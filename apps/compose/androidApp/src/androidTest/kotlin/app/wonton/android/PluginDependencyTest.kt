@@ -42,18 +42,9 @@ class PluginDependencyTest {
         compose.onNodeWithText("Write to the downloads folder").performScrollTo()
         compose.onNodeWithText("API key").performScrollTo()
         compose.onNodeWithText("indexer").performScrollTo()
-        shot("install-provider")
-    }
-
-    @Test
-    fun providerInstallListsWantingApps() {
-        openStore()
-        scroll().performScrollToNode(hasText("qBittorrent"))
-        compose.onNodeWithText("qBittorrent").performClick()
-        compose.onNodeWithText(strings.getString(R.string.store_get)).performClick()
         compose.onNodeWithText(strings.getString(R.string.install_wants_connected_title)).performScrollTo()
         compose.onNodeWithText("Audio Book").performScrollTo()
-        shot("install-wanting")
+        shot("install-provider")
     }
 
     @Test

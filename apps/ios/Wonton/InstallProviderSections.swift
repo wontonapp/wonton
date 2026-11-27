@@ -13,7 +13,14 @@ struct InstallProviderSections: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        if !preview.wantingPlugins.isEmpty { connectedSection }
+        if !wanting.isEmpty {
+            InstallConnectedApps(
+                wanting: wanting,
+                connected: preview.connectedPlugins,
+                direct: isDirect,
+                toggle: toggleConnected
+            )
+        }
         ForEach(preview.installProviders, id: \.capability) { section in
             DetailSection(title: String(localized: .Install.installRequiredCapabilities)) {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
@@ -53,23 +60,14 @@ struct InstallProviderSections: View {
         if let problem { ProblemNotice(problem: problem) }
     }
 
-    /// 装的是提供方：已装并想用这个能力的插件，勾选的才接上（ADR-0053 第 3 条）。
-    private var connectedSection: some View {
-        DetailSection(title: String(localized: .Install.installWantsConnectedTitle)) {
-            ForEach(preview.wantingPlugins, id: \.id) { plugin in
-                StepOptionRow(
-                    title: plugin.title,
-                    isSelected: preview.connectedPlugins.contains(plugin.id),
-                    neutralSelection: true,
-                    select: { toggleConnected(plugin.id) },
-                    leading: { EmptyView() },
-                    trailing: {
-                        if plugin.highPrivilege { highPrivilegeTag }
-                    }
-                )
-            }
-        }
+    /// 装的是提供方：已装并想用这个能力的插件（ADR-0053 第 3 条）。外层装提供方时勾选的才接上；
+    /// 随批安装的提供方内层带不了连接，只列出来。
+    private var wanting: [CapabilityProviderRef] {
+        if !preview.wantingPlugins.isEmpty { return preview.wantingPlugins }
+        return preview.installProviders.compactMap { $0.selected?.preview.wantingPlugins }.first ?? []
     }
+
+    private var isDirect: Bool { !preview.wantingPlugins.isEmpty }
 
     private var thirdPartyTag: some View {
         Tag(text: String(localized: .Install.installProviderThirdParty), tint: colors.textSecondary)

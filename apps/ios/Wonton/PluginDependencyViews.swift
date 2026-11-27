@@ -246,3 +246,39 @@ struct PluginMissingCapabilities: View {
         }
     }
 }
+
+/// 想用这个提供方的已装应用（ADR-0053 第 3 条）：直接装提供方时勾选的才接上，随批安装的只列出来。
+struct InstallConnectedApps: View {
+    let wanting: [CapabilityProviderRef]
+    let connected: [String]
+    let direct: Bool
+    let toggle: (String) -> Void
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        DetailSection(title: String(localized: .Install.installWantsConnectedTitle)) {
+            ForEach(wanting, id: \.id) { plugin in
+                HStack(spacing: WontonTheme.spacing.s8) {
+                    Text(plugin.title)
+                        .wontonText(WontonTheme.typography.body)
+                        .foregroundStyle(Color(colors.textPrimary))
+                    if plugin.highPrivilege {
+                        Tag(
+                            text: String(localized: .Install.installProviderHighPrivilege),
+                            tint: colors.warning
+                        )
+                    }
+                    Spacer(minLength: 0)
+                    if direct {
+                        Toggle("", isOn: Binding(
+                            get: { connected.contains(plugin.id) },
+                            set: { _ in toggle(plugin.id) }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(WontonToggleStyle())
+                    }
+                }
+            }
+        }
+    }
+}

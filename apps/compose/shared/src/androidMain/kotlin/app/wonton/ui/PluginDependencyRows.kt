@@ -104,12 +104,22 @@ private fun row(missing: MissingCapability, required: Boolean, colors: ThemeColo
     }
 }
 
-/** 装的是提供方：已装并想用这个能力的插件，勾选的才接上（ADR-0053 第 3 条）。 */
+/**
+ * 装的是提供方：已装并想用这个能力的插件（ADR-0053 第 3 条）。外层装提供方时勾选的才接上；
+ * 随批安装的提供方内层带不了连接，只列出来。
+ */
 @Composable
 internal fun ConnectedSection(preview: InstallPreview, onUpdate: (InstallPreview) -> Unit) {
     val colors = WontonTheme.colors
+    val direct = preview.wantingPlugins.isNotEmpty()
+    val wanting = if (direct) {
+        preview.wantingPlugins
+    } else {
+        preview.installProviders.mapNotNull { it.selected?.preview?.wantingPlugins }.firstOrNull().orEmpty()
+    }
+    if (wanting.isEmpty()) return
     DetailSection(stringResource(R.string.install_wants_connected_title)) {
-        preview.wantingPlugins.forEach { plugin ->
+        wanting.forEach { plugin ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     plugin.title,
@@ -120,9 +130,11 @@ internal fun ConnectedSection(preview: InstallPreview, onUpdate: (InstallPreview
                 if (plugin.highPrivilege) {
                     Tag(stringResource(R.string.install_provider_high_privilege), colors.warning)
                 }
-                WontonSwitch(plugin.id in preview.connectedPlugins, { on ->
-                    onUpdate(preview.withConnected(plugin.id, on))
-                }, true)
+                if (direct) {
+                    WontonSwitch(plugin.id in preview.connectedPlugins, { on ->
+                        onUpdate(preview.withConnected(plugin.id, on))
+                    }, true)
+                }
             }
         }
     }
