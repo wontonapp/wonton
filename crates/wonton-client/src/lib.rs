@@ -25,6 +25,7 @@ uniffi::setup_scaffolding!();
 
 mod about;
 mod agent_chains;
+mod agent_models;
 #[cfg(target_os = "android")]
 mod android;
 mod app_lock;
@@ -97,8 +98,9 @@ pub use plugin_choices::{
 pub use plugins::capabilities::dependency_next_step;
 pub use sharing::discover_share_source;
 pub use subscription::{
-    AgentChainsSubscription, AgentStopSubscription, AppLockSubscription, AppearanceSubscription,
-    BotContactsSubscription, ChatSubscription, ClientsDomainSubscription, ComposerSubscription,
+    AgentChainsSubscription, AgentModelsSubscription, AgentStopSubscription, AppLockSubscription,
+    AppearanceSubscription, BotContactsSubscription, ChatSubscription, ClientsDomainSubscription,
+    ComposerSubscription,
     ConfirmationsSubscription, FamilySubscription, FriendsSubscription, HomeSubscription,
     OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
     ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
