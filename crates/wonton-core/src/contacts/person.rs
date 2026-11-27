@@ -111,7 +111,7 @@ impl Contacts {
             match changed {
                 Ok(()) if next == ContactState::Active => {
                     tracing::info!(bot = %local.user_id, contact = %user, "对方接受了联系人邀请");
-                    self.ports.effects.allowed_users_changed(&local.bot);
+                    self.apply(&local.bot).await;
                 }
                 Ok(()) => {}
                 Err(e) => tracing::error!(error = %e, "联系人记录写不进去"),

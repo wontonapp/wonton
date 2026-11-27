@@ -7,7 +7,10 @@ use std::time::Duration;
 use futures_util::future::BoxFuture;
 use hyper::{Method, StatusCode};
 use serde_json::{Value, json};
-use wonton_protocol::{BotKeeper, BotRef, ContactEvent, ContactRequestPush, PeerStatus};
+use wonton_protocol::{
+    BotKeeper, BotRef, ContactApply, ContactApplyFailure, ContactEvent, ContactRequestPush,
+    PeerStatus,
+};
 
 use super::fakes::loopback_tunnel_with;
 use super::family_tests::send_as;
@@ -69,10 +72,27 @@ impl PersonInvites for Offline {
 #[derive(Default)]
 pub(super) struct Recorded {
     pushed: Mutex<Vec<String>>,
+    /// 按 Bot 名给的下一次应用结果，取一次就没了；没给的按成功。
+    next: Mutex<std::collections::BTreeMap<String, ContactApply>>,
+}
+
+impl Recorded {
+    fn fail(&self, bot: &str, apply: ContactApply) {
+        self.next.lock().unwrap().insert(bot.to_owned(), apply);
+    }
 }
 
 impl Effects for Recorded {
-    fn allowed_users_changed(&self, _: &BotRef) {}
+    fn allowed_users_changed<'a>(&'a self, bot: &'a BotRef) -> BoxFuture<'a, ContactApply> {
+        let apply = self
+            .next
+            .lock()
+            .unwrap()
+            .remove(&bot.bot)
+            .unwrap_or(ContactApply::Applied);
+        Box::pin(async move { apply })
+    }
+
     fn notify_request(&self, keeper: &str, _: ContactRequestPush) {
         self.pushed.lock().unwrap().push(keeper.to_owned());
     }
@@ -473,4 +493,105 @@ async fn an_unchanged_list_hangs_instead_of_returning_at_once() {
         .expect("到时限要回来");
     assert_eq!(status, StatusCode::OK, "{list}");
     assert_eq!(list["revision"].as_u64().unwrap(), revision);
+}
+
+/// 同机两个 Helper Bot 先互发请求，返回 Bob 这一侧的 Bot 和同意地址。
+async fn pending_approval(home: &Home) -> (iroh::EndpointId, String) {
+    let alice = home.device(Some("alice"));
+    let path = wonton_protocol::bot_contacts_path(&bot("alice"));
+    let (status, _, body) = home
+        .call(
+            Some(alice),
+            Method::POST,
+            &path,
+            json!({"user_id": "@hermes-bob:test", "kind": "bot"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let bob = home.device(Some("bob"));
+    let approve =
+        wonton_protocol::bot_contact_approve_path(&bot("bob"), &encoded("@hermes-alice:test"));
+    (bob, approve)
+}
+
+#[tokio::test]
+async fn the_apply_result_rides_the_response_and_later_lists() {
+    let home = home().await;
+    let (bob, approve) = pending_approval(&home).await;
+    let (status, _, body) = home
+        .call(Some(bob), Method::POST, &approve, Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["contacts"][0]["state"], "active");
+    assert_eq!(body["apply"], json!({"state": "applied"}));
+
+    let (_, _, list) = home
+        .call(
+            Some(bob),
+            Method::GET,
+            &wonton_protocol::bot_contacts_path(&bot("bob")),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(
+        list["apply"],
+        json!({"state": "applied"}),
+        "再查还是这个结果"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_apply_keeps_the_contact_and_says_why() {
+    let home = home().await;
+    let (bob, approve) = pending_approval(&home).await;
+    home.effects.fail(
+        "bob",
+        ContactApply::Failed {
+            reason: ContactApplyFailure::PluginNotReady,
+            detail: "插件停着".into(),
+        },
+    );
+    let (status, _, body) = home
+        .call(Some(bob), Method::POST, &approve, Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["contacts"][0]["state"], "active", "记录照样成立");
+    assert_eq!(
+        body["apply"],
+        json!({"state": "failed", "reason": "plugin_not_ready", "detail": "插件停着"})
+    );
+    let (status, _, list) = home
+        .call(
+            Some(bob),
+            Method::GET,
+            &wonton_protocol::bot_contacts_path(&bot("bob")),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["apply"]["reason"], "plugin_not_ready");
+}
+
+#[tokio::test]
+async fn invalid_input_fails_the_call_and_leaves_no_apply() {
+    let home = home().await;
+    let alice = home.device(Some("alice"));
+    let path = wonton_protocol::bot_contacts_path(&bot("alice"));
+    let (status, kind, body) = home
+        .call(
+            Some(alice),
+            Method::POST,
+            &path,
+            json!({"user_id": "@bad", "kind": "bot"}),
+        )
+        .await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (StatusCode::BAD_REQUEST, "invalid_user_id")
+    );
+    assert!(body.get("apply").is_none(), "{body}");
+    let (_, _, list) = home
+        .call(Some(alice), Method::GET, &path, Value::Null)
+        .await;
+    assert!(list.get("apply").is_none(), "{list}");
 }

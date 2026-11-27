@@ -21,13 +21,14 @@ mod remote;
 mod store;
 pub mod wiring;
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    BotContact, BotRef, ContactError, ContactKind, ContactState, PendingContactRequest,
-    RemoteContact,
+    BotContact, BotRef, ContactApply, ContactError, ContactKind, ContactState,
+    PendingContactRequest, RemoteContact,
 };
 
 pub use ports::{
@@ -67,6 +68,8 @@ pub struct Contacts {
     ports: Ports,
     /// 记录每变一次加一。
     changes: watch::Sender<u64>,
+    /// 每个 Bot 最近一次名单变更在运行时的结果（#646）。只是运行时事实，不落盘。
+    applies: Mutex<BTreeMap<BotRef, ContactApply>>,
 }
 
 impl std::fmt::Debug for Contacts {
@@ -101,6 +104,7 @@ impl Contacts {
             ops: tokio::sync::Mutex::new(()),
             ports,
             changes: watch::channel(0).0,
+            applies: Mutex::default(),
         }))
     }
 
@@ -210,6 +214,37 @@ impl Contacts {
             .collect()
     }
 
+    /// 名单变了：等运行时真的换上新名单，把结果留给调用方查（#646）。
+    /// 记录已经写好，失败只进回执，不撤联系人。
+    async fn apply(&self, bot: &BotRef) {
+        let apply = self.ports.effects.allowed_users_changed(bot).await;
+        match &apply {
+            ContactApply::Applied => {
+                tracing::info!(plugin = %bot.plugin_id, bot = %bot.bot, "联系人变了，Bot 的名单已更新")
+            }
+            ContactApply::Failed { reason, detail } => tracing::error!(
+                plugin = %bot.plugin_id,
+                bot = %bot.bot,
+                ?reason,
+                %detail,
+                "联系人变了，Bot 的名单没换上"
+            ),
+        }
+        self.applies
+            .lock()
+            .expect("应用回执锁中毒")
+            .insert(bot.clone(), apply);
+    }
+
+    /// 这个 Bot 最近一次名单变更在运行时的结果；核心重启后从空开始。
+    pub fn last_apply(&self, bot: &BotRef) -> Option<ContactApply> {
+        self.applies
+            .lock()
+            .expect("应用回执锁中毒")
+            .get(bot)
+            .cloned()
+    }
+
     fn contact(&self, user_id: &str, row: &Row) -> BotContact {
         let remote = server_of(user_id)
             .filter(|server| *server != self.own_server)
@@ -290,6 +325,8 @@ pub(crate) fn now_ms() -> u64 {
 
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+mod tests_apply;
 #[cfg(test)]
 mod tests_open_federation;
 #[cfg(test)]

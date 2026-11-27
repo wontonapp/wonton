@@ -3,7 +3,7 @@
 
 use futures_util::future::BoxFuture;
 use wonton_protocol::{
-    BotKeeper, BotRef, ContactError, ContactEvent, ContactRequestPush, PeerStatus,
+    BotKeeper, BotRef, ContactApply, ContactError, ContactEvent, ContactRequestPush, PeerStatus,
 };
 
 /// 联系人操作失败：类别给 App，`detail` 是给日志和“详情”的原因（核心写，不翻译）。
@@ -105,10 +105,12 @@ pub trait PersonInvites: Send + Sync {
     ) -> BoxFuture<'a, Result<(), ContactFailure>>;
 }
 
-/// 联系人变了以后对外的事。都在联系人的记录写好之后调，失败由实现方记日志：记录是准的，下次重建照记录来。
+/// 联系人变了以后对外的事。都在联系人的记录写好之后调，调用方等运行时的真实结果（#646）：
+/// 失败只进回执，不撤记录——记录是准的，下次重建照记录来。
 pub trait Effects: Send + Sync {
-    /// 这个 Bot 的已成立联系人变了：重建它的服务，让 `WONTON_MATRIX_ALLOWED_USERS` 跟上。
-    fn allowed_users_changed(&self, bot: &BotRef);
+    /// 这个 Bot 的已成立联系人变了：让运行中的服务真的换上新 `WONTON_MATRIX_ALLOWED_USERS`。
+    /// 返回运行时的结果，不把“任务已经起来”当已应用。
+    fn allowed_users_changed<'a>(&'a self, bot: &'a BotRef) -> BoxFuture<'a, ContactApply>;
     /// 推送一条新的联系人请求给 `keeper_username` 的设备。
     fn notify_request(&self, keeper_username: &str, push: ContactRequestPush);
 }

@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex, Weak};
 
 use futures_util::future::BoxFuture;
 use wonton_protocol::{
-    BotKeeper, BotRef, ContactError, ContactEvent, ContactKind, ContactRequest, ContactRequestPush,
-    ContactState, PeerStatus,
+    BotKeeper, BotRef, ContactApply, ContactError, ContactEvent, ContactKind, ContactRequest,
+    ContactRequestPush, ContactState, PeerStatus,
 };
 
 use super::*;
@@ -180,12 +180,27 @@ impl PersonInvites for FakeInvites {
 #[derive(Default)]
 pub(crate) struct FakeEffects {
     pub(crate) rebuilt: Mutex<Vec<BotRef>>,
+    /// 按 Bot 名给的下一次结果，取一次就没了；没给的按成功。
+    pub(crate) next: Mutex<BTreeMap<String, ContactApply>>,
     pub(crate) pushed: Mutex<Vec<(String, ContactRequestPush)>>,
 }
 
+impl FakeEffects {
+    pub(crate) fn fail(&self, bot: &str, apply: ContactApply) {
+        self.next.lock().unwrap().insert(bot.to_owned(), apply);
+    }
+}
+
 impl Effects for FakeEffects {
-    fn allowed_users_changed(&self, bot: &BotRef) {
+    fn allowed_users_changed<'a>(&'a self, bot: &'a BotRef) -> BoxFuture<'a, ContactApply> {
         self.rebuilt.lock().unwrap().push(bot.clone());
+        let apply = self
+            .next
+            .lock()
+            .unwrap()
+            .remove(&bot.bot)
+            .unwrap_or(ContactApply::Applied);
+        Box::pin(async move { apply })
     }
 
     fn notify_request(&self, keeper: &str, push: ContactRequestPush) {

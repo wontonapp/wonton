@@ -4,7 +4,8 @@ use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use wonton_protocol::{BotKeeper, BotRef, ContactRequestPush};
+use futures_util::future::BoxFuture;
+use wonton_protocol::{BotKeeper, BotRef, ContactApply, ContactRequestPush};
 
 use super::{Contacts, Directory, Effects, LocalBot, Ports, StoreError};
 use crate::matrix::Matrix;
@@ -85,22 +86,14 @@ pub struct CoreEffects {
 }
 
 impl Effects for CoreEffects {
-    fn allowed_users_changed(&self, bot: &BotRef) {
+    fn allowed_users_changed<'a>(&'a self, bot: &'a BotRef) -> BoxFuture<'a, ContactApply> {
         let plugins = self.plugins.clone();
         let rebuilds = self.rebuilds.clone();
         let bot = bot.clone();
-        tokio::spawn(async move {
+        Box::pin(async move {
             let _queue = rebuilds.lock().await;
-            match plugins.rebuild_for_contacts(&bot).await {
-                Ok(()) => {
-                    tracing::info!(plugin = %bot.plugin_id, bot = %bot.bot, "联系人变了，Bot 的名单已更新")
-                }
-                // 记录是准的：下次重建（启动、升级、再变一次）照记录渲染。
-                Err(e) => {
-                    tracing::error!(plugin = %bot.plugin_id, bot = %bot.bot, error = %e, "联系人变了，重建 Bot 失败")
-                }
-            }
-        });
+            plugins.rebuild_for_contacts(&bot).await
+        })
     }
 
     fn notify_request(&self, keeper_username: &str, request: ContactRequestPush) {
