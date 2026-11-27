@@ -20,7 +20,7 @@ extension ConnectionNotice {
         case .connecting: String(localized: .Connection2.connectionNoticeConnecting)
         case .updating: String(localized: .Connection1.connectionNoticeUpdating)
         case .serverOffline: String(localized: .Connection0.connectionNoticeServerOffline)
-        case .relayRejected: String(localized: .Connection2.connectionNoticeRelayRejected)
+        case .relayRejected: String(localized: .Connection1.connectionNoticeRelayRejected)
         case .unreachable: String(localized: .Connection1.connectionNoticeUnreachable)
         case .deviceRejected: String(localized: .Connection2.connectionNoticeDeviceRejected)
         case .versionMismatch: String(localized: .Connection0.connectionNoticeVersionMismatch)

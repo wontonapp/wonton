@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="connection_relay_rejected">中继拒绝了这台手机的令牌</string>
     <string name="connection_updating">正在更新…</string>
     <string name="connection_pair_again">重新配对</string>
     <string name="connection_view">查看连接</string>
@@ -9,7 +10,6 @@
     <string name="connection_add_device">添加设备</string>
     <string name="connection_ok">正常</string>
     <string name="connection_failing">不通</string>
-    <string name="connection_rejected">被拒绝</string>
     <string name="connection_value_none">—</string>
     <string name="connection_last_handshake">上次握手</string>
     <string name="connection_last_failure">上次失败</string>

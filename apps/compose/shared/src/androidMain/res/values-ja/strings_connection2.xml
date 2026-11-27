@@ -2,7 +2,6 @@
 <resources>
     <string name="connection_waiting_network">ネットワークを待っています…</string>
     <string name="connection_server_offline">自宅サーバーがオフラインのようです</string>
-    <string name="connection_relay_rejected">中継サーバーがこのスマートフォンのトークンを拒否しました</string>
     <string name="connection_new_version">新しいバージョンあり</string>
     <string name="connection_pair_again_hint">ペアリングコードのページを開きます。新しいコードでペアリングするまで、現在の接続は切れません。</string>
     <string name="connection_mobile_network">モバイルネットワーク</string>

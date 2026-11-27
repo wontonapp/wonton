@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Connection notice: the home server is updating itself. -->
+    <string name="connection_relay_rejected">The relay rejected this phone’s token</string>
     <string name="connection_updating">Updating…</string>
     <!-- Button that opens pairing again. No arguments; short label. -->
     <string name="connection_pair_again">Pair again</string>
@@ -18,7 +19,6 @@
     <string name="connection_ok">OK</string>
     <!-- Value of the phone's mobile network check: it doesn't work. No arguments. -->
     <string name="connection_failing">Unreachable</string>
-    <string name="connection_rejected">Rejected</string>
     <!-- Value of a number the core couldn\'t measure: a dash, never 0. -->
     <string name="connection_value_none">—</string>
     <!-- Label of the last handshake time in the connection details. -->
