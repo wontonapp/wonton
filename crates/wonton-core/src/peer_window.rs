@@ -114,6 +114,94 @@ fn major_minor(version: &str) -> Option<(u64, u64)> {
 /// Tuwunel 配置里那一行。
 const ALLOW_INVALID: &str = "allow_invalid_tls_certificates";
 
+/// 上一次自动写进 `allow_invalid_tls_certificates` 的值。跨重启用它区分“主人手改”和“上次自动写的”。
+pub(crate) fn last_applied_path(data_dir: &Path) -> std::path::PathBuf {
+    data_dir.join("core/window-applied")
+}
+
+/// 主人手改顶掉自动的值。存下来，重启后仍认得出，不把主人的关闭改回去。
+pub(crate) fn manual_path(data_dir: &Path) -> std::path::PathBuf {
+    data_dir.join("core/window-manual")
+}
+
+/// 读主人顶掉的值；没有或读不懂都当没有。
+pub(crate) fn load_manual(data_dir: &Path) -> Option<bool> {
+    let text = std::fs::read_to_string(manual_path(data_dir)).ok()?;
+    match text.trim() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
+/// 记下主人顶掉的值。
+pub(crate) async fn store_manual(data_dir: &Path, value: bool) {
+    let path = manual_path(data_dir);
+    if let Some(dir) = path.parent()
+        && let Err(error) = tokio::fs::create_dir_all(dir).await
+    {
+        tracing::error!(%error, path = %dir.display(), "建不出记窗口状态的目录");
+        return;
+    }
+    if let Err(error) = tokio::fs::write(&path, if value { "true" } else { "false" }).await {
+        tracing::error!(%error, path = %path.display(), "记不下主人手改的窗口值");
+    }
+}
+
+/// 交回自动：删掉顶掉的记录。
+pub(crate) async fn clear_manual(data_dir: &Path) {
+    if let Err(error) = tokio::fs::remove_file(manual_path(data_dir)).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::error!(%error, "删不掉主人手改的窗口值记录");
+    }
+}
+
+/// 读上次自动写的值；没有或读不懂都当没有（第一次升上来，文件里的值按自动值算）。
+pub(crate) fn load_last_applied(data_dir: &Path) -> Option<bool> {
+    let text = std::fs::read_to_string(last_applied_path(data_dir)).ok()?;
+    match text.trim() {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
+}
+
+/// 记下这次自动写的值；写不进去只记日志，下一轮重试。
+pub(crate) async fn store_last_applied(data_dir: &Path, value: bool) {
+    let path = last_applied_path(data_dir);
+    if let Some(dir) = path.parent()
+        && let Err(error) = tokio::fs::create_dir_all(dir).await
+    {
+        tracing::error!(%error, path = %dir.display(), "建不出记窗口状态的目录");
+        return;
+    }
+    if let Err(error) = tokio::fs::write(&path, if value { "true" } else { "false" }).await {
+        tracing::error!(%error, path = %path.display(), "记不下窗口状态");
+    }
+}
+
+/// 读 `tuwenel.toml` 现在写的 `allow_invalid_tls_certificates`；没有这行或值认不出算错。
+pub(crate) async fn allow_invalid(path: &Path) -> anyhow::Result<bool> {
+    let text = tokio::fs::read_to_string(path)
+        .await
+        .with_context(|| format!("读取 {}", path.display()))?;
+    for line in text.lines() {
+        let Some(rest) = line.trim_start().strip_prefix(ALLOW_INVALID) else {
+            continue;
+        };
+        let Some(value) = rest.trim_start().strip_prefix('=') else {
+            continue;
+        };
+        return match value.trim() {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            other => anyhow::bail!("{} 里 {ALLOW_INVALID} 的值认不出：{other}", path.display()),
+        };
+    }
+    anyhow::bail!("{} 里没有 {ALLOW_INVALID}", path.display())
+}
+
 /// 把 `tuwenel.toml` 的 `allow_invalid_tls_certificates` 改成 `value`；已经是这个值返回 false（不动文件）。
 /// 原地写，不换 inode（这份文件是单文件绑定挂载）；调用方在写之后让 Tuwunel 热加载。
 pub(crate) async fn set_allow_invalid(path: &Path, value: bool) -> anyhow::Result<bool> {

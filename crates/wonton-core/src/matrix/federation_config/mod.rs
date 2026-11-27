@@ -46,6 +46,8 @@ pub struct FederationConfig {
     server_name: String,
     /// 上一次成功让 Tuwunel 用上的 `allow_invalid` 值；写成功但热加载失败时留空重试。
     window_applied: Mutex<Option<bool>>,
+    /// 主人手改文件顶掉的自动值：文件值和它不同就一直不覆盖（ADR-0112 §5b）。
+    window_manual: Mutex<Option<bool>>,
 }
 
 impl FederationConfig {
@@ -70,6 +72,7 @@ impl FederationConfig {
             notice,
             server_name,
             window_applied: Mutex::new(None),
+            window_manual: Mutex::new(None),
         });
         tokio::spawn(async move {
             let mut forbidden = blocks.subscribe();
@@ -120,6 +123,50 @@ impl FederationConfig {
             }
         };
         let needed = state.needed;
+        let path = self.install_dir.join("secrets/tuwunel/tuwunel.toml");
+        // 上次自动写的值从数据目录读回（跨重启）：文件值和它不同就是主人手改的，以文件为准。
+        let mut applied = *self.window_applied.lock().expect("窗口状态锁中毒");
+        if applied.is_none() {
+            applied = crate::peer_window::load_last_applied(&self.data_dir);
+            *self.window_applied.lock().expect("窗口状态锁中毒") = applied;
+        }
+        let had_applied = applied.is_some();
+        if self.window_manual.lock().expect("窗口状态锁中毒").is_none() {
+            *self.window_manual.lock().expect("窗口状态锁中毒") =
+                crate::peer_window::load_manual(&self.data_dir);
+        }
+        match crate::peer_window::allow_invalid(&path).await {
+            Ok(on_disk) if applied != Some(on_disk) => {
+                // 主人手改（或升级时的安装脚本写了别的值）：认文件值。没有上次记录的第一轮算自动值。
+                *self.window_applied.lock().expect("窗口状态锁中毒") = Some(on_disk);
+                let manual = (had_applied && on_disk != needed).then_some(on_disk);
+                *self.window_manual.lock().expect("窗口状态锁中毒") = manual;
+                if let Some(value) = manual {
+                    crate::peer_window::store_manual(&self.data_dir, value).await;
+                }
+                crate::peer_window::store_last_applied(&self.data_dir, on_disk).await;
+                if had_applied {
+                    if let Err(error) = self.matrix.reload_config().await {
+                        tracing::error!(%error, "主人手改了 allow_invalid，热加载失败，下一轮重试");
+                    }
+                    tracing::info!(allow_invalid = on_disk, "按文件里的 allow_invalid 热加载");
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "读不出 Tuwunel 的 allow_invalid，按上次写的值判断");
+            }
+        }
+        let manual = *self.window_manual.lock().expect("窗口状态锁中毒");
+        if let Some(manual) = manual {
+            if manual != needed {
+                tracing::debug!(allow_invalid = manual, "主人手动开关着窗口，本轮不自动改");
+                return;
+            }
+            // 文件已经回到自动值：交回自动。
+            *self.window_manual.lock().expect("窗口状态锁中毒") = None;
+            crate::peer_window::clear_manual(&self.data_dir).await;
+        }
         if *self.window_applied.lock().expect("窗口状态锁中毒") == Some(needed) {
             return;
         }
@@ -129,7 +176,6 @@ impl FederationConfig {
                 "待钉窗口已到期，对端还没升级；握手仍按证书名字放行"
             );
         }
-        let path = self.install_dir.join("secrets/tuwunel/tuwunel.toml");
         if let Err(error) = crate::peer_window::set_allow_invalid(&path, needed).await {
             tracing::error!(%error, "改写 allow_invalid_tls_certificates 失败");
             return;
@@ -139,6 +185,7 @@ impl FederationConfig {
             return;
         }
         *self.window_applied.lock().expect("窗口状态锁中毒") = Some(needed);
+        crate::peer_window::store_last_applied(&self.data_dir, needed).await;
         tracing::info!(
             allow_invalid = needed,
             "按待钉窗口改写了 Tuwunel 的证书校验"
