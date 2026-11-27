@@ -56,6 +56,7 @@ async fn send_setup() -> Send {
 
 fn member(username: &str, display: &str) -> MemberRecord {
     MemberRecord {
+        invited_by: None,
         display_name: display.into(),
         ..MemberRecord::for_test(username)
     }

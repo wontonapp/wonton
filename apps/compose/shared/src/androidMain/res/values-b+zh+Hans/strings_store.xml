@@ -4,6 +4,8 @@
     <string name="store_add_source">添加来源</string>
     <!-- Button on a store row to install an app you don't have. -->
     <string name="store_get">获取</string>
+    <!-- Button in the empty store state that goes back to the pairing screen. -->
+    <string name="store_go_pair">去配对</string>
     <!-- Small tag on a store row for an app that asks for risky permissions. -->
     <string name="store_high_permissions">高权限</string>
     <!-- Button that requests store content when it has not been loaded. -->

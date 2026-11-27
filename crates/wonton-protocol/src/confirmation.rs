@@ -73,6 +73,10 @@ pub struct ConfirmationCard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub origin: Option<crate::ConfirmationOrigin>,
+    /// 这张卡片替谁办事（ADR-0088 第 5 节）：私人 Bot 替它的归属人。核心确认不了时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub on_behalf: Option<OnBehalfView>,
     /// 谁能回答（ADR-0088）。
     #[serde(default)]
     pub audience: CardAudience,
@@ -80,6 +84,14 @@ pub struct ConfirmationCard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub answered_by: Option<String>,
+}
+
+/// 卡片替谁办事：显示名由核心按成员记录取好，壳只用它写字。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct OnBehalfView {
+    pub user_id: String,
+    pub display_name: String,
 }
 
 /// 一张卡片发给谁。

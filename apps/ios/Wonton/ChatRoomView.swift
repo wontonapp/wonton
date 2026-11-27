@@ -685,13 +685,11 @@ private extension ChatRoomView {
     }
 }
 
-/// 不能聊的原因；能用时为空。新建聊天和房间提示共用同一套文字。
+/// 不能聊的原因；能用或还没核实（照常能发）时为空。新建聊天和房间提示共用同一套文字。
 func botAccessNoticeText(_ access: BotAccess) -> LocalizedStringResource? {
     switch access {
-    case .own, .shared, .contact:
+    case .own, .shared, .contact, .unknown:
         return nil
-    case .unknown:
-        return .Chat.roomBotUnknown
     case let .unusable(reason):
         switch reason {
         case .ownerPrivate: return .Chat.roomBotOwnerPrivate

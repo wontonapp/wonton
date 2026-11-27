@@ -39,10 +39,9 @@ internal fun botAccessReasonNotice(reason: BotChatUnavailable): Int = when (reas
     else -> R.string.room_bot_unavailable
 }
 
-/** 这个 Bot 现在不能聊的原因；能用、不是 Bot 或还没取到时为空，输入框照常。 */
+/** 这个 Bot 现在不能聊的原因；能用、不是 Bot、还没取到或还没核实（照常能发）时为空，输入框照常。 */
 internal fun botAccessNotice(access: BotAccess?): Int? = when (access) {
-    null, BotAccess.Own, BotAccess.Shared, BotAccess.Contact -> null
-    BotAccess.Unknown -> R.string.room_bot_unknown
+    null, BotAccess.Own, BotAccess.Shared, BotAccess.Contact, BotAccess.Unknown -> null
     is BotAccess.Unusable -> botAccessReasonNotice(access.reason)
 }
 

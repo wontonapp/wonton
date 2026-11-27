@@ -122,6 +122,7 @@ gateway-body-unreadable = 读不了请求体：{ $error }
 gateway-body-invalid = 请求体不合法：{ $error }
 gateway-bot-not-found = 没有这个 Bot：{ $caller }
 gateway-bot-not-in-plugin = 应用 { $id } 没有这个 Bot：{ $caller }
+gateway-danger-owner-bot = 危险模式只给主人的 Bot 用。
 gateway-tool-not-found = 应用 { $id } 没有工具 { $tool }
 gateway-tool-deletes = 工具 { $tool } 会删除或覆盖数据，每次都要确认，不能标成只读
 gateway-plugin-not-running = 这个应用没有在运行，或者没有声明工具
@@ -192,6 +193,13 @@ clients-gate-public-list-not-cleared = 公网证书列表没清空
 clients-gate-entry-not-reloaded = 入口没有重读配置：{ $error }
 clients-gate-connector-mismatch = 连接器容器和开关不一致
 clients-gate-public-list-mismatch = 公网证书列表和开关不一致
+clients-domain-terms-required = 先勾选 Let's Encrypt 的订户协议
+clients-domain-external-certificate = 这家装的是自己的证书（WONTON_ENTRY_CERTIFICATE=external），核心不签发
+clients-domain-fixed-suffix = 服务器名已经定了，只能换服务商和凭据
+clients-domain-suffix-required = 填一个域名
+clients-domain-suffix-invalid = 用小写的 ASCII 域名，不带通配符和端口
+clients-domain-suffix-ip = 填域名，不是 IP 地址
+clients-domain-credentials-required = 首次配置或换服务商时要一起填这个服务商的凭据
 gateway-chains-disabled = 家里的服务器没有启用调用链账本
 
 # agent_acp 的转发（ADR-0061 第 5 块）：建连时的拒绝和逐帧转发里的错误，按类别回给使用方。

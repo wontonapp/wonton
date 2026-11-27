@@ -169,6 +169,11 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         R.string.problem_transport_unavailable_next_step,
         detail,
     )
+    PluginFailure.NOT_PAIRED -> problem(
+        R.string.problem_not_paired_title,
+        R.string.problem_not_paired_next_step,
+        detail,
+    )
     PluginFailure.UNAUTHORIZED -> problem(
         R.string.problem_unauthorized_title,
         R.string.problem_unauthorized_next_step,

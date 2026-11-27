@@ -174,7 +174,6 @@
     <string name="room_bot_owner_private">這是家裡人的私人 Bot，主人還沒給授權。</string>
     <string name="room_bot_grant_revoked">這個 Bot 的授權已經收回。</string>
     <string name="room_bot_unavailable">這個 Bot 現在用不了。</string>
-    <string name="room_bot_unknown">還沒核實這個 Bot 能不能發。</string>
     <string name="room_bot_role_lacks_shared_bots">這是家庭共享 Bot，但你的角色還不能用共享 Bot。</string>
     <string name="room_bot_app_not_shared">這個應用沒開放給你。</string>
     <string name="room_bot_contact_pending">聯絡人還在等對方同意。</string>

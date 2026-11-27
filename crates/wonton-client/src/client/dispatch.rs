@@ -4,8 +4,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AgentAction, BotAction, ChatAction, DefaultBotVisibility, DeviceNetwork, HomeAction,
-    PageAction, PluginAction, PushAction, SessionAction, SettingsAction, TimelineAction,
+    Action, AgentAction, BotAction, ChatAction, ClientsAction, DefaultBotVisibility, DeviceNetwork,
+    HomeAction, PageAction, PluginAction, PushAction, SessionAction, SettingsAction,
+    TimelineAction,
 };
 
 use super::switch::PushInput;
@@ -98,6 +99,10 @@ impl ClientCore {
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
+                Action::Family { action } => {
+                    self.dispatch_ui_fake_family(action);
+                    Ok(())
+                }
                 // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。发送的检查放在前面：
                 // 先过发送的拒绝和附件区的检查：被拒的发送不进假时间线、不开假链，也不回显；收下了才记假时间线（发附言的顺带补一条）。
                 Action::Timeline { action } => {
@@ -137,12 +142,20 @@ impl ClientCore {
             Action::Family { action } => scope.family.dispatch(action),
             Action::Friends { action } => scope.friends.dispatch(action),
             Action::Sharing { action } => self.dispatch_sharing(&scope, action),
-            // 公网访问的模块还没接；接上之前如实报还没就绪，不静默当成功。
-            Action::Clients { .. } => Err(CoreError::NotReady {
-                reason: "clients module is not wired yet".into(),
-            }),
             Action::Timeline { action } => self.timeline_action(&scope, action),
             Action::Agent { action } => self.agent_action(&scope, action),
+            Action::Clients { action } => match action {
+                // 公网访问的模块还没接；接上之前如实报还没就绪，不静默当成功。
+                ClientsAction::RefreshDomain
+                | ClientsAction::CancelDomain
+                | ClientsAction::SelectDomainProvider { .. }
+                | ClientsAction::SaveDomain { .. }
+                | ClientsAction::RetryCertificate
+                | ClientsAction::DismissDomainProblem => scope.clients_domain.dispatch(action),
+                _ => Err(CoreError::NotReady {
+                    reason: "clients module is not wired yet".into(),
+                }),
+            },
         }
     }
 }

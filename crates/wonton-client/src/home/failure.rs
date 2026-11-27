@@ -6,7 +6,7 @@ use wonton_l10n::{Lang, l10n};
 use wonton_protocol::{PairingFailure, PairingStatus};
 use wonton_tunnel::TunnelError;
 use wonton_tunnel::pair::PairingCode;
-use wonton_tunnel::relays::Relay;
+use wonton_tunnel::relays::RelayView;
 
 use crate::l10n::CATALOG;
 
@@ -194,7 +194,7 @@ fn add_decoded(patterns: &mut Patterns, value: &str, form: bool) {
     }
 }
 
-fn sensitive_patterns(relays: &[Relay], secret: Option<&str>) -> Patterns {
+fn sensitive_patterns(relays: &[RelayView], secret: Option<&str>) -> Patterns {
     let mut patterns = Patterns::default();
     if let Some(secret) = secret {
         patterns.add(secret, false);
@@ -468,7 +468,7 @@ fn replace_spans(text: &str, mut spans: Vec<Range<usize>>) -> String {
     result
 }
 
-pub(super) fn redact_relays(relays: &[Relay], text: &str) -> String {
+pub(super) fn redact_relays(relays: &[RelayView], text: &str) -> String {
     redact_patterns(text, &sensitive_patterns(relays, None))
 }
 

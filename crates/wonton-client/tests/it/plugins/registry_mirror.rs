@@ -306,7 +306,7 @@ async fn registry_previous_server_responses_do_not_populate_the_new_server() {
 }
 
 #[tokio::test]
-async fn registry_save_without_a_connection_reports_transport_failure() {
+async fn registry_save_without_a_server_reports_not_paired() {
     let rig = Rig::new().await;
     rig.app
         .dispatch(Action::Plugins {
@@ -320,11 +320,43 @@ async fn registry_save_without_a_connection_reports_transport_failure() {
         .await
         .registry_mirror;
     assert!(!vm.saving);
+    assert_eq!(vm.save_problem.unwrap().reason, PluginFailure::NotPaired);
+    assert!(vm.settings.is_none());
+}
+
+/// 配对过、隧道断了：这才是“连不上”，不能被归成没配对。
+#[tokio::test]
+async fn registry_save_after_the_connection_drops_reports_transport_failure() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.drop_home().await;
+    let deadline = Instant::now() + WAIT;
+    while !matches!(
+        rig.app.home().status,
+        wonton_client::HomeStatus::Disconnected { .. }
+    ) {
+        assert!(
+            Instant::now() < deadline,
+            "连接没有断开：{:?}",
+            rig.app.home()
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveRegistryMirror {
+                mirror: "custom.example".into(),
+            },
+        })
+        .unwrap();
+    let vm = rig
+        .wait_for(|v| v.registry_mirror.save_problem.is_some())
+        .await
+        .registry_mirror;
     assert_eq!(
         vm.save_problem.unwrap().reason,
         PluginFailure::TransportUnavailable
     );
-    assert!(vm.settings.is_none());
 }
 
 #[tokio::test]

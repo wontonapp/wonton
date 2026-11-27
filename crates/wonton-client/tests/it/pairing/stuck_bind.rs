@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use wonton_client::{HomeStatus, PairingFailure, PairingStatus};
 use wonton_tunnel::pair::PairingCode;
-use wonton_tunnel::relays::{Relay, RelayToken};
+use wonton_tunnel::relays::{RelayToken, RelayView};
 
 use super::support::{Home, Phone};
 use crate::home::support::Gate;
@@ -30,7 +30,7 @@ async fn a_bind_that_never_returns_fails_at_the_bind_deadline() {
         "192.0.2.10:18482".parse().unwrap(),
         "198.51.100.42:27519".parse().unwrap(),
     ];
-    code.relays.push(Relay {
+    code.relays.push(RelayView {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new("18482")),
         quic_port: None,

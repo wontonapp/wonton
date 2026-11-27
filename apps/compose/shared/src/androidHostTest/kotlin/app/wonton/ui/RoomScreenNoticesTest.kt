@@ -15,11 +15,7 @@ class RoomScreenNoticesTest {
         assertNull(botAccessNotice(BotAccess.Own))
         assertNull(botAccessNotice(BotAccess.Shared))
         assertNull(botAccessNotice(BotAccess.Contact))
-    }
-
-    @Test
-    fun unknownAccessStillWarns() {
-        assertEquals(R.string.room_bot_unknown, botAccessNotice(BotAccess.Unknown))
+        assertNull(botAccessNotice(BotAccess.Unknown))
     }
 
     @Test

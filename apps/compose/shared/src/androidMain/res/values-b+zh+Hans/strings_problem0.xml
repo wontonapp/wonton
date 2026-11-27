@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="problem_apps_not_ready">应用列表还没有准备好，请稍后重试。</string>
+    <!-- Problem title: this phone has no home server paired yet. -->
+    <string name="problem_not_paired_title">还没配对家里的服务器</string>
     <!-- Problem title: the app is busy with another task. -->
     <string name="problem_plugin_conflict_title">这个应用正忙</string>
     <!-- Problem title: the device the app should run on isn't available. -->

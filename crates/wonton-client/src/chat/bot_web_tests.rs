@@ -114,6 +114,8 @@ fn request() -> Request {
 fn profile(id: BotRef, user: &str) -> BotView {
     BotView {
         availability: Default::default(),
+        shared: false,
+        danger: None,
         bot: id,
         user_id: user.into(),
         web: None,

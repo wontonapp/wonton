@@ -24,6 +24,12 @@ impl PluginsLink {
         request.revision += 1;
         request.force |= force;
         let home = self.home.view();
+        // 还没配对就没有可连的服务器：先让壳引导去配对，配对后 follow_home 会自己再取。
+        if home.status == HomeStatus::NotConfigured {
+            self.view
+                .send_modify(|view| view.store_load = StoreLoadState::NotPaired);
+            return;
+        }
         if home.status == HomeStatus::Connecting {
             self.view
                 .send_modify(|view| view.store_load = StoreLoadState::WaitingForConnection);

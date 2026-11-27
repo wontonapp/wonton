@@ -70,6 +70,7 @@ val ConnectionNotice.sentence: String
         is ConnectionNotice.Connecting -> stringResource(R.string.connection_connecting)
         is ConnectionNotice.Updating -> stringResource(R.string.connection_updating)
         is ConnectionNotice.ServerOffline -> stringResource(R.string.connection_server_offline)
+        is ConnectionNotice.RelayRejected -> stringResource(R.string.connection_relay_rejected)
         is ConnectionNotice.Unreachable -> stringResource(R.string.problem_transport_unavailable_title)
         is ConnectionNotice.DeviceRejected -> stringResource(R.string.connection_device_rejected)
         is ConnectionNotice.VersionMismatch -> stringResource(R.string.connection_version_mismatch)
@@ -84,6 +85,7 @@ private val ConnectionNotice.retrying: Boolean?
     get() = when (this) {
         is ConnectionNotice.Connecting -> true
         is ConnectionNotice.ServerOffline -> retrying
+        is ConnectionNotice.RelayRejected -> retrying
         is ConnectionNotice.Unreachable -> retrying
         else -> null
     }
@@ -147,6 +149,7 @@ fun connectionBarStatus(
 private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen: (SettingsSubpage) -> Unit) {
     val colors = WontonTheme.colors
     val retrying = notice.retrying == true
+    val warning = notice is ConnectionNotice.DeviceRejected || notice is ConnectionNotice.RelayRejected
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         if (retrying) {
             Row(
@@ -168,8 +171,7 @@ private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen
             Text(
                 notice.sentence,
                 style = WontonTheme.typography.body,
-                color = (if (notice is ConnectionNotice.DeviceRejected) colors.warning else colors.textPrimary)
-                    .toColor(),
+                color = (if (warning) colors.warning else colors.textPrimary).toColor(),
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
@@ -448,5 +450,6 @@ private val ConnectionCheck.text: String
     @Composable get() = when (this) {
         ConnectionCheck.OK -> stringResource(R.string.connection_ok)
         ConnectionCheck.FAILING -> stringResource(R.string.connection_failing)
+        ConnectionCheck.REJECTED -> stringResource(R.string.connection_rejected)
         ConnectionCheck.UNKNOWN -> stringResource(R.string.connection_unknown)
     }

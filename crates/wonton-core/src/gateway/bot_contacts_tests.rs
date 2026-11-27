@@ -185,6 +185,7 @@ fn add_members(members: &crate::members::Members) {
     for username in ["alice", "bob"] {
         members
             .invite(MemberRecord {
+                invited_by: None,
                 username: username.to_owned(),
                 user_id: format!("@{username}:test"),
                 display_name: username.to_uppercase(),

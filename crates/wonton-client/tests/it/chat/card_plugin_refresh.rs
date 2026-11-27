@@ -49,6 +49,9 @@ fn succeeded(message: &str) -> Value {
 
 fn plugin() -> InstalledPlugin {
     InstalledPlugin {
+        bot_danger_can_toggle: false,
+        bot_shared: false,
+        bot_danger: false,
         chat: Default::default(),
         id: PLUGIN.to_owned(),
         title: "看板".to_owned(),

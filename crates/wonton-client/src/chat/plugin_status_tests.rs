@@ -6,6 +6,9 @@ use wonton_protocol::{
 
 fn plugin(status: PluginState) -> InstalledPlugin {
     InstalledPlugin {
+        bot_danger_can_toggle: false,
+        bot_shared: false,
+        bot_danger: false,
         id: "app.agent".into(),
         title: "Agent".into(),
         summary: String::new(),

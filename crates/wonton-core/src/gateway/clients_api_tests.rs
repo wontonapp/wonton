@@ -319,6 +319,7 @@ async fn family_member_forbidden() {
     let h = Harness::start(None).await;
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             username: "mia".into(),
             user_id: "@mia:test".into(),
             display_name: "Mia".into(),

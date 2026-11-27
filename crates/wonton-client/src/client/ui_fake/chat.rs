@@ -132,6 +132,8 @@ pub(super) fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     // 两个 Bot：私聊那个顶栏本来就显示，群里的那个走时间线的 room_bots（ui_fake_room）。
     chat.bots = vec![
         BotView {
+            shared: false,
+            danger: None,
             user_id: "@echo:home.example".into(),
             availability: BotChatAvailability::Available,
             bot: BotRef {
@@ -151,6 +153,8 @@ pub(super) fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
             chat: Default::default(),
         },
         BotView {
+            shared: false,
+            danger: None,
             user_id: "@hermes:home.example".into(),
             availability: BotChatAvailability::Available,
             bot: BotRef {

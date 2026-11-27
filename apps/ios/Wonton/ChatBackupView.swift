@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import WontonClient
 
 /// 聊天记录备份。协议里叫恢复（密钥备份加秘密存储），这里按它对主人的用处说：换设备后还能看到以前的消息。
@@ -275,16 +274,7 @@ private struct RecoveryKeySection: View {
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             HStack(spacing: WontonTheme.spacing.s8) {
-                Button {
-                    // 只留在本机的剪贴板（不经“通用剪贴板”同步到别的设备），两分钟后清掉。
-                    UIPasteboard.general.setItems(
-                        [[UTType.plainText.identifier: recoveryKey]],
-                        options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(120)]
-                    )
-                } label: {
-                    Text(.ChatBackup1.chatBackupCopy).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle(kind: .secondary))
+                WontonCopyButton(text: recoveryKey, clipboard: .localSecret, look: .wide)
                 // 点“已保存”先确认一次：关掉后本机不再显示这把密钥，误点等于永久丢失（盲测 11-12）。
                 Button { isConfirmingSaved = true } label: {
                     Text(.ChatBackup1.chatBackupSaved).frame(maxWidth: .infinity)

@@ -133,6 +133,7 @@ async fn only_installers_see_the_installed_scope() {
     let device = iroh::SecretKey::generate().public();
     h.members
         .invite(crate::members::MemberRecord {
+            invited_by: None,
             username: "mia".into(),
             user_id: "@mia:test".into(),
             display_name: "Mia".into(),

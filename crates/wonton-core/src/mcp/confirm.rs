@@ -91,6 +91,8 @@ pub struct Audience {
     /// 这张卡片的冻结收件人；管理员列表不含主人，主人由 `Admins` 隐含。
     pub(crate) recipients: Recipients,
     pub requester: Option<ConfirmationRequester>,
+    /// 这张卡替谁办事：`acted_by` 里的家人经成员记录换成显示名（ADR-0088 第 5 节）。
+    pub on_behalf: Option<wonton_protocol::OnBehalfView>,
     pub origin: Option<ConfirmationOrigin>,
     pub category: Option<wonton_protocol::ConfirmationCategory>,
 }
@@ -367,6 +369,7 @@ impl Confirmations {
         let Audience {
             recipients,
             requester,
+            on_behalf,
             origin,
             category,
         } = audience;
@@ -384,6 +387,7 @@ impl Confirmations {
             devices: draft.devices,
             window: None,
             requester,
+            on_behalf,
             origin,
             audience: match &recipients {
                 Recipients::Keeper(_) => wonton_protocol::CardAudience::Keeper,

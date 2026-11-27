@@ -39,6 +39,11 @@ extension PluginFailure {
                 .Problem2.problemTransportUnavailableTitle,
                 .Problem3.problemTransportUnavailableNextStep,
                 detail)
+        case .notPaired:
+            categorizedProblem(
+                .Problem2.problemNotPairedTitle,
+                .Problem0.problemNotPairedNextStep,
+                detail)
         case .unauthorized:
             categorizedProblem(
                 .Problem3.problemUnauthorizedTitle,
@@ -583,6 +588,7 @@ struct ProblemView: View {
         }
         .multilineTextAlignment(.center)
         .padding(WontonTheme.spacing.s32)
+        .accessibilityIdentifier("problem-view")
     }
 }
 

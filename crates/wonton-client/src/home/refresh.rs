@@ -11,7 +11,7 @@ use iroh::{Endpoint, EndpointId, TransportAddr};
 use serde::Deserialize;
 use url::Url;
 use wonton_protocol::ProxySettings;
-use wonton_tunnel::relays::Relay;
+use wonton_tunnel::relays::RelayView;
 use wonton_tunnel::{TunnelClient, TunnelStatus};
 
 use super::HomeLink;
@@ -24,7 +24,7 @@ use crate::chat::proxy_url;
 struct Reported {
     endpoint_id: EndpointId,
     #[serde(default)]
-    relays: Vec<Relay>,
+    relays: Vec<RelayView>,
     #[serde(default)]
     direct_addrs: Vec<SocketAddr>,
 }
@@ -114,6 +114,10 @@ impl HomeLink {
 
     /// 本次连接选中的直连路径排最前。返回连接信息是否还是取地址时那份（是的话新地址已经用上）。
     async fn remember(&self, text: &str, ticket: &Ticket, reported: Reported) -> bool {
+        if let Err(reason) = Ticket::validate_reported_relays(&reported.relays) {
+            tracing::warn!("the server reported an unusable relay: {reason}");
+            return false;
+        }
         let Some((_, client)) = self.current_link().await else {
             return false;
         };

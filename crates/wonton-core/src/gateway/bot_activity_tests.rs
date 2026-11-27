@@ -165,6 +165,7 @@ impl Home {
         self.gateway
             .members
             .invite(crate::members::MemberRecord {
+                invited_by: None,
                 role_id: "family".into(),
                 ..crate::members::MemberRecord::for_test("mia")
             })

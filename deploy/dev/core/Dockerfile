@@ -7,9 +7,14 @@
 # 基础镜像是 Docker 官方镜像在 ECR Public 上的副本：国内的构建机（比如跑发布作业的那台）连不上 Docker Hub，
 # ECR Public 直连可用（2026-10-29 实测）。CI（main-image、release）经 build-arg 把它们指到
 # ghcr.io/<owner>/test-images 的副本：托管 runner 的出口 IP 拉 ECR Public 也会被限流（实测 429）。
-ARG RUST_IMAGE=public.ecr.aws/docker/library/rust:1.99.1-slim-trixie
-ARG DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:trixie-slim
-ARG COMPOSE_IMAGE=public.ecr.aws/docker/library/docker:29.9.2-cli
+# 远端构建机的 registry 连不上时用 `名字:标签@sha256:…` 跳过解析标签：`WONTON_DEV_*_IMAGE` 给开发栈的
+# compose 传（远程排队的包装只认 `WONTON_*`、`CARGO_*` 的名字），CI 仍可直接覆盖 `RUST_IMAGE` 这些。
+ARG WONTON_DEV_RUST_IMAGE=public.ecr.aws/docker/library/rust:1.99.1-slim-trixie
+ARG WONTON_DEV_DEBIAN_IMAGE=public.ecr.aws/docker/library/debian:trixie-slim
+ARG WONTON_DEV_COMPOSE_IMAGE=public.ecr.aws/docker/library/docker:29.9.2-cli
+ARG RUST_IMAGE=${WONTON_DEV_RUST_IMAGE}
+ARG DEBIAN_IMAGE=${WONTON_DEV_DEBIAN_IMAGE}
+ARG COMPOSE_IMAGE=${WONTON_DEV_COMPOSE_IMAGE}
 FROM --platform=$BUILDPLATFORM ${RUST_IMAGE} AS build-base
 # 构建机经回环代理出网时，容器里的 127.0.0.1 是容器自己：代理写成 `--build-arg HTTP_PROXY=…` 传进来（dev.sh 按
 # WONTON_DEV_BUILD_PROXY 传）。不传时照旧用构建机上配的代理。

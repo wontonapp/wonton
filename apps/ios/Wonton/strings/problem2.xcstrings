@@ -42,6 +42,16 @@
         }
       }
     },
+    "problem.notPaired.title": {
+      "comment": "Problem title: this phone has no home server paired yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not paired with your home server yet" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "还没配对家里的服务器" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "還沒配對家裡的伺服器" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "自宅サーバーとまだペアリングしていません" } }
+      }
+    },
     "problem.plugin.coreUpgrading.nextStep": {
       "comment": "Next step: try after the update finishes.",
       "extractionState": "manual",

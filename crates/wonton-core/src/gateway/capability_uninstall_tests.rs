@@ -174,6 +174,7 @@ async fn install_member(h: &Harness) -> iroh::EndpointId {
             username: "mia".into(),
             user_id: "@mia:test".into(),
             display_name: "Mia".into(),
+            invited_by: None,
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
             role_id: "admin".to_owned(),

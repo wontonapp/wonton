@@ -19,12 +19,19 @@ async fn a_joining_code_waits_without_configuring_and_pairs_once_approved() {
         let view = phone
             .wait_for(|view| matches!(view.pairing, Some(PairingStatus::JoinPending { .. })))
             .await;
-        let Some(PairingStatus::JoinPending { role: Some(role) }) = view.pairing else {
+        let Some(PairingStatus::JoinPending {
+            role: Some(role), ..
+        }) = view.pairing
+        else {
             panic!("the server sends the role with a pending join")
         };
         assert_eq!(role.template, Some(RoleTemplate::Child));
         // 最严的角色也允许“只读”，加入页照样写得出这一条。
-        assert_eq!(role.abilities, [PermissionItem::Ai]);
+        assert!(
+            role.abilities
+                .iter()
+                .any(|ability| ability.item == PermissionItem::Ai)
+        );
         assert_eq!(phone.home().status, HomeStatus::NotConfigured);
         assert!(phone.home().server_id.is_none());
         assert!(phone.home().proxy.is_none());

@@ -25,7 +25,7 @@ use wonton_tunnel::{
     LocalProxy, ProxyAccess, ProxyCredential, TunnelClient, TunnelError, TunnelStatus,
 };
 
-use super::fakes::{echo_upstream, fake_hydra, loopback_endpoint, loopback_tunnel_with};
+use super::fakes::{echo_upstream, fake_hydra, loopback_endpoint, loopback_tunnel_relays};
 use super::isolation_tests::{OTHER, browser_cases};
 use super::proxy_sso_tests::{KEY, VAULT_HOST, leaked, received, register_vault};
 use super::tests::{CORE, PLUGIN, TOKEN, WHOAMI, owner};
@@ -41,6 +41,7 @@ use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
 use crate::tunnel::{Tunnel, TunnelEntry};
+use wonton_tunnel::relays::RelayTable;
 
 /// 浏览器看到的端口：经隧道时不监听，只用来拼地址。
 const PORT: u16 = 18480;
@@ -62,7 +63,20 @@ impl Home {
     pub(super) async fn start_lan(addresses: &[&str]) -> Self {
         let lan: std::collections::BTreeSet<std::net::IpAddr> =
             addresses.iter().map(|a| a.parse().unwrap()).collect();
-        Self::start_full(None, None, lan, None, None).await
+        Self::start_full(None, None, lan, None, None, RelayTable::builtin_n0()).await
+    }
+
+    /// 中继表由调用方给的核心。
+    pub(super) async fn start_relays(relays: RelayTable) -> Self {
+        Self::start_full(
+            None,
+            None,
+            std::collections::BTreeSet::from(["192.168.1.2".parse().unwrap()]),
+            None,
+            None,
+            relays,
+        )
+        .await
     }
 
     pub(super) async fn start_with(
@@ -75,6 +89,7 @@ impl Home {
             std::collections::BTreeSet::from(["192.168.1.2".parse().unwrap()]),
             None,
             None,
+            RelayTable::builtin_n0(),
         )
         .await
     }
@@ -88,6 +103,7 @@ impl Home {
             std::collections::BTreeSet::from(["192.168.1.2".parse().unwrap()]),
             Some(friends),
             blocks,
+            RelayTable::builtin_n0(),
         )
         .await
     }
@@ -112,6 +128,7 @@ impl Home {
         lan: std::collections::BTreeSet<std::net::IpAddr>,
         friends: Option<Arc<crate::friends::Friends>>,
         blocks: Option<Arc<crate::matrix::FederationBlocks>>,
+        relays: RelayTable,
     ) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
@@ -160,7 +177,7 @@ impl Home {
         let manifest =
             PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
-        let (tunnel, members) = loopback_tunnel_with(dir.path(), lan).await;
+        let (tunnel, members) = loopback_tunnel_relays(dir.path(), lan, relays).await;
         let roles = Arc::new(crate::roles::Roles::open(dir.path().join("roles.json")).unwrap());
         let gateway = Gateway::new(
             public,
@@ -619,6 +636,42 @@ async fn tunnel_api_reports_the_server_address_to_the_owner() {
             .contains(&Value::String(bound)),
         "{info}"
     );
+}
+
+/// 中继的准入令牌单独放在 `token` 里下发，地址里不带；令牌打码、n0 跟着下发。
+#[tokio::test]
+async fn tunnel_api_reports_relay_tokens_out_of_the_url() {
+    let home =
+        Home::start_relays(RelayTable::parse("https://sekrit@relay.example.org;n0").unwrap()).await;
+    let request = hyper::Request::builder()
+        .uri("/_wonton/api/tunnel")
+        .header(header::HOST, format!("{CORE}:{PORT}"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = home.app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let info: Value = serde_json::from_slice(&bytes).unwrap();
+    let relay = &info["relays"][0];
+    assert_eq!(relay["url"], "https://relay.example.org/");
+    assert_eq!(relay["token"], "sekrit");
+    assert_eq!(relay["tier"], 0);
+    assert!(info["relays"].as_array().unwrap().len() > 1, "n0 跟着下发");
+    // 插件网页通常带设备身份（上一条测试里被拒）；带主人令牌时也能读到同一份表。
+    let request = hyper::Request::builder()
+        .uri("/_wonton/api/tunnel")
+        .header(header::HOST, format!("{CORE}:{PORT}"))
+        .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+        .header(header::ORIGIN, format!("http://{PLUGIN}:{PORT}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = home.app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    // 日志里的 Debug 不打印令牌。
+    let debug = format!("{:?}", home.tunnel.relays());
+    assert!(debug.contains("https://relay.example.org/"), "{debug}");
+    assert!(!debug.contains("sekrit"), "{debug}");
 }
 
 /// 局域网（没有隧道身份）的请求，在进程内直接交给网关。

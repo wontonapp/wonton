@@ -35,9 +35,9 @@ import app.wonton.protocol.OwnerSecretView
 import app.wonton.protocol.OwnerSecretsView
 import app.wonton.protocol.PluginAction
 import app.wonton.protocol.PluginFailure
+import app.wonton.ui.design.WontonCopyButton
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonSeparator
-import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Forward
@@ -153,9 +153,7 @@ private fun OwnerSecretRow(pluginId: String, item: OwnerSecretView, plugins: Plu
                         style = WontonTheme.typography.body.copy(fontFamily = FontFamily.Monospace),
                         color = WontonTheme.colors.textPrimary.toColor(),
                     )
-                    WontonSmallButton(stringResource(R.string.message_copy), {
-                        copySensitive(context, value, clipLabel)
-                    })
+                    WontonCopyButton({ copySensitive(context, value, clipLabel) })
                 }
             }
         }

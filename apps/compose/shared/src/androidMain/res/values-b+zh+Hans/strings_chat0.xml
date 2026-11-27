@@ -10,7 +10,6 @@
     <string name="chat_install_stage_starting">正在启动</string>
     <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
     <string name="chat_install_stage_waiting_for_bot">等待 Bot 就绪</string>
-    <string name="chat_backup_copy">复制</string>
     <!-- Explanation under the heading when backup is on. -->
     <string name="chat_backup_detail_enabled">换手机或新设备时，输入恢复密钥就能看到以前的消息。</string>
     <!-- Explanation when the recovery key is missing on this device. -->

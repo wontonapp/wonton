@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <string name="connection_rejected">被拒絕</string>
     <string name="connection_unpaired">未配對</string>
     <string name="connection_connected">已連線</string>
     <string name="connection_connecting">連線中…</string>

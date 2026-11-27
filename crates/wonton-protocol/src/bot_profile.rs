@@ -170,6 +170,17 @@ impl BotActivity {
     }
 }
 
+/// 危险模式的状态：只有主人能给自己的私人 Bot 开（ADR-0091）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DangerModeView {
+    pub enabled: bool,
+    /// 主人现在能不能改这个开关；不能时 `reason` 说为什么。
+    pub can_toggle: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
 /// 资料字段 [`AVATARS_FIELD`] 的值。键是 [`BotActivity::key`]；不认识的键原样保留，旧 App 忽略它们。主人或 Agent 清掉
 /// 全部状态头像时写成空表而不是删掉字段：字段在，核心就不再按清单补默认素材。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -340,6 +351,12 @@ pub struct BotView {
     /// 当前人能不能和它聊天；不能时 `activity` 为空，壳显示原因并禁用输入；未知时壳照常能发。
     #[serde(default)]
     pub availability: BotChatAvailability,
+    /// 这是全家共用的共享 Bot（不是某一个人的私人 Bot）。
+    #[serde(default)]
+    pub shared: bool,
+    /// 危险模式：开着时在 Bot 资料页和聊天页标题处标出来（ADR-0091）。核心还不知道时为空。
+    #[serde(default)]
+    pub danger: Option<DangerModeView>,
     /// 由当前请求者的身份决定；未核实、断线或切换账号时为空，不能借用插件的默认网页地址。
     #[serde(default)]
     pub web: Option<BotWebView>,
@@ -586,6 +603,8 @@ mod tests {
             poster: None,
         };
         let mut bot = BotView {
+            shared: false,
+            danger: None,
             chat: Default::default(),
             availability: Default::default(),
             user_id: "@b:h".into(),
