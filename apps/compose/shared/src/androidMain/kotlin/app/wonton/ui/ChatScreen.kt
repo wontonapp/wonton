@@ -47,6 +47,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AppLink
 import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatAccount
+import app.wonton.protocol.BotAccess
 import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
@@ -588,11 +589,41 @@ private fun StartChatScreen(
                 Modifier.fillMaxWidth(),
                 enabled = input.isNotEmpty(),
             )
-            if (contacts.isNotEmpty()) {
+            viewModel.ownPrivateBotProblem?.let { problem ->
+                Text(
+                    problem.detail,
+                    style = WontonTheme.typography.supporting,
+                    color = WontonTheme.colors.textSecondary.toColor(),
+                )
+            }
+            val usable = contacts.filter { it.access !is BotAccess.Unusable }
+            val unavailable = contacts.filter { it.access is BotAccess.Unusable }
+            if (usable.isNotEmpty()) {
                 WontonGroup {
-                    contacts.forEachIndexed { index, contact ->
+                    usable.forEachIndexed { index, contact ->
                         if (index > 0) WontonSeparator()
                         WontonRow(contact.name, showsForward = true, onClick = { onStart(contact.userId, contact) })
+                    }
+                }
+            }
+            if (unavailable.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.chat_start_unavailable),
+                    style = WontonTheme.typography.caption,
+                    color = WontonTheme.colors.textSecondary.toColor(),
+                )
+                WontonGroup {
+                    unavailable.forEachIndexed { index, contact ->
+                        if (index > 0) WontonSeparator()
+                        WontonRow(
+                            contact.name,
+                            value = (contact.access as BotAccess.Unusable)
+                                .let { botAccessReasonNotice(it.reason) }
+                                .let { stringResource(it) },
+                            showsForward = true,
+                            onClick = contact.userId.takeIf { it.isNotEmpty() }
+                                ?.let { userId -> { onStart(userId, contact) } },
+                        )
                     }
                 }
             }

@@ -48,7 +48,7 @@ import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
-import app.wonton.protocol.BotChatAvailability
+import app.wonton.protocol.BotAccess
 import app.wonton.protocol.BotRef
 import app.wonton.protocol.ComposerEdit
 import app.wonton.protocol.ComposerViewModel
@@ -195,7 +195,7 @@ internal fun RoomRoute(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
-    botChat: BotChatAvailability?,
+    botAccess: BotAccess?,
     bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
@@ -270,7 +270,7 @@ internal fun RoomRoute(
             isDirect,
             isReadOnly,
             bot,
-            botChat,
+            botAccess,
             bots,
             plugins,
             rooms,
@@ -298,7 +298,7 @@ private fun RoomScreen(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
-    botChat: BotChatAvailability?,
+    botAccess: BotAccess?,
     bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
@@ -315,9 +315,9 @@ private fun RoomScreen(
     val openMenu = { item: TimelineItem, message: TimelineMessage, bounds: Rect ->
         menu = MessageMenuTarget(item.id, message, bounds)
     }
-    val botNotice = botChatNotice(botChat)
+    val botNotice = botAccessNotice(botAccess)
     // 资格未知（离线、核心还没给）照常能发，进离线队列；只有确定的不能用才禁用。
-    val botCanSend = botChat !is BotChatAvailability.Unavailable
+    val botCanSend = botAccess !is BotAccess.Unusable
     val visible = messageMenuBounds()
     val roomId = target.roomId
     val draft = rememberRoomDraft(core, target, onAction)
@@ -659,7 +659,7 @@ private fun Conversation(
                     commandsOmitted = timeline.commandsOmitted,
                     // 草稿整句就是一条完整命令（没有多写的正文）时发核心给的整句，不自己拼。
                     enabled = botCanSend,
-                    disabledProblem = botChatBlockedProblem(botCanSend, botNotice),
+                    disabledProblem = botAccessBlockedProblem(botCanSend, botNotice),
                     dropCommand = timeline.commands.firstOrNull { it.text == draft.text.trim() }?.text,
                 )
             }

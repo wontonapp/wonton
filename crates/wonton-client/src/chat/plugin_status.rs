@@ -39,13 +39,21 @@ fn for_room<'a>(
     if !room.is_direct {
         return None;
     }
-    let user = room.direct_user_id.as_deref()?;
-    let plugin = plugins
-        .installed
-        .as_ref()?
-        .plugins
-        .iter()
-        .find(|plugin| plugin.bot_user_id.as_deref() == Some(user))?;
+    let installed = plugins.installed.as_ref()?;
+    let by_bot = room.bot.as_ref().and_then(|bot| {
+        installed
+            .plugins
+            .iter()
+            .find(|plugin| plugin.id == bot.bot.plugin_id)
+    });
+    // Bot 的身份还在、插件却已不在已装列表：退回按私聊对方认，别让一行状态整个消失。
+    let plugin = by_bot.or_else(|| {
+        let user = room.direct_user_id.as_deref()?;
+        installed
+            .plugins
+            .iter()
+            .find(|plugin| plugin.bot_user_id.as_deref() == Some(user))
+    })?;
     if matches!(plugin.status, PluginState::Running { .. }) {
         return None;
     }

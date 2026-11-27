@@ -679,6 +679,7 @@ mod unread_tests {
             direct_user_id: None,
             plugin: None,
             bot_chat: None,
+            bot: None,
             is_encrypted: true,
             is_read_only: false,
             membership,

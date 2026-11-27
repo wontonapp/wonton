@@ -54,4 +54,5 @@
     <string name="chat_ask_failed_not_in_room">这个房间不是和 Bot 的私聊。</string>
     <string name="chat_ask_failed_forbidden">Bot 没有收下这句话。</string>
     <string name="chat_ask_failed_not_ready">还没准备好。</string>
+    <string name="chat_start_unavailable">暂时不能聊</string>
 </resources>
