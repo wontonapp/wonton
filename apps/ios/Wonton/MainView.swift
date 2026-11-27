@@ -30,8 +30,9 @@ struct MainView: View {
     @State var showsPanel = false
     /// 没配对时是根页面（网格或配对页）的路径；配对后是“全部应用”那一层的路径，空就是没开（见 `HomeView.layered`）。
     @State var appsPath = NavigationPath()
-    /// 插件页层的路径，和核心的页面栈一一对应；左边缘右滑是系统的交互式返回。
-    @State var pagePath: [TabRef] = []
+    /// 插件页层的路径：核心页面栈里的页一一对应，原生音乐页推进去的子页跟在它后面（只在壳里）；
+    /// 左边缘右滑是系统的交互式返回。
+    @State var pagePath: [PageRoute] = []
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
@@ -90,11 +91,11 @@ struct MainView: View {
             visited.formUnion(recentPages)
             pages.setKeepAlive(recentPages)
             // 核心弹了栈（胶囊关页、页面被卸载）：路径跟着对齐。系统返回的弹栈由 pagePath 的 onChange 发。
-            pagePath = stackTabs
+            pagePath = pagePath.aligned(to: stackTabs)
         }
         .onChange(of: pagePath) { _, path in
             // 主人在页面层做了系统返回：把弹栈交给核心，核心的订阅再把两边对齐。
-            if path.count < pages.viewModel.stack.count { pages.closeCurrent() }
+            if path.tabs.count < pages.viewModel.stack.count { pages.closeCurrent() }
         }
         .onChange(of: pages.showsPluginPage, initial: true) { _, shown in
             // 页面默认全屏：横屏只在插件页上放开，回根页面收回来。
