@@ -78,7 +78,7 @@ App 被杀后收不到任何消息。
 - 没有自定 HPKE 格式：RFC 8291 就是“用设备公钥加密推送、推送服务读不到”的标准。Android 的 UnifiedPush 连接库
   （Apache-2.0）收到后自动解密；浏览器的 Push API 原生支持，PWA 的 Web 端可以直接用；iOS 通知扩展用 CryptoKit 的
   P-256 和 AES-GCM 就能解。
-- 核心因此按 RFC 8030 发 Web Push：网页由中继用 VAPID 代发（私钥在中继、JWT 由中继签），核心只把加密负载 POST 给中继；其他渠道仍由核心直发。每个渠道都只是一个推送地址。加密用 `web-push-native`
+- 核心因此是一个标准的 Web Push 发送方（RFC 8030），每个渠道都只是一个推送地址。加密用 `web-push-native`
   （MIT 或 Apache-2.0）。
 
 **渠道**

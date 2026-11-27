@@ -36,7 +36,7 @@ Telegram、飞书、企业微信等作为可选的渠道插件，基于 Hermes �
 ## 桌面端（第二期）与 Web 端（第一期 PWA）
 
 桌面用 Electron + React，与 PWA 共用 React 渲染层；客户端核心是本机旁路进程，本机服务供手机远程控制（[ADR-0124](0124-client-react-pwa-electron.md)）。
-Web 第一期做 PWA，同一套 React 渲染层，每用户一份核心、所有窗口共用，浏览器经中继收发（详见 [ADR-0124](0124-client-react-pwa-electron.md)）。
+Web 第一期做 PWA，同一套 React 渲染层，每用户一份核心、所有窗口共用，网页由家里提供（详见 [ADR-0124](0124-client-react-pwa-electron.md)）。
 
 ## 跨机 Bot 通信（M3）
 

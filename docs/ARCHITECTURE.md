@@ -7,7 +7,7 @@
 家里一台常开的枢纽（Linux + Docker 主机，或者 Mac、Windows 上的内置 Linux 虚拟机）上跑着一个薄的 Rust 核心容器，它用 Docker
 管理所有插件；其他电脑作为受管设备挂在枢纽下，在自己的工作区里跑 Agent。自托管的 Matrix 服务器（Tuwunel）是所有会话的事实源；
 Agent 和插件都以 Matrix bot 的身份和人对话；手机上的原生 App 由一个厚的 Rust 客户端核心驱动，Web 和桌面共用一套 React 渲染层——
-Web 上每用户一份服务器端核心，浏览器经我们的中继用 WSS 拿 ViewModel；桌面上核心是本机旁路进程；原生移动端和 Electron 的 sidecar
+Web 上每用户一份服务器端核心，网页和 TLS 都在家里，浏览器经这家的家名子域名用 WSS 拿 ViewModel（中继只按 SNI 转发）；桌面上核心是本机旁路进程；原生移动端和 Electron 的 sidecar
 经 iroh 隧道连回家；推送经我们运营的中继转发密文。
 
 ## 组件总览
@@ -41,7 +41,6 @@ flowchart LR
 
   subgraph Cloud["我们运营的云端（不存业务数据）"]
     Relay["iroh-relay\niroh-dns-server"]
-    WebRelay["网页中继\n静态文件 + WSS 反向转发"]
     PushRelay["推送中继\ngorush"]
     Catalog["节点列表\n签名静态文件"]
   end
@@ -51,8 +50,7 @@ flowchart LR
 
   ClientCore <-->|"iroh 隧道"| Core
   Core <-->|"iroh 隧道 · 设备密钥"| DeviceAgent
-  React -->|"PWA：WSS（经中继）"| WebRelay
-  WebRelay <-->|"出站双向 TLS（网页连接器）"| Core
+  React -->|"PWA：HTTPS/WSS（家名子域名，中继只按 SNI 转发）"| Core
   Core -->|"WSS 字节（每用户内部网络）"| WebSession
   Core --> Tuwunel
   Agent <--> Tuwunel
@@ -79,7 +77,7 @@ flowchart LR
 | `tuwunel` | 核心组件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
 | `hydra` | 核心组件 | OIDC 提供方，插件的单点登录（ADR-0009）。 |
 | `mailpit` | 核心组件 | 收插件应用发的信（SMTP），接入申请了 `notify` 的插件网络，只收发给家里人的内部邮箱；核心取走后转进聊天（ADR-0056）。 |
-| 网页核心与网页连接器 | 核心组件（有网页配对才有） | 每个用户一个网页核心容器（`wonton-client-host`），加一个出站连网页中继的连接器，都由核心经 Docker API 管、都不挂 Docker socket；浏览器的帧只在网页核心容器里解析（ADR-0124）。 |
+| 网页核心 | 核心组件（有网页配对才有） | 每个用户一个网页核心容器（`wonton-client-host`），由核心经 Docker API 管、不挂 Docker socket，浏览器的帧只在这里解析。网页的前端包由核心验签后托管，经第三方 App 入口的 `web` 标签提供（ADR-0124）。 |
 | 第三方 App 入口 | 核心组件（有要服务的名字和证书才有） | 入口容器、局域网转发、连接器和 lego，由核心管理（ADR-0021）。名字来自装机设置或 App 里配的自己的域名，“不要名字”的装法也能只靠后者；证书签出来才建入口，续期按天跑、条款没勾不联系 CA。连接器是 TCP 转发、frpc 或 cloudflared，主人在设置里选，公网访问有总开关（ADR-0090）；lego 用主人的 DNS 服务商（ADR-0089）。 |
 | `hermes` | 默认插件（可卸载） | 唯一默认 Agent，走原生 Matrix；各家人的私人 Bot、共享 Bot 保留独立身份与数据边界。核心按普通默认插件机制装一次，卸掉不重装；安装和运行不以 Magpie 为前置（ADR-0108）。 |
 | `magpie` | 可选普通插件 | 通用模型网关；核心和默认装机不依赖它，不再承担 Agent 的模型入口。通用网关合同及其使用方的凭据与授权边界保留（ADR-0008、ADR-0108）。 |
@@ -98,7 +96,7 @@ flowchart LR
 
 | 服务 | 选型 | 说明 |
 | --- | --- | --- |
-| 中继 | 官方 `iroh-relay` 镜像 + 网页中继 | 打洞失败时转发隧道流量；网页连接全走网页中继（静态文件 + 反向 WSS），按用户限流。准入只认 endpoint ID，见 ADR-0048。 |
+| 中继 | 官方 `iroh-relay` 镜像 | 打洞失败时转发隧道流量。准入只认 endpoint ID，见 ADR-0048。 |
 | 发现 | 官方 `iroh-dns-server` 镜像 | 家里服务器换网络后，App 靠它找到新地址。 |
 | 推送中继 | gorush 加一层鉴权 | 只接收密文，转发到 APNs、FCM、华为 HMS。 |
 | 目录 | 签名静态文件 | 中继节点列表。插件的官方索引在 GitHub 上，签名以后也能经这里分发（ADR-0017）。 |
@@ -111,7 +109,7 @@ flowchart LR
 | --- | --- | --- |
 | iOS | SwiftUI | 外加通知扩展（解密推送）；录屏扩展留给 M2 的屏幕共享。 |
 | Android | Jetpack Compose | 默认“保持连接”前台服务；推送是设置里的高级选项：有谷歌服务走 FCM，其余用 UnifiedPush，一律在推送服务内本地解密（ADR-0003）。 |
-| PWA（第一期） | React | 每用户一份核心、窗口共用，浏览器经中继 WSS，中继按用户限流；详见 ADR-0124。 |
+| PWA（第一期） | React | 每用户一份核心、窗口共用；网页和 TLS 都在家里，经家名子域名访问；详见 ADR-0124。 |
 | 桌面（第二期） | React + 本机 Rust 旁路进程 | 与 PWA 共用 React 渲染层；核心是本机子进程，经 stdio 帧；还带本机服务供手机远程控制（ADR-0081、ADR-0124）。 |
 | 客户端核心 | Rust + UniFFI | matrix-rust-sdk、iroh、本地代理、状态、ViewModel（含设置首页 `SettingsViewModel`）、行为测试；壳经一个 `ClientCore.dispatch(Action)` 入口提交按领域包装的操作。Web 上同一个核心以每用户一个的服务器端进程运行，渲染层走 JSON 帧，不经 UniFFI。 |
 

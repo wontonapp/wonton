@@ -18,7 +18,7 @@
   其余仍在客户端核心），经 UniFFI 导出“操作进、ViewModel 出”的接口。原生壳只负责渲染 ViewModel、把用户操作发回
   核心，以及调用平台能力（推送、通知扩展、相册、文件选择、后台音频）。
 - **测试**：行为测试写在核心里一次，各端共享。
-- **Web**：MVP 只有服务器上的最小网页（配对二维码、运行状态）。核心接口保持可序列化；第一期做 PWA，React 渲染层，核心在服务器上按用户一份运行，浏览器经中继收发（详见 [ADR-0124](0124-client-react-pwa-electron.md)）。
+- **Web**：MVP 只有服务器上的最小网页（配对二维码、运行状态）。核心接口保持可序列化；第一期做 PWA，React 渲染层，核心在服务器上按用户一份运行，网页由家里提供、浏览器经家名子域名收发（详见 [ADR-0124](0124-client-react-pwa-electron.md)）。
 - **许可**：matrix-rust-sdk（Apache-2.0）、iroh（MIT/Apache-2.0）、UniFFI（MPL-2.0）可以商用；
   Element X、FluffyChat、Dart 版 Matrix SDK 是 AGPL，不使用。
 
