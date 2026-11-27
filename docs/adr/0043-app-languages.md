@@ -36,7 +36,7 @@ App 名字：中文是“云吞”和“雲吞”，英文和日文是“Wonton�
 
 - iOS 用 String Catalog：`Localizable.xcstrings` 放界面文字，`InfoPlist.xcstrings` 放 `CFBundleDisplayName` 和 `NS…UsageDescription`。打开 Xcode 的“生成 String Catalog 符号”（`STRING_CATALOG_GENERATE_SYMBOLS`），代码里写 `Text(.settingsLanguage)`、`String(localized: .settingsLanguage)`，键写错编译不过。
 - Android 用资源文件：界面在 `shared/src/androidMain/res/values*/strings.xml`，App 名字和推送服务的文字在 `androidApp` 的资源里。代码里写 `stringResource(R.string.settings_language)`、`pluralStringResource`，Composable 外用 `Context.getString`。
-- 不用 Compose Multiplatform 的资源：界面因为 UniFFI 绑定依赖 JNA 只能放在 `androidMain`（见 `shared/build.gradle.kts`），用不上它的跨平台好处，系统的应用语言和 Android Lint 的检查又是对 Android 资源做的。桌面端（M2）把界面搬进 `commonMain` 时一起换，两种资源都是同样的 `strings.xml` 写法。
+- 不用 Compose Multiplatform 的资源：界面因为 UniFFI 绑定依赖 JNA 只能放在 `androidMain`（见 `shared/build.gradle.kts`），用不上它的跨平台好处，系统的应用语言和 Android Lint 的检查又是对 Android 资源做的。桌面端改用 React（[ADR-0124](0124-client-react-pwa-electron.md)），不经过这里；以后 Android 若把界面搬进 `commonMain`，再一起换资源写法。
 
 **客户端核心：界面上的文字一律不出，只出“详情”。** ViewModel 给枚举、类别和原始值（数目、字节数、时间戳、名字），壳按它们挑文字和格式化。
 

@@ -2,6 +2,7 @@
 
 - 状态：已接受（2026-10-28），M0 验证
 - 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：房间不再端到端加密，下文的聊天备份、恢复密钥和秘密存储删除，新设备同步下来就是全部历史
+- 部分被 [ADR-0124](0124-client-react-pwa-electron.md) 取代（2026-11-26）：桌面从 Compose Multiplatform 改为 Electron + React，Web 从 Compose 编译到 Web 改为 React PWA；厚核心、ViewModel/Action、UniFFI 和原生移动壳不变
 
 ## 背景
 
@@ -11,15 +12,13 @@
 
 ## 决策
 
-- **UI**：iOS 用 SwiftUI；Android 用 Jetpack Compose；桌面用 Compose Multiplatform，与 Android
-  共享 UI 模块（M2）。实际维护两套 UI。
+- **UI**：iOS 用 SwiftUI；Android 用 Jetpack Compose；桌面和 Web 用 React（桌面外壳是 Electron），见 [ADR-0124](0124-client-react-pwa-electron.md)。原生移动端维护自己的壳。
 - **厚核心**：所有状态、业务逻辑、网络（matrix-rust-sdk、iroh）、存储和 ViewModel 都在 Rust 客户端
   核心里（[ADR-0113](0113-media-transport.md) 补了一处：跨设备的离线长任务与播放会话的事实源在家里服务器的核心，
   其余仍在客户端核心），经 UniFFI 导出“操作进、ViewModel 出”的接口。原生壳只负责渲染 ViewModel、把用户操作发回
   核心，以及调用平台能力（推送、通知扩展、相册、文件选择、后台音频）。
 - **测试**：行为测试写在核心里一次，各端共享。
-- **Web**：MVP 只有服务器上的最小网页（配对二维码、运行状态）。核心接口保持可序列化；M3 把 Compose
-  UI 编译到 Web（Kotlin/Wasm），核心在服务器上运行，浏览器经 WebSocket 收发操作和 ViewModel。
+- **Web**：MVP 只有服务器上的最小网页（配对二维码、运行状态）。核心接口保持可序列化；第一期做 PWA，React 渲染层，核心在服务器上按用户一份运行，网页由家里提供、浏览器经家名子域名收发（详见 [ADR-0124](0124-client-react-pwa-electron.md)）。
 - **许可**：matrix-rust-sdk（Apache-2.0）、iroh（MIT/Apache-2.0）、UniFFI（MPL-2.0）可以商用；
   Element X、FluffyChat、Dart 版 Matrix SDK 是 AGPL，不使用。
 
@@ -35,9 +34,9 @@
 
 ## 代价与风险
 
-- 仍有两套 UI 代码；推送、通知扩展、后台音频等平台能力要在两端各写一份。
+- 原生移动端仍有自己的 UI 代码；推送、通知扩展、后台音频等平台能力要在移动两端各写一份。
 - UniFFI 的异步接口和回调（ViewModel 推送）需要谨慎设计，避免旧 bridge 那种手写 C ABI 加 JSON 字符串。
-- Compose 的 Web 端是画布渲染，首屏较大，中文输入法和无障碍还在完善，M3 前要验证。
+- Web 与桌面共用一套 React 渲染层，核心不在浏览器里，见 ADR-0124。
 
 ## 待验证（M0）
 
@@ -77,9 +76,8 @@ ViewModel；核心拒绝操作时，两端显示的是核心给出的同一句�
     modulemap。这是 UniFFI 对多 crate 的预期用法。
   - UniFFI 0.32 给 Swift 错误类型生成了取自 Rust `Display` 的 `description`，但没有声明
     `CustomStringConvertible`，需要在 `WontonClient` 包里补一行声明；Kotlin 的 `toString()` 直接可用。
-  - UniFFI 的 Kotlin 绑定依赖 JNA，只能编译到 JVM 类目标（Android、桌面），不能放进 `commonMain`。
-    M2 的桌面端可以和 Android 共用一个 JVM 源集；M3 的 Web 端（Kotlin/Wasm）用不了这套绑定，
-    要从 `wonton-protocol` 另外生成可序列化的类型，到时再定。
+- UniFFI 的 Kotlin 绑定依赖 JNA，只能编译到 JVM 类目标（Android），不能放进 `commonMain`。
+  桌面端改用 React 后不共用 JVM 源集（[ADR-0124](0124-client-react-pwa-electron.md)）；Web/Electron 从 `wonton-protocol` 另外生成可序列化的类型，走 JSON 帧。
 - 后续：整份快照适合会话列表这种小 ViewModel。聊天时间线要推增量（matrix-rust-sdk 的
   `VectorDiff`），届时沿用同样的订阅形态，但推的是不能合并的增量批次。
 

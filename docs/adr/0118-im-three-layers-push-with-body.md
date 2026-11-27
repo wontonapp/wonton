@@ -76,7 +76,7 @@
 | 小米 | 不能在手机上解。2022-09-12 起停止提供透传消息，只剩通知栏消息：系统直接弹出，不需要应用启动、不受自启动管理影响，点开前应用完全不可感知 | [《停止提供透传消息下发的公告》](https://dev.mi.com/xiaomihyperos/documentation/detail?pId=1530)、[《推送常见问题汇总》](https://dev.mi.com/distribute/doc/details?pId=1545)（2026-10-19，“在 MIUI 系统上，通知栏类型的消息，是不需要应用启动就能弹出的……app 是完全不可感知的”）。退回：只写“新消息” |
 | OPPO | 不能。推送服务只做通知栏消息，标题和正文是系统字段，由系统展示；全部文档里没有透传 | [推送服务介绍](https://open.oppomobile.com/new/introduction?page_name=push)（“推送服务目前支持通知栏信息”）、[《通知栏消息》](https://open.oppomobile.com/documentation/page/info?id=11236)（title 必填，content 限 50 或 128 字）。退回：只写“新消息” |
 | vivo | 不能。vpush 通知由系统展示，“不需要应用驻留后台”，没有透传 | [《消息分类说明》](https://dev.vivo.com.cn/documentCenter/doc/359)（2026-09-21）。退回：只写“新消息” |
-| Web（M3） | 能。浏览器的 Push API 原生解 RFC 8291，页面接到明文 | ADR-0003 选 RFC 8291 的理由不变 |
+| Web（P1 PWA） | 能。浏览器的 Push API 原生解 RFC 8291，页面接到明文 | ADR-0003 选 RFC 8291 的理由不变 |
 
 退回的写法统一：标题是 App 名，正文是“新消息”，点开进房间按 `room_id`、`event_id` 定位并取回。**不把正文以明文交给系统展示的渠道**——
 想显示就得把正文交给小米、OPPO、vivo 和华为的系统通道，那“云端看不到内容”就破了；先只给通用文字，以后要按渠道再定。
