@@ -1048,9 +1048,11 @@ mod shared_rows_tests {
 
     #[test]
     fn failed_or_stale_results_keep_the_previous_list() {
-        let mut local = Local::default();
-        local.shared = Some(vec![row(BotAccess::Own)]);
-        local.shared_serial = 2;
+        let mut local = Local {
+            shared: Some(vec![row(BotAccess::Own)]),
+            shared_serial: 2,
+            ..Default::default()
+        };
         assert!(!Bots::apply_shared_result(
             &mut local,
             1,
@@ -1074,8 +1076,10 @@ mod shared_rows_tests {
 
     #[test]
     fn not_ready_result_writes_rows_as_unknown() {
-        let mut local = Local::default();
-        local.shared_serial = 7;
+        let mut local = Local {
+            shared_serial: 7,
+            ..Default::default()
+        };
         assert!(Bots::apply_shared_result(
             &mut local,
             7,

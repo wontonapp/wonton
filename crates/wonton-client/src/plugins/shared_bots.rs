@@ -29,8 +29,10 @@ async fn fetch_shared_bots(api: &CoreApi) -> Result<Option<SharedBotsView>, Core
         }) => Ok(None),
         Err(CoreApiError::Transport(problem)) => Err(to_core_error(problem)),
         Err(CoreApiError::Http {
-            status, message, ..
-        }) if status == 401 => Err(CoreError::Unauthorized { reason: message }),
+            status: 401,
+            message,
+            ..
+        }) => Err(CoreError::Unauthorized { reason: message }),
         Err(CoreApiError::Http { message, .. }) => Err(CoreError::Upstream { reason: message }),
         Err(CoreApiError::Protocol(reason)) => Err(CoreError::Upstream { reason }),
     }
