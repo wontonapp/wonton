@@ -250,12 +250,20 @@ allow_media() { # 页面一加载就请求摄像头/麦克风：核心弹原生�
         xml=$(ui "$dev" 2>/dev/null || true)
         # 首次打开会盖一层 “Got it” 介绍；不点掉，底下的 Join call 点不到。
         if grep -q 'text="Got it"' <<<"$xml"; then
-            tap_text "$dev" "Got it" >/dev/null 2>&1 || true
+            # EC 的介绍层是原生层：touch 在上面经常不生效，DPAD 中间键才稳；tap 只兜底。
+            timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent 23" >/dev/null 2>&1 || true
+            sleep 1
+            xml=$(ui "$dev" 2>/dev/null || true)
+            grep -q 'text="Got it"' <<<"$xml" && tap_text "$dev" "Got it" >/dev/null 2>&1 || true
             sleep 1
             continue
         fi
         if grep -q 'text="Allow"' <<<"$xml" && grep -qiE 'camera|microphone' <<<"$xml"; then
-            tap_text "$dev" "Allow" || true
+            # 原生的媒体权限弹窗同样 touch 不可靠：DPAD 右移到 Allow 再中键确定；tap 只兜底。
+            timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent 22; adb -s $dev shell input keyevent 23" >/dev/null 2>&1 || true
+            sleep 1
+            xml=$(ui "$dev" 2>/dev/null || true)
+            grep -q 'text="Allow"' <<<"$xml" && tap_text "$dev" "Allow" || true
             : > "$EVIDENCE/.media-$dev-ok"
             log "设备 $dev 已允许摄像头/麦克风"
         fi
@@ -286,6 +294,16 @@ except Exception: pass' "$rect" 2>/dev/null || true)
                 y=$(python3 -c 'import json,sys
 try: print(json.loads(sys.argv[1])["y"])
 except Exception: pass' "$rect" 2>/dev/null || true)
+                if [[ -z $x || -z $y ]]; then
+                    # premain 的 __joinRect 没给到时，按 DOM 里含 “Join call” 的按钮现算中点。
+                    rect=$(cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" eval "$page" '(async()=>{const b=[...document.querySelectorAll("button")].find(b=>(b.textContent||"").includes("Join call"));if(!b)return null;const r=b.getBoundingClientRect();return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2})})()') || true
+                    x=$(python3 -c 'import json,sys
+try: print(json.loads(sys.argv[1])["x"])
+except Exception: pass' "$rect" 2>/dev/null || true)
+                    y=$(python3 -c 'import json,sys
+try: print(json.loads(sys.argv[1])["y"])
+except Exception: pass' "$rect" 2>/dev/null || true)
+                fi
                 if [[ -n $x && -n $y ]]; then
                     cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" click "$page" "$x" "$y" >/dev/null 2>&1 || true
                 else

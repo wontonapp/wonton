@@ -72,6 +72,7 @@ RELAYS='https://<令牌>@relay.808cbd.com,no-n0' STACK=call-smoke HOST=localhost
 - `HOST=localhost`（本机模拟器）的配对码用模拟器到宿主机的 `10.0.2.2`；远端主机用它的局域网地址。两种都用 `adb reverse` 打底。
 - 上一轮被 `kill -9` 时 EXIT trap 不跑，`block_direct` 的 DROP 会留着把下一轮的隧道端口一起挡死；脚本开跑时会先 `iptables -F OUTPUT` 清一次。
 - APK 只编 `arm64-v8a` 时 x86_64 模拟器装不上；模拟器要用 `./gradlew :androidApp:assembleDebug -Pwonton.abis=x86_64`。
+- EC 的引导层（`Got it`）和媒体权限弹窗是原生层：`adb input tap` 在上面经常不生效（实测点十次没反应），DPAD 才稳——`Got it` 用 `input keyevent 23`，`Allow` 用 `22` 再 `23`。脚本已经先走 DPAD，`tap_text` 只兜底。
 - 每轮开始会 `pm clear` 两个设备（配对、权限、本地缓存的房间都清空），再重新配对；这是为了让“全新安装会先出 Loading/授权页”不再被误判成已配对。**relay 组例外**：它故意先在直连下把 EC 页面打开把 JS 包放进缓存，再下规则。
 - 自建中继当前跑 iroh-relay v1.4.1，App 的 iroh 1.5.0 只发 `Sec-WebSocket-Protocol: iroh-relay`，v1.4.1 只认
   `iroh-relay-v1|v2`，升级回 400 `unsupported relay version`（`curl` 实测：`iroh-relay` 400、v1/v2 101）。relay 组会卡在
