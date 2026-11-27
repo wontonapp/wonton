@@ -367,7 +367,7 @@ pub enum LibraryAction {
         title: String,
         #[serde(default)]
         ids: Vec<String>,
-        /// 建好就共享给的本机用户名
+        /// 建好就共享给的人，Matrix ID（同 [`super::choices::ShareTarget::user_id`]）
         #[serde(default)]
         share_with: Vec<String>,
     },
@@ -379,7 +379,7 @@ pub enum LibraryAction {
         album: String,
         ids: Vec<String>,
     },
-    /// 共享给家人；`people` 是本机用户名，已在的不重复加
+    /// 共享给家人；`people` 是 Matrix ID（同 [`super::choices::ShareTarget::user_id`]），已在的不重复加
     ShareAlbum {
         album: String,
         people: Vec<String>,
