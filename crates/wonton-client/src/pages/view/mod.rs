@@ -109,6 +109,7 @@ pub(super) fn build_app(
         plugin_id,
         tab,
         title,
+        subtitle,
         icon,
         open,
     } = row;
@@ -122,6 +123,7 @@ pub(super) fn build_app(
         plugin_id: plugin_id.clone(),
         tab: page_tab,
         title,
+        subtitle,
         open,
         icon,
         badge: SidebarBadge {

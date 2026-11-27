@@ -163,6 +163,7 @@ impl PluginManager {
             plan: self.dependency_plan(package)?,
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
+            subtitle: m.subtitle.as_ref().map(|t| langs.pick_owned(t)),
             summary: langs.pick_owned(&m.description),
             version: m.version.clone(),
             kind: kind(m.kind),

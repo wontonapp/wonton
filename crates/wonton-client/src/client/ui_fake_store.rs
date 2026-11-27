@@ -5,17 +5,24 @@ use wonton_protocol::{PluginDetail, PluginDetailRoute, StoreItem, StoreListing, 
 
 pub(super) const VAULT_TITLE: &str = "Photo Vault";
 pub(super) const VAULT_SOURCE: &str = "github:example/wonton-vault";
+const VAULT_SUBTITLE: &str = "Phone Photo Backup";
 pub(super) const MUSIC_TITLE: &str = "Home Music";
 pub(super) const MUSIC_SOURCE: &str = "github:example/wonton-music";
+const MUSIC_SUBTITLE: &str = "Home Music Library";
 const LAN_SOURCE: &str = "github:example/wonton-lan-scan";
 
-/// 商店列表：第一项已经装着，后两项没装。
+/// 商店列表：第一项已经装着，后两项没装；社区那一项没写副标题。
 pub(super) fn listing() -> StoreListing {
     StoreListing {
         official: StoreSection {
             plugins: vec![
-                item(VAULT_TITLE, VAULT_SOURCE, Some("0.9.0")),
-                item(MUSIC_TITLE, MUSIC_SOURCE, None),
+                item(
+                    VAULT_TITLE,
+                    Some(VAULT_SUBTITLE),
+                    VAULT_SOURCE,
+                    Some("0.9.0"),
+                ),
+                item(MUSIC_TITLE, Some(MUSIC_SUBTITLE), MUSIC_SOURCE, None),
             ],
             fetched_at_ms: Some(1_793_000_000_000),
             problem: None,
@@ -23,7 +30,7 @@ pub(super) fn listing() -> StoreListing {
         },
         added: Vec::new(),
         community: StoreSection {
-            plugins: vec![item("LAN Scan", LAN_SOURCE, None)],
+            plugins: vec![item("LAN Scan", None, LAN_SOURCE, None)],
             fetched_at_ms: Some(1_793_000_000_000),
             problem: None,
             unreadable: Vec::new(),
@@ -31,11 +38,17 @@ pub(super) fn listing() -> StoreListing {
     }
 }
 
-fn item(title: &str, source: &str, installed_version: Option<&str>) -> StoreItem {
+fn item(
+    title: &str,
+    subtitle: Option<&str>,
+    source: &str,
+    installed_version: Option<&str>,
+) -> StoreItem {
     StoreItem {
         source: source.into(),
         id: id_of(source),
         title: title.into(),
+        subtitle: subtitle.map(Into::into),
         summary: "The household's own copies, on the home server".into(),
         icon: None,
         tags: Vec::new(),
@@ -62,19 +75,22 @@ pub(super) fn detail(route: &PluginDetailRoute) -> Option<PluginDetail> {
     let PluginDetailRoute::Store { source } = route else {
         return None;
     };
-    let (title, summary) = match source.as_str() {
+    let (title, subtitle, summary) = match source.as_str() {
         VAULT_SOURCE => (
             VAULT_TITLE,
+            VAULT_SUBTITLE,
             "Every photo the household takes, on the home server",
         ),
         MUSIC_SOURCE => (
             MUSIC_TITLE,
+            MUSIC_SUBTITLE,
             "The household's records, playable from anywhere",
         ),
         _ => return None,
     };
     let mut detail = super::ui_fake_plugin_detail::app(&id_of(source), title, summary, None);
     detail.source = Some(source.clone());
+    detail.subtitle = Some(subtitle.into());
     Some(detail)
 }
 

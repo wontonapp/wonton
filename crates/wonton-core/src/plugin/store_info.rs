@@ -55,6 +55,8 @@ const MAX_AUTHOR_CHARS: usize = 64;
 const MAX_ABOUT_CHARS: usize = 4000;
 const MAX_RELEASE_NOTES_CHARS: usize = 2000;
 const MAX_SETUP_CHARS: usize = 400;
+/// 副标题在列表行里和标题各占一行，长了会被截断。
+const MAX_SUBTITLE_CHARS: usize = 30;
 
 /// 解析清单之前先看 `spec`：比核心新的清单可能用了核心不认识的字段，这时先报规范版本，不逐项报未知字段。
 pub fn check_spec(manifest: &Value, langs: &Languages) -> Result<(), ManifestError> {
@@ -137,6 +139,9 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
             )));
         }
         https_url("license_url", url, langs)?;
+    }
+    if let Some(subtitle) = &manifest.subtitle {
+        long_text("subtitle", subtitle, MAX_SUBTITLE_CHARS, langs)?;
     }
     for tags in manifest.tags.values() {
         validate_tags(tags, langs)?;
