@@ -114,7 +114,7 @@ impl PagesLink {
         });
         let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         tracing::info!(
@@ -157,7 +157,7 @@ impl PagesLink {
             })?;
         let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         tracing::info!(

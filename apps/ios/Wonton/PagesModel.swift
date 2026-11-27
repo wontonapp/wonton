@@ -91,6 +91,7 @@ extension OpenPage {
         case .plugin, .pluginPath, .bot, .url, .sharedApp, .uiResource, .widget: page.title
         }
     }
+}
 
 extension InstalledPlugin {
     var tabChoices: [TabChoice] {

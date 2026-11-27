@@ -156,7 +156,7 @@ impl PagesLink {
         state.read_problem = None;
         self.sync_problem.send_replace(None);
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         Ok(())

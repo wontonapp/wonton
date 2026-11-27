@@ -1,6 +1,8 @@
 //! 页面的动作：打开、关闭、我的应用的增删排序和自动加入。按网址加的在 [`add_url`](super::add_url)。
 use super::*;
 
+use wonton_protocol::{MAX_BAR_ITEMS, TabLayout};
+
 impl PagesLink {
     /// 打开一个页面：已经在栈里的挪到栈顶，其余压栈。根页（所有会话、收件箱）也走这里。
     pub(crate) fn open_page(&self, tab: TabRef) -> Result<(), CoreError> {
@@ -14,7 +16,12 @@ impl PagesLink {
     /// 不该因此弹出“没有打开的页面”。
     pub(super) fn close_page(&self) -> Result<(), CoreError> {
         self.runtime_change(|state, _| {
-            state.stack.pop();
+            // 栈空时的“关”是退出应用根页：壳的返回键在网格上就是回聊天。
+            let popped = state.stack.pop().is_some();
+            if !popped && state.tab == BarEntry::Apps && state.config.bar.contains(&BarEntry::Agent)
+            {
+                state.tab = BarEntry::Agent;
+            }
             Ok(())
         })
     }

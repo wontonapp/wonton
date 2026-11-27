@@ -53,9 +53,18 @@ impl ClientCore {
                 Ok(())
             }
             PageAction::ClosePage => {
-                // 和真核心一样：没有开着的页时是安静的什么也不做。
+                // 和真核心一样：栈空时的“关”从应用根回 Agent。
                 views.pages.send_modify(|pages| {
-                    pages.stack.pop();
+                    if !pages.stack.pop().is_some()
+                        && pages.tab == BarEntry::Apps
+                        && pages
+                            .bar
+                            .items
+                            .iter()
+                            .any(|item| item.entry == BarEntry::Agent)
+                    {
+                        pages.tab = BarEntry::Agent;
+                    }
                 });
                 Ok(())
             }

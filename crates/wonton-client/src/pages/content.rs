@@ -109,8 +109,12 @@ impl PagesLink {
                 state.content.remove(tab);
             }
         }
-        clear_gone_prompt(&mut state);
-        let view = make_view(&state, &plugins, self.sync_problem.borrow().is_some());
+        let view = make_view(
+            &state,
+            &plugins,
+            &self.chat.borrow(),
+            self.sync_problem.borrow().is_some(),
+        );
         drop(state);
         self.publish(view, &plugins);
     }

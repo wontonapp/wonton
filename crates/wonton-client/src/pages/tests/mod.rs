@@ -125,6 +125,7 @@ impl Rig {
                 problem: None,
                 read_problem: None,
                 stack: Vec::new(),
+                failures: HashMap::new(),
                 content: HashMap::new(),
                 paired: true,
                 tab: BarEntry::Agent,

@@ -292,7 +292,7 @@ final class AppNavigation {
         presentationRevision += 1
     }
 
-    private func select(bar entry: BarEntry) {
+    private func select(bar entry: BarEntry) throws {
         pages.select(entry)
         opensSettings = false
         presentationRevision += 1
