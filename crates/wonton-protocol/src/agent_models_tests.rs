@@ -148,6 +148,14 @@ fn catalog_only_lets_https_key_pages_through() {
         current: None,
     };
     assert!(good.check().is_ok());
+    let upper = ModelCatalog {
+        providers: vec![provider(
+            "a",
+            vec![api_key(Some("HTTPS://example.com/keys"))],
+        )],
+        current: None,
+    };
+    assert!(upper.check().is_ok());
     for url in [
         "http://example.com/keys",
         "javascript:alert(1)",
@@ -223,6 +231,15 @@ fn model_list_is_bounded() {
             .collect(),
     };
     assert!(many.check().is_err());
+    let model = |id: &str| ModelOption {
+        id: id.into(),
+        name: None,
+        recommended: false,
+    };
+    let duplicate = ModelList {
+        models: vec![model("m"), model("m")],
+    };
+    assert!(duplicate.check().is_err());
 }
 
 #[test]
