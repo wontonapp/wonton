@@ -19,10 +19,11 @@ extension SideChatState {
     var isFailure: Bool { self == .failed }
 }
 
-/// 主对话上的旁聊盖层（ADR-0093）：下面的主对话继续订阅，被盖住时隐藏、读不到、摸不着、右滑不退出整个房间；
+/// 主对话上的旁聊盖层（ADR-0093）：下面的主对话继续订阅，被盖住时隐藏、读不到、摸不着；
 /// 上面用 `fullScreenCover` 单开一张全屏页：不能塞进房间自己的布局，房间被压进的栈里再套一层栈、
 /// 内层在 ZStack 里量不出高度，整页会变空（iOS 26 模拟器实测）。
-/// 盖着时同时按住外面的边缘返回手势（`keepsRoomOnSideChat`）：旁聊页那一层的根没有可退的页面。
+/// 旁聊页左边缘右滑跟手关掉盖子（`EdgeDismiss`），拖的时候露出下面的主对话。盖着时外面房间的边缘返回按住不动
+/// （`keepsRoomOnSideChat`），免得关旁聊的同一下把整个房间也退掉。
 struct SideChatCover<Main: View>: View {
     let model: ChatModel
     let plugins: PluginsModel
@@ -32,6 +33,8 @@ struct SideChatCover<Main: View>: View {
     /// 呈现中的旁聊根。模型里的旁聊一没（返回、旁聊自己结束、离开房间）盖层就从这里收，收完自己再清；
     /// 直接读模型的话收起动画还在跑、内容已经变空，滑下去的半秒是一张空白页。
     @State private var shown: Shown?
+    /// 左边缘拖着旁聊页、下面的主对话露出来的这一会儿。
+    @State private var peeking = false
 
     private struct Shown: Identifiable {
         let id: String
@@ -40,7 +43,7 @@ struct SideChatCover<Main: View>: View {
     var body: some View {
         let covered = model.sideChats[roomId] != nil
         main()
-            .opacity(covered || shown != nil ? 0 : 1)
+            .opacity((covered || shown != nil) && !peeking ? 0 : 1)
             .allowsHitTesting(covered || shown == nil)
             .accessibilityHidden(covered || shown != nil)
             .navigationBarBackButtonHidden(covered || shown != nil)
@@ -59,6 +62,7 @@ struct SideChatCover<Main: View>: View {
                 item: $shown,
                 onDismiss: {
                     shown = nil
+                    peeking = false
                     blockOuterPop()
                 },
                 content: { shown in
@@ -66,9 +70,22 @@ struct SideChatCover<Main: View>: View {
                         ChatRoomView(
                             model: model, plugins: plugins, roomId: roomId, threadRoot: shown.id, title: title
                         )
+                        .edgeDismisses(peek: { peeking = $0 }, close: closeWithoutAnimation)
                     }
                 }
             )
+    }
+
+    /// 左边缘拖完了：画面上已经只剩主对话，盖子不再播收起的动画。
+    private func closeWithoutAnimation() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            // 先关模型里的旁聊再收盖子：旁聊页 `onDisappear` 看到旁聊还开着会补记一次 `gone`。
+            model.closeSideChat(in: roomId, why: "edge")
+            peeking = false
+            shown = nil
+        }
     }
 
     private func blockOuterPop() {
