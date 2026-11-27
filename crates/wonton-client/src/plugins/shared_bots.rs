@@ -68,10 +68,7 @@ mod tests {
     #[tokio::test]
     async fn a_405_from_a_get_on_a_post_only_route_is_an_old_core_not_a_failure() {
         // 旧核心的真实形状：同一路径只注册了 POST；GET 回 axum 的 405。
-        let router = Router::new().route(
-            SHARED_BOTS_PATH,
-            post(|| async { StatusCode::CREATED }),
-        );
+        let router = Router::new().route(SHARED_BOTS_PATH, post(|| async { StatusCode::CREATED }));
         let (api, _server) = serve(router).await;
         assert!(fetch_shared_bots(&api).await.unwrap().is_none());
     }
