@@ -5,7 +5,7 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use tokio::task::JoinHandle;
 use wonton_matrix::{MatrixSession, SyncStatus};
-use wonton_protocol::ChatSync;
+use wonton_protocol::{ChatFailure, ChatSync};
 
 use super::ChatLink;
 use super::failure;
@@ -62,9 +62,21 @@ impl ChatLink {
         let sync = {
             let statuses = session.sync_status();
             let view = view.clone();
+            let chat = Arc::downgrade(self);
             self.runtime.spawn(async move {
                 let mut statuses = std::pin::pin!(statuses);
                 while let Some(status) = statuses.next().await {
+                    // 会话还挂在一个已经拆掉的代理上：同步自己重启多少次都只会再失败。换成当前代理重新
+                    // 登录一次（和 App 回到前台走同一条路），新会话用新连接，通知和消息才接得上。
+                    if let SyncStatus::Failed(error) = &status
+                        && failure(error) == ChatFailure::TransportUnavailable
+                        && let Some(link) = chat.upgrade()
+                        && let Some(proxy) = link.home.view().proxy.clone()
+                        && lock(&link.signing_proxy).as_ref() != Some(&proxy)
+                    {
+                        link.runtime
+                            .spawn(link.clone().connect(super::connect::Target::Home(proxy)));
+                    }
                     let sync = match status {
                         SyncStatus::Idle => ChatSync::Idle,
                         SyncStatus::Starting => ChatSync::Starting,
