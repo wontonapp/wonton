@@ -168,3 +168,10 @@ app-lock-corrupt = The app lock settings file { $path } is damaged: { $reason }
 pages-storage-problem = Could not save My Apps; they may fall back to an older state on next launch: { $error }
 # Owner-only generated plugin keys; input and collected secrets are never returned.
 plugins-owner-secret-not-listed = This key is not in the open list: { $name }
+# 按网址加进我的应用、同步我的应用时的报错。
+page-invalid-url = Can't read that address.
+page-not-https = Only https:// websites can be added.
+page-path-outside = That page is outside the app's own site.
+my-apps-sync-failed-read = Couldn't read My apps from the server.
+my-apps-sync-unreadable = My apps on the server can't be read here; keeping the ones on this device.
+my-apps-bot-page = A bot's web page opens from its chat and can't be added to My apps.

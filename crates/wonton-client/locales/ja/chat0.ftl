@@ -126,3 +126,4 @@ chat-ask-failed-upstream = 家のサーバーでエラーが起きました。
 chat-ask-failed-other = メッセージを送信できませんでした。
 chat-ask-target-missing = 目標がありません。
 chat-my-bot = マイ Bot
+chat-room-view-unknown = このチャットが見つかりません。

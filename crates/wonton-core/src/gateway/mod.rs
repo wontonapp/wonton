@@ -88,7 +88,6 @@ pub(crate) mod notify_limit;
 mod onboarding;
 mod owner_secrets;
 mod pages;
-mod panel_pins;
 mod peers;
 pub mod people_limits;
 pub(crate) mod permissions;
@@ -476,8 +475,6 @@ mod onboarding_tests;
 mod owner_secrets_tests;
 #[cfg(test)]
 mod pairing_tests;
-#[cfg(test)]
-mod panel_pins_tests;
 #[cfg(test)]
 mod peers_api_tests;
 #[cfg(test)]

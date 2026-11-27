@@ -98,6 +98,8 @@
     <string name="widget_status_at">%1$s · %2$s</string>
     <string name="myapp_add">マイアプリに追加</string>
     <string name="myapp_add_more">アプリを追加</string>
+    <string name="myapp_url">URL を入力</string>
+    <string name="myapp_url_add">追加</string>
     <string name="myapp_auto_add">新しく入れたアプリを自動で追加</string>
     <string name="myapp_problem">マイアプリを読み書きできませんでした</string>
     <string name="myapp_remove">マイアプリから外す</string>
