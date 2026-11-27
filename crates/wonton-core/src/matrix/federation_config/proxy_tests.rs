@@ -212,6 +212,15 @@ impl Stack {
         };
         let config = config.replace(PROXY_ADDR, &format!("{proxy_host}:{proxy_port}"));
         std::fs::write(dir.join("secrets/tuwunel/wonton-fed.toml"), config).unwrap();
+        // 1122 这一支还没有核心终结出站 TLS（那是 1123）：测试里的转发器是原样透明转发，所以让 Tuwunel
+        // 自己用 init 生成的 peer.pem 终结，并放宽校验接受对方的自签叶；trust.pem 仍按正式写法挂进来，
+        // 1123 起改成核心出示 CA 签的证书、由 Tuwunel 用 trust.pem 验证。
+        let tuwenel = std::fs::read_to_string(dir.join("secrets/tuwunel/tuwunel.toml")).unwrap();
+        let tuwenel = tuwenel.replace(
+            "allow_invalid_tls_certificates = false",
+            "allow_invalid_tls_certificates = true",
+        ) + "\n[global.tls]\ncerts = \"/etc/wonton-peer-tls/peer.pem\"\nkey = \"/etc/wonton-peer-tls/peer.key\"\ndual_protocol = true\n";
+        std::fs::write(dir.join("secrets/tuwunel/tuwunel.toml"), tuwenel).unwrap();
         let token = crate::secret::random_token();
         let mut stack = Self {
             dir: dir.to_owned(),
@@ -277,6 +286,8 @@ impl Stack {
             "--detach",
             "--name",
             &self.container,
+            "--env",
+            "SSL_CERT_FILE=/etc/wonton-peer-tls/trust.pem",
             "--env",
             "TUWUNEL_CONFIG=/etc/tuwunel/tuwunel.toml",
         ]

@@ -16,8 +16,12 @@
 # ROOM_ID=<房间> [ROOM_NAME=<名字>] 可复用已有房间；只给 ROOM_ID 时从房间状态读名字（旧房间会积着上轮成员，判定要看本轮新增的两条）。
 # 插件包：PKG（worktree 内的相对路径，默认 deploy/dev/calls/plugin，由调用方放好）。
 # 每组有组级 deadline：GROUP_DEADLINE=秒（默认 600），从判定阶段起算，到点就 fail_group 出判决，不被卡死的步骤吞掉。
+# 自建中继：RELAYS 是核心的 `WONTON_RELAYS` 值（含令牌，如 `https://<令牌>@relay.808cbd.com,no-n0`）。
+# 设了就写进 worktree 的 deploy/dev/core/.env、重起核心（remote-dev 的 up 会把它推到栈上），配对前断言
+# 中继接口给的表逐项等于 RELAYS；relay 组再要求两端的隧道路径真落在 RELAY_HOST（默认从 RELAYS 取）上。
+# 只看到 `relay: true` 也可能是 n0，所以断言里必须带主机。
 # 实现按职责拆在 smoke.d/ 下，由本文件按依赖顺序 source；函数和变量共用同一个 shell。
-set -euo pipefail
+set -Eeuo pipefail
 shopt -s inherit_errexit
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,6 +42,10 @@ source "$here/smoke.d/ui.sh"
 source "$here/smoke.d/stages.sh"
 # 库都 source 完、准备段之前挂 EXIT 还原；更早的失败和原来一样还没挂上。
 trap restore_defaults EXIT
+trap 'printf "%s 收到 SIGTERM\n" "$(date +%T)" >> "$EVIDENCE/run.log"; exit 143' TERM
+trap 'printf "%s 收到 SIGINT\n" "$(date +%T)" >> "$EVIDENCE/run.log"; exit 130' INT
+# set -e 静默退出时留下行号和命令，别只看到日志停住。
+trap 'printf "%s 意外退出：line %s（%s）\n" "$(date +%T)" "$LINENO" "$BASH_COMMAND" >> "$EVIDENCE/run.log"' ERR
 # shellcheck source=deploy/dev/calls/smoke.d/prep.sh
 source "$here/smoke.d/prep.sh"
 

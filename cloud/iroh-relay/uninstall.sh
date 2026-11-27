@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 # 卸载 iroh 中继。默认保留 /etc/wonton-iroh-relay（配置、令牌、证书副本），--purge 连用户和数据一起删。
-#   bash uninstall.sh
-#   bash uninstall.sh --purge
+#   DOMAIN=relay.example.com bash uninstall.sh
+#   DOMAIN=relay.example.com bash uninstall.sh --purge
 set -euo pipefail
 
 PREFIX=/opt/wonton-iroh-relay
 ETC=/etc/wonton-iroh-relay
 STATE=/var/lib/wonton-iroh-relay
 USER=wonton-iroh-relay
-DOMAIN=relay.808cbd.com
+DOMAIN=${DOMAIN:-}
 DEPLOY_HOOK=/etc/letsencrypt/renewal-hooks/deploy/wonton-iroh-relay.sh
 
 die() {
     echo "uninstall: $*" >&2
     exit 1
 }
+
+[[ -n $DOMAIN ]] || die "缺 DOMAIN：DOMAIN=relay.example.com $0"
 
 [[ $EUID -eq 0 ]] || die "要用 root 跑"
 

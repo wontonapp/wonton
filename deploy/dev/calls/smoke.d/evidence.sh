@@ -27,13 +27,13 @@ capture_failure_evidence() { # <tag>：组失败时把两端 App 核心日志尾
     local tag=$1 d side
     for d in "$DEV_A" "$DEV_B"; do
         if [[ $d == "$DEV_B" ]]; then side=b; else side=a; fi
-        timeout 25 ssh "$HOST" "adb -s $d shell run-as app.wonton.android tail -n 200 files/core.log" \
+        timeout 60 ssh "$HOST" "adb -s $d shell run-as app.wonton.android tail -n 200 files/core.log" \
             > "$EVIDENCE/failure-$tag-app-$side.log" 2>&1 || true
-        timeout 25 ssh "$HOST" "adb -s $d shell logcat -d" 2>/dev/null |
+        timeout 60 ssh "$HOST" "adb -s $d shell logcat -d" 2>/dev/null |
             grep -iE 'chromium|ERR_CONTENT_LENGTH|Failed to connect|transport-unavailable|relay is rate-limiting|Element Call' \
             > "$EVIDENCE/failure-$tag-console-$side.log" 2>&1 || true
     done
-    timeout 25 ssh "$HOST" "docker logs --tail 200 wonton-$STACK" 2>/dev/null |
+    timeout 60 ssh "$HOST" "docker logs --tail 200 wonton-$STACK" 2>/dev/null |
         grep -iE 'CheckedPath|relay|rate-limit|transport-unavailable|tunnel_stream_aborted' \
         > "$EVIDENCE/failure-$tag-core.log" 2>&1 || true
 }

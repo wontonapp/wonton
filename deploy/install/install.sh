@@ -600,6 +600,7 @@ write_config() {
     -e WONTON_MATRIX_SERVER_NAME="${WONTON_MATRIX_SERVER_NAME:-}" \
     -e WONTON_PLUGIN_NETWORK_POOL="$plugin_network_pool" \
     -e WONTON_RELAYS="$relays" \
+    -e WONTON_CORE_IMAGE="$pinned" \
     "$pinned" init "$install_dir" "$domain" || init_failed
 
   settle_proxy

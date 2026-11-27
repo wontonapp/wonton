@@ -3,38 +3,28 @@
 # shellcheck shell=bash
 
 # dump 常在冷启动/转场后返回空壳：循环到拿到超过 3000 字节的层级再回，拿到就够。
-ui() { timeout 90 ssh "$HOST" "for i in 1 2 3 4 5 6 7 8; do adb -s $1 shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 && sleep 0.3 && n=\$(adb -s $1 shell \"wc -c < /sdcard/ui.xml\" | tr -d \"\\r\") && [ \"\$n\" -gt 3000 ] 2>/dev/null && adb -s $1 shell cat /sdcard/ui.xml && exit 0; sleep 5; done; exit 1"; }
+ui() { # <dev>：当前界面 XML。系统 ANR 弹窗（"isn't responding"）会盖住 App、吞掉后面的点按：
+        # 从弹窗自己的 bounds 点 Wait 再重取，最多 3 次。
+    local dev=$1 xml b c x1 y1 x2 y2 i
+    for i in 1 2 3; do
+        xml=$(timeout 90 ssh "$HOST" "for i in 1 2 3 4 5 6 7 8; do adb -s $dev shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 && sleep 0.3 && n=\$(adb -s $dev shell \"wc -c < /sdcard/ui.xml\" | tr -d \"\\r\") && [ \"\$n\" -gt 3000 ] 2>/dev/null && adb -s $dev shell cat /sdcard/ui.xml && exit 0; sleep 5; done; exit 1")
+        grep -qE "isn't responding|无响应|Keeps stopping" <<<"$xml" || { printf '%s\n' "$xml"; return 0; }
+        b=$(grep -oE 'text="(Wait|等待)"[^>]*bounds="\[[0-9]+,[0-9]+\]\[[0-9]+,[0-9]+\]"' <<<"$xml" | tail -1)
+        c=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${b##*bounds=\"}")
+        if [[ $c =~ ^[0-9]+\ [0-9]+\ [0-9]+\ [0-9]+$ ]]; then
+            read -r x1 y1 x2 y2 <<<"$c"
+            timeout 60 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))" >/dev/null 2>&1 || true
+            log "设备 $dev：系统 ANR 弹窗，点了 Wait"
+        else
+            timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent 66" >/dev/null 2>&1 || true
+        fi
+        sleep 1
+    done
+    printf '%s\n' "$xml"
+}
 # App 是否在前台。只看窗口焦点，不信 dump 文本：部分系统界面（配对页的输入框焦点、
 # 桌面）在 dump 里没有可认的字，靠文本判断会把它们当成 App 页面继续空转。
-app_fg() { timeout 25 ssh "$HOST" "adb -s $1 shell dumpsys window 2>/dev/null | grep -q 'mCurrentFocus=.*app.wonton.android'" >/dev/null 2>&1; }
-# 处理识别到的引导/面板状态（onboarding_action 的 install|goto|next|close）。
-# install 后要等预置插件装完（按钮变成 Go to chat），失败出 Retry 就重试；最多 90 秒，不无限等。
-onboarding_do() { # onboarding_do <dev> <action>
-    local dev=$1 action=$2 xml i
-    case $action in
-    install)
-        log "设备 $dev 首次引导：装预置插件"
-        tap_text "$dev" "Install these apps" >/dev/null 2>&1 || true
-        for i in $(seq 1 45); do
-            sleep 2
-            xml=$(ui "$dev" 2>/dev/null || true)
-            if grep -q 'text="Go to chat"\|text="去聊天"\|text="Done"\|text="完成"' <<<"$xml"; then
-                tap_text "$dev" "Go to chat" >/dev/null 2>&1 || tap_text "$dev" "Done" >/dev/null 2>&1 || true
-                sleep 2; return 0
-            fi
-            if grep -qE 'text="(Try again|重试)"' <<<"$xml"; then
-                tap_text "$dev" "Try again" >/dev/null 2>&1 || tap_text "$dev" "重试" >/dev/null 2>&1 || true
-            fi
-        done
-        log "设备 $dev 首次引导：预置插件 90 秒没装完（还停在 Install these apps）"
-        ;;
-    goto) tap_text "$dev" "Go to chat" >/dev/null 2>&1 || tap_text "$dev" "去聊天" >/dev/null 2>&1 ||
-        tap_text "$dev" "Done" >/dev/null 2>&1 || tap_text "$dev" "完成" >/dev/null 2>&1 || true; sleep 2 ;;
-    next) tap_text "$dev" "Next" >/dev/null 2>&1 || tap_text "$dev" "下一步" >/dev/null 2>&1 || true; sleep 2 ;;
-    close) tap_desc "$dev" "Close page" >/dev/null 2>&1 || tap_desc "$dev" "Close panel" >/dev/null 2>&1 ||
-        tap_desc "$dev" "Close" >/dev/null 2>&1 || tap_text "$dev" "Close" >/dev/null 2>&1 || true; sleep 2 ;;
-    esac
-}
+app_fg() { timeout 60 ssh "$HOST" "adb -s $1 shell dumpsys window 2>/dev/null | grep -q 'mCurrentFocus=.*app.wonton.android'" >/dev/null 2>&1; }
 # 把页面带回聊天列表：焦点不在 App 就冷启动，在就 BACK 退出设置/备份这类页面。
 to_list() { # to_list <dev>：一路清掉验证/备份页直到聊天列表出现
     local dev=$1 xml action
@@ -68,10 +58,39 @@ to_list() { # to_list <dev>：一路清掉验证/备份页直到聊天列表出�
         if app_fg "$dev"; then
             timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent BACK" >/dev/null 2>&1 || true
         else
-            timeout 25 ssh "$HOST" "adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+            timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent 66" >/dev/null 2>&1 || true
         fi
-        sleep 2
+        sleep 1
     done
+    printf '%s\n' "$xml"
+}
+# 处理识别到的引导/面板状态（onboarding_action 的 install|goto|next|close）。
+# install 后要等预置插件装完（按钮变成 Go to chat），失败出 Retry 就重试；最多 90 秒，不无限等。
+onboarding_do() { # onboarding_do <dev> <action>
+    local dev=$1 action=$2 xml i
+    case $action in
+    install)
+        log "设备 $dev 首次引导：装预置插件"
+        tap_text "$dev" "Install these apps" >/dev/null 2>&1 || true
+        for i in $(seq 1 45); do
+            sleep 2
+            xml=$(ui "$dev" 2>/dev/null || true)
+            if grep -q 'text="Go to chat"\|text="去聊天"\|text="Done"\|text="完成"' <<<"$xml"; then
+                tap_text "$dev" "Go to chat" >/dev/null 2>&1 || tap_text "$dev" "Done" >/dev/null 2>&1 || true
+                sleep 2; return 0
+            fi
+            if grep -qE 'text="(Try again|重试)"' <<<"$xml"; then
+                tap_text "$dev" "Try again" >/dev/null 2>&1 || tap_text "$dev" "重试" >/dev/null 2>&1 || true
+            fi
+        done
+        log "设备 $dev 首次引导：预置插件 90 秒没装完（还停在 Install these apps）"
+        ;;
+    goto) tap_text "$dev" "Go to chat" >/dev/null 2>&1 || tap_text "$dev" "去聊天" >/dev/null 2>&1 ||
+        tap_text "$dev" "Done" >/dev/null 2>&1 || tap_text "$dev" "完成" >/dev/null 2>&1 || true; sleep 2 ;;
+    next) tap_text "$dev" "Next" >/dev/null 2>&1 || tap_text "$dev" "下一步" >/dev/null 2>&1 || true; sleep 2 ;;
+    close) tap_desc "$dev" "Close page" >/dev/null 2>&1 || tap_desc "$dev" "Close panel" >/dev/null 2>&1 ||
+        tap_desc "$dev" "Close" >/dev/null 2>&1 || tap_text "$dev" "Close" >/dev/null 2>&1 || true; sleep 2 ;;
+    esac
 }
 # 把要放进 grep -E 的字面串转义：房名里的 + ( . 等不再当正则。
 ere_escape() { printf '%s\n' "$1" | sed 's/[][\\.^$*+?(){}|]/\\&/g'; }
@@ -98,19 +117,19 @@ tap_name() {
     done
     [[ -n ${coords:-} ]] || { echo "设备 $dev 上看不到「$text」" >&2; return 1; }
     read -r x y <<<"$coords"
-    timeout 25 ssh "$HOST" "adb -s $dev shell input tap $x $y"
+    timeout 60 ssh "$HOST" "adb -s $dev shell input tap $x $y"
     # 第二下只在目标还在时补：双击会把刚弹出的确认框点到背景上关掉。
     sleep 1
-    ui "$dev" 2>/dev/null | grep -q "text=\"$esc\"" && timeout 25 ssh "$HOST" "adb -s $dev shell input tap $x $y"
+    ui "$dev" 2>/dev/null | grep -q "text=\"$esc\"" && timeout 60 ssh "$HOST" "adb -s $dev shell input tap $x $y"
     true
 }
-shot() { timeout 25 ssh "$HOST" "adb -s $1 exec-out screencap -p" > "$EVIDENCE/$2.png"; }
-rec() { timeout 25 ssh "$HOST" "adb -s $1 shell screenrecord --bit-rate 4000000 --time-limit 300 /sdcard/$2.mp4" & }
+shot() { timeout 60 ssh "$HOST" "adb -s $1 exec-out screencap -p" > "$EVIDENCE/$2.png"; }
+rec() { timeout 60 ssh "$HOST" "adb -s $1 shell screenrecord --bit-rate 4000000 --time-limit 300 /sdcard/$2.mp4" & }
 fetch_rec() { # 视频经 exec-out 回本地（adb pull 会把文件写到 HOST 上，不是本机）
-    timeout 25 ssh "$HOST" "adb -s $1 shell pkill -INT screenrecord" >/dev/null 2>&1 || true
+    timeout 60 ssh "$HOST" "adb -s $1 shell pkill -INT screenrecord" >/dev/null 2>&1 || true
     sleep 2
-    timeout 25 ssh "$HOST" "adb -s $1 exec-out cat /sdcard/$2.mp4" > "$EVIDENCE/$2.mp4"
-    timeout 25 ssh "$HOST" "adb -s $1 shell rm -f /sdcard/$2.mp4" >/dev/null 2>&1 || true
+    timeout 60 ssh "$HOST" "adb -s $1 exec-out cat /sdcard/$2.mp4" > "$EVIDENCE/$2.mp4"
+    timeout 60 ssh "$HOST" "adb -s $1 shell rm -f /sdcard/$2.mp4" >/dev/null 2>&1 || true
     [[ -s $EVIDENCE/$2.mp4 ]] || log "录屏为空：$2"
 }
 
@@ -135,15 +154,19 @@ tap_desc() { # 按 content-desc 点中心（关闭这类只有无障碍描述的
     b=${c##*bounds=\"}
     c=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${b%\"}")
     read -r x1 y1 x2 y2 <<<"$c"
-    timeout 25 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
+    timeout 60 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
 }
 
 clear_dialogs() { # 设备验证、备份提示这类会话级弹层
-    local d xml
+    local d xml last
     for d in "$DEV_A" "$DEV_B"; do
+        last=""
         for _ in 1 2 3 4 5 6 7 8; do
             xml=$(ui "$d" 2>/dev/null || true)
-            if grep -q 'text="Reset chat backup?"' <<<"$xml"; then tap_text "$d" "Cancel" || true; sleep 1; timeout 25 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true; sleep 2; continue; fi
+            # 一轮下来界面没变就收手：备份横幅这类按钮点不掉的提示会一直挂着。
+            [[ $xml == "$last" ]] && break
+            last=$xml
+            if grep -q 'text="Reset chat backup?"' <<<"$xml"; then tap_text "$d" "Cancel" || true; sleep 1; timeout 60 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true; sleep 2; continue; fi
             # 插件媒体权限弹窗：答一次 Allow，核心记下决定，后续 join 不再询问。
             if grep -qE 'text="(Allow|允许)"' <<<"$xml" && grep -qiE 'camera|microphone|摄像头|麦克风' <<<"$xml"; then
                 tap_text "$d" "Allow" 2>/dev/null || tap_text "$d" "允许" 2>/dev/null || true; sleep 2; continue
@@ -155,17 +178,17 @@ clear_dialogs() { # 设备验证、备份提示这类会话级弹层
                 tap_text "$d" "Got it" >/dev/null 2>&1 || true; sleep 2; continue
             fi
             if grep -q 'text="Start verification"' <<<"$xml"; then
-                timeout 25 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true
+                timeout 60 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true
             elif grep -q "I don't have my other device" <<<"$xml"; then
                 tap_text "$d" "I don't have my other device" >/dev/null 2>&1 || true
             elif grep -q 'Enter your recovery key' <<<"$xml"; then
-                timeout 25 ssh "$HOST" "adb -s $d shell input keyevent BACK"
+                timeout 60 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true
             elif grep -q 'text="Later"' <<<"$xml"; then
                 tap_text "$d" "Later" >/dev/null 2>&1 || true
             elif grep -qE 'Reset backup|can.t see past messages' <<<"$xml"; then
                 # 备份页本体（含 Verify/Enter recovery key/Reset backup）与"看不到历史"页：
                 # BACK 退回列表；点 Reset backup 只会弹确认框把流程拖死。
-                timeout 25 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true
+                timeout 60 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true
             else
                 break
             fi
@@ -184,7 +207,7 @@ open_room() { # open_room <dev> <显示名片段>
         # 列表 UI 不实时刷新：新建房间的行要等 App 重启才渲染出来（17:19 实测）。
         # 周期性重启一次，重渲染列表；房间行出现就往下走。
         if (( i % 60 == 0 )); then
-            timeout 25 ssh "$HOST" "adb -s $dev shell am force-stop app.wonton.android; adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+            timeout 60 ssh "$HOST" "adb -s $dev shell am force-stop app.wonton.android; adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
             sleep 12
         fi
         xml=$(ui "$dev" 2>/dev/null || true)
@@ -199,7 +222,7 @@ open_room() { # open_room <dev> <显示名片段>
         fi
         # 焦点掉到桌面/系统 UI 时 dump 里常常认不出字，不能只靠页面文本判断。
         if ! app_fg "$dev" && ! grep -qE 'content-desc="(Sidebar|Collapse sidebar)"' <<<"$xml"; then
-            timeout 25 ssh "$HOST" "adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+            timeout 60 ssh "$HOST" "adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
             sleep 2
             continue
         fi
@@ -210,9 +233,9 @@ open_room() { # open_room <dev> <显示名片段>
             cs=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${b%\"}")
             if [[ $cs =~ ^[0-9]+\ [0-9]+\ [0-9]+\ [0-9]+$ ]]; then
                 read -r x1 y1 x2 y2 <<<"$cs"
-                timeout 25 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))" >/dev/null 2>&1 || true
+                timeout 60 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))" >/dev/null 2>&1 || true
             else
-                timeout 25 ssh "$HOST" "adb -s $dev shell input tap 983 1200" >/dev/null 2>&1 || true
+                timeout 60 ssh "$HOST" "adb -s $dev shell input tap 983 1200" >/dev/null 2>&1 || true
             fi
             sleep 2
             continue
@@ -226,7 +249,7 @@ open_room() { # open_room <dev> <显示名片段>
         fi
         if (( i % 15 == 0 )); then log "open_room i=$i len=${#xml} fg=$(app_fg "$dev" && echo fg || echo bg)"; fi
         if grep -q 'text="End call"' <<<"$xml" || grep -q 'content-desc="Close page"' <<<"$xml"; then
-            timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent BACK" || true
+            timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent BACK" || true
             sleep 2
             continue
         fi
@@ -239,9 +262,9 @@ open_room() { # open_room <dev> <显示名片段>
         [[ -n $row ]] && break
         # 列表不滚太狠：每 3 轮才向下试一屏，每 12 轮回顶部，免得把已经露出来的新房间刷过去。
         if (( i % 12 == 0 )); then
-            for _ in 1 2 3; do timeout 25 ssh "$HOST" "adb -s $dev shell input swipe 250 700 250 1700 200" >/dev/null 2>&1 || true; done
+            for _ in 1 2 3; do timeout 60 ssh "$HOST" "adb -s $dev shell input swipe 250 700 250 1700 200" >/dev/null 2>&1 || true; done
         elif (( i % 3 == 0 )); then
-            timeout 25 ssh "$HOST" "adb -s $dev shell input swipe 250 1400 250 700 300" >/dev/null 2>&1 || true
+            timeout 60 ssh "$HOST" "adb -s $dev shell input swipe 250 1400 250 700 300" >/dev/null 2>&1 || true
         fi
         sleep 2
     done
@@ -251,7 +274,7 @@ open_room() { # open_room <dev> <显示名片段>
         { echo "== $(date +%T) $dev fg=$(ssh "$HOST" "adb -s $dev shell dumpsys window 2>/dev/null | grep -o 'mCurrentFocus=[^ ]*'" | tr -d '\r')"; printf '%s\n' "$xml" | head -40; } >> "$EVIDENCE/openroom-debug.log" 2>&1 || true
         die "房间 $name 不在设备 $dev 的列表里"
     fi
-    tap_name "$dev" "$row"
+    tap_name "$dev" "$row" || true
     sleep 4
     # 进房后偶尔弹核心的「Not available right now / OK」（同步还没就绪），点掉再确认房名。
     for _ in $(seq 1 12); do
@@ -296,7 +319,7 @@ open_call() { # 顶栏的入口，通话中时是“通话中”
         fi
         if [[ $coords =~ ^[0-9]+\ [0-9]+\ [0-9]+\ [0-9]+$ ]]; then
             read -r x1 y1 x2 y2 <<<"$coords"
-            timeout 25 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
+            timeout 60 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
             sleep 2
             allow_media "$dev"
             return 0
@@ -313,12 +336,20 @@ allow_media() { # 页面一加载就请求摄像头/麦克风：核心弹原生�
         xml=$(ui "$dev" 2>/dev/null || true)
         # 首次打开会盖一层 “Got it” 介绍；不点掉，底下的 Join call 点不到。
         if grep -q 'text="Got it"' <<<"$xml"; then
-            tap_text "$dev" "Got it" >/dev/null 2>&1 || true
+            # EC 的介绍层是原生层：touch 在上面经常不生效，DPAD 中间键才稳；tap 只兜底。
+            timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent 23" >/dev/null 2>&1 || true
+            sleep 1
+            xml=$(ui "$dev" 2>/dev/null || true)
+            grep -q 'text="Got it"' <<<"$xml" && tap_text "$dev" "Got it" >/dev/null 2>&1 || true
             sleep 1
             continue
         fi
         if grep -q 'text="Allow"' <<<"$xml" && grep -qiE 'camera|microphone' <<<"$xml"; then
-            tap_text "$dev" "Allow" || true
+            # 原生的媒体权限弹窗同样 touch 不可靠：DPAD 右移到 Allow 再中键确定；tap 只兜底。
+            timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent 22; adb -s $dev shell input keyevent 23" >/dev/null 2>&1 || true
+            sleep 1
+            xml=$(ui "$dev" 2>/dev/null || true)
+            grep -q 'text="Allow"' <<<"$xml" && tap_text "$dev" "Allow" || true
             : > "$EVIDENCE/.media-$dev-ok"
             log "设备 $dev 已允许摄像头/麦克风"
         fi
@@ -343,16 +374,16 @@ join_call() {
             if grep -q 'Join call' <<<"$txt"; then
                 # 底栏是 WebView 内容：矩形由 premain 的 __joinRect 给出，点击走 CDP（合成点击对底栏无效）。
                 rect=$(cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" eval "$page" 'JSON.stringify(window.__joinRect ? window.__joinRect() : null)') || true
-                x=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["x"])
-except Exception: pass' "$rect" 2>/dev/null || true)
-                y=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["y"])
-except Exception: pass' "$rect" 2>/dev/null || true)
+                { read -r x; read -r y; } < <(rect_xy "$rect") || true
+                if [[ -z $x || -z $y ]]; then
+                    # premain 的 __joinRect 没给到时，按 DOM 里含 “Join call” 的按钮现算中点。
+                    rect=$(cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" eval "$page" '(async()=>{const b=[...document.querySelectorAll("button")].find(b=>(b.textContent||"").includes("Join call"));if(!b)return null;const r=b.getBoundingClientRect();return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2})})()') || true
+                    { read -r x; read -r y; } < <(rect_xy "$rect") || true
+                fi
                 if [[ -n $x && -n $y ]]; then
                     cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" click "$page" "$x" "$y" >/dev/null 2>&1 || true
                 else
-                    timeout 25 ssh "$HOST" "adb -s $dev shell input tap 540 1906" >/dev/null 2>&1 || true
+                    timeout 60 ssh "$HOST" "adb -s $dev shell input tap 540 1906" >/dev/null 2>&1 || true
                 fi
                 sleep 8; continue
             fi
@@ -378,12 +409,12 @@ cdp() { # cdp <a|b> <端口> <子命令> [参数]
     shift 2
     # 套接字名里是持有 WebView 的进程 pid，pidof 可能同时列出多个（主进程 + 隔离进程），
     # 按 pid 逐个比对，别赌第一个。
-    pids=$(timeout 25 ssh "$HOST" "adb -s $dev shell pidof app.wonton.android" | tr -d '\r' | tr '\n' ' ')
-    for cand in $(timeout 25 ssh "$HOST" "adb -s $dev shell cat /proc/net/unix" | grep -o 'webview_devtools_remote_[0-9]*' | sort -u); do
+    pids=$(timeout 60 ssh "$HOST" "adb -s $dev shell pidof app.wonton.android" | tr -d '\r' | tr '\n' ' ')
+    for cand in $(timeout 60 ssh "$HOST" "adb -s $dev shell cat /proc/net/unix" | grep -o 'webview_devtools_remote_[0-9]*' | sort -u); do
         if [[ " $pids " == *" ${cand##*_} "* ]]; then sock=$cand; fi
     done
     [[ -n $sock ]] || sock="webview_devtools_remote_${pids%% *}"
-    timeout 25 ssh "$HOST" "adb -s $dev forward --remove tcp:$port; adb -s $dev forward tcp:$port localabstract:$sock" >/dev/null 2>&1 || true
+    timeout 60 ssh "$HOST" "adb -s $dev forward --remove tcp:$port; adb -s $dev forward tcp:$port localabstract:$sock" >/dev/null 2>&1 || true
     printf -v q ' %q' "$@"
     # 系统 python 可能没有 websocket-client（有的机器重启后 pip 模块丢）；纯 Python 包随仓库 pylib 带上。
     timeout 90 ssh "$HOST" "cd $RCD && no_proxy=* PYTHONPATH=$RCD/pylib python3 cdp.py --port $port$q"
@@ -392,15 +423,21 @@ cdp() { # cdp <a|b> <端口> <子命令> [参数]
 ptext() { cdp "$1" "$2" eval "$3" 'document.body.innerText' 2>/dev/null | tail -1; }
 
 # 点掉页面里的 “Got it” 介绍层（在 WebView 里，走 CDP 的鼠标事件）。
+rect_xy() { # <cdp eval 输出>：cdp.py 打的是 {"exception":…,"value":"<JS 返回的字符串>"}，先剥一层再取 x/y
+    python3 -c 'import json,sys
+try:
+    v = json.loads(sys.argv[1])
+    if isinstance(v, dict) and "value" in v:
+        v = json.loads(v["value"])
+    print(int(v["x"])); print(int(v["y"]))
+except Exception:
+    pass' "$1" 2>/dev/null || true
+}
+
 page_dismiss() { # page_dismiss <a|b> <端口> <页面>
     local pos x y
     pos=$(cdp "$1" "$2" eval "$3" 'JSON.stringify(window.__gotItRect ? window.__gotItRect() : null)' 2>/dev/null) || return 0
-    x=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["x"])
-except Exception: pass' "$pos" 2>/dev/null || true)
-    y=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["y"])
-except Exception: pass' "$pos" 2>/dev/null || true)
+    { read -r x; read -r y; } < <(rect_xy "$pos") || true
     [[ -n $x && -n $y ]] || return 0
     cdp "$1" "$2" click "$3" "$x" "$y" >/dev/null 2>&1 || true
     sleep 2
@@ -453,7 +490,7 @@ hangup() { # 先点网页自己的挂断（页面卸载不会发 leave），再�
     b=${c##*bounds=\"}
     c=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${b%\"}")
     read -r x1 y1 x2 y2 <<<"$c"
-    timeout 25 ssh "$HOST" "adb -s $d shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
+    timeout 60 ssh "$HOST" "adb -s $d shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
 }
 
 ensure_media() { # 页面可能停在入口/大厅/静音：没有页就重新开，没进就加入，静音/关摄像头就点开关
