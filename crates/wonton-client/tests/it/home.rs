@@ -4,6 +4,7 @@
 mod connect;
 mod identity;
 mod migration;
+mod pairing;
 mod publication;
 mod relay_token;
 pub(crate) mod support;
@@ -26,54 +27,6 @@ use wonton_client::{
     Action, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure, HomeStatus, HomeViewModel,
     PushMethod,
 };
-
-#[tokio::test]
-async fn an_unregistered_device_is_told_it_needs_pairing() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[]).await;
-
-    phone.connect(&home);
-    let view = phone
-        .wait_for(|view| matches!(view.status, HomeStatus::Disconnected { .. }))
-        .await;
-    assert!(
-        matches!(
-            view.status,
-            HomeStatus::Disconnected {
-                reason: HomeFailure::Unauthorized,
-                ..
-            }
-        ),
-        "{view:?}"
-    );
-    assert_eq!(view.notice, Some(ConnectionNotice::DeviceRejected));
-}
-
-#[tokio::test]
-async fn an_unregistered_device_stops_trying_until_it_is_paired() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[]).await;
-    phone.connect(&home);
-    phone
-        .wait_for(|view| matches!(view.status, HomeStatus::Disconnected { .. }))
-        .await;
-    let opened = &home.server().endpoint().metrics().socket.num_conns_opened;
-    let before = opened.get();
-
-    // 比定时检查的间隔长：重试也没用，状态也不该在“连接中”和“要配对”之间跳。
-    tokio::time::sleep(Duration::from_secs(7)).await;
-
-    assert_eq!(opened.get(), before);
-    assert!(matches!(
-        phone.home().status,
-        HomeStatus::Disconnected {
-            reason: HomeFailure::Unauthorized,
-            ..
-        }
-    ));
-}
 
 /// 取地址失败一次（换网、机器忙）：自动补取，过时标记先真后假，连接不用重建。
 #[tokio::test]
