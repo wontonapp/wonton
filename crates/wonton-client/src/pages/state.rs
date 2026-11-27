@@ -208,11 +208,14 @@ pub(super) fn remove_uninstalled(
         }
         keep
     });
+    let bar_before = state.config.bar.len();
     state
         .config
         .bar
         .retain(|entry| !bar_plugin_id(entry).is_some_and(gone));
-    state.bar_full = false;
+    if state.config.bar.len() < bar_before {
+        state.bar_full = false;
+    }
     // 插件卸了只拿掉那一项；用户删掉的根页不复活，栏可以暂时是空的。
     state.settle_tab();
     state.stack.retain(|item| {
@@ -277,11 +280,14 @@ pub(super) fn update_metadata(
 
 pub(super) fn clear_plugin_config(state: &mut PagesState) {
     state.config.my_apps.retain(|entry| !is_plugin_page(entry));
+    let bar_before = state.config.bar.len();
     state
         .config
         .bar
         .retain(|entry| bar_plugin_id(entry).is_none());
-    state.bar_full = false;
+    if state.config.bar.len() < bar_before {
+        state.bar_full = false;
+    }
     // 换服务器只拿掉绑在插件上的项；用户删掉的根页不复活。
     state.settle_tab();
     state.config.panel.clear();

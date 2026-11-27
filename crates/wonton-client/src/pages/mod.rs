@@ -375,6 +375,8 @@ impl PagesLink {
         if let Err(error) = change(&mut state, &plugins) {
             if commit_on_error {
                 ensure_stack(&mut state, &plugins);
+                clear_gone_prompt(&mut state);
+                widget::clear_closed(&mut state);
                 let sync_stale = self.sync_problem.borrow().is_some();
                 let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
                 *lock(&self.state) = state;

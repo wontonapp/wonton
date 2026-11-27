@@ -105,18 +105,20 @@ impl ClientCore {
             PageAction::AddBarItem { entry } => {
                 let mut added = true;
                 views.pages.send_modify(|pages| {
+                    let (label, icon) = match &entry {
+                        BarEntry::Agent => ("Agent".to_owned(), BarIcon::Agent),
+                        BarEntry::Apps => ("Apps".to_owned(), BarIcon::Apps),
+                        BarEntry::App { .. } => ("App".to_owned(), BarIcon::App { icon: None }),
+                    };
                     let known = match &entry {
                         BarEntry::Agent | BarEntry::Apps => true,
-                        BarEntry::App {
-                            app: wonton_protocol::MyAppRef::Page { tab },
-                        } => fake_open(tab.clone()).is_some(),
-                        BarEntry::App {
-                            app: wonton_protocol::MyAppRef::Plugin { plugin_id },
-                        } => fake_open(TabRef::Plugin {
-                            plugin_id: plugin_id.clone(),
-                            page: None,
-                        })
-                        .is_some(),
+                        BarEntry::App { app } => views
+                            .plugins
+                            .borrow()
+                            .sidebar
+                            .apps
+                            .iter()
+                            .any(|row| side_app_matches(app, row)),
                     };
                     if !known || pages.bar.items.iter().any(|item| item.entry == entry) {
                         added = false;
@@ -130,8 +132,8 @@ impl ClientCore {
                     pages.bar.full = false;
                     pages.bar.items.push(BarItem {
                         entry,
-                        label: "App".into(),
-                        icon: BarIcon::App { icon: None },
+                        label,
+                        icon,
                         badge: 0,
                     });
                 });
@@ -182,6 +184,118 @@ impl ClientCore {
                 } else {
                     Ok(())
                 }
+            }
+            PageAction::AddMyApp { app, .. } => {
+                let tab = match &app {
+                    wonton_protocol::MyAppRef::Page { tab } => tab.clone(),
+                    wonton_protocol::MyAppRef::Plugin { plugin_id } => TabRef::Plugin {
+                        plugin_id: plugin_id.clone(),
+                        page: None,
+                    },
+                };
+                let known = match &tab {
+                    TabRef::Url { url } => url.starts_with("https://"),
+                    _ => fake_open(tab.clone()).is_some(),
+                };
+                let mut duplicate = false;
+                views.plugins.send_modify(|plugins| {
+                    if plugins
+                        .sidebar
+                        .apps
+                        .iter()
+                        .any(|row| side_app_matches(&app, row))
+                    {
+                        duplicate = true;
+                        return;
+                    }
+                    let title = super::tabs::fake_page(&tab)
+                        .map(|page| page.title)
+                        .or_else(|| match &app {
+                            wonton_protocol::MyAppRef::Plugin { plugin_id } => {
+                                Some(plugin_id.clone())
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| "App".to_owned());
+                    plugins.sidebar.apps.push(wonton_protocol::SidebarApp {
+                        plugin_id: match &tab {
+                            TabRef::Plugin { plugin_id, .. } => Some(plugin_id.clone()),
+                            _ => None,
+                        },
+                        tab: None,
+                        title,
+                        open: wonton_protocol::SidebarOpen::Page { tab },
+                        icon: None,
+                        badge: wonton_protocol::SidebarBadge::default(),
+                    });
+                });
+                if !known || duplicate {
+                    return Err(CoreError::InvalidInput {
+                        reason: "fake app is already in my apps or unknown".into(),
+                    });
+                }
+                Ok(())
+            }
+            PageAction::RemoveMyApp { app } => {
+                let entry = BarEntry::App { app: app.clone() };
+                views.plugins.send_modify(|plugins| {
+                    plugins
+                        .sidebar
+                        .apps
+                        .retain(|row| !side_app_matches(&app, row));
+                });
+                views.pages.send_modify(|pages| {
+                    let before = pages.bar.items.len();
+                    pages.bar.items.retain(|item| item.entry != entry);
+                    if pages.bar.items.len() < before {
+                        pages.bar.full = false;
+                    }
+                });
+                Ok(())
+            }
+            // 面板的增删和选择在真核心写账号数据；假数据把同一份视图直接改掉，面板走屏不用后端。
+            // 只动主面板：房间面板的页来自时间线，假数据里没有对应的视图可改。
+            PageAction::AddPanelPage { scope, tab } => {
+                if scope != PanelScope::Main {
+                    return Ok(());
+                }
+                let Some(page) = super::tabs::fake_page(&tab) else {
+                    return Ok(());
+                };
+                views.pages.send_modify(|pages| {
+                    if pages.panel.iter().any(|item| item.tab == tab) {
+                        return;
+                    }
+                    pages.panel.push(PanelItem {
+                        tab,
+                        page,
+                        attention: false,
+                        source: PanelSource::User,
+                        movable: true,
+                    });
+                });
+                Ok(())
+            }
+            PageAction::RemovePanelPage { scope, tab } => {
+                if scope != PanelScope::Main {
+                    return Ok(());
+                }
+                views.pages.send_modify(|pages| {
+                    pages.panel.retain(|item| item.tab != tab);
+                    if pages.panel_selected.as_ref() == Some(&tab) {
+                        pages.panel_selected = None;
+                    }
+                });
+                Ok(())
+            }
+            PageAction::SelectPanelPage { scope, tab } => {
+                if scope != PanelScope::Main {
+                    return Ok(());
+                }
+                views
+                    .pages
+                    .send_modify(|pages| pages.panel_selected = Some(tab));
+                Ok(())
             }
             _ => Ok(()),
         }
@@ -234,6 +348,19 @@ impl ClientCore {
     }
 }
 
+/// 侧边栏这一行是不是这个应用行。
+fn side_app_matches(app: &wonton_protocol::MyAppRef, row: &wonton_protocol::SidebarApp) -> bool {
+    match (app, &row.open) {
+        (
+            wonton_protocol::MyAppRef::Page { tab },
+            wonton_protocol::SidebarOpen::Page { tab: open },
+        ) => tab == open,
+        (wonton_protocol::MyAppRef::Plugin { plugin_id }, _) => {
+            row.plugin_id.as_deref() == Some(plugin_id)
+        }
+        _ => false,
+    }
+}
 /// 假收件箱页：壳按 `TabRef::Inbox` 画自己的原生列表，元数据只给胶囊用。
 fn fake_root_page(tab: TabRef) -> OpenPage {
     OpenPage {

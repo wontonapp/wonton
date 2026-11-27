@@ -294,3 +294,50 @@ async fn removed_roots_are_still_selectable() {
     // 应用项不在栏上时不能选。
     assert_invalid(rig.app.dispatch(select(BarEntry::App { app: url_app(1) })));
 }
+#[tokio::test]
+async fn removing_a_pinned_row_takes_its_bar_item_and_clears_full() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    for id in 0..4 {
+        add_my_app(&rig, url_app(id)).await;
+        rig.app
+            .dispatch(Action::Pages {
+                action: PageAction::AddBarItem {
+                    entry: BarEntry::App { app: url_app(id) },
+                },
+            })
+            .unwrap();
+    }
+    add_my_app(&rig, url_app(4)).await;
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: PageAction::AddBarItem {
+            entry: BarEntry::App { app: url_app(4) },
+        },
+    }));
+    assert!(rig.app.pages().bar.full);
+
+    // 删掉没进栏的行不动 full。
+    rig.app
+        .dispatch(Action::Pages {
+            action: PageAction::RemoveMyApp { app: url_app(4) },
+        })
+        .unwrap();
+    assert!(rig.app.pages().bar.full);
+
+    // 删掉栏上的行：栏项一起没，full 清，选中项还是可用的 Agent。
+    rig.app
+        .dispatch(Action::Pages {
+            action: PageAction::RemoveMyApp { app: url_app(0) },
+        })
+        .unwrap();
+    let view = rig.app.pages();
+    assert!(
+        view.bar
+            .items
+            .iter()
+            .all(|item| item.entry != BarEntry::App { app: url_app(0) })
+    );
+    assert!(!view.bar.full);
+    assert_eq!(view.bar.items.len(), 5);
+    assert_eq!(view.tab, BarEntry::Agent);
+}

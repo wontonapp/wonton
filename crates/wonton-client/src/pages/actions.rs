@@ -147,11 +147,14 @@ impl PagesLink {
             };
             state.config.my_apps.remove(index);
             // 行没了，栏上那一项一起拿掉（卸载插件走同一条清理）。
+            let bar_before = state.config.bar.len();
             state
                 .config
                 .bar
                 .retain(|item| item != &BarEntry::App { app: app.clone() });
-            state.bar_full = false;
+            if state.config.bar.len() < bar_before {
+                state.bar_full = false;
+            }
             state.settle_tab();
             Ok(())
         })

@@ -214,32 +214,50 @@ fn pages_open_and_close_like_the_real_stack() {
         .is_err()
     );
     for id in ["app.example.photos", "app.example.papers", CORNER_APP] {
+        let app = MyAppRef::Page {
+            tab: web_app_tab(id),
+        };
+        core.dispatch(Action::Pages {
+            action: PageAction::AddMyApp {
+                app: app.clone(),
+                title: None,
+                index: None,
+            },
+        })
+        .unwrap();
         core.dispatch(Action::Pages {
             action: PageAction::AddBarItem {
-                entry: BarEntry::App {
-                    app: MyAppRef::Page {
-                        tab: web_app_tab(id),
-                    },
-                },
+                entry: BarEntry::App { app },
             },
         })
         .unwrap();
     }
     assert_eq!(core.pages().bar.items.len(), MAX_BAR_ITEMS as usize);
+
+    // 再加一行但不放进栏：栏已满，拒且置 full。
+    let extra = MyAppRef::Page {
+        tab: TabRef::Url {
+            url: "https://example.com/one".into(),
+        },
+    };
+    core.dispatch(Action::Pages {
+        action: PageAction::AddMyApp {
+            app: extra.clone(),
+            title: None,
+            index: None,
+        },
+    })
+    .unwrap();
     assert!(
         core.dispatch(Action::Pages {
             action: PageAction::AddBarItem {
-                entry: BarEntry::App {
-                    app: MyAppRef::Plugin {
-                        plugin_id: "app.example.papers".into(),
-                    },
-                },
+                entry: BarEntry::App { app: extra },
             },
         })
         .is_err()
     );
     assert!(core.pages().bar.full);
-    // 不认识的插件拒，也不改 full。
+    // 没进“我的应用”的插件：拒，full 不动。
     assert!(
         core.dispatch(Action::Pages {
             action: PageAction::AddBarItem {
@@ -252,6 +270,7 @@ fn pages_open_and_close_like_the_real_stack() {
         })
         .is_err()
     );
+    assert!(core.pages().bar.full);
     core.dispatch(Action::Pages {
         action: PageAction::MoveBarItem { from: 0, to: 2 },
     })

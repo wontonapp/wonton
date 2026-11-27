@@ -233,8 +233,9 @@ pub struct BarViewModel {
 
 - `PagesViewModel`：`root: TabRef` 换成 `tab: BarEntry`（当前选中的栏项），删 `shows_apps`；`stack` 只管页面（会话页、收件箱页、应用页），
   压着页面时底栏不画。
-- `PageAction` 增 `SelectBarItem { entry: BarEntry }`、`AddBarItem { app: MyAppRef }`、`RemoveBarItem { entry: BarEntry }`、
-  `MoveBarItem { from: u32, to: u32 }`；`AddMyApp` 保持现有字段（`app`/`title`/`index`），不加 `pinned`。加满 6 时 `AddBarItem` 返回 `invalid_input` 带原因。
+- `PageAction` 增 `SelectBarItem { entry: BarEntry }`、`AddBarItem { entry: BarEntry }`、`RemoveBarItem { entry: BarEntry }`、
+  `MoveBarItem { from: u32, to: u32 }`；`AddMyApp` 保持现有字段（`app`/`title`/`index`），不加 `pinned`。根页删出栏也能用
+  `AddBarItem` 加回来，应用项要在我的应用里；加满 6 时返回 `invalid_input` 带原因。
 - `MyAppEntry` 保持现有字段（`app`/`title`），不加 `pinned`；在不在栏上看 `BarViewModel.items` 里有没有这条。
 - `LayoutSettings` 增 `bar: Vec<BarEntry>`（成员和顺序）。
 - `TabRef` 只留页面（`Plugin`、`PluginPath`、`Bot`、`Url`、`UiResource`、`SharedApp`、`Widget`）；`Chat` 换成 `Rooms`（所有会话页，侧边栏
