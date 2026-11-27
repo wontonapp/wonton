@@ -115,12 +115,20 @@ fun WontonChip(title: String, isSelected: Boolean, onClick: () -> Unit) {
 
 /** 列表行尾的小按钮。图形比按钮矮，命中区还是 48。 */
 @Composable
-fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true, danger: Boolean = false) {
+fun WontonSmallButton(
+    text: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    danger: Boolean = false,
+    modifier: Modifier = Modifier,
+    /** 文字前面的东西，动作按钮进行中放转圈（[WontonActionButton]）。 */
+    leading: (@Composable () -> Unit)? = null,
+) {
     val colors = WontonTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
-        Modifier.heightIn(min = WontonTheme.size.target)
+        modifier.heightIn(min = WontonTheme.size.target)
             .alpha(if (!enabled) DISABLED_ALPHA else if (pressed) PRESSED_ALPHA else 1f)
             .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -131,11 +139,17 @@ fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true
                 .padding(horizontal = WontonTheme.spacing.s12),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text,
-                style = WontonTheme.typography.supporting,
-                color = (if (danger) colors.danger else colors.textPrimary).toColor(),
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                leading?.invoke()
+                Text(
+                    text,
+                    style = WontonTheme.typography.supporting,
+                    color = (if (danger) colors.danger else colors.textPrimary).toColor(),
+                )
+            }
         }
     }
 }

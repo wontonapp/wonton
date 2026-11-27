@@ -132,7 +132,7 @@ internal fun shortStatus(page: TabPage): String? =
 @Composable
 internal fun PageStatusOverlay(
     state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, crossOriginBlocked: Boolean,
-    inset: PaddingValues, onDetails: (String) -> Unit, browserAttempted: MutableState<Boolean>,
+    inset: PaddingValues, browserAttempted: MutableState<Boolean>,
     browserAllowed: Boolean, unsupported: String? = null,
 ) {
     val platformBlocked = !supported || crossOriginBlocked
@@ -144,7 +144,7 @@ internal fun PageStatusOverlay(
                 }
             } else {
                 PluginTabStatus(
-                    page, tab, state.pages, state.problem, supported, crossOriginBlocked, onDetails, state.place,
+                    page, tab, state.pages, state.problem, supported, crossOriginBlocked, state.place,
                     browserAttempted, browserAllowed,
                 )
             }

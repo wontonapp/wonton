@@ -90,6 +90,10 @@ impl ClientCore {
                     .send_modify(|pages| pages.panel_selected = Some(tab));
                 Ok(())
             }
+            PageAction::RetryPage { page } => {
+                self.retry_ui_fake(page);
+                Ok(())
+            }
             _ => Ok(()),
         }
     }

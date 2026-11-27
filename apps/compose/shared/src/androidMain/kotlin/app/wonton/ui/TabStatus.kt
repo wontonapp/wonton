@@ -20,16 +20,21 @@ import app.wonton.protocol.TabLoadFailure
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TabState
-import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.WontonActionButton
+import app.wonton.ui.design.WontonActionNotice
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
+/**
+ * 页面容器的状态页。出错页的按钮都是动作按钮（ADR-0026 的“动作按钮的反馈”）：重试的进度和结果是核心按这一份实例给的
+ * （[TabPage.retry]）；“详情”在原地展开，不跳走。
+ */
 @Composable
 internal fun PluginTabStatus(
     page: TabPage, tab: TabRef, tabs: PagesState, problem: Problem?, supported: Boolean,
-    crossOriginBlocked: Boolean, onDetails: (String) -> Unit, place: PlacedTab?,
+    crossOriginBlocked: Boolean, place: PlacedTab?,
     browserAttempted: MutableState<Boolean>, browserAllowed: Boolean,
 ) {
     val state = page.state
@@ -68,8 +73,11 @@ internal fun PluginTabStatus(
         ) {
             Text(failure.titleText, style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor())
-            failure.detail?.let { ProblemDetail(it, stringResource(R.string.common_details)) }
-            TabStatusActions(state, tab, tabs, onDetails, place)
+            TabStatusActions(page, tab, tabs, place)
+            WontonActionNotice(page.retry)
+            failure.detail?.let {
+                ProblemDetail(it, stringResource(R.string.tab_view_details), toggleTag = "pageDetails")
+            }
         }
     }
 }
@@ -92,27 +100,22 @@ private fun pageFailure(state: TabState, problem: Problem?, page: TabPage, suppo
 }
 
 @Composable
-private fun TabStatusActions(
-    state: TabState, tab: TabRef, tabs: PagesState, onDetails: (String) -> Unit, place: PlacedTab?,
-) {
-    val pluginId = tab.localPluginId()
+private fun TabStatusActions(page: TabPage, tab: TabRef, tabs: PagesState, place: PlacedTab?) {
+    val state = page.state
     if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
-        WontonButton(stringResource(R.string.panel_remove), {
+        WontonActionButton(stringResource(R.string.panel_remove), {
             tabs.send(Action.Pages(PageAction.RemovePanelPage(place.scope, tab)))
         })
     } else if (state is TabState.PageRemoved) {
-        WontonButton(stringResource(R.string.common_close), { tabs.send(Action.Pages(PageAction.ClosePage)) })
+        WontonActionButton(stringResource(R.string.common_close), { tabs.send(Action.Pages(PageAction.ClosePage)) })
     } else if (state is TabState.Stopped && tab is TabRef.Plugin) {
-        WontonButton(stringResource(R.string.tab_start), {
+        WontonActionButton(stringResource(R.string.tab_start), {
             tabs.send(Action.Plugins(PluginAction.StartPlugin(tab.pluginId)))
         })
     } else {
-        WontonButton(stringResource(R.string.common_retry), {
-            tabs.send(Action.Pages(PageAction.ReloadTab(place ?: PlacedTab.Page(tab))))
-        })
-        if (state is TabState.Failed && pluginId != null) {
-            WontonButton(stringResource(R.string.tab_view_details), { onDetails(pluginId) })
-        }
+        WontonActionButton(stringResource(R.string.common_retry), {
+            tabs.send(Action.Pages(PageAction.RetryPage(place ?: PlacedTab.Page(tab))))
+        }, run = page.retry)
     }
 }
 

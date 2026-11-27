@@ -123,8 +123,7 @@ struct ConnectionLine: View {
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 } else {
                     if notice.retrying == false {
-                        Button(.Common.commonRetry, action: retry)
-                            .buttonStyle(WontonButtonStyle(kind: .secondary))
+                        WontonActionButton(title: String(localized: .Common.commonRetry), action: retry)
                     }
                     Button(.Connection1.connectionViewConnection) { open(.server) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -132,22 +131,6 @@ struct ConnectionLine: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct RetryButton: View {
-    let retrying: Bool
-    let retry: () -> Void
-
-    var body: some View {
-        Button(action: retry) {
-            HStack(spacing: WontonTheme.spacing.s4) {
-                if retrying { ProgressView().controlSize(.small) }
-                Text(.Common.commonRetry)
-            }
-        }
-        .buttonStyle(WontonButtonStyle(kind: .secondary))
-        .disabled(retrying)
     }
 }
 
@@ -200,7 +183,9 @@ struct ConnectionView: View {
                     WontonRow(title: String(localized: .Egress.egressPathHomeServer), value: view.details.server.text)
                 }
                 if let retrying = view.notice?.retrying {
-                    RetryButton(retrying: retrying) { model.send(.home(action: .retryConnection)) }
+                    WontonActionButton(
+                        title: String(localized: .Common.commonRetry), run: retrying ? .running : .idle
+                    ) { model.send(.home(action: .retryConnection)) }
                 }
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.connectionDetails) {

@@ -564,9 +564,10 @@ struct ProblemDetail: View {
     }
 }
 
-/// 什么都显示不出来，整页说明。
+/// 什么都显示不出来，整页说明。“重试”是动作按钮（ADR-0026 的“动作按钮的反馈”）：`run` 是核心给的进度。
 struct ProblemView: View {
     let problem: Problem
+    var run: ActionRun = .idle
     let retry: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -581,9 +582,9 @@ struct ProblemView: View {
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
-            Button(String(localized: .Common.commonRetry), action: retry)
-                .buttonStyle(WontonButtonStyle(kind: .secondary))
+            WontonActionButton(title: String(localized: .Common.commonRetry), run: run, action: retry)
                 .padding(.vertical, WontonTheme.spacing.s8)
+            WontonActionNotice(run: run)
             if let detail = problem.detail { ProblemDetail(text: detail) }
         }
         .multilineTextAlignment(.center)
@@ -638,6 +639,7 @@ extension View {
 /// 列表还在，只是少了点什么或者不是最新的：一条轻提示，不抢列表的位置。
 struct ProblemRow: View {
     let problem: Problem
+    var run: ActionRun = .idle
     var retry: (() -> Void)?
     @Environment(\.wontonColors) private var colors
 
@@ -655,10 +657,11 @@ struct ProblemRow: View {
                         .foregroundStyle(Color(colors.textSecondary))
                 }
                 if let detail = problem.detail { ProblemDetail(text: detail) }
+                WontonActionNotice(run: run)
             }
             Spacer(minLength: 0)
             if let retry {
-                Button(String(localized: .Common.commonRetry), action: retry).buttonStyle(WontonSmallButtonStyle())
+                WontonActionButton(title: String(localized: .Common.commonRetry), size: .small, run: run, action: retry)
             }
         }
     }

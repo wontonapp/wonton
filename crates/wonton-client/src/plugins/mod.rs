@@ -336,6 +336,20 @@ impl PluginsLink {
         });
     }
 
+    /// 出错页的“重试”（`PageAction::RetryPage`）：同 [`Self::refresh_installed`]，但等这次取完，
+    /// 调用方据结果判断插件好没好。主人点的，隧道正在建也照样发，请求会等它。
+    pub(crate) async fn refresh_installed_now(self: &Arc<Self>) -> Result<(), PluginProblem> {
+        if self.external {
+            return Ok(());
+        }
+        self.home.retry_if_rejected().await;
+        let generation = self.generation.load(Ordering::SeqCst);
+        self.begin_refresh();
+        let result = self.fetch_installed().await;
+        self.end_refresh(Listing::Installed, generation, result.clone());
+        result
+    }
+
     fn spawn_installed(self: &Arc<Self>) {
         let link = self.clone();
         let generation = self.generation.load(Ordering::SeqCst);

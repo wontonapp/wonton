@@ -179,6 +179,10 @@ pub struct TabPage {
     pub state: TabState,
     /// 页面要重新加载的计数：变了壳就重新加载（重试、升级完、连上后）。
     pub reload: u64,
+    /// 出错页上“重试”跑到哪一步（[`PageAction::RetryPage`](crate::PageAction::RetryPage)）：按实例记，
+    /// 栈里的和面板里的同一页面各是各的。
+    #[serde(default)]
+    pub retry: crate::ActionRun,
     /// 这个页面不在 App 里加载，交给系统浏览器：它要跨源隔离，这个平台的 WebView 给不了（ADR-0033）。
     /// 壳用 `ClientCore::plugin_browser_url` 换浏览器打开的地址。
     #[serde(default)]
@@ -355,6 +359,7 @@ mod tests {
             layout: TabLayout::EdgeToEdge,
             state,
             reload: 2,
+            retry: crate::ActionRun::Running,
             opens_in_browser: true,
         }
     }

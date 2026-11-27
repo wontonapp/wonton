@@ -453,6 +453,7 @@ impl ClientCore {
             | PageAction::SetBotPinConsent { .. }
             | PageAction::PinCurrentPage { .. }
             | PageAction::ReloadTab { .. }
+            | PageAction::RetryPage { .. }
             | PageAction::DismissUninstalledTabs) => scope.pages.dispatch(action),
         }
     }

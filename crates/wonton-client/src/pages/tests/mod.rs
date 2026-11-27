@@ -19,6 +19,7 @@ mod room_panel;
 mod stack;
 mod sync_status;
 mod tab_failure;
+mod tab_retry;
 
 pub(super) struct Rig {
     pub(super) tabs: Arc<PagesLink>,
@@ -135,6 +136,8 @@ impl Rig {
                 shows_apps: false,
                 failures: HashMap::new(),
                 reloads: HashMap::new(),
+                retries: HashMap::new(),
+                retry_seq: 0,
                 uninstalled: Vec::new(),
                 previous_plugins: None,
                 connected: true,

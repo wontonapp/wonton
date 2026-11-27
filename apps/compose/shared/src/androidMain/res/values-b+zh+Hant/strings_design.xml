@@ -22,4 +22,22 @@
     <string name="design_update_badge">有新版本</string>
     <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
     <string name="design_badge_count">%1$d 則待處理</string>
+    <!-- Accessibility value of an action button while the action is in progress. -->
+    <string name="design_action_running">進行中</string>
+    <!-- Shown under an action button when no result came back in time. -->
+    <string name="design_action_uncertain">不確定成功了沒有，過一會兒再看看。</string>
+    <!-- Shown under an action button that failed because the home server is unreachable. -->
+    <string name="design_action_failed_transport">連不上家裡的伺服器。</string>
+    <!-- Shown under an action button that failed for lack of permission. -->
+    <string name="design_action_failed_permission">沒有權限做這件事。</string>
+    <!-- Shown under an action button that failed because the app is not installed or not ready. -->
+    <string name="design_action_failed_not_ready">這個應用程式還沒準備好。</string>
+    <!-- Shown under an action button that failed with an error on the home server. -->
+    <string name="design_action_failed_upstream">家裡的伺服器出錯了。</string>
+    <!-- Shown under a retry button when the retry ran but the problem is still there. -->
+    <string name="design_action_failed_still">試過了，還是不行。</string>
+    <!-- Shown under an action button that failed because the request was not valid. -->
+    <string name="design_action_failed_invalid">這件事做不了。</string>
+    <!-- Shown under an action button that failed for a reason this app version does not know. -->
+    <string name="design_action_failed_other">沒有成功。</string>
 </resources>

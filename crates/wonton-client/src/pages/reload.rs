@@ -79,6 +79,14 @@ pub(super) fn reload_plugin_pages(state: &mut PagesState, plugin_id: &str) {
     }
     for instance in placed {
         state.failures.remove(&instance);
+        // 在跑的重试等这次重新加载的结果；上一次没成的那句不再挂着。
+        if !state
+            .retries
+            .get(&instance)
+            .is_some_and(|retry| retry.run.is_running())
+        {
+            state.retries.remove(&instance);
+        }
         increment_reload(state, &instance);
     }
 }

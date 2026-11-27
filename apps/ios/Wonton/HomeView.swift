@@ -112,10 +112,10 @@ struct HomeView: View {
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {
         if let problem = plugins.viewModel.problem {
-            ProblemRow(problem: problem.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
+            ProblemRow(problem: problem.problem, run: refreshRun) { plugins.send(.plugins(action: .refreshPlugins)) }
         }
         if let check = installed.upgradeCheck {
-            ProblemRow(problem: check.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
+            ProblemRow(problem: check.problem, run: refreshRun) { plugins.send(.plugins(action: .refreshPlugins)) }
         }
         if installed.plugins.isEmpty {
             NoPlugins { path.append(AppsRoute.store) }
@@ -163,12 +163,15 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
+    /// 重新取已安装插件的进度：核心在取时“重试”转圈、不能连点（ADR-0026 的“动作按钮的反馈”）。
+    private var refreshRun: ActionRun { plugins.viewModel.refreshing ? .running : .idle }
+
     /// 还没取到已安装的插件：取不到的原因和下一步，或者正在取。
     @ViewBuilder private var placeholder: some View {
         if let problem = plugins.viewModel.problem {
-            ProblemView(problem: problem.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
+            ProblemView(problem: problem.problem, run: refreshRun) { plugins.send(.plugins(action: .refreshPlugins)) }
         } else if let rejection = plugins.refreshRejection {
-            ProblemView(problem: rejection.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
+            ProblemView(problem: rejection.problem, run: refreshRun) { plugins.send(.plugins(action: .refreshPlugins)) }
         } else {
             LoadingView()
         }

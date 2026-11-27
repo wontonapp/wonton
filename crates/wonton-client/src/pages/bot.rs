@@ -192,6 +192,7 @@ pub(super) fn build_page(
         layout: metadata.layout,
         state: state_value,
         reload: state.reloads.get(placed).copied().unwrap_or_default(),
+        retry: retry_run(state, placed),
         opens_in_browser: browser,
     }
 }

@@ -45,6 +45,8 @@ mod panel_view;
 use panel_view::*;
 mod reload;
 use reload::*;
+mod retry;
+use retry::*;
 mod actions;
 mod bot;
 mod content;
@@ -89,6 +91,9 @@ struct PagesState {
     /// 加载失败和重载计数都按页面实例记：同一页面在栈里和面板里是两份（ADR-0052）。
     failures: HashMap<PlacedTab, (TabLoadFailure, Option<u16>)>,
     reloads: HashMap<PlacedTab, u64>,
+    /// 出错页的“重试”按实例记（[`retry`]），键同 `reloads`。
+    retries: HashMap<PlacedTab, PageRetry>,
+    retry_seq: u64,
     uninstalled: Vec<String>,
     previous_plugins: Option<HashMap<String, PreviousPlugin>>,
     connected: bool,
@@ -196,6 +201,8 @@ impl PagesLink {
             shows_apps: false,
             failures: HashMap::new(),
             reloads: HashMap::new(),
+            retries: HashMap::new(),
+            retry_seq: 0,
             uninstalled: Vec::new(),
             previous_plugins: None,
             connected: matches!(home_view.status, HomeStatus::Connected),
@@ -267,6 +274,7 @@ impl PagesLink {
                 Ok(())
             }
             PageAction::ReloadTab { page } => self.reload(page),
+            PageAction::RetryPage { page } => self.retry(page),
             PageAction::TabLoadFailed { page, status } => self.load_failed(page, status),
             PageAction::TabLoadSucceeded { page } => self.load_succeeded(page),
             PageAction::AddPanelPage { scope, tab } => self.add_panel_page(scope, tab, None),

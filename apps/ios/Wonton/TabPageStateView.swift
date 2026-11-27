@@ -1,6 +1,8 @@
 import SwiftUI
 import WontonClient
 
+/// 页面容器的状态页：加载、启动中、停止、出了问题。出错页的按钮都走 `WontonActionButton`（ADR-0026 的“动作按钮的反馈”）：
+/// 重试的进度和结果是核心按这一份实例给的（`TabPage.retry`）；“详情”在原地展开，不跳走。
 struct TabPageStateView: View {
     let page: TabPage
     let session: TabWebSession
@@ -8,7 +10,6 @@ struct TabPageStateView: View {
     let shareProblem: Problem?
     /// 面板里的这一份：失败时多一个“从面板移除”（ADR-0052）。
     let isPanel: Bool
-    let details: () -> Void
     let remove: () -> Void
     @State private var startProblem: Problem?
     @Environment(\.wontonColors) private var colors
@@ -17,9 +18,9 @@ struct TabPageStateView: View {
         Group {
             if let problem = shareProblem ?? session.problem {
                 VStack {
-                    ProblemView(problem: problem, retry: session.retry)
+                    ProblemView(problem: problem, retry: session.retryPage)
                     if case .sharedApp = session.tab {
-                        Button(TabText.close, action: remove).buttonStyle(WontonButtonStyle(kind: .secondary))
+                        WontonActionButton(title: TabText.close, action: remove)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -41,11 +42,11 @@ struct TabPageStateView: View {
         case .stopped:
             failure(TabText.stopped(page.title)) {
                 if case .plugin = session.tab {
-                    Button(TabText.start, action: startPlugin)
+                    WontonActionButton(title: TabText.start, identifier: "pageStart", action: startPlugin)
                     if let startProblem { ProblemNotice(problem: startProblem) }
                 } else {
-                    Button(TabText.retry, action: session.retry)
-                    Button(TabText.close, action: remove)
+                    retryButton
+                    WontonActionButton(title: TabText.close, action: remove)
                 }
             }
         case .upgrading:
@@ -63,13 +64,12 @@ struct TabPageStateView: View {
             skeleton(TabText.uninstalling)
         case let .failed(reason):
             failure(String(localized: .Tab1.tabFailedTitle(page.title)), detail: reason) {
-                if case .plugin = session.tab { Button(TabText.details, action: details) }
-                Button(TabText.retry, action: session.retry)
-                if isPanel { Button(TabText.removePanelPage, action: remove) }
+                retryButton
+                if isPanel { removeButton }
             }
         case .pageRemoved:
             failure(TabText.pageRemoved) {
-                Button(isPanel ? TabText.removePanelPage : TabText.close, action: remove)
+                if isPanel { removeButton } else { WontonActionButton(title: TabText.close, action: remove) }
             }
         case let .loadFailed(reason, status, details):
             if reason == .transport, !connected {
@@ -77,17 +77,24 @@ struct TabPageStateView: View {
             } else {
                 // 详情是核心按 App 语言写的（错误码收在里面）；核心没给时退回裸错误码。
                 failure(TabText.pageFailed, detail: details ?? status.map { "HTTP \($0)" }, next: reason.label) {
-                    Button(TabText.retry, action: session.retry)
-                    if isPanel { Button(TabText.removePanelPage, action: remove) }
+                    retryButton
+                    if isPanel { removeButton }
                 }
             }
         case .unknown:
             failure(TabText.unknown) {
-                if case .plugin = session.tab { Button(TabText.details, action: details) }
-                Button(TabText.retry, action: session.retry)
-                if isPanel { Button(TabText.removePanelPage, action: remove) }
+                retryButton
+                if isPanel { removeButton }
             }
         }
+    }
+
+    private var retryButton: some View {
+        WontonActionButton(title: TabText.retry, run: page.retry, identifier: "pageRetry", action: session.retryPage)
+    }
+
+    private var removeButton: some View {
+        WontonActionButton(title: TabText.removePanelPage, action: remove)
     }
 
     private func startPlugin() {
@@ -129,14 +136,16 @@ struct TabPageStateView: View {
             WontonIcon.warning.view().foregroundStyle(Color(colors.textSecondary))
             Text(title).wontonText(WontonTheme.typography.itemTitle)
             if let next { Text(next).wontonText(WontonTheme.typography.supporting) }
-            buttons().buttonStyle(WontonButtonStyle(kind: .secondary))
-            if let detail { ProblemDetail(text: detail) }
+            buttons()
+            WontonActionNotice(run: page.retry)
+            if let detail { ProblemDetail(text: detail, label: .Tab0.tabViewDetails, toggleIdentifier: "pageDetails") }
         }
         .foregroundStyle(Color(colors.textPrimary))
         .multilineTextAlignment(.center)
         .padding(WontonTheme.spacing.s32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(colors.canvas))
+        .animation(.easeOut(duration: WontonTheme.motion.feedback), value: page.retry.phase)
     }
 }
 

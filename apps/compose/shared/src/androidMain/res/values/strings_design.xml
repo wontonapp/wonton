@@ -22,4 +22,22 @@
     <string name="design_update_badge">Update available</string>
     <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
     <string name="design_badge_count">%1$d pending</string>
+    <!-- Accessibility value of an action button while the action is in progress. -->
+    <string name="design_action_running">In progress</string>
+    <!-- Shown under an action button when no result came back in time. -->
+    <string name="design_action_uncertain">Not sure it worked. Check again in a moment.</string>
+    <!-- Shown under an action button that failed because the home server is unreachable. -->
+    <string name="design_action_failed_transport">Can\'t reach your home server.</string>
+    <!-- Shown under an action button that failed for lack of permission. -->
+    <string name="design_action_failed_permission">You don\'t have permission to do this.</string>
+    <!-- Shown under an action button that failed because the app is not installed or not ready. -->
+    <string name="design_action_failed_not_ready">This app isn\'t ready yet.</string>
+    <!-- Shown under an action button that failed with an error on the home server. -->
+    <string name="design_action_failed_upstream">Something went wrong on your home server.</string>
+    <!-- Shown under a retry button when the retry ran but the problem is still there. -->
+    <string name="design_action_failed_still">Tried again. Still not working.</string>
+    <!-- Shown under an action button that failed because the request was not valid. -->
+    <string name="design_action_failed_invalid">This can\'t be done.</string>
+    <!-- Shown under an action button that failed for a reason this app version does not know. -->
+    <string name="design_action_failed_other">That didn\'t work.</string>
 </resources>

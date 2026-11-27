@@ -140,7 +140,7 @@ internal fun PanelPage(
         BotPageDisclosure(page, active, awaitingLogin, tabs,
             onContinue = { loginAcknowledged.value = true }, cancel = { panel.move(PanelLevel.CLOSED) })
         PanelStatusOverlay(
-            state, page, tab, supported, crossOriginBlocked, inset, public, onDetails,
+            state, page, tab, supported, crossOriginBlocked, inset, public,
             browserAttempted = remember { mutableStateOf(false) }, browserAllowed = admitted,
         )
         if (panel.level == PanelLevel.FULL && current) {
@@ -160,11 +160,11 @@ internal fun PanelPage(
 @Composable
 private fun PanelStatusOverlay(
     state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, crossOriginBlocked: Boolean,
-    inset: PaddingValues, public: Boolean, onDetails: (String) -> Unit, browserAttempted: MutableState<Boolean>,
+    inset: PaddingValues, public: Boolean, browserAttempted: MutableState<Boolean>,
     browserAllowed: Boolean,
 ) {
     PageStatusOverlay(
-        state, page, tab, supported, crossOriginBlocked, inset, onDetails, browserAttempted, browserAllowed,
+        state, page, tab, supported, crossOriginBlocked, inset, browserAttempted, browserAllowed,
         unsupported = if (public) stringResource(R.string.panel_public_unsupported) else null,
     )
 }

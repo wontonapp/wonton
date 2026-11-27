@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.ActionRun
 import app.wonton.protocol.AppearanceProblem
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatProblem
@@ -54,11 +55,10 @@ import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginProblem
 import app.wonton.protocol.StoreFailure
 import app.wonton.protocol.StoreProblem
-import app.wonton.ui.design.WontonButton
-import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonActionButton
+import app.wonton.ui.design.WontonActionNotice
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonNotice
-import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Forward
@@ -414,9 +414,13 @@ fun ProblemDetail(
     }
 }
 
-/** 什么都显示不出来，整页说明。 */
+/** 什么都显示不出来，整页说明。“重试”是动作按钮（ADR-0026 的“动作按钮的反馈”）：[run] 是核心给的进度。 */
 @Composable
-fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) {
+fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) = ProblemView(problem, ActionRun.Idle, onRetry)
+
+/** 同上，“重试”带核心给的进度 [run]。 */
+@Composable
+fun ProblemView(problem: Problem, run: ActionRun, onRetry: (() -> Unit)?) {
     val colors = WontonTheme.colors
     Column(
         Modifier.fillMaxSize().padding(WontonTheme.spacing.s32),
@@ -443,13 +447,14 @@ fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) {
             )
         }
         onRetry?.let {
-            WontonButton(
+            WontonActionButton(
                 stringResource(R.string.common_retry),
                 it,
                 Modifier.padding(vertical = WontonTheme.spacing.s8),
-                kind = WontonButtonKind.SECONDARY,
+                run = run,
             )
         }
+        WontonActionNotice(run)
         problem.detail?.let { ProblemDetail(it) }
     }
 }
@@ -473,7 +478,11 @@ fun ProblemDialog(problem: Problem, onDismiss: () -> Unit) {
 
 /** 列表还在，只是少了点什么或者不是最新的：一条轻提示，不抢列表的位置。 */
 @Composable
-fun ProblemRow(problem: Problem, onRetry: (() -> Unit)? = null) {
+fun ProblemRow(problem: Problem, onRetry: (() -> Unit)? = null) = ProblemRow(problem, ActionRun.Idle, onRetry)
+
+/** 同上，“重试”带核心给的进度 [run]。 */
+@Composable
+fun ProblemRow(problem: Problem, run: ActionRun, onRetry: (() -> Unit)?) {
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.supporting
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
@@ -488,8 +497,9 @@ fun ProblemRow(problem: Problem, onRetry: (() -> Unit)? = null) {
             Text(problem.titleText, style = style, color = colors.textPrimary.toColor())
             problem.nextStepText?.let { Text(it, style = style, color = colors.textSecondary.toColor()) }
             problem.detail?.let { ProblemDetail(it) }
+            WontonActionNotice(run)
         }
-        onRetry?.let { WontonSmallButton(stringResource(R.string.common_retry), it) }
+        onRetry?.let { WontonActionButton(stringResource(R.string.common_retry), it, small = true, run = run) }
     }
 }
 

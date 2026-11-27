@@ -69,6 +69,7 @@ pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
             layout: TabLayout::EdgeToEdge,
             state: TabState::Ready,
             reload: 0,
+            retry: Default::default(),
             opens_in_browser: false,
         });
     }
@@ -81,6 +82,7 @@ pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
                 layout: TabLayout::default(),
                 state: TabState::Ready,
                 reload: 0,
+                retry: Default::default(),
                 opens_in_browser: false,
             });
         }
@@ -100,6 +102,7 @@ pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
             },
         },
         reload: 0,
+        retry: Default::default(),
         opens_in_browser: false,
     })
 }

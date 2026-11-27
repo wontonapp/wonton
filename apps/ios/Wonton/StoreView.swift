@@ -408,8 +408,7 @@ private struct StoreItemRow: View {
                     failureRow(failure)
                     Spacer(minLength: 0)
                     if showsRetry {
-                        Button(String(localized: .Common.commonRetry)) { retry() }
-                            .buttonStyle(WontonSmallButtonStyle())
+                        WontonActionButton(title: String(localized: .Common.commonRetry), size: .small, action: retry)
                     }
                 }
                 .padding(.leading, WontonTheme.size.storeIcon + WontonTheme.spacing.s12)
@@ -557,8 +556,9 @@ struct TaskRow: View {
                 if showsRetry, task.operation == .install,
                    model.viewModel.installed?.plugins
                        .first(where: { $0.id == task.id })?.installFailure?.retryable == true {
-                    Button(.Common.commonRetry) { model.send(.plugins(action: .retryPluginInstall(id: task.id))) }
-                        .buttonStyle(WontonSmallButtonStyle())
+                    WontonActionButton(title: String(localized: .Common.commonRetry), size: .small) {
+                        model.send(.plugins(action: .retryPluginInstall(id: task.id)))
+                    }
                 }
             }
         case let .uncertain(message, nextStep):

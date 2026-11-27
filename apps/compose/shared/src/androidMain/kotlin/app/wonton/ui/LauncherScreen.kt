@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.ActionRun
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.SharingAction
 import app.wonton.protocol.PluginAction
@@ -127,12 +128,16 @@ fun LauncherScreen(
                     }
                     plugins.viewModel.problem?.let { problem ->
                         item(key = "problem", span = { GridItemSpan(maxLineSpan) }) {
-                            ProblemRow(problem.problem) { plugins.send(Action.Plugins(PluginAction.RefreshPlugins)) }
+                            ProblemRow(problem.problem, plugins.refreshRun) {
+                                plugins.send(Action.Plugins(PluginAction.RefreshPlugins))
+                            }
                         }
                     }
                     installed?.upgradeCheck?.let { check ->
                         item(key = "check", span = { GridItemSpan(maxLineSpan) }) {
-                            ProblemRow(check.problem) { plugins.send(Action.Plugins(PluginAction.RefreshPlugins)) }
+                            ProblemRow(check.problem, plugins.refreshRun) {
+                                plugins.send(Action.Plugins(PluginAction.RefreshPlugins))
+                            }
                         }
                     }
                     if (installed?.plugins?.isEmpty() == true && hasStore) {
@@ -174,8 +179,8 @@ private fun LauncherPlaceholder(plugins: PluginsState) {
     val rejection = plugins.refreshRejection
     val retry = { plugins.send(Action.Plugins(PluginAction.RefreshPlugins)) }
     when {
-        problem != null -> ProblemView(problem.problem, retry)
-        rejection != null -> ProblemView(rejection.problem, retry)
+        problem != null -> ProblemView(problem.problem, plugins.refreshRun, retry)
+        rejection != null -> ProblemView(rejection.problem, plugins.refreshRun, retry)
         else -> LoadingView()
     }
 }
@@ -362,3 +367,7 @@ private fun LauncherMenu(
     }
     WontonActionSheet(actions, onDismiss, plugin.title)
 }
+
+/** 重新取已安装插件的进度：核心在取时“重试”转圈、不能连点（ADR-0026 的“动作按钮的反馈”）。 */
+private val PluginsState.refreshRun: ActionRun
+    get() = if (viewModel.refreshing) ActionRun.Running else ActionRun.Idle

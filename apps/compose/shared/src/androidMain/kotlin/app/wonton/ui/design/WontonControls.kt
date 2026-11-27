@@ -101,6 +101,8 @@ fun WontonButton(
     modifier: Modifier = Modifier,
     kind: WontonButtonKind = WontonButtonKind.PRIMARY,
     enabled: Boolean = true,
+    /** 文字前面的东西，动作按钮进行中放转圈（[WontonActionButton]）。 */
+    leading: (@Composable () -> Unit)? = null,
 ) {
     val colors = WontonTheme.colors
     val (fill, content) = when (kind) {
@@ -120,7 +122,13 @@ fun WontonButton(
             .padding(horizontal = WontonTheme.spacing.s16),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = WontonTheme.typography.body, color = content.toColor())
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            leading?.invoke()
+            Text(text, style = WontonTheme.typography.body, color = content.toColor())
+        }
     }
 }
 

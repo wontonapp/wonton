@@ -12,13 +12,13 @@ import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.SharingAction
 import app.wonton.protocol.Action
+import app.wonton.protocol.ActionRun
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.SharedAppsSource
 import app.wonton.protocol.SharedAppsState
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
-import app.wonton.ui.design.WontonButton
-import app.wonton.ui.design.WontonButtonKind
+import app.wonton.ui.design.WontonActionButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
@@ -43,19 +43,20 @@ internal fun SharedPageStatus(
     Column(Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()).padding(inset)
         .padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
+        // 分享来源在重新取时“重试”“刷新”转圈、不能连点（ADR-0026 的“动作按钮的反馈”）。
+        val run = if (source?.state is SharedAppsState.Loading) ActionRun.Running else ActionRun.Idle
         if (failure != null) {
             ProblemNotice(failure)
-            if (supported) WontonButton(stringResource(R.string.common_retry), {
+            if (supported) WontonActionButton(stringResource(R.string.common_retry), {
                 if (source?.state !is SharedAppsState.Ready || row == null || row.problem != null) {
                     tabs.send(Action.Sharing(SharingAction.RefreshSharedApps(tab.ownerUserId)))
                 }
                 tabs.send(Action.Pages(PageAction.ReloadTab(PlacedTab.Page(tab))))
-            }, kind = WontonButtonKind.SECONDARY)
+            }, run = run)
         } else LoadingView()
-        WontonButton(stringResource(R.string.share_refresh), {
+        WontonActionButton(stringResource(R.string.share_refresh), {
             tabs.send(Action.Sharing(SharingAction.RefreshSharedApps(tab.ownerUserId)))
-        }, kind = WontonButtonKind.SECONDARY)
-        WontonButton(stringResource(R.string.common_close), { tabs.send(Action.Pages(PageAction.ClosePage)) },
-            kind = WontonButtonKind.SECONDARY)
+        }, run = run)
+        WontonActionButton(stringResource(R.string.common_close), { tabs.send(Action.Pages(PageAction.ClosePage)) })
     }
 }
