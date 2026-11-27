@@ -5,6 +5,7 @@ mod grouping_tests;
 mod input_tests;
 mod persistence_tests;
 mod queue_tests;
+mod resume_tests;
 mod retry_tests;
 mod share_tests;
 mod transfer_strip_tests;

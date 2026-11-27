@@ -50,8 +50,9 @@ enum UITestSidebar {
         while Date() < deadline {
             for label in labels {
                 let row = app.buttons[label].firstMatch
-                // 抽屉动画中途行会短暂落在屏幕外（负 x），只要还在树里就算找到，点的时候按坐标点。
-                if row.exists { return row }
+                // 抽屉关着时行仍在无障碍树里、坐标却在屏幕外，直接点会算出 {-1,-1}：先开抽屉再点。
+                // 抽屉已经开着时，滚出可视区的行也交给 tap 自己滚动。
+                if row.exists, row.isHittable || opened { return row }
             }
             if let containing, opened {
                 let row = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", containing)).firstMatch

@@ -27,7 +27,7 @@ use super::super::proxy_auth::ProxyAuth;
 use wonton_protocol::BotKeeper;
 
 use super::super::render::{Deployment, InstallContext, dry_run, render};
-use super::super::secrets::{self, Secrets};
+use super::super::secrets::{self, CollectMissing, Secrets};
 use super::super::store::{EnabledPermission, InstalledRecord};
 use super::super::upstreams::uses_sso;
 use super::{installed_package, newer};
@@ -366,6 +366,7 @@ impl PluginManager {
     }
 
     #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
+    #[allow(clippy::too_many_lines)] // 升级就是把安装各步按原顺序重放一遍，拆开只会把顺序藏进多函数。
     async fn replace_version(
         &self,
         old: &Old,
@@ -413,7 +414,14 @@ impl PluginManager {
         ))
         .await?;
         let (upstream, models, mcp) = self
-            .deploy_upstreams(manifest, &network, &mut secrets, wait, &langs)
+            .deploy_upstreams(
+                manifest,
+                &network,
+                &mut secrets,
+                wait,
+                CollectMissing::Fail,
+                &langs,
+            )
             .await?;
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &network)
@@ -800,7 +808,7 @@ impl PluginManager {
             .as_ref()
             .is_some_and(|p| p.models.is_some())
         {
-            for (plugin, error) in self.reconcile_models().await {
+            for (plugin, error) in self.reconcile_models_locked().await {
                 tracing::warn!(%plugin, %error, "模型网关升级后对账失败");
             }
         }

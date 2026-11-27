@@ -55,6 +55,7 @@ impl PluginManager {
                 tracing::warn!(plugin = %id, error = %e, "查看插件的容器失败");
             }
         }
+        self.watch_model_credentials().await;
         // 运行中的模型使用方共用一轮默认路由探测（30 秒一次，只读模型列表；见 model_health）。
         let consumers: Vec<PluginId> = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
@@ -346,7 +347,7 @@ impl PluginManager {
         self.recovery_complete(id)?;
         // 核心启动时模型网关不在，使用方的凭据没对上账。
         if self.recovered(id, deployed, token) {
-            for (plugin, error) in self.reconcile_models().await {
+            for (plugin, error) in self.reconcile_models_locked().await {
                 tracing::error!(%plugin, %error, "模型网关凭据对账失败");
             }
         }

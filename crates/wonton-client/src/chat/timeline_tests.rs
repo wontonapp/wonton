@@ -171,6 +171,7 @@ fn room_bots_are_uncertain_until_members_and_the_bot_list_are_ready() {
 /// 一个认得 `bots` 里那些用户 ID 的聊天状态；别的字段取空值，这个测试只看 Bot 清单。
 fn chat_view(bots: &[&str]) -> ChatViewModel {
     ChatViewModel {
+        ask: None,
         chat_layout_default: Default::default(),
         account: wonton_protocol::ChatAccount::SignedOut,
         sync: wonton_protocol::ChatSync::Idle,
@@ -187,6 +188,7 @@ fn chat_view(bots: &[&str]) -> ChatViewModel {
         },
         installing_bots: Vec::new(),
         rooms: Vec::new(),
+        shared_contacts: Vec::new(),
         problem: None,
         push: wonton_protocol::PushStatus::NoEndpoint,
         pending_confirmations: Vec::new(),

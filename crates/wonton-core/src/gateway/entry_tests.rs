@@ -25,7 +25,7 @@ use crate::tunnel::Tunnel;
 
 // 原样记录上游实际收到的请求，而不是检查路由源码或拼一个假的成功响应。
 #[derive(Debug)]
-struct Received {
+pub(super) struct Received {
     method: Method,
     uri: String,
     host: Option<String>,
@@ -34,16 +34,21 @@ struct Received {
     body: Vec<u8>,
 }
 
-struct Home {
-    app: Router,
-    gateway: Arc<Gateway>,
-    received: Arc<Mutex<Vec<Received>>>,
+pub(super) struct Home {
+    pub(super) app: Router,
+    pub(super) gateway: Arc<Gateway>,
+    pub(super) received: Arc<Mutex<Vec<Received>>>,
     upstream_task: tokio::task::JoinHandle<()>,
     _harness: Harness,
 }
 
 impl Home {
     async fn start(matrix_enabled: bool) -> Self {
+        Self::start_with_entry(matrix_enabled, None).await
+    }
+
+    /// `enabled` 给了就接上总开关，值就是开关；没给时网关没有入口状态（按开处理）。
+    pub(super) async fn start_with_entry(matrix_enabled: bool, enabled: Option<bool>) -> Self {
         let h = Harness::start(None).await;
         let gateway = gateway(&h);
         let received = Arc::new(Mutex::new(Vec::new()));
@@ -105,6 +110,20 @@ impl Home {
             (None, tokio::spawn(async {}))
         };
         gateway.matrix = matrix.0;
+        if let Some(enabled) = enabled {
+            let access = Arc::new(
+                crate::entry_access::EntryAccess::open(h.data_dir.join("core/entry-access.json"))
+                    .unwrap(),
+            );
+            access
+                .save(wonton_protocol::PublicAccess { enabled })
+                .unwrap();
+            gateway.entry = Some(Arc::new(crate::entry_access::EntryAdmin::new(
+                access,
+                None,
+                h.data_dir.clone(),
+            )));
+        }
         let gateway = Arc::new(gateway);
         Self {
             app: entry_router(gateway.clone()),
@@ -115,18 +134,30 @@ impl Home {
         }
     }
 
-    async fn request(&self, method: Method, host: &str, path: &str) -> Reply {
-        let request = Request::builder()
+    pub(super) async fn request(&self, method: Method, host: &str, path: &str) -> Reply {
+        self.request_with(method, host, path, &[]).await
+    }
+
+    pub(super) async fn request_with(
+        &self,
+        method: Method,
+        host: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+    ) -> Reply {
+        let mut request = Request::builder()
             .method(method)
             .uri(path)
-            .header(header::HOST, host)
-            .body(Body::empty())
-            .unwrap();
+            .header(header::HOST, host);
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        let request = request.body(Body::empty()).unwrap();
         Reply::of(self.app.clone().oneshot(request).await.unwrap()).await
     }
 }
 
-fn gateway(h: &Harness) -> Gateway {
+pub(super) fn gateway(h: &Harness) -> Gateway {
     let profile = OwnerStore::for_test(&h.data_dir.join("entry-owner"), &owner());
     // 不让测试连接任何中继；这里只换发现用的表，复用已有回环 endpoint。
     let relays = RelayTable::from_relays(vec![

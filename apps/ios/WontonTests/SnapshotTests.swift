@@ -116,6 +116,16 @@ final class SnapshotTests: XCTestCase {
         assert(SnapshotFixtures.settings(core: core), testName: "testSettings", line: #line)
     }
 
+    func testFriends() throws {
+        let core = try makeCore()
+        assert(SnapshotFixtures.friends(core: core), testName: "testFriends", line: #line)
+    }
+
+    func testFriendsDark() throws {
+        let core = try makeCore()
+        assert(SnapshotFixtures.friends(core: core), dark: true, testName: "testFriendsDark", line: #line)
+    }
+
     func testPluginProblem() throws {
         assert(SnapshotFixtures.pluginProblem(), testName: "testPluginProblem", line: #line)
     }
@@ -201,9 +211,11 @@ final class SnapshotTests: XCTestCase {
     }
 
     /// 逐像素比较；系统字体和矢量图标在同一台模拟器上是确定的，放宽精度要写明原因。
-    private func assert(_ view: some View, size: CGSize = SnapshotFixtures.size, testName: String, line: UInt) {
+    private func assert(
+        _ view: some View, size: CGSize = SnapshotFixtures.size, dark: Bool = false, testName: String, line: UInt
+    ) {
         assertSnapshot(
-            of: SnapshotFixtures.wrapped(view),
+            of: SnapshotFixtures.wrapped(view, dark: dark),
             as: .image(
                 drawHierarchyInKeyWindow: true,
                 layout: .fixed(width: size.width, height: size.height),

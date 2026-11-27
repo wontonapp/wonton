@@ -12,6 +12,7 @@ use crate::chat::layout::Layouts;
 
 fn empty_view() -> ChatViewModel {
     ChatViewModel {
+        ask: None,
         chat_layout_default: Default::default(),
         account: wonton_protocol::ChatAccount::SignedOut,
         sync: wonton_protocol::ChatSync::Idle,
@@ -28,6 +29,7 @@ fn empty_view() -> ChatViewModel {
         },
         installing_bots: Vec::new(),
         rooms: Vec::new(),
+        shared_contacts: Vec::new(),
         problem: None,
         push: wonton_protocol::PushStatus::NoEndpoint,
         pending_confirmations: Vec::new(),
@@ -159,6 +161,7 @@ fn two_bots_publish_only_their_own_readiness_and_clear_errors_on_the_same_watch(
     other.identity = 4;
     local.records.insert(default.clone(), other);
     let sender = watch::Sender::new(ChatViewModel {
+        ask: None,
         bots: vec![
             profile(default.clone(), "@default:home"),
             profile(request.bot.clone(), &request.user),
@@ -236,6 +239,7 @@ fn the_page_a_profile_can_open_follows_the_bot_itself() {
     };
     local.records.insert(request.bot.clone(), record());
     let mut view = ChatViewModel {
+        ask: None,
         bots: vec![profile(request.bot.clone(), &request.user)],
         ..empty_view()
     };

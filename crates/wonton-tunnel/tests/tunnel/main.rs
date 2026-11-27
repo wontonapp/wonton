@@ -2,7 +2,9 @@
 //! 不做地址发现，不依赖外网。
 mod cold_connect;
 mod embedded;
+mod fake_ip;
 mod federation;
+mod federation_tls;
 mod forwarding;
 mod lifecycle;
 mod local_proxy;

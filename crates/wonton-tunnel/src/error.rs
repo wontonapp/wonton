@@ -26,6 +26,10 @@ pub enum TunnelError {
     /// 隧道是通的，但服务端连不上它要转发到的上游 HTTP 服务。
     #[error("the server cannot reach its upstream HTTP service")]
     UpstreamUnavailable,
+    /// 对端的 TLS 证书没过校验：SPKI 和 pin 不符、名字不符、过期，或者握手本身失败。对方不换证书时
+    /// 重试无用，要重配对或等对方升级。
+    #[error("peer TLS certificate rejected: {reason}")]
+    PeerCertificate { reason: String },
     /// 对端违反隧道协议，通常是两端版本不匹配。
     #[error("tunnel protocol error: {reason}")]
     Protocol {
@@ -45,6 +49,7 @@ impl TunnelError {
             Self::TransportUnavailable { .. } => "transport-unavailable",
             Self::UpstreamUnavailable => "upstream-unavailable",
             Self::Protocol { .. } => "protocol",
+            Self::PeerCertificate { .. } => "peer-certificate",
             Self::Closed => "closed",
         }
     }
@@ -57,7 +62,7 @@ impl TunnelError {
             Self::Unauthorized => "unauthorized",
             Self::TransportUnavailable { .. } | Self::Closed => "tunnel-unavailable",
             Self::UpstreamUnavailable => "upstream-unavailable",
-            Self::Protocol { .. } => "protocol",
+            Self::Protocol { .. } | Self::PeerCertificate { .. } => "protocol",
         }
     }
 

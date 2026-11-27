@@ -1192,36 +1192,6 @@
         }
       }
     },
-    "room.botOtherPrivate": {
-      "comment": "Above the composer in a DM with a family member's private Bot, which the current person, owner included, has no grant for.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This is another family member's private Bot. Its owner hasn't given access."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这是家里人的私人 Bot，主人还没给授权。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "這是家裡人的私人 Bot，主人還沒給授權。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "これは家族の他の人のプライベート Bot です。持ち主はまだ利用を許可していません。"
-          }
-        }
-      }
-    },
     "room.botGrantRevoked": {
       "comment": "Above the composer in a DM with a Bot the person could use before and whose grant was removed.",
       "extractionState": "manual",
@@ -1308,6 +1278,186 @@
           "stringUnit": {
             "state": "translated",
             "value": "この Bot に送れるかまだ確かめていません。"
+          }
+        }
+      }
+    },
+    "room.botOwnerPrivate": {
+      "comment": "Bot 可用性的原因。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is another family member's private Bot. Its owner hasn't given access."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是家里人的私人 Bot，主人还没给授权。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這是家裡人的私人 Bot，主人還沒給授權。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これは家族の他の人のプライベート Bot です。持ち主はまだ利用を許可していません。"
+          }
+        }
+      }
+    },
+    "room.botRoleLacksSharedBots": {
+      "comment": "Bot 可用性的原因。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is a family Bot, but your role can't use family Bots."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是家庭共享 Bot，但你的角色还不能用共享 Bot。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這是家庭共享 Bot，但你的角色還不能用共享 Bot。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これは家族の共有 Bot ですが、あなたの役割では共有 Bot を使えません。"
+          }
+        }
+      }
+    },
+    "room.botAppNotShared": {
+      "comment": "Bot 可用性的原因。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app isn't available to you."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个应用没开放给你。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個應用沒開放給你。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリはあなたに開放されていません。"
+          }
+        }
+      }
+    },
+    "room.botContactPending": {
+      "comment": "Bot 可用性的原因。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The contact request is still waiting for approval."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联系人还在等对方同意。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聯絡人還在等對方同意。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先のリクエストはまだ承認待ちです。"
+          }
+        }
+      }
+    },
+    "room.botContactDeclined": {
+      "comment": "Bot 可用性的原因。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "They declined, or their server doesn't know this Bot."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方拒绝了，或对方服务器上没有这个 Bot。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "對方拒絕了，或對方伺服器上沒有這個 Bot。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手が拒否したか、相手のサーバーにこの Bot がありません。"
+          }
+        }
+      }
+    },
+    "room.botMissing": {
+      "comment": "Bot 可用性的原因。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Bot hasn't been created yet."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 Bot 还没建出来。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個 Bot 還沒建出來。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Bot はまだ作成されていません。"
           }
         }
       }

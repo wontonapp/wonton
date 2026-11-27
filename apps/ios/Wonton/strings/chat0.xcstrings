@@ -461,6 +461,186 @@
           }
         }
       }
+    },
+    "chat.ask.failed.notInRoom": {
+      "comment": "Ask-target failure sentence shown above the chat list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This room isn't a chat with a Bot."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个房间不是和 Bot 的私聊。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個房間不是和 Bot 的私訊。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このルームは Bot とのダイレクトチャットではありません。"
+          }
+        }
+      }
+    },
+    "chat.ask.failed.readOnlyRoom": {
+      "comment": "Ask-target failure sentence shown above the chat list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is a notification channel; it can't reach a Bot."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是通知频道，到不了 Bot。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這是通知頻道，到不了 Bot。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここは通知チャンネルで、Bot には届きません。"
+          }
+        }
+      }
+    },
+    "chat.ask.failed.contactRequired": {
+      "comment": "Ask-target failure sentence shown above the chat list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Bot doesn't have you as a contact yet."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 Bot 还没把你当联系人。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個 Bot 還沒把你當聯絡人。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Bot はまだあなたを連絡先として登録していません。"
+          }
+        }
+      }
+    },
+    "chat.ask.failed.transport": {
+      "comment": "Ask-target failure sentence shown above the chat list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach your home server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连不上家里的服务器。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連不上家裡的伺服器。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家のサーバーに接続できません。"
+          }
+        }
+      }
+    },
+    "chat.ask.failed.other": {
+      "comment": "Ask-target failure sentence shown above the chat list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The message couldn't be sent."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这句话没能发出去。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這句話沒能送出去。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージを送信できませんでした。"
+          }
+        }
+      }
+    },
+    "chat.start.unavailable": {
+      "comment": "新建聊天里不能用的 Bot 分组标题。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't chat yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时不能聊"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暫時不能聊"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ話せません"
+          }
+        }
+      }
     }
   }
 }

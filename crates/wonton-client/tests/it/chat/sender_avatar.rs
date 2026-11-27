@@ -20,14 +20,28 @@ fn avatar_of<'a>(timeline: &'a Timeline, body: &str) -> Option<&'a str> {
     avatar?.map(|avatar| avatar.token.as_str())
 }
 
-/// 等到正文是 `body` 的消息出现，返回它的发送者头像。
-async fn wait_avatar(timeline: &mut Timeline, body: &str) -> Option<String> {
+/// 等到正文是 `body` 的消息出现（不看有没有头像）。
+async fn wait_message(timeline: &mut Timeline, body: &str) {
     timeline
         .until("消息出现", |item| match &item.content {
             TimelineContent::Message { message }
                 if matches!(&message.body, MessageContent::Text { body: text, .. } if text == body) =>
             {
-                Some(message.sender_avatar.as_ref().map(|avatar| avatar.token.clone()))
+                Some(())
+            }
+            _ => None,
+        })
+        .await;
+}
+
+/// 等到正文是 `body` 的消息带上发送者头像：成员资料可能比消息晚到，没头像时继续等。
+async fn wait_avatar(timeline: &mut Timeline, body: &str) -> String {
+    timeline
+        .until("消息带发送者头像", |item| match &item.content {
+            TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body: text, .. } if text == body) =>
+            {
+                message.sender_avatar.as_ref().map(|avatar| avatar.token.clone())
             }
             _ => None,
         })
@@ -69,10 +83,12 @@ async fn the_senders_avatar_travels_with_the_message() {
             },
         })
         .unwrap();
+    wait_message(&mut timeline, "主人发的").await;
+    wait_message(&mut timeline, "Bot 发的").await;
     let bot_avatar = wait_avatar(&mut timeline, "Bot 发的").await;
-    let own_avatar = wait_avatar(&mut timeline, "主人发的").await;
+    let own_avatar = avatar_of(&timeline, "主人发的");
     let token = wonton_matrix::media_token(AVATAR).expect("头像句柄");
-    assert_eq!(bot_avatar.as_deref(), Some(token.as_str()));
+    assert_eq!(bot_avatar, token);
     assert_eq!(own_avatar, None);
     assert_eq!(avatar_of(&timeline, "Bot 发的"), Some(token.as_str()));
 }

@@ -303,6 +303,10 @@ plugin-settings-models-connect-first = 先在「模型設定」接上模型，Bo
 plugin-settings-models-not-ready = 模型閘道 { $provider } 未就緒：{ $error }
 plugin-settings-models-command-rejected = 模型閘道 { $provider } 拒絕了憑證命令（{ $command }，結束代碼 { $code }）：{ $stderr }
 
+plugin-settings-models-command-outcome-unknown = 模型閘道上一次憑證命令的結果還沒確定
+plugin-settings-models-credential-container-missing = 模型閘道 { $gateway } 的憑證容器不存在
+plugin-settings-models-credential-missing = 模型閘道使用方 { $id } 缺少憑證 { $name }
+
 # ── 商店索引（storefront）──────────────────────────────────────────────────
 
 plugin-settings-store-index-fetch-failed = 取不到官方索引：{ $error }
@@ -333,6 +337,8 @@ plugin-settings-secret-not-text = 應用程式密鑰 { $name } 不是文字
 plugin-settings-secret-invalid = 應用程式密鑰 { $name }：容器 { $container } 裡的 { $path } { $reason }
 plugin-settings-secret-not-regular = 不是一般檔案
 plugin-settings-secret-too-big = 超過 64 KiB
+plugin-settings-secret-not-collected = 沒有寫下來（服務應當在裝完之前寫下它，檢查 collect.path）
+plugin-settings-secret-no-container = 不在（服務沒起來，或者 collect.service 寫錯了）
 
 # ── 應用程式的 Bot（bots.rs）───────────────────────────────────────────────────
 

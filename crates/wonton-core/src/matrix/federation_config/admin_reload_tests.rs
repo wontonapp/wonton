@@ -22,6 +22,9 @@ async fn config() -> (FederationConfig, Fake, tempfile::TempDir, tempfile::TempD
     let config = FederationConfig {
         matrix: Arc::new(matrix),
         install_dir: install.path().to_owned(),
+        data_dir: state.path().to_owned(),
+        window_applied: std::sync::Mutex::new(None),
+        window_manual: std::sync::Mutex::new(None),
         notice: None,
         server_name: matrix_config.server_name,
     };
@@ -69,4 +72,215 @@ async fn a_missing_admin_membership_is_a_reload_failure() {
         .await
         .unwrap_err();
     assert_eq!(failure.kind, FailureKind::Reload);
+}
+
+/// 配对都钉住了：窗口关掉 `allow_invalid` 并热加载一次；状态没再变就不重复写、不重复加载。
+#[tokio::test]
+async fn a_finished_window_closes_the_relaxed_check_and_reloads_once() {
+    let (config, fake, _state, install) = config().await;
+    let toml = install.path().join("secrets/tuwunel/tuwunel.toml");
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = true\n").unwrap();
+    std::fs::create_dir_all(config.data_dir.join("core")).unwrap();
+    std::fs::write(
+        config.data_dir.join("core/peers.json"),
+        serde_json::json!({"peers": {"pinned.example": {
+            "phase": "paired",
+            "pin_state": "pinned",
+            "peer_pin": [{"der": "MIIB", "spki_sha256": "00", "pinned_at_ms": 1}]
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+
+    config.apply_window().await;
+    assert!(
+        std::fs::read_to_string(&toml)
+            .unwrap()
+            .contains("allow_invalid_tls_certificates = false")
+    );
+    let reloads = || {
+        fake.state()
+            .sent
+            .iter()
+            .filter(|(_, content)| content["body"] == RELOAD_COMMAND)
+            .count()
+    };
+    assert_eq!(reloads(), 1);
+    config.apply_window().await;
+    assert_eq!(reloads(), 1, "状态没变不重复热加载");
+}
+
+/// 还有没钉住、窗口还没到期的对端：放宽窗口要开着（文件被改回 true）。
+#[tokio::test]
+async fn an_unpinned_peer_keeps_the_window_open() {
+    let (config, _fake, _state, install) = config().await;
+    let toml = install.path().join("secrets/tuwunel/tuwunel.toml");
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = false\n").unwrap();
+    std::fs::create_dir_all(config.data_dir.join("core")).unwrap();
+    std::fs::write(
+        config.data_dir.join("core/peers.json"),
+        serde_json::json!({"peers": {"old.example": {
+            "phase": "paired",
+            "pin_state": {"pending": {"since_version": "0.8.0"}},
+            "peer_pin": []
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+
+    config.apply_window().await;
+    assert!(
+        std::fs::read_to_string(&toml)
+            .unwrap()
+            .contains("allow_invalid_tls_certificates = true")
+    );
+}
+
+/// 主人能提前关（ADR-0112 §5b）：手改文件关掉后，窗口还开着也不被自动改回；把文件改回自动值就交回自动。
+#[tokio::test]
+async fn the_owner_can_close_the_window_early_and_get_auto_back() {
+    let (config, fake, state, install) = config().await;
+    let toml = install.path().join("secrets/tuwunel/tuwunel.toml");
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = true\n").unwrap();
+    std::fs::create_dir_all(state.path().join("core")).unwrap();
+    std::fs::write(
+        state.path().join("core/peers.json"),
+        serde_json::json!({"peers": {"old.example": {
+            "phase": "paired",
+            "pin_state": {"pending": {"since_version": "0.8.0"}},
+            "peer_pin": []
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    // 上次自动写的是 true，和现在的文件一致。
+    crate::peer_window::store_last_applied(state.path(), true).await;
+    *config.window_applied.lock().unwrap() = Some(true);
+
+    // 主人手改成 false：核心认它、热加载一次，并且窗口虽开着也不改回去。
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = false\n").unwrap();
+    config.apply_window().await;
+    config.apply_window().await;
+    assert!(
+        std::fs::read_to_string(&toml)
+            .unwrap()
+            .contains("allow_invalid_tls_certificates = false")
+    );
+    let reloads = || {
+        fake.state()
+            .sent
+            .iter()
+            .filter(|(_, content)| content["body"] == RELOAD_COMMAND)
+            .count()
+    };
+    assert_eq!(reloads(), 1, "认主人的改动只热加载一次，之后不重复");
+
+    // 重启后仍认得出是手改，不把窗口改回去。
+    let again = FederationConfig {
+        matrix: config.matrix.clone(),
+        install_dir: config.install_dir.clone(),
+        data_dir: config.data_dir.clone(),
+        notice: None,
+        server_name: config.server_name.clone(),
+        window_applied: std::sync::Mutex::new(None),
+        window_manual: std::sync::Mutex::new(None),
+    };
+    again.apply_window().await;
+    assert_eq!(reloads(), 1, "重启认手改，不重写不重载");
+    assert!(
+        std::fs::read_to_string(&toml)
+            .unwrap()
+            .contains("allow_invalid_tls_certificates = false")
+    );
+
+    // 主人把文件改回自动值（窗口还开着时是 true）：交回自动；随后钉齐，自动关掉。
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = true\n").unwrap();
+    again.apply_window().await;
+    assert_eq!(reloads(), 2, "交回自动也热加载一次");
+    std::fs::write(
+        state.path().join("core/peers.json"),
+        serde_json::json!({"peers": {"old.example": {
+            "phase": "paired",
+            "pin_state": "pinned",
+            "peer_pin": [{"der": "MIIB", "spki_sha256": "00", "pinned_at_ms": 1}]
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    again.apply_window().await;
+    assert!(
+        std::fs::read_to_string(&toml)
+            .unwrap()
+            .contains("allow_invalid_tls_certificates = false")
+    );
+}
+
+/// 手动关之后对端都钉齐（窗口自然不需要）：交回自动并清掉手改标记；再来一个待钉对端会重新开。
+#[tokio::test]
+async fn a_new_pending_peer_reopens_after_the_manual_close_was_released() {
+    let (config, fake, state, install) = config().await;
+    let toml = install.path().join("secrets/tuwunel/tuwunel.toml");
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = true\n").unwrap();
+    std::fs::create_dir_all(state.path().join("core")).unwrap();
+    std::fs::write(
+        state.path().join("core/peers.json"),
+        serde_json::json!({"peers": {"old.example": {
+            "phase": "paired",
+            "pin_state": {"pending": {"since_version": "0.8.0"}},
+            "peer_pin": []
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    crate::peer_window::store_last_applied(state.path(), true).await;
+    *config.window_applied.lock().unwrap() = Some(true);
+
+    // 主人提前关：核心认文件值，记下这是手改。
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = false\n").unwrap();
+    config.apply_window().await;
+    assert!(crate::peer_window::load_manual(state.path()).is_some());
+
+    // 对端钉齐，窗口不再需要：交回自动、清掉手改标记，文件保持 false。
+    std::fs::write(
+        state.path().join("core/peers.json"),
+        serde_json::json!({"peers": {"old.example": {
+            "phase": "paired",
+            "pin_state": "pinned",
+            "peer_pin": [{"der": "MIIB", "spki_sha256": "00", "pinned_at_ms": 1}]
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    config.apply_window().await;
+    assert!(
+        crate::peer_window::load_manual(state.path()).is_none(),
+        "钉齐后手改标记要清掉"
+    );
+
+    // 新的待钉对端出现：自动重开 allow_invalid。
+    std::fs::write(
+        state.path().join("core/peers.json"),
+        serde_json::json!({"peers": {
+            "old.example": {
+                "phase": "paired",
+                "pin_state": "pinned",
+                "peer_pin": [{"der": "MIIB", "spki_sha256": "00", "pinned_at_ms": 1}]
+            },
+            "new.example": {
+                "phase": "paired",
+                "pin_state": {"pending": {"since_version": "0.8.0"}},
+                "peer_pin": []
+            }
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    config.apply_window().await;
+    assert!(
+        std::fs::read_to_string(&toml)
+            .unwrap()
+            .contains("allow_invalid_tls_certificates = true"),
+        "新的待钉对端要重新开窗口"
+    );
+    let _ = fake;
 }

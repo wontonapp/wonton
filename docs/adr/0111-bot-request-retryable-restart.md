@@ -42,7 +42,7 @@ MCP 不改上游，但插件补一次唤醒，理由见下。
 - park 住的服务器只有两条路醒来：外部 `_reconnect_event.set()`（`/mcp refresh`、OAuth 恢复、`ensure_healthy`、
   回收 stdio 的首次调用），或者 `_PARKED_RETRY_INTERVAL = 300` 秒到点后自己探一次（`_park`，`mcp_tool.py:243`）。
 - **`tools/list_changed` 不唤醒 park 住的服务器**：处理器（`mcp_tool_health.py:100`）只记一行、排一个刷新，而 `_refresh_tools`
-  在 `session is None` 时直接返回。194 日志里“发通知后 9 秒 revived”是那次重连的会话在 keepalive 里被认定健康
+  在 `session is None` 时直接返回。验证机日志里“发通知后 9 秒 revived”是那次重连的会话在 keepalive 里被认定健康
   （`_mark_session_proven`）打的，不是通知本身叫醒的。
 
 所以核心恢复慢过重试梯队时，工具会一直停到那 300 秒。插件（同一批的 wonton-plugin-hermes#51）在每条进来的消息上

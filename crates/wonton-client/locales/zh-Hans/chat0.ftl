@@ -116,3 +116,13 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = 没发出去：家里服务器拒收。（{ $error }）
+
+chat-ask-failed-no-bot = 没有可以问的 Bot。
+chat-ask-failed-bot-not-ready = 这个 Bot 还没准备好。
+chat-ask-failed-bot-problem = 这个 Bot 的主房间坏了。
+chat-ask-failed-read-only-room = 这是通知频道，到不了 Bot。
+chat-ask-failed-transport = 连不上家里的服务器。
+chat-ask-failed-upstream = 家里的服务器出错了。
+chat-ask-failed-other = 这句话没能发出去。
+chat-ask-target-missing = 没有目标。
+chat-my-bot = 我的 Bot

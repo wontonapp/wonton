@@ -18,9 +18,6 @@ pub const EDGE_SUBNET: &str = "10.90.0.0/24";
 /// 两种都只认这个对端。
 pub const CONNECTOR_ADDRESS: &str = "10.90.0.2";
 pub const ENTRY_EDGE_ADDRESS: &str = "10.90.0.3";
-/// 局域网转发在 `wonton-lanfwd` 上的固定地址（C8 建网）。连接器不在那个网络上（ADR-0021“网络规则”）。
-pub const LAN_FORWARD_ADDRESS: &str = "10.90.1.2";
-pub const LAN_FORWARD_SUBNET: &str = "10.90.1.0/24";
 
 /// 证书文件（证书和私钥在同一个 PEM 里），和 crt-list 一样在只读的 `/certs` 下。
 pub const CERT_FILE: &str = "/certs/site.pem";
@@ -49,20 +46,23 @@ pub enum Trust {
 pub struct Model {
     /// 证书的父域，如 `k3f9qzab.example.test`。标签硬拼在它前面。
     pub suffix: String,
-    /// 联邦的服务器名，进公网前端的 crt-list（公网入口关着时它也照常要能握手）。
+    /// 联邦的服务器名，进公网前端的 crt-list。
     pub federation: Option<String>,
+    /// 公网访问总开关；关着时公网前端的证书列表为空，任何 SNI 都握手不成（ADR-0090 第 2 节）。
+    pub public: bool,
     /// 生成 8449 的配对前端（已配对的云吞之间）。
     pub paired_federation: bool,
     /// 入口自检用的标签，也不算进任何插件的配额。
     pub probe_label: String,
     /// 主人打开了公网入口的插件标签。
     pub public_labels: Vec<String>,
+
     /// 主人打开了局域网入口的插件标签。
     pub lan_labels: Vec<String>,
     pub trust: Trust,
     /// 公网前端认的对端（连接器）。局域网转发是 `lan_forward`，不在这个列表里。
     pub connectors: Vec<String>,
-    /// 入口容器接了局域网转发网络时才有；没有就不生成局域网前端（C8 之前）。
+    /// 局域网转发在 `lanfwd` 上的地址；没有插件开局域网入口时为空，不生成局域网前端。
     pub lan_forward: Option<String>,
 }
 
@@ -72,6 +72,7 @@ impl Model {
         Self {
             suffix: suffix.to_owned(),
             federation: Some(federation.to_owned()),
+            public: true,
             paired_federation: true,
             probe_label: labels::PROBE_LABEL.to_owned(),
             public_labels: Vec::new(),
@@ -82,8 +83,11 @@ impl Model {
         }
     }
 
-    /// 公网前端 crt-list 里的名字：联邦、探测标签、打开的公网入口。
+    /// 公网前端 crt-list 里的名字：联邦、探测标签、打开的公网入口。总开关关着时一个都没有。
     pub fn public_names(&self) -> Vec<String> {
+        if !self.public {
+            return Vec::new();
+        }
         let mut names = Vec::new();
         if let Some(federation) = &self.federation {
             names.push(federation.clone());

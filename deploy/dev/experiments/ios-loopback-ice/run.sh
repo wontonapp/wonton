@@ -1,5 +1,5 @@
 #!/bin/bash
-# WKWebView loopback-ICE experiment. Runs on the mini inside a mini-slot run.
+# WKWebView loopback-ICE experiment. Runs on the dev machine inside a mini-slot run.
 # Modes: lan (control, en0 address), loopback (127.0.0.1), alt (127.0.0.2), ipv6 (::1).
 set -uo pipefail
 name=call-ios-loopback

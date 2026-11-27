@@ -14,13 +14,15 @@ struct OnboardingAppsStep: View {
                 ProblemNotice(problem: catalogProblem.onboardingProblem)
             }
             ForEach(needs, id: \.id) { need in
-                StepOptionRow(title: need.title, isSelected: need.selected) {
+                StepOptionRow(title: need.title, isSelected: need.selected, neutralSelection: true) {
                     send(.onboarding(action: .toggleOnboardingNeed(id: need.id)))
                 }
                 // 子项跟着分组一起勾：勾的粒度是需求，子项列出它装哪些应用，点子项同切换。
                 ForEach(need.plugins, id: \.id) { item in
                     StepOptionRow(
-                        title: item.title, isSelected: need.selected, blocked: item.blocked,
+                        title: item.title, isSelected: need.selected,
+                        blocked: item.installedVersion == nil ? item.blocked : nil,
+                        neutralSelection: true,
                         select: { send(.onboarding(action: .toggleOnboardingNeed(id: need.id))) },
                         leading: {
                             PluginIconView(icon: item.icon, size: WontonTheme.size.taskIcon, model: plugins)

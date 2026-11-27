@@ -45,6 +45,7 @@ chat-ask-invalid-bot-id = 默认 Agent 的 ID 格式不对。
 # 已有私聊的房间 ID 解析不了时显示。
 chat-ask-invalid-room-id = 私聊的房间 ID 不合法。
 
+
 chat-invalid-action = 不是聊天操作
 
 # 壳给了这个核心不认识的回答时显示。
@@ -99,3 +100,7 @@ chat-op-agent-answer-failed = 回答选项失败：{ $error }
 
 # 附言没进发送队列或没被服务器收下，转发也没发。
 chat-forward-comment-failed = 附言没发出去，因此没有转发：{ $error }
+chat-ask-failed-not-in-room = 这个房间不是和 Bot 的私聊。
+chat-ask-failed-contact-required = 这个 Bot 还没把你当联系人。
+chat-ask-failed-forbidden = Bot 没有收下这句话。
+chat-ask-failed-not-ready = 还没准备好。

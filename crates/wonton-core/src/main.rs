@@ -35,6 +35,7 @@ use wonton_core::friends::Friends;
 use wonton_core::gateway::agent_chains::AgentChains;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
+use wonton_core::matrix::federation_tls;
 use wonton_core::matrix::{FederationBlocks, FederationConfig, Matrix, NoticeRoom};
 use wonton_core::mcp;
 use wonton_core::mcp::audit::Audit;
@@ -63,8 +64,10 @@ use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
 use wonton_core::upgrade::compose_images;
 use wonton_core::upgrade::docker_host::DockerHost;
 use wonton_core::upgrade::service::{UpgradeConfig, Upgrades};
-use wonton_tunnel::federation::{FEDERATION_ALPN, FederationForwarder, FederationProtocol};
-use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerPairProtocol};
+use wonton_tunnel::federation::{
+    FEDERATION_ALPN, FederationForwarder, FederationProtocol, PeerPinLookup, PinSeen,
+};
+use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerCertificate, PeerPairProtocol};
 
 /// 联邦转发组件对每台对方服务器的探活周期和超时。Tuwunel 的联邦请求是并发的，断了的连接靠下一次
 /// 使用或探活重连（ADR-0050）。
@@ -110,6 +113,13 @@ async fn open_peers_and_federation(
         },
     )
     .context("读取服务器配对记录")?;
+    // 本机对外出示的证书（ADR-0112）：装了证书材料就必须读得出来，读不出来按启动失败。
+    match std::env::var_os("WONTON_PEER_TLS_DIR").filter(|dir| !dir.is_empty()) {
+        Some(dir) => {
+            peers.set_own_certificate(peers::load_own_certificate(std::path::Path::new(&dir))?)
+        }
+        None => tracing::info!("没有 WONTON_PEER_TLS_DIR，配对不互换证书"),
+    }
     // 联邦转发：入站协议挂在隧道的 endpoint 上，出站是给 Tuwunel 用的 CONNECT 代理。上游地址按连接现
     // 解析（入口容器运行时会被对账重建，启动时钉死 SocketAddr 会在重建后断流）。
     let protocol = FederationProtocol::new(
@@ -118,6 +128,27 @@ async fn open_peers_and_federation(
     );
     let lookup = peers.clone();
     let listen = federation_addrs::listen(&cfg.federation_listen).await?;
+    let tls = cfg
+        .peer_tls_dir
+        .as_deref()
+        .map(|dir| {
+            let pin_peers = peers.clone();
+            let pins: PeerPinLookup = Arc::new(move |name: &str| pin_peers.tls_verification(name));
+            let tofu_peers = peers.clone();
+            let pin_seen: PinSeen =
+                Arc::new(
+                    move |name: &str, der: Vec<u8>| match PeerCertificate::from_der(der) {
+                        Ok(certificate) => {
+                            tofu_peers.tofu_pin(name, &certificate);
+                        }
+                        Err(error) => {
+                            tracing::warn!(server = %name, %error, "握手里的证书解析不了，不钉");
+                        }
+                    },
+                );
+            federation_tls::forwarder(dir, pins, Some(pin_seen))
+        })
+        .transpose()?;
     let forwarder = FederationForwarder::bind(
         tunnel.endpoint.clone(),
         listen,
@@ -125,6 +156,7 @@ async fn open_peers_and_federation(
         peers.paired_names(),
         FEDERATION_PING_INTERVAL,
         FEDERATION_PING_TIMEOUT,
+        tls,
     )
     .await
     .with_context(|| format!("联邦转发组件监听 {}", cfg.federation_listen))?;
@@ -311,11 +343,18 @@ async fn serve() -> anyhow::Result<()> {
     // 入口容器先对账：把上一版 compose 容器认领掉、按设置把入口建好，主人打开的公网入口和联邦 TLS 前端
     // 才在服务。失败按类别记日志、照常启动（不挡核心），带退避的重试在入口的运行循环里；入站联邦的
     // 上游地址按连接现解析，入口容器不在时那条流连不上、核心照常服务。
-    let entry = serve::start_entry_runtime(&cfg, &engine).await;
+    // 公网访问总开关（ADR-0090 第 2 节）：运行循环、网关和配对状态都读它。
+    let access = Arc::new(wonton_core::entry_access::EntryAccess::open(
+        cfg.core_state_dir().join("entry-access.json"),
+    )?);
+    let entry = serve::start_entry_runtime(&cfg, &engine, &access).await;
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
     let forwarder = _forwarder.map(Arc::new);
+    if let Some(peers) = &peers {
+        peers.attach_public_access(access.clone());
+    }
     let sharing = sharing_registries.service(peers.clone(), forwarder.clone())?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     serve::spawn_federation_config(
@@ -326,6 +365,13 @@ async fn serve() -> anyhow::Result<()> {
         federation_blocks.clone(),
     );
     let clients = serve::open_domain(&cfg, &engine, &notices)?;
+    let entry_admin = cfg.install_dir.as_ref().map(|dir| {
+        Arc::new(wonton_core::entry_access::EntryAdmin::new(
+            access.clone(),
+            entry.clone(),
+            dir.clone(),
+        ))
+    });
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),
@@ -364,8 +410,9 @@ async fn serve() -> anyhow::Result<()> {
         sharing,
         contacts,
         clients.clone(),
-        entry.clone(),
         agent_chains,
+        entry_admin,
+        access.public_access_flag(),
     );
     manager.attach_clients_gateway(&gateway);
     if let Err(error) = wonton_core::entry_runtime::reconcile_clients(&gateway).await {
@@ -374,6 +421,7 @@ async fn serve() -> anyhow::Result<()> {
     if let (Some(containers), Some(clients)) = (entry, clients) {
         wonton_core::entry_runtime::spawn(
             containers,
+            access.clone(),
             clients,
             notices.clone(),
             Some(gateway.clone()),
@@ -417,8 +465,9 @@ fn open_gateway(
     sharing: Arc<wonton_core::gateway::sharing::Sharing>,
     contacts: Option<Arc<wonton_core::contacts::Contacts>>,
     clients: Option<Arc<wonton_core::clients::domain::Domain>>,
-    entry: Option<wonton_core::entry_containers::EntryContainers>,
     agent_chains: Arc<AgentChains>,
+    entry: Option<Arc<wonton_core::entry_access::EntryAdmin>>,
+    public_access: Arc<std::sync::atomic::AtomicBool>,
 ) -> Arc<Gateway> {
     Arc::new(
         Gateway::new(
@@ -452,7 +501,8 @@ fn open_gateway(
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing))
         .with_clients(clients)
-        .with_entry(entry),
+        .with_entry(entry)
+        .with_public_access_flag(public_access),
     )
 }
 

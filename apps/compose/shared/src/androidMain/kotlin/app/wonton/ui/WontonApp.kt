@@ -309,7 +309,7 @@ private fun NativeTab(
         )
         else -> ChatRoute(
             pages.core, nav.chat, pages.plugins, nav.plugins,
-            onAppLink = { nav.openLink(it, pages.core.onboarding()) },
+            onAppLink = { nav.openLink(it) },
         ) { nav.openApps(HomePage.LAUNCHER) }
     }
 }

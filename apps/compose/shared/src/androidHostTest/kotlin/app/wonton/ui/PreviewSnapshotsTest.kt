@@ -86,4 +86,10 @@ class PreviewSnapshotsTest {
 
     @Test
     fun peersPublicAccessOffDark() = paparazzi.snapshot { PeersPublicAccessOffDarkPreview() }
+
+    @Test
+    fun friends() = paparazzi.snapshot { FriendsPreview() }
+
+    @Test
+    fun friendsDark() = paparazzi.snapshot { FriendsDarkPreview() }
 }

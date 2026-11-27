@@ -69,6 +69,7 @@ fn plugin() -> ClientsPlugin {
             paths: vec!["/webhook".into()],
         }),
         blocked: Some(EntryBlock::PublicAccessOff),
+        effect: None,
     }
 }
 
@@ -415,7 +416,7 @@ fn unknown_entry_kind_inside_set_entry_is_other() {
 fn home_and_tail_are_optional_and_round_trip() {
     let mut named = domain();
     named.home = Some("alice".into());
-    named.tail = Some("808cbd.com".into());
+    named.tail = Some("example.com".into());
     round_trip(serde_json::to_value(&named).unwrap(), named);
 
     let mut old = serde_json::to_value(domain()).unwrap();

@@ -4,8 +4,8 @@
 use hyper::HeaderMap;
 use ruma_common::UserId;
 use wonton_protocol::{
-    BotChatAvailability, BotChatUnavailable, BotKeeper, BotRef, ContactState, DefaultBotVisibility,
-    MemberStatus,
+    BotAccess, BotChatAvailability, BotChatUnavailable, BotKeeper, BotRef, ContactState,
+    DefaultBotVisibility, MemberStatus,
 };
 
 use super::{Gateway, Person, TunnelPeer, api, isolation};
@@ -72,69 +72,144 @@ pub(super) fn bot_identity_and_contact_facts(
     })
 }
 
-/// 按原始事实判断当前请求者能不能和这个 Bot 聊天：本人的、共享 Bot（主人或角色允许）和已成立的联系人能用；
-/// 别人的私人 Bot 分“没授权”和“授权已撤”：从来没有过记录（缺失、等对方同意）算没授权，拒绝过、对方已不存在
-/// 这类有往来的算授权已撤；读不明时未知。角色和成员记录要和调用人的当前身份一致，不一致只说明快照变了，
-/// 不当作能用。
-pub(super) fn chat_availability(
+/// 当前请求人能不能明确用这个 Bot（[`BotAccess`]）；身份、成员或角色读不明时未知。列表走 [`bot_access_of`]，
+/// 这里只留给不持有调用人快照的测试。
+#[cfg(test)]
+pub(super) fn bot_access(
     gateway: &Gateway,
-    facts: &BotIdentityAndContactFacts,
-) -> BotChatAvailability {
+    peer: Option<TunnelPeer>,
+    headers: &HeaderMap,
+    bot: &BotRef,
+) -> Result<BotAccess, StoreError> {
+    let facts = bot_identity_and_contact_facts(gateway, peer, headers, bot)?;
+    Ok(access_of(gateway, bot, &facts))
+}
+
+/// 同 [`bot_access`]，但重新读一次事实；调用人已经变了（换人、注销、设备被撤）时未知。
+pub(super) fn bot_access_of(
+    gateway: &Gateway,
+    peer: Option<TunnelPeer>,
+    headers: &HeaderMap,
+    bot: &BotRef,
+    caller: &CallerFacts,
+) -> Result<BotAccess, StoreError> {
+    let facts = bot_identity_and_contact_facts(gateway, peer, headers, bot)?;
+    if &facts.caller != caller {
+        return Ok(BotAccess::Unknown);
+    }
+    Ok(access_of(gateway, bot, &facts))
+}
+
+/// 调用人的身份和成员、角色记录一致到能判权限；不一致只说明快照变了，不当作能用。
+pub(super) fn caller_ready(gateway: &Gateway, caller: &CallerFacts) -> bool {
     let CallerFacts::Known {
         person,
         user_id: Some(user_id),
         ..
-    } = &facts.caller
+    } = caller
     else {
-        return BotChatAvailability::Unknown;
+        return false;
     };
     if <&UserId>::try_from(user_id.as_str()).is_err() {
-        return BotChatAvailability::Unknown;
+        return false;
     }
-    let shared_bots = if person.is_owner() {
-        true
-    } else {
-        let Some(member) = gateway.members.get(&person.username) else {
-            return BotChatAvailability::Unknown;
-        };
-        if member.status != MemberStatus::Joined || member.user_id.as_str() != user_id.as_str() {
-            return BotChatAvailability::Unknown;
-        }
-        let Some(role) = gateway.roles.get(&member.role_id) else {
-            return BotChatAvailability::Unknown;
-        };
-        role.permissions.shared_bots
+    if person.is_owner() {
+        return true;
+    }
+    let Some(member) = gateway.members.get(&person.username) else {
+        return false;
     };
-    let (contact_active, grant_revoked) = match &facts.contact {
+    member.status == MemberStatus::Joined
+        && member.user_id.as_str() == user_id.as_str()
+        && gateway.roles.get(&member.role_id).is_some()
+}
+
+fn access_of(gateway: &Gateway, bot: &BotRef, facts: &BotIdentityAndContactFacts) -> BotAccess {
+    // 记录有没有，和调用人认不认得出来无关：没建出来的行照样说“缺记录”，不先说“不知道”。
+    let Some(record) = facts.bot.as_ref() else {
+        return BotAccess::Unusable {
+            reason: BotChatUnavailable::BotMissing,
+        };
+    };
+    if !caller_ready(gateway, &facts.caller) {
+        return BotAccess::Unknown;
+    }
+    let CallerFacts::Known { person, .. } = &facts.caller else {
+        return BotAccess::Unknown;
+    };
+    // 自己的 Bot 和已经成立的联系人不靠 `open_apps` 才成立：Matrix 那边照样收。
+    if matches!(&record.listing.keeper, BotKeeper::User { username } if username == &person.username)
+    {
+        return BotAccess::Own;
+    }
+    let contact = match &facts.contact {
         PersonContactFacts::Record(PersonContactRecordRead::Person {
             state: ContactState::Active,
             ..
-        }) => (true, false),
+        }) => Some(BotAccess::Contact),
+        PersonContactFacts::Record(PersonContactRecordRead::Person {
+            state: ContactState::Pending | ContactState::Incoming,
+            ..
+        }) => Some(BotAccess::Unusable {
+            reason: BotChatUnavailable::ContactPending,
+        }),
         PersonContactFacts::Record(PersonContactRecordRead::Person {
             state: ContactState::Declined | ContactState::NotFound,
             ..
-        }) => (false, true),
-        _ => (false, false),
+        }) => Some(BotAccess::Unusable {
+            reason: BotChatUnavailable::ContactDeclined,
+        }),
+        _ => None,
     };
-    let Some(record) = facts.bot.as_ref() else {
-        return BotChatAvailability::Unknown;
-    };
-    let own = matches!(&record.listing.keeper, BotKeeper::User { username } if username == &person.username);
-    let shared = record.listing.keeper == BotKeeper::Household;
-    if own || shared && shared_bots || contact_active {
-        return BotChatAvailability::Available;
+    if matches!(contact, Some(BotAccess::Contact)) {
+        return BotAccess::Contact;
     }
-    match record.listing.keeper {
-        BotKeeper::User { .. } if grant_revoked => BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::GrantNotActive,
-        },
-        BotKeeper::User { .. } => BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::OtherPrivateBot,
-        },
-        // 共享 Bot 但角色不许共享，或归属方式还不认识：确定不能用。
-        _ => BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::Other,
-        },
+    // 插件没开给这个人：就算 Bot 是自己或家里的，插件页和联系人里都拿不到它。
+    if !gateway
+        .permissions(person)
+        .open_apps
+        .allows_plugin(&bot.plugin_id)
+    {
+        return BotAccess::Unusable {
+            reason: BotChatUnavailable::AppNotShared,
+        };
+    }
+    let role_shared_bots = if person.is_owner() {
+        true
+    } else {
+        gateway
+            .members
+            .get(&person.username)
+            .and_then(|member| gateway.roles.get(&member.role_id))
+            .is_some_and(|role| role.permissions.shared_bots)
+    };
+    match &record.listing.keeper {
+        BotKeeper::Household if role_shared_bots => BotAccess::Shared,
+        BotKeeper::Household => contact.unwrap_or(BotAccess::Unusable {
+            reason: BotChatUnavailable::RoleLacksSharedBots,
+        }),
+        BotKeeper::User { .. } => contact.unwrap_or(BotAccess::Unusable {
+            reason: BotChatUnavailable::OwnerPrivate,
+        }),
+        // 归属方式还不认识：不能当作能用。
+        BotKeeper::Other => BotAccess::Unknown,
+    }
+}
+
+/// 按原始事实判断当前请求者能不能和这个 Bot 聊天；只是 [`bot_access`] 的三态压缩，详细原因在 [`BotAccess`]。
+pub(super) fn chat_availability(
+    gateway: &Gateway,
+    facts: &BotIdentityAndContactFacts,
+) -> BotChatAvailability {
+    let Some(record) = facts.bot.as_ref() else {
+        return BotChatAvailability::Unavailable {
+            reason: BotChatUnavailable::BotMissing,
+        };
+    };
+    match access_of(gateway, &record.listing.bot, facts) {
+        BotAccess::Own | BotAccess::Shared | BotAccess::Contact => BotChatAvailability::Available,
+        BotAccess::Unusable { reason } => BotChatAvailability::Unavailable { reason },
+        BotAccess::Unknown => BotChatAvailability::Unknown,
     }
 }
 
@@ -146,11 +221,11 @@ pub(super) fn chat_availability_of(
     bot: &BotRef,
     caller: &CallerFacts,
 ) -> Result<BotChatAvailability, StoreError> {
-    let facts = bot_identity_and_contact_facts(gateway, peer, headers, bot)?;
-    if &facts.caller != caller {
-        return Ok(BotChatAvailability::Unknown);
-    }
-    Ok(chat_availability(gateway, &facts))
+    Ok(match bot_access_of(gateway, peer, headers, bot, caller)? {
+        BotAccess::Own | BotAccess::Shared | BotAccess::Contact => BotChatAvailability::Available,
+        BotAccess::Unusable { reason } => BotChatAvailability::Unavailable { reason },
+        BotAccess::Unknown => BotChatAvailability::Unknown,
+    })
 }
 
 /// 按归属和联系人给默认 Bot 的身份可见性：能用才披露身份；确定没有授权时按没有，其余未知。

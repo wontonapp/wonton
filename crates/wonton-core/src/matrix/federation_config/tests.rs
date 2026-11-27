@@ -483,7 +483,8 @@ impl Drop for Cluster {
 
 pub(super) async fn wait_ready(base: &str) {
     let http = HttpClient::new();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    // 共享 CI 主机过载时 Tuwunel 打开 RocksDB 就能花一分钟以上：等宽一点，别把慢当没起来。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
     while std::time::Instant::now() < deadline {
         if let Ok((StatusCode::OK, _)) = http
             .json(

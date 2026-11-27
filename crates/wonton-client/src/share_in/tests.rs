@@ -54,6 +54,7 @@ fn room(id: &str, direct: Option<&str>) -> RoomRow {
         direct_user_id: direct.map(str::to_owned),
         plugin: None,
         bot_chat: None,
+        bot: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,
@@ -67,6 +68,7 @@ fn room(id: &str, direct: Option<&str>) -> RoomRow {
 
 fn chat(account: ChatAccount, sync: ChatSync, rooms: Vec<RoomRow>) -> ChatViewModel {
     ChatViewModel {
+        ask: None,
         chat_layout_default: Default::default(),
         account,
         sync,
@@ -83,6 +85,7 @@ fn chat(account: ChatAccount, sync: ChatSync, rooms: Vec<RoomRow>) -> ChatViewMo
         },
         installing_bots: Vec::new(),
         rooms,
+        shared_contacts: Vec::new(),
         problem: None,
         push: PushStatus::NoEndpoint,
         pending_confirmations: Vec::new(),

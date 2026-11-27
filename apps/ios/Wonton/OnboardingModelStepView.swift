@@ -23,7 +23,7 @@ struct OnboardingModelStepView: View {
             }
             if step.hasConfiguredModels {
                 StepOptionRow(title: String(localized: .Onboarding4.onboardingModelUseCurrent),
-                              isSelected: step.choice == .current) {
+                              isSelected: step.choice == .current, neutralSelection: true) {
                     send(.onboarding(action: .useCurrentModel))
                 }
             }

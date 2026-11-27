@@ -1,8 +1,8 @@
-//! 经本地代理调核心的文件接口（ADR-0020）。核心凭隧道身份认出这台已配对设备；每个请求都带 [`FILES_HEADER`]。
+//! 经本地代理调核心的文件接口（ADR-0020）。核心凭隧道身份认出这台已配对设备；每个请求都带 [`FILES_HEADER`] 和 App 的语言。
 
 use std::time::Duration;
 
-use reqwest::header::HeaderMap;
+use reqwest::header::{ACCEPT_LANGUAGE, HeaderMap};
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use url::Url;
@@ -103,6 +103,7 @@ impl Api {
         self.client
             .request(method, self.url(path))
             .header(FILES_HEADER, "1")
+            .header(ACCEPT_LANGUAGE, CATALOG.tag(language()))
     }
 
     fn control(&self, method: Method, path: &str) -> RequestBuilder {
@@ -252,7 +253,14 @@ pub(super) fn classify(status: StatusCode, headers: &HeaderMap, body: &[u8]) -> 
             ),
         );
     }
-    unnamed(status)
+    unnamed(status, tusd_said(body))
+}
+
+/// tusd 的错误是一行 `ERR_…: 说明` 的纯文本，核心原样转过来（tus 协议的一部分）。不是这个样子的不当成它的话。
+fn tusd_said(body: &[u8]) -> Option<&str> {
+    let said = std::str::from_utf8(body).ok()?.trim();
+    let (code, _) = said.split_once(':')?;
+    (code.starts_with("ERR_") && !said.contains('\n')).then_some(said)
 }
 
 /// 上传创建之后和下载的请求碰上 `service_unavailable`：整套服务重启时，有几秒隧道通了而 tusd 还没起来。暂停后接着传，不算失败，不然主人要
@@ -264,14 +272,23 @@ pub(super) fn pausable(problem: Problem) -> Problem {
     }
 }
 
-/// 没写类别的响应：tusd 转发过来的，或者路上的代理给的。
-fn unnamed(status: StatusCode) -> Problem {
-    let message = l10n!(
-        CATALOG,
-        language(),
-        "files-api-status",
-        status = status.as_u16()
-    );
+/// 没写类别的响应：tusd 转发过来的，或者路上的代理给的。tusd 写了原因的话放进详情，只有状态码看不出是什么错。
+fn unnamed(status: StatusCode, said: Option<&str>) -> Problem {
+    let message = match said {
+        Some(said) => l10n!(
+            CATALOG,
+            language(),
+            "files-api-status-said",
+            status = status.as_u16(),
+            said = said
+        ),
+        None => l10n!(
+            CATALOG,
+            language(),
+            "files-api-status",
+            status = status.as_u16()
+        ),
+    };
     match status {
         StatusCode::NOT_FOUND | StatusCode::GONE => {
             Problem::Failed(FileFailure::FileUnknown, message)
@@ -288,4 +305,33 @@ fn unnamed(status: StatusCode) -> Problem {
 
 pub(super) fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name)?.to_str().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 文件接口的每个请求都带着 App 的语言：网关按 `Accept-Language` 挑后台文案（`gateway/api/mod.rs`），不带就落英文。
+    #[test]
+    fn every_file_request_carries_the_app_language() {
+        let api = Api {
+            base: Url::parse("http://wonton.localhost/_wonton/files/").unwrap(),
+            client: Client::new(),
+        };
+        for request in [
+            api.stream(Method::GET, "files"),
+            api.control(Method::HEAD, "files"),
+            api.tus(Method::PATCH, "uploads"),
+            api.uploads(),
+        ] {
+            let request = request.build().expect("请求能建出来");
+            assert_eq!(
+                request
+                    .headers()
+                    .get(ACCEPT_LANGUAGE)
+                    .map(|value| value.to_str().unwrap()),
+                Some(CATALOG.tag(language()))
+            );
+        }
+    }
 }

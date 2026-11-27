@@ -24,6 +24,8 @@ plugins=(
   geraldpeng6/wonton-plugin-memos@v0.1.2
   geraldpeng6/wonton-plugin-miniflux@v0.1.2
   geraldpeng6/wonton-plugin-actual@v0.1.2
+  geraldpeng6/wonton-plugin-autobangumi@v0.1.0
+  geraldpeng6/wonton-plugin-qbittorrent@v0.3.0
 )
 
 work="$(mktemp -d)"

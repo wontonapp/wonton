@@ -27,6 +27,7 @@ mod api;
 mod api_body;
 mod api_switch;
 mod auth;
+mod authorization;
 mod bot_activity;
 mod bot_contacts;
 mod bot_plugin_access;
@@ -37,6 +38,7 @@ mod bot_web;
 #[cfg(test)]
 mod bot_web_tests;
 mod bots;
+mod build;
 mod capabilities;
 mod capability_settings;
 mod chain_mentions;
@@ -44,6 +46,7 @@ mod clients_api;
 mod clients_domain;
 mod clients_entry;
 mod clients_passwords;
+mod clients_status;
 mod clients_switches;
 mod confirmations;
 mod core_routes;
@@ -61,6 +64,7 @@ mod friends;
 mod friends_wiring;
 mod health;
 mod hosted;
+mod identity;
 mod inbox;
 mod install_gate_cards;
 mod install_gate_checks;
@@ -113,42 +117,43 @@ pub use send_limits::{SendLimiter, SendLimits};
 mod relays_api;
 mod session;
 mod settings_api;
+mod shared_bots;
+#[cfg(test)]
+#[path = "shared_bots_tests.rs"]
+mod shared_bots_tests;
 mod sso;
 mod store_api;
 mod tool_policy;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use axum::Router;
 use axum::extract::{ConnectInfo, Request};
 use axum::response::Response;
-use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
-use hyper::{HeaderMap, StatusCode};
+use hyper::StatusCode;
+use hyper::header::{HOST, SET_COOKIE};
 use iroh::EndpointId;
 use tower::ServiceExt;
-use wonton_protocol::{MemberStatus, Permissions, Role};
-
-use crate::roles::RolesError;
+use wonton_protocol::Role;
 
 /// 家人的记录找不到了（比如刚被移除）：代登录和 OIDC 声明拿不到身份，如实报错。
 #[derive(Debug, thiserror::Error)]
 #[error("家人 {0} 不在记录里（可能刚被移除）")]
 pub(crate) struct MissingMember(pub(crate) String);
 
-use crate::config::{self, HostKind, PublicUrls};
+use crate::config::{HostKind, PublicUrls};
 use crate::friends::Friends;
 use crate::http::HttpClient;
 use crate::l10n;
 use crate::matrix::{FederationBlocks, Matrix};
 use crate::members::Members;
 use crate::oidc::Hydra;
-use crate::owner::{Owner, OwnerStore};
+use crate::owner::OwnerStore;
 use crate::plugin::PluginManager;
 use crate::push::Push;
 use crate::roles::Roles;
-use crate::secret::constant_time_eq;
 use crate::tunnel::Tunnel;
 
 pub use pages::ERROR_HEADER;
@@ -258,8 +263,8 @@ pub struct Gateway {
     pub(crate) domain: Option<Arc<crate::clients::domain::Domain>>,
     /// 客户端开关写入和入口配置刷新串行化，避免并发请求互相覆盖。
     pub(crate) clients_apply: tokio::sync::Mutex<()>,
-    /// 启动流程创建的入口容器；客户端开关使用同一个实例应用模型。
-    pub(crate) entry: Option<crate::entry_containers::EntryContainers>,
+    /// 启动流程创建的入口容器和公网访问总开关（ADR-0090）；客户端开关使用同一个实例应用模型，没装入口的核心没有。
+    pub(crate) entry: Option<Arc<crate::entry_access::EntryAdmin>>,
     /// 公网访问总开关，默认关闭；插件开关保留但模型不生成公网标签。
     pub(crate) public_access: Arc<AtomicBool>,
     /// C12 入口种类配置完成与否；C7 只读取，连接器由后续 PR 接入。
@@ -267,436 +272,6 @@ pub struct Gateway {
     sessions: session::SessionStore,
     /// 调用链（ADR-0061 第 10 节）：账本、出箱和设置，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
-}
-impl Gateway {
-    /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
-    /// `http://主机:端口`。
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        public: PublicUrls,
-        owner: Arc<OwnerStore>,
-        owner_token: String,
-        members: Arc<Members>,
-        plugins: Arc<PluginManager>,
-        hydra: Option<(Hydra, String)>,
-        http: HttpClient,
-        tunnel: Tunnel,
-    ) -> Self {
-        plugins.attach_person_members(members.clone());
-        let (hydra, hydra_public) = match hydra {
-            Some((hydra, public_url)) => {
-                let authority = config::http_authority(&public_url)
-                    .unwrap_or_else(|e| panic!("身份提供方的公开地址没有经过配置层校验：{e}"));
-                (Some(hydra), Some(authority))
-            }
-            None => (None, None),
-        };
-        let onboarding = Arc::new(onboarding::OnboardingState::new(plugins.data_dir()));
-        let link_previews = Arc::new(crate::link_preview::LinkPreviews::new(
-            plugins.data_dir().join("core").join("link-previews"),
-            plugins.core_proxy().clone(),
-        ));
-        let roles = Arc::new(Roles::initial());
-        tunnel.pairing.attach_roles(roles.clone());
-        plugins.attach_person_roles(roles.clone());
-        Self {
-            public,
-            owner,
-            owner_token,
-            members,
-            family_room_sync: tokio::sync::Mutex::new(()),
-            member_sync: tokio::sync::Mutex::new(()),
-            roles,
-            clients: plugins.clients.clone(),
-            plugins,
-            hydra,
-            hydra_public,
-            http,
-            system_http: HttpClient::system_loopback(),
-            upstream_http: HttpClient::for_forwarding(),
-            tunnel,
-            matrix: None,
-            send_limits: Arc::new(send_limits::SendLimiter::new(
-                send_limits::SendLimits::default(),
-            )),
-            people_limits: Arc::new(people_limits::PeopleLimiter::new(
-                people_limits::PeopleLimits::default(),
-            )),
-            push: None,
-            mcp: None,
-            notices: None,
-            notify_limiter: notify_limit::Limiter::default(),
-            files: None,
-            audit: None,
-            tusd: None,
-            upgrades: None,
-            peers: None,
-            friends: None,
-            friend_requests: friend_requests::Requests::default(),
-            contacts: None,
-            federation_blocks: None,
-            sharing: None,
-            onboarding,
-            health_limits: health::RateLimits::new(),
-            link_previews,
-            app_calls: Arc::default(),
-            domain: None,
-            clients_apply: tokio::sync::Mutex::new(()),
-            entry: None,
-            public_access: Arc::new(AtomicBool::new(false)),
-            public_ingress_configured: false,
-            sessions: session::SessionStore::default(),
-            agent_chains: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_clients(mut self, domain: Option<Arc<crate::clients::domain::Domain>>) -> Self {
-        self.domain = domain;
-        self
-    }
-    #[must_use]
-    pub fn with_entry(mut self, entry: Option<crate::entry_containers::EntryContainers>) -> Self {
-        self.entry = entry;
-        self
-    }
-
-    #[must_use]
-    pub fn with_public_access(self, enabled: bool) -> Self {
-        self.public_access.store(enabled, Ordering::Relaxed);
-        self
-    }
-
-    #[must_use]
-    pub fn with_public_ingress_configured(mut self, configured: bool) -> Self {
-        self.public_ingress_configured = configured;
-        self
-    }
-
-    pub(crate) fn public_access_enabled(&self) -> bool {
-        self.public_access.load(Ordering::Relaxed)
-    }
-
-    #[must_use]
-    pub fn with_sharing(mut self, sharing: Option<Arc<sharing::Sharing>>) -> Self {
-        self.sharing = sharing;
-        self
-    }
-
-    /// 接上角色记录：网关自己只带模板时用 [`Roles::initial`]，生产由启动时装上 `roles.json`。
-    #[must_use]
-    pub fn with_roles(mut self, roles: Arc<Roles>) -> Self {
-        self.tunnel.pairing.attach_roles(roles.clone());
-        self.plugins.attach_person_roles(roles.clone());
-        self.roles = roles;
-        self
-    }
-
-    #[must_use]
-    pub fn with_system_http(mut self, http: HttpClient) -> Self {
-        self.system_http = http;
-        self
-    }
-
-    /// 接上 Matrix 服务器：App 的登录令牌和 `matrix.<base>` 这才可用。
-    #[must_use]
-    pub fn with_matrix(mut self, matrix: Option<Arc<Matrix>>) -> Self {
-        self.matrix = matrix;
-        self
-    }
-
-    /// 换上配置里的 Bot 发消息限制（[`crate::config::Config`] 的环境变量改数字）；测试可以带自己的时钟。
-    #[must_use]
-    pub fn with_send_limiter(mut self, send_limits: Arc<send_limits::SendLimiter>) -> Self {
-        self.send_limits = send_limits;
-        self
-    }
-
-    /// 接上推送代理：设备登记推送、Tuwunel 调 `push.wonton.internal` 这才可用。
-    #[must_use]
-    pub fn with_push(mut self, push: Option<Arc<Push>>) -> Self {
-        self.push = push;
-        self
-    }
-
-    /// 接上 MCP 总线：`mcp.wonton.internal` 和回答确认的接口这才可用。
-    #[must_use]
-    pub fn with_mcp(mut self, mcp: Option<crate::mcp::Endpoint>) -> Self {
-        self.mcp = mcp;
-        self
-    }
-
-    /// 接上通知房间：`notify.wonton.internal` 这才可用（ADR-0047）。
-    #[must_use]
-    pub fn with_notices(mut self, notices: Option<Arc<crate::matrix::NoticeRoom>>) -> Self {
-        self.notices = notices;
-        self
-    }
-
-    /// 接上文件服务：`/_wonton/files/…` 这才可用。
-    #[must_use]
-    pub fn with_files(mut self, files: Option<Arc<crate::files::Files>>) -> Self {
-        self.files = files;
-        self
-    }
-
-    /// 接上审计日志：主人查看插件密钥的取值审计这才可用。
-    #[must_use]
-    pub fn with_audit(mut self, audit: Option<Arc<crate::mcp::audit::Audit>>) -> Self {
-        self.audit = audit;
-        self
-    }
-
-    /// 接上 tusd：`authority` 是 `host:port`，见 [`crate::config::http_authority`]。
-    pub fn with_tusd(mut self, authority: Option<String>) -> Self {
-        self.tusd = authority;
-        self
-    }
-
-    /// 接上核心的一键升级：`/_wonton/api/core/upgrade` 这才可用。
-    #[must_use]
-    pub fn with_upgrades(
-        mut self,
-        upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
-    ) -> Self {
-        self.upgrades = upgrades;
-        self
-    }
-
-    /// 接上服务器配对：`/_wonton/api/peers` 和联邦转发这才可用（ADR-0050）。没接 Matrix 的核心没有它。
-    #[must_use]
-    pub fn with_peers(mut self, peers: Option<Arc<crate::peers::Peers>>) -> Self {
-        self.peers = peers;
-        self
-    }
-
-    fn check_owner_token(&self, token: &str) -> bool {
-        constant_time_eq(token.trim(), &self.owner_token)
-    }
-
-    /// 访问令牌是谁（Matrix 用户 ID）：`whoami`，按令牌的哈希缓存（和发送限制共用一份，见
-    /// [`send_limits::SendLimiter`]）。没接入 Matrix 或认不出时是 `None`。
-    pub(crate) async fn bot_user_of_token(&self, token: &str) -> Option<String> {
-        match self.bot_identity(token).await {
-            Identity::Bot(user) => Some(user),
-            Identity::Unknown | Identity::Unavailable => None,
-        }
-    }
-
-    /// 同 [`Self::bot_user_of_token`]，但分得开令牌失效和问不到 Tuwunel。
-    pub(crate) async fn bot_identity(&self, token: &str) -> Identity {
-        self.send_limits
-            .identify(
-                token,
-                send_limits::token_hash(token),
-                self.matrix.as_deref(),
-            )
-            .await
-    }
-
-    /// 经隧道接入的已配对设备是谁（ADR-0045）：设备记录里写了家人就是他，没写是主人。吊销后立即不再认它，
-    /// 哪怕请求还在一条没来得及断开的连接上。
-    fn device_person(&self, peer: Option<TunnelPeer>) -> Option<Person> {
-        let TunnelPeer(id) = peer?;
-        let device = self.tunnel.devices.get(&id)?;
-        let Some(username) = device.user else {
-            return Some(Person::owner(self.owner.username()));
-        };
-        // 失败即停：设备记的家人必须在记录里、还没被移除。记录对不上时按认不出处理，不编一个身份放行。
-        match self.members.get(&username) {
-            Some(record)
-                if record.status != MemberStatus::Removed
-                    && !self.members.pending_endpoint(id, &username) =>
-            {
-                Some(Person::member(&record.username))
-            }
-            _ => {
-                tracing::warn!(
-                    device = %id.fmt_short(),
-                    member = %username,
-                    "设备的家人不在记录里、尚未批准或已移除，拒绝这台设备的请求"
-                );
-                None
-            }
-        }
-    }
-
-    /// 经隧道接入的已配对设备属于谁：用户名（家人）或主人。
-    fn device_user(&self, peer: Option<TunnelPeer>) -> Option<String> {
-        self.device_person(peer).map(|person| person.username)
-    }
-
-    /// 请求认得出是谁时，把它的 `Accept-Language` 记在这个人名下（ADR-0043）：语言按人给，主人和家人各记各的。
-    /// 认不出人就不记。
-    pub(crate) fn note_languages(&self, peer: Option<TunnelPeer>, headers: &HeaderMap) {
-        let person = self.device_person(peer).or_else(|| {
-            let token = headers
-                .get(AUTHORIZATION)?
-                .to_str()
-                .ok()?
-                .strip_prefix("Bearer ")?;
-            self.check_owner_token(token)
-                .then(|| Person::owner(self.owner.username()))
-        });
-        let Some(person) = person else { return };
-        let accept = headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok());
-        self.plugins.note_person_languages(&person.username, accept);
-    }
-
-    /// 核心域名上的当前人：经隧道的已配对设备，或者局域网浏览器的核心会话（主人令牌登录，是主人）。
-    fn core_person(&self, peer: Option<TunnelPeer>, headers: &HeaderMap) -> Option<Person> {
-        self.device_person(peer).or_else(|| {
-            session::cookies(headers, CORE_COOKIE).find_map(|sid| self.sessions.core_user(sid))
-        })
-    }
-
-    /// 插件域上的当前人：已配对设备或本域插件会话。来源隔离或受限 OIDC 回调允许后才使用。
-    fn plugin_person(&self, host: &str, req: &Request) -> Option<Person> {
-        self.device_person(req.extensions().get().copied())
-            .or_else(|| {
-                session::cookies(req.headers(), APP_COOKIE)
-                    .find_map(|sid| self.sessions.app_user(sid, host))
-            })
-    }
-
-    /// 从 `owner.json` / `members.json` 取本人资料；插件出口只用用户名派生内部邮箱，不公开真实邮箱。
-    /// 复用 [`Owner`] 值类型；家人的记录找不到就报错，不编一个身份出来。
-    pub(crate) fn identity_of(&self, person: &Person) -> Result<Owner, MissingMember> {
-        if person.is_owner() {
-            return Ok(self.owner.owner());
-        }
-        if person.role == Role::Friend {
-            let record = self
-                .sharing
-                .as_ref()
-                .and_then(|sharing| sharing.friends.find_username(&person.username))
-                .ok_or_else(|| MissingMember(person.username.clone()))?;
-            return Ok(Owner {
-                username: record.username,
-                display_name: record.display_name.unwrap_or_default(),
-                email: None,
-            });
-        }
-        let record = self
-            .members
-            .get(&person.username)
-            .ok_or_else(|| MissingMember(person.username.clone()))?;
-        Ok(Owner {
-            username: record.username,
-            display_name: record.display_name,
-            email: record.email,
-        })
-    }
-
-    /// 这台设备的人在 `GET ME_PATH` 里看到的自己（ADR-0045 的 `Me`）。家人的记录找不到了就报错：
-    /// 设备刚被移除时会这样，不编一个身份出来。
-    pub(crate) fn me(&self, person: &Person) -> Result<wonton_protocol::Me, MissingMember> {
-        let user_id = matrix_user_id(self, &person.username);
-        if person.is_owner() {
-            let profile = self.owner.profile();
-            Ok(wonton_protocol::Me {
-                user_id,
-                username: profile.username,
-                is_owner: true,
-                role_id: None,
-                role_name: None,
-                permissions: None,
-                display_name: profile.display_name,
-                email: profile.email,
-                avatar: None,
-            })
-        } else {
-            let record = self
-                .members
-                .get(&person.username)
-                .ok_or_else(|| MissingMember(person.username.clone()))?;
-            if record.status == MemberStatus::Removed {
-                return Err(MissingMember(person.username.clone()));
-            }
-            // 角色记录读不到时按最严的权限报，不冒充能给：`role_id` 照实给出记录里那条。
-            let role = self.roles.get(&record.role_id);
-            Ok(wonton_protocol::Me {
-                user_id,
-                username: record.username,
-                is_owner: false,
-                role_name: role
-                    .as_ref()
-                    .map(|role| role.name.trim())
-                    .filter(|name| !name.is_empty())
-                    .map(str::to_owned),
-                permissions: Some(
-                    role.as_ref()
-                        .map_or_else(Permissions::strictest, |role| role.permissions.clone()),
-                ),
-                role_id: Some(record.role_id),
-                display_name: Some(record.display_name),
-                email: record.email,
-                avatar: None,
-            })
-        }
-    }
-
-    /// 这个人现在的权限：每次请求按记录里的角色解析，角色改了下一个请求就生效。主人短路为全部权限；
-    /// 记录被移除、或者记录里的角色不在了，按最严的 [`Permissions::strictest`] 算，不冒充能给。
-    pub(crate) fn permissions(&self, person: &Person) -> Permissions {
-        if person.is_owner() {
-            return Permissions::owner();
-        }
-        let Some(record) = self.members.get(&person.username) else {
-            return Permissions::strictest();
-        };
-        if record.status == MemberStatus::Removed {
-            return Permissions::strictest();
-        }
-        self.roles
-            .get(&record.role_id)
-            .map_or_else(Permissions::strictest, |role| role.permissions)
-    }
-    /// 这个人是否在指定应用里具备插件管理员能力。应用未对他开放时，管理员范围也不生效。
-    pub(crate) fn plugin_admin(&self, person: &Person, plugin_id: &str) -> bool {
-        if person.is_owner() {
-            return true;
-        }
-        if person.role == Role::Friend {
-            return false;
-        }
-        let permissions = self.permissions(person);
-        permissions.open_apps.allows_plugin(plugin_id)
-            && permissions.plugin_admin.allows_plugin(plugin_id)
-    }
-
-    /// 这个角色有几人在用：没移除的家人和还在名单里的好友。角色接口接上之前只有测试用。
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn role_people(&self, role_id: &str) -> u32 {
-        let members = self
-            .members
-            .list()
-            .iter()
-            .filter(|m| m.status != MemberStatus::Removed && m.role_id == role_id)
-            .count();
-        let friends = self.friends.as_ref().map_or(0, |friends| {
-            friends
-                .list_active()
-                .iter()
-                .filter(|f| f.role_id == role_id)
-                .count()
-        });
-        u32::try_from(members + friends).unwrap_or(u32::MAX)
-    }
-
-    /// 删一个角色。用的人数按这一刻的记录算：先把人换走，再删。角色接口接上之前只有测试用。
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn delete_role(&self, role_id: &str) -> Result<(), RolesError> {
-        self.roles.delete(role_id, self.role_people(role_id))
-    }
-
-    fn secure_cookies(&self) -> bool {
-        self.public.scheme == "https"
-    }
-
-    fn core_origin(&self) -> String {
-        self.public.origin(self.public.core_host())
-    }
 }
 
 /// 网关的完整路由。服务时需要 `into_make_service_with_connect_info::<SocketAddr>()`。
@@ -798,6 +373,8 @@ mod chain_mentions_tests;
 #[path = "clients_entry_tests.rs"]
 mod clients_entry_tests;
 #[cfg(test)]
+mod clients_status_tests;
+#[cfg(test)]
 mod core_upgrade_tests;
 #[cfg(test)]
 mod degraded_webui_tests;
@@ -816,6 +393,8 @@ mod family_roles_tests;
 mod family_rules_tests;
 #[cfg(test)]
 mod family_tests;
+#[cfg(test)]
+mod files_create_tests;
 #[cfg(test)]
 mod files_plugin_tests;
 #[cfg(test)]
@@ -844,6 +423,8 @@ mod isolation_policy_tests;
 mod isolation_tests;
 #[cfg(test)]
 mod join_recovery_tests;
+#[cfg(test)]
+mod join_reissue_tests;
 #[cfg(test)]
 mod join_requests_tests;
 #[cfg(test)]

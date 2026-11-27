@@ -233,7 +233,14 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<(Option<Endpoint>, Option<ModelsRoute>, Option<McpTarget>), InstallError> {
         let upstreams = self
-            .deploy_upstreams(manifest, &plan.network, secrets, wait, langs)
+            .deploy_upstreams(
+                manifest,
+                &plan.network,
+                secrets,
+                wait,
+                super::super::secrets::CollectMissing::Fail,
+                langs,
+            )
             .await?;
         if let Some((_, _, bot)) = &undo.bot {
             undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;

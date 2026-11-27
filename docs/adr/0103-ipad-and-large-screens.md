@@ -58,13 +58,13 @@ Android 对应大屏/折叠屏与多窗口，有对应能力的一起做。
 
 ### 2. 宽屏布局：两栏（宽度自适应）
 
-- 聊天根页在 regular 宽度（iPad 全屏、竖屏大多数分屏比例）用 `NavigationSplitView`：
-  - **左列**：现在的聊天列表，顶部一条入口行（新聊天、我的应用、商店、设置）。#379 的侧边栏抽屉在 regular 宽度下不再出现，
+- 主界面（Agent、应用两个根页，见 [ADR-0126](0126-agent-list-bar-and-cloud.md)）在 regular 宽度（iPad 全屏、竖屏大多数分屏比例）用 `NavigationSplitView`：
+  - **左列**：Agent、应用两个根页的导航：Agent 的会话列表在上，底部是默认 Agent、应用两项的底栏（可加应用、拖动排序，见 [ADR-0126](0126-agent-list-bar-and-cloud.md)）；顶部入口行（所有会话、新聊天、收件箱铃铛、我的应用、商店、设置）。#379 的侧边栏抽屉在 regular 宽度下不再出现，
     它的组（我的应用）作为入口行的展开页或列表下方的分组进入（细节在实现 PR 定，两个摆法都不改数据模型）。
   - **右列（detail）**：当前房间；从我的应用/全部应用打开插件页时，插件页铺满右列（左列照常可点）。
     这是 [ADR-0095](0095-no-tab-bar.md) "插件页整页铺满"的大屏特例：手机上铺满整屏，iPad 宽屏铺满右列。
-- compact 宽度（iPhone、iPad 竖屏三分之二以下分屏、Slide Over）：完全沿用 #379 的单列形态（列表 → 房间/整页插件页），
-  抽屉回归。判定用 `horizontalSizeClass`，iOS 17 没有 WindowSizeClass API。
+- compact 宽度（iPhone、iPad 竖屏三分之二以下分屏、Slide Over）：完全沿用 #379 的单列形态（根页 → 房间/整页插件页），
+  抽屉回归，底栏留在两个根页上。判定用 `horizontalSizeClass`，iOS 17 没有 WindowSizeClass API。
 - 两栏下"当前房间"从左列选中推导，仍是每窗口状态（见第 4 节）。
 
 ### 3. 多窗口：内容窗口

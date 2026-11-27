@@ -107,6 +107,8 @@ final class TabWebSession: NSObject {
     @ObservationIgnored private(set) var parked = false
     @ObservationIgnored var missedFinish = false
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
+    /// 本页的历史足迹；胶囊菜单的“返回”用它认出不会换页的一步。
+    @ObservationIgnored let history = PageHistory()
     /// 页面自己的顶栏颜色：整页的网页框上面让出来的那一条照它涂（`PageTopStrip`）。
     var topColor: UIColor?
     /// 取色脚本最近一次报的颜色；没报或报了“没有”时是 nil，`topColor` 退回 WebKit 给的（见 `observeTopColor`）。
@@ -361,6 +363,7 @@ final class TabWebSession: NSObject {
         widgetChannel.stop()
         setMediaPlaying(false)
         backObservation = nil
+        history.clear()
         removeTopColorChannel()
         webView?.stopLoading()
         webView?.navigationDelegate = nil

@@ -4,9 +4,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
+use hyper::HeaderMap;
 use hyper::header::{AUTHORIZATION, ORIGIN};
 use serde_json::{Value, json};
-use wonton_protocol::{BotKeeper, ContactEvent, ContactState};
+use wonton_protocol::{
+    AppScope, BotAccess, BotKeeper, ContactEvent, ContactState, DEFAULT_INVITE_ROLE, RoleDraft,
+};
 
 use super::*;
 use crate::contacts::tests::{FakeDirectory, FakeEffects, FakeInvites};
@@ -50,6 +53,7 @@ impl Fixture {
             harness.http.clone(),
             harness.tunnel.clone(),
         );
+        open_all_apps(&gateway);
         Self { gateway, harness }
     }
 
@@ -128,6 +132,27 @@ impl Fixture {
     }
 }
 
+/// 种子角色默认一个应用都不开放；本文件的用例只测 Bot 归属和联系人，让角色能打开插件。
+fn open_all_apps(gateway: &Gateway) {
+    for id in ["admin", "family", "child", DEFAULT_INVITE_ROLE] {
+        let Some(role) = gateway.roles.get(id) else {
+            continue;
+        };
+        let mut permissions = role.permissions.clone();
+        permissions.open_apps = AppScope::All;
+        gateway
+            .roles
+            .update(
+                &role.id,
+                &RoleDraft {
+                    name: id.to_owned(),
+                    permissions,
+                },
+            )
+            .unwrap();
+    }
+}
+
 fn bot(name: &str) -> BotRef {
     BotRef {
         plugin_id: PLUGIN.into(),
@@ -158,7 +183,7 @@ async fn a_person_contact_grant_toggles_chat_availability() {
     assert_eq!(
         chat_availability(&fixture.gateway, &facts),
         BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::OtherPrivateBot
+            reason: BotChatUnavailable::OwnerPrivate
         }
     );
 
@@ -175,7 +200,7 @@ async fn a_person_contact_grant_toggles_chat_availability() {
     assert_eq!(
         chat_availability(&fixture.gateway, &facts),
         BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::OtherPrivateBot
+            reason: BotChatUnavailable::OwnerPrivate
         }
     );
 
@@ -188,7 +213,7 @@ async fn a_person_contact_grant_toggles_chat_availability() {
         assert_eq!(
             chat_availability(&fixture.gateway, &facts),
             BotChatAvailability::Unavailable {
-                reason: BotChatUnavailable::OtherPrivateBot
+                reason: BotChatUnavailable::ContactPending,
             },
             "{state}"
         );
@@ -213,11 +238,154 @@ async fn a_person_contact_grant_toggles_chat_availability() {
         assert_eq!(
             chat_availability(&fixture.gateway, &facts),
             BotChatAvailability::Unavailable {
-                reason: BotChatUnavailable::GrantNotActive
+                reason: BotChatUnavailable::ContactDeclined
             },
             "{state}"
         );
     }
+}
+
+fn access(fixture: &Fixture, peer: TunnelPeer, reference: &BotRef) -> BotAccess {
+    bot_access(&fixture.gateway, Some(peer), &HeaderMap::new(), reference).unwrap()
+}
+
+#[tokio::test]
+async fn app_scope_and_shared_bots_gate_access_before_contacts() {
+    let fixture = Fixture::new().await;
+    let alice = fixture.member("alice", "@alice:test");
+    let reference = bot("shared");
+    fixture.seed(&[(
+        "shared",
+        "@shared:test",
+        BotKeeper::Household,
+        "!shared-home:test",
+    )]);
+    fixture.gateway.members.set_role("alice", "family").unwrap();
+
+    let family = fixture.gateway.roles.get("family").unwrap();
+    let mut permissions = family.permissions.clone();
+    permissions.open_apps = AppScope::Selected {
+        plugin_ids: vec!["app.other".into()],
+    };
+    fixture
+        .gateway
+        .roles
+        .update(
+            "family",
+            &RoleDraft {
+                name: "family".into(),
+                permissions,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        access(&fixture, alice, &reference),
+        BotAccess::Unusable {
+            reason: BotChatUnavailable::AppNotShared
+        }
+    );
+
+    // 插件开了、角色能听共享 Bot：共享。
+    fixture.gateway.members.set_role("alice", "admin").unwrap();
+    assert_eq!(access(&fixture, alice, &reference), BotAccess::Shared);
+}
+
+#[tokio::test]
+async fn own_bot_and_active_contact_do_not_depend_on_open_apps() {
+    let mut fixture = Fixture::new().await;
+    let alice = fixture.member("alice", "@alice:test");
+    let own = bot("alice-bot");
+    let contacted = bot("bob-bot");
+    fixture.seed(&[
+        (
+            "alice-bot",
+            "@alice-bot:test",
+            BotKeeper::User {
+                username: "alice".into(),
+            },
+            "!own-home:test",
+        ),
+        (
+            "bob-bot",
+            "@bob-bot:test",
+            BotKeeper::User {
+                username: "bob".into(),
+            },
+            "!bob-home:test",
+        ),
+    ]);
+    fixture.gateway.members.set_role("alice", "family").unwrap();
+    // 插件没开给她的角色：自己的 Bot 和已成立联系人照样能用。
+    let family = fixture.gateway.roles.get("family").unwrap();
+    let mut permissions = family.permissions.clone();
+    permissions.open_apps = AppScope::Selected {
+        plugin_ids: vec!["app.other".into()],
+    };
+    fixture
+        .gateway
+        .roles
+        .update(
+            "family",
+            &RoleDraft {
+                name: "family".into(),
+                permissions,
+            },
+        )
+        .unwrap();
+    assert_eq!(access(&fixture, alice, &own), BotAccess::Own);
+    fixture.contacts(contact_rows(
+        &contacted,
+        json!({"@alice:test": {"kind": "person", "state": "active", "updated_at_ms": 1}}),
+    ));
+    assert_eq!(access(&fixture, alice, &contacted), BotAccess::Contact);
+}
+
+#[tokio::test]
+async fn a_missing_record_is_bot_missing_even_without_a_known_caller() {
+    let fixture = Fixture::new().await;
+    let facts = fixture.facts(None, &bot("missing"));
+    assert!(facts.bot.is_none());
+    assert_eq!(
+        fixture.facts(None, &bot("missing")).caller,
+        CallerFacts::Unknown
+    );
+    assert_eq!(
+        access_of(&fixture.gateway, &bot("missing"), &facts),
+        BotAccess::Unusable {
+            reason: BotChatUnavailable::BotMissing
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_missing_record_is_bot_missing_for_an_unknown_caller_too() {
+    let fixture = Fixture::new().await;
+    let facts = fixture.facts(None, &bot("missing"));
+    assert_eq!(
+        chat_availability(&fixture.gateway, &facts),
+        BotChatAvailability::Unavailable {
+            reason: BotChatUnavailable::BotMissing
+        }
+    );
+}
+
+#[tokio::test]
+async fn household_bot_without_shared_bots_says_role_lacks_it() {
+    let fixture = Fixture::new().await;
+    let alice = fixture.member("alice", "@alice:test");
+    let reference = bot("shared");
+    fixture.seed(&[(
+        "shared",
+        "@shared:test",
+        BotKeeper::Household,
+        "!shared-home:test",
+    )]);
+    assert_eq!(
+        access(&fixture, alice, &reference),
+        BotAccess::Unusable {
+            reason: BotChatUnavailable::RoleLacksSharedBots
+        }
+    );
 }
 
 #[tokio::test]
@@ -252,7 +420,7 @@ async fn ownership_and_role_decide_own_shared_and_other_bots() {
     assert_eq!(
         availability(alice, &bot("shared")),
         BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::Other
+            reason: BotChatUnavailable::RoleLacksSharedBots
         }
     );
     fixture.gateway.members.set_role("alice", "family").unwrap();
@@ -262,9 +430,7 @@ async fn ownership_and_role_decide_own_shared_and_other_bots() {
     );
     assert_eq!(
         availability(alice, &bot("future")),
-        BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::Other
-        }
+        BotChatAvailability::Unknown
     );
 }
 

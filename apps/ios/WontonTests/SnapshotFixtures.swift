@@ -30,11 +30,11 @@ enum SnapshotFixtures {
     }
 
     /// 外观、语言和字号都钉死：参考图不能受模拟器的系统设置影响。
-    static func wrapped<V: View>(_ view: V) -> some View {
-        let colors = defaultAppearance().light
+    static func wrapped<V: View>(_ view: V, dark: Bool = false) -> some View {
+        let colors = dark ? defaultAppearance().dark : defaultAppearance().light
         return view
             .environment(\.wontonColors, colors)
-            .environment(\.colorScheme, .light)
+            .environment(\.colorScheme, dark ? .dark : .light)
             .environment(\.locale, Locale(identifier: "en_US"))
             .environment(\.timeZone, TimeZone(identifier: "UTC")!)
             .environment(\.dynamicTypeSize, .large)
@@ -250,6 +250,7 @@ enum SnapshotFixtures {
                     membership: .invited, preview: nil, sideChats: false, unreadCount: 0, layout: layout
                 )
             ],
+            sharedContacts: [],
             problem: nil, push: .registered, pendingConfirmations: [], settledConfirmations: [],
             backgroundNotifications: [], bots: [],
             chatLayoutDefault: ChatLayoutChoice(form: nil, textScale: nil, code: nil)
@@ -339,4 +340,44 @@ extension SnapshotFixtures {
             .frame(width: 1194, height: 834)
     }
 }
+
+extension SnapshotFixtures {
+    static func friends(core: ClientCore) -> some View {
+        NavigationStack { FriendsView(core: core, viewModel: previewFriends()) }
+    }
+
+    /// 好友页的固定数据：三个好友（分享数不同）和一条请求，没有分组。
+    private static func previewFriends() -> FriendsViewModel {
+        FriendsViewModel(
+            state: .ready,
+            friends: [
+                FriendRow(
+                    userId: "@anna:example.test", displayName: "Anna", roleId: "friend",
+                    sharedPlugins: ["app.photos", "app.notes"], lastOpenedShareAtMs: nil
+                ),
+                FriendRow(
+                    userId: "@marco:example.test", displayName: "Marco", roleId: "friend",
+                    sharedPlugins: [], lastOpenedShareAtMs: nil
+                ),
+                FriendRow(
+                    userId: "@lena:example.test", displayName: "Lena", roleId: "friend",
+                    sharedPlugins: ["app.notes"], lastOpenedShareAtMs: nil
+                )
+            ],
+            incoming: [
+                FriendRequest(
+                    roomId: "!request:home.example", userId: "@sam:example.test", displayName: "Sam",
+                    kind: .friend, invitedAtMs: timestampMs
+                )
+            ],
+            outgoing: [],
+            blocked: [],
+            canBlockFederation: true,
+            publicAccessOff: false,
+            myLink: nil
+        )
+    }
+
+}
+
 #endif

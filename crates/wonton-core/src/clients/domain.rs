@@ -131,6 +131,12 @@ impl Domain {
         Ok(EntrySettings::load(&self.install_dir)?.map(|settings| settings.domain))
     }
 
+    /// 现在生效的后缀：装机定的名字优先，其次设置里填的。只读设置，不查证书和 CAA。
+    pub fn suffix(&self) -> Result<Option<String>> {
+        let store = self.effective()?;
+        Ok(self.fixed_suffix()?.or(store.suffix))
+    }
+
     /// 现在的设置：有设置文件用文件，否则用装机环境的初值。
     fn effective(&self) -> Result<Store> {
         let mut store = match std::fs::read(self.install_dir.join(DOMAIN_FILE)) {
@@ -168,15 +174,25 @@ impl Domain {
         Ok(Acme {
             directory_url: setting("WONTON_ACME_DIRECTORY").context("没有配置 ACME directory")?,
             ca_file: setting("WONTON_ACME_CA_FILE").map(PathBuf::from),
-            resolvers: match setting("WONTON_ACME_RESOLVERS") {
-                Some(raw) => parse_resolvers(&raw)?,
-                None => Vec::new(),
-            },
+            resolvers: env_resolvers()?,
             propagation_disable_ans: setting("WONTON_ACME_PROPAGATION_DISABLE_ANS").as_deref()
                 == Some("true"),
             email: setting("WONTON_ACME_EMAIL"),
             network: setting("WONTON_ACME_NETWORK").unwrap_or_else(|| "bridge".into()),
         })
+    }
+
+    /// 查 `*.lan.<后缀>` 用的后缀和解析器：和签发时查 CAA 的是同一组。后缀还没配时为空。
+    pub(crate) fn lan_lookup(&self) -> Result<Option<(String, Vec<String>)>> {
+        let fixed = self.fixed_suffix()?;
+        let Some(suffix) = fixed.or(self.effective()?.suffix) else {
+            return Ok(None);
+        };
+        let resolvers = match EntrySettings::load(&self.install_dir)? {
+            Some(settings) => settings.acme_resolvers,
+            None => env_resolvers()?,
+        };
+        Ok(Some((suffix, resolvers)))
     }
 
     fn manager(&self, store: &Store) -> Result<CertificateManager> {
@@ -688,6 +704,11 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// 没有设置文件的安装（“不要名字”）由环境给 ACME 坐标，解析器也一样。
+fn env_resolvers() -> Result<Vec<String>> {
+    parse_resolvers(&std::env::var("WONTON_ACME_RESOLVERS").unwrap_or_default())
 }
 
 /// lego 的 provider 代码只许小写字母和数字（和 `CertificateManager` 同一套规则）。

@@ -41,6 +41,7 @@ fun StepOptionRow(
     modifier: Modifier = Modifier,
     description: String? = null,
     blocked: String? = null,
+    neutralSelection: Boolean = false,
     multiple: Boolean = false,
     leading: @Composable () -> Unit = {},
     trailing: @Composable () -> Unit = {},
@@ -48,10 +49,12 @@ fun StepOptionRow(
 ) {
     val colors = WontonTheme.colors
     val shape = RoundedCornerShape(WontonTheme.radii.control)
+    // 中性选中不铺重点色：选中只由勾选标志表达，和装不了的红字分开。
+    val accentFilled = selected && !neutralSelection
     Row(
         modifier.fillMaxWidth().clip(shape)
             .then(
-                if (selected) Modifier.accentFill(shape)
+                if (accentFilled) Modifier.accentFill(shape)
                 else Modifier.background(colors.surfaceSubtle.toColor()),
             ),
         verticalAlignment = Alignment.CenterVertically,
@@ -77,7 +80,7 @@ fun StepOptionRow(
                 if (centered) Modifier else Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
             ) {
-                val textColor = if (selected) colors.textOnAccentFill else colors.textPrimary
+                val textColor = if (accentFilled) colors.textOnAccentFill else colors.textPrimary
                 // 挤在一行的窄按钮（消息下的选项）：表情和字一起居中，放不下就省略号，不折行。
                 if (centered) {
                     // 挤在一行的窄按钮：放不下先缩字，13sp 是底，再放不下才省略号。
@@ -107,7 +110,7 @@ fun StepOptionRow(
                     Text(
                         it,
                         style = WontonTheme.typography.supporting,
-                        color = (if (selected) colors.textOnAccentFill else colors.textSecondary).toColor(),
+                        color = (if (accentFilled) colors.textOnAccentFill else colors.textSecondary).toColor(),
                     )
                 }
                 blocked?.let {
@@ -120,7 +123,7 @@ fun StepOptionRow(
                     // 装饰：选中状态由选项本身朗读。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.iconSmall),
-                    tint = colors.accentInkOnFill.toColor(),
+                    tint = (if (neutralSelection) colors.primary else colors.accentInkOnFill).toColor(),
                 )
             }
         }

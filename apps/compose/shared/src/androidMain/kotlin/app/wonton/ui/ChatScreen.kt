@@ -47,6 +47,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AppLink
 import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatAccount
+import app.wonton.protocol.BotAccess
 import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
@@ -190,7 +191,23 @@ fun ChatRoute(
     }
 
     viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.Chat(ChatAction.DismissChatProblem)) } }
+    AskFailureHost(navigation, core) { rejection = it }
     rejection?.let { ProblemDialog(it) { rejection = null } }
+}
+
+/** 问 Bot 的失败提示；没有失败时什么都不画，ChatRoute 里不用再开一个分支。 */
+@Composable
+private fun AskFailureHost(
+    navigation: ChatNavigation,
+    core: ClientCore,
+    onRejected: (Problem) -> Unit,
+) {
+    val failure = navigation.ask.askFailure ?: return
+    AskFailureDialog(
+        failure = failure,
+        onRetry = { navigation.ask.retryAsk(core)?.let(onRejected) },
+        onDismiss = { navigation.ask.askFailure = null },
+    )
 }
 
 @Composable
@@ -572,11 +589,41 @@ private fun StartChatScreen(
                 Modifier.fillMaxWidth(),
                 enabled = input.isNotEmpty(),
             )
-            if (contacts.isNotEmpty()) {
+            viewModel.ownPrivateBotProblem?.let { problem ->
+                Text(
+                    problem.detail,
+                    style = WontonTheme.typography.supporting,
+                    color = WontonTheme.colors.textSecondary.toColor(),
+                )
+            }
+            val usable = contacts.filter { it.access !is BotAccess.Unusable }
+            val unavailable = contacts.filter { it.access is BotAccess.Unusable }
+            if (usable.isNotEmpty()) {
                 WontonGroup {
-                    contacts.forEachIndexed { index, contact ->
+                    usable.forEachIndexed { index, contact ->
                         if (index > 0) WontonSeparator()
                         WontonRow(contact.name, showsForward = true, onClick = { onStart(contact.userId, contact) })
+                    }
+                }
+            }
+            if (unavailable.isNotEmpty()) {
+                Text(
+                    stringResource(R.string.chat_start_unavailable),
+                    style = WontonTheme.typography.caption,
+                    color = WontonTheme.colors.textSecondary.toColor(),
+                )
+                WontonGroup {
+                    unavailable.forEachIndexed { index, contact ->
+                        if (index > 0) WontonSeparator()
+                        WontonRow(
+                            contact.name,
+                            value = (contact.access as BotAccess.Unusable)
+                                .let { botAccessReasonNotice(it.reason) }
+                                .let { stringResource(it) },
+                            showsForward = true,
+                            onClick = contact.userId.takeIf { it.isNotEmpty() }
+                                ?.let { userId -> { onStart(userId, contact) } },
+                        )
                     }
                 }
             }

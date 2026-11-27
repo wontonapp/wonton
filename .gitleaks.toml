@@ -72,3 +72,10 @@ description = "relay.env.example 里的准入令牌占位值（大写字母加�
 condition = "AND"
 paths = ['''^cloud/iroh-relay/relay\.env\.example$''']
 regexes = ['''REPLACE_WITH_64_HEX_CHARS''']
+
+[[allowlists]]
+description = "开发栈商店索引把插件文件的 sha256 写成 \"文件名\": \"<64 位十六进制>\"，mcp-token 这种带横线的文件名被 generic-api-key 当成键名+凭据"
+condition = "AND"
+paths = ['''^deploy/dev/core/store/index\.json$''']
+regexTarget = "line"
+regexes = ['''"config/mcp-token\.sh": "[0-9a-f]{64}"''']

@@ -53,6 +53,7 @@ gateway-name-models = モデルゲートウェイ
 # TLS入口コンテナの後ろにあるクライアント入口（ADR-0021）。
 gateway-entry-header-invalid = 入口ゲートウェイがこのリクエストに正しい印を付けていません
 gateway-entry-closed = この入口は開いていません。オーナーがWontonアプリで開けられます
+gateway-public-access-off = 外部からのアクセスはオフです。オーナーがWontonアプリでオンにできます
 gateway-entry-public-denied = 公開アドレスからはこのパスにアクセスできません
 gateway-entry-setup-pending = まずこのアプリのウェブページで初回登録を済ませてから、もう一度お試しください
 gateway-entry-auth-required = Wontonで発行したこのアプリのパスワードでサインインしてください
@@ -180,6 +181,17 @@ clients-credentials-missing-command = マニフェストに { $op } コマンド
 clients-credentials-failed = アプリ内のコマンドが失敗しました：{ $error }
 gateway-entry-credentials-not-issued = アプリのパスワードがまだないため、入口は閉じたままです
 clients-domain-read-failed = ドメイン設定を読めませんでした：{ $error }
+clients-public-access-save-failed = 外部アクセスのスイッチを保存できませんでした：{ $error }
+# 外部アクセスのスイッチの各ゲート：できなかったことをゲートごとに書く（ADR-0090）。
+clients-gate-core-not-in-container-connector = コアがコンテナで動いていないため、コネクターを起動できません
+clients-gate-core-not-in-container-entry = コアがコンテナで動いていないため、入口コンテナがありません
+clients-gate-connector-still-running = コネクターがまだ動いています
+clients-gate-connector-not-running = コネクターが起動していません
+clients-gate-public-list-still-empty = 公開証明書リストがまだ空です
+clients-gate-public-list-not-cleared = 公開証明書リストが空になっていません
+clients-gate-entry-not-reloaded = 入口が設定を読み直していません：{ $error }
+clients-gate-connector-mismatch = コネクターのコンテナがスイッチと一致しません
+clients-gate-public-list-mismatch = 公開証明書リストがスイッチと一致しません
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
 
 # agent_acp の転送（ADR-0061 第 5 ブロック）：接続時の拒否とフレームごとのエラーを、種別付きで利用者に返す。
@@ -209,7 +221,14 @@ gateway-install-card-setting = リクエストで入力された設定：{ $titl
 gateway-install-changed = カードの送信後に { $id } の権限、デバイス、設定が変更されたため、アップグレードしませんでした。もう一度リクエストしてください。
 clients-switch-container = コアがコンテナ内で動作していないため、入口ネットワークを利用できません
 clients-switch-domain = 入口を開く前にドメインと有効な証明書を設定してください
-clients-switch-lan = LAN 転送コンテナの準備ができていないため、LAN 入口は利用できません
+clients-switch-lan = このホストの LAN アドレスをまだ検出していません。しばらくしてからもう一度お試しください
+clients-switch-lan-selection = LAN アドレスを選べないため、LAN 入口を開けません：{ $reason }
+clients-switch-lan-not-private = このホストの LAN アドレス（{ $addresses }）はプライベート IPv4 アドレスではありません。LAN 入口は 10.x、172.16–31.x、192.168.x でのみ開けます
+clients-switch-lan-wide-subnet = LAN アドレスのサブネット { $subnet } がプライベートアドレスの範囲を超えているため、LAN 内の機器だけを許可できません
+clients-switch-lan-unknown-subnet = LAN アドレス { $address } のサブネットが分からないため、LAN 内の機器だけを許可できません
+clients-switch-lan-record-wrong = LAN 用ドメインが { $found } を指しています。DNS サービスでレコードを次のように変更してください：{ $record }
+clients-switch-lan-record-missing = LAN 用ドメインのレコードがありません。DNS サービスで次を追加してください：{ $record }
+clients-switch-lan-record-failed = LAN 用ドメインのレコードを確認できません。しばらくしてからもう一度お試しください。必要なレコード：{ $record }（{ $error }）
 clients-switch-setup = 先にアプリのウェブページで初回登録を完了してください
 clients-switch-app-unavailable = アプリが動作していないため、初回登録の状態を確認できません
 clients-switch-credentials = アプリがまだパスワードを正常に発行していません

@@ -50,11 +50,22 @@ impl PluginManager {
         &self,
         id: &PluginId,
         manifest: &Manifest,
+        langs: &Languages,
     ) -> Option<wonton_protocol::PluginHint> {
         use super::models::ProviderState;
         use wonton_protocol::PluginHintCategory as Category;
         if !super::models::uses_models(manifest) {
             return None;
+        }
+        let (has_keys, problem, route) = self.store.model_keys().hint_basis(id, langs);
+        // 上次的失败原因比“网关没就绪”更具体，先给；恢复后重试成功会清掉。
+        if problem.is_some() {
+            return Some(wonton_protocol::PluginHint {
+                category: Category::ModelsNotConnected,
+                detail: problem,
+                provider: None,
+                capability: None,
+            });
         }
         if !matches!(self.models_provider(), ProviderState::Ready(_)) {
             // 网关不在或没就绪：详情页现场推导，没有可带的原始原因（与 ADR-0055 相同）。
@@ -65,11 +76,10 @@ impl PluginManager {
                 capability: None,
             });
         }
-        let (has_keys, problem, route) = self.store.model_keys().hint_basis(id);
-        if problem.is_some() || !has_keys {
+        if !has_keys {
             return Some(wonton_protocol::PluginHint {
                 category: Category::ModelsNotConnected,
-                detail: problem,
+                detail: None,
                 provider: None,
                 capability: None,
             });
@@ -299,6 +309,7 @@ impl PluginManager {
     }
 
     async fn record_probe(&self, ids: Vec<PluginId>, outcome: ProbeOutcome) {
+        let _allocating = self.bot_allocation.lock().await;
         let probe = outcome.into_probe();
         for id in ids {
             self.store.model_keys().update_route(&id, probe.clone());
@@ -357,7 +368,7 @@ impl PluginManager {
     }
 
     /// 用凭据请求 `GET <openai>/models`：200 是认（带回模型列表），401 是不认，其他算网关出错。
-    async fn verify(
+    pub(super) async fn verify(
         &self,
         route: &ModelsRoute,
         value: &str,

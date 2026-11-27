@@ -15,6 +15,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Notify;
 
+#[path = "clients_lan_tests.rs"]
+mod clients_lan_tests;
 #[path = "clients_switches_regression_tests.rs"]
 mod clients_switches_regression_tests;
 
@@ -25,13 +27,15 @@ struct Rig {
     id: PluginId,
     install: std::path::PathBuf,
     reloads: Arc<AtomicUsize>,
+    /// `*.lan` 记录的假解析器；`lan` 为假时没有，局域网入口一直是“还没检测过”。
+    dns: Option<clients_lan_tests::FakeDns>,
     /// 要求“重载还卡着”的用例拿它控制假主进程：先 0 到达，再 1 放行。
     gate: Option<(Arc<Notify>, Arc<Notify>)>,
 }
 
 /// 假入口主进程：每来一条连接记一次，回 `reply`；`gated` 时先报到达、等放行再回。
 /// 返回监听地址（入口的 reload_addr 就是它）、命中计数和放行/到达开关。
-async fn master(
+pub(crate) async fn master(
     reply: &'static str,
     gated: bool,
     // 从第几次到第几次之间回失败（0 起算，两端都含），给回的那种文本。
@@ -85,7 +89,13 @@ impl Rig {
     ) -> Self {
         let h = Harness::start(None).await;
         let id = register(&h);
-        let install = prepare_entry_files(&h);
+        let dns = if lan {
+            Some(clients_lan_tests::FakeDns::start(&["192.168.1.10"]).await)
+        } else {
+            None
+        };
+        let resolvers = dns.iter().map(|dns| dns.server.clone()).collect();
+        let install = prepare_entry_files_with_resolvers(&h, resolvers);
         let (reload_addr, reloads, gate) = master(reply, gated, fails).await;
         let entry = EntryContainers::new(
             h.docker.engine().await,
@@ -94,7 +104,6 @@ impl Rig {
             Instance::default(),
             Some("wonton-core".into()),
         )
-        .with_lan_forward_available(lan)
         .with_reload_addr(reload_addr);
         let domain = Domain::new(
             install.clone(),
@@ -102,6 +111,17 @@ impl Rig {
             h.docker.engine().await,
             None,
         );
+        let access = Arc::new(
+            crate::entry_access::EntryAccess::open(install.join("core/entry-access.json")).unwrap(),
+        );
+        access
+            .save(wonton_protocol::PublicAccess { enabled: public })
+            .unwrap();
+        let entry = Arc::new(crate::entry_access::EntryAdmin::new(
+            access,
+            Some(Arc::new(entry)),
+            install.clone(),
+        ));
         let gateway = Arc::new(
             super::Gateway::new(
                 h.gateway.public.clone(),
@@ -119,6 +139,9 @@ impl Rig {
             .with_public_access(public),
         );
         h.manager.attach_clients_gateway(&gateway);
+        if lan {
+            h.manager.lan_pass_for_test().await;
+        }
         let app = crate::gateway::router(gateway.clone());
         Self {
             h,
@@ -127,6 +150,7 @@ impl Rig {
             id,
             install,
             reloads,
+            dns,
             gate,
         }
     }
@@ -195,7 +219,14 @@ fn register(h: &Harness) -> PluginId {
     id
 }
 
-fn prepare_entry_files(h: &Harness) -> std::path::PathBuf {
+pub(crate) fn prepare_entry_files(h: &Harness) -> std::path::PathBuf {
+    prepare_entry_files_with_resolvers(h, Vec::new())
+}
+
+fn prepare_entry_files_with_resolvers(
+    h: &Harness,
+    acme_resolvers: Vec<String>,
+) -> std::path::PathBuf {
     let install = h.data_dir.join("entry-test");
     std::fs::create_dir_all(install.join("entry/certs")).unwrap();
     let tls = rcgen::generate_simple_self_signed(vec![
@@ -217,7 +248,7 @@ fn prepare_entry_files(h: &Harness) -> std::path::PathBuf {
         registration: None,
         acme_directory: None,
         acme_ca: None,
-        acme_resolvers: vec![],
+        acme_resolvers,
         acme_email: None,
         acme_accept_terms: false,
         acme_network: "bridge".into(),

@@ -243,31 +243,31 @@
       }
     },
     "problem.plugin.invalid.nextStep": {
-      "comment": "Next step: contact the app's author.",
+      "comment": "Next step: read the reason in Details; a key the app must write being missing needs the app's author.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Contact the app's author."
+            "value": "See Details for the reason; if the reason is a key the app must write being missing, contact the app's author."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "请联系应用的作者。"
+            "value": "看「详情」里的原因；如果缺的是应用要写的密钥，联系应用的作者。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "請聯絡 App 的作者。"
+            "value": "看「詳細資訊」裡的原因；如果缺的是 App 要寫的密鑰，聯絡 App 的作者。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アプリの作者に連絡してください。"
+            "value": "「詳細」に理由が出ます。アプリが書くべき鍵が無い場合は、アプリの作者に連絡してください。"
           }
         }
       }

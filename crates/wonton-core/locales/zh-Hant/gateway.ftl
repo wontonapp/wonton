@@ -53,6 +53,7 @@ gateway-name-models = 模型閘道
 # TLS 入口容器後面的客戶端入口（ADR-0021）。
 gateway-entry-header-invalid = 入口閘道沒有給這個請求標上正確的記號
 gateway-entry-closed = 這個入口沒有開啟，主人可以在 Wonton 應用程式裡開啟
+gateway-public-access-off = 公網訪問已關，主人可以在 Wonton 應用程式裡開啟
 gateway-entry-public-denied = 公網位址上存取不了這個路徑
 gateway-entry-setup-pending = 請先在這個應用程式的網頁上完成首次註冊，然後再試
 gateway-entry-auth-required = 請用在雲吞裡給這個應用程式發的專用密碼登入
@@ -180,6 +181,17 @@ clients-credentials-missing-command = 清單裡沒有 { $op } 命令
 clients-credentials-failed = 應用裡的命令失敗：{ $error }
 gateway-entry-credentials-not-issued = 應用還沒有密碼，入口先不開
 clients-domain-read-failed = 網域設定讀不了：{ $error }
+clients-public-access-save-failed = 公網訪問開關儲存不了：{ $error }
+# 公網訪問開關的各道閘門：哪道沒做成，就按道寫哪道（ADR-0090）。
+clients-gate-core-not-in-container-connector = 核心沒跑在容器裡，連接器起不來
+clients-gate-core-not-in-container-entry = 核心沒跑在容器裡，入口容器不在
+clients-gate-connector-still-running = 連接器還開著
+clients-gate-connector-not-running = 連接器沒起來
+clients-gate-public-list-still-empty = 公網憑證清單還是空的
+clients-gate-public-list-not-cleared = 公網憑證清單沒清空
+clients-gate-entry-not-reloaded = 入口沒有重讀設定：{ $error }
+clients-gate-connector-mismatch = 連接器容器和開關不一致
+clients-gate-public-list-mismatch = 公網憑證清單和開關不一致
 gateway-chains-disabled = 家裡的伺服器沒有啟用呼叫鏈帳本
 
 # agent_acp 的轉發（ADR-0061 第 5 塊）：建連時的拒絕和逐幀轉發裡的錯誤，按類別回給使用方。
@@ -209,7 +221,14 @@ gateway-install-card-setting = 請求裡填的設定：{ $title } = { $value }
 gateway-install-changed = 卡片發出後 { $id } 的權限、裝置或設定已經改過，沒有升級。請重新發起。
 clients-switch-container = 核心沒有在容器裡執行，無法接入入口網路
 clients-switch-domain = 請先設定網域和有效憑證，再開啟入口
-clients-switch-lan = 區域網路入口尚未開放：轉送容器尚未就緒
+clients-switch-lan = 尚未偵測過這台主機的區域網路位址，請稍後再試
+clients-switch-lan-selection = 選不出區域網路位址，無法開放區域網路入口：{ $reason }
+clients-switch-lan-not-private = 這台主機的區域網路位址（{ $addresses }）不是私有 IPv4 位址，區域網路入口只能開在 10.x、172.16–31.x、192.168.x 上
+clients-switch-lan-wide-subnet = 區域網路位址所在的網段 { $subnet } 超出私有位址範圍，無法只放行區域網路裡的裝置
+clients-switch-lan-unknown-subnet = 不知道區域網路位址 { $address } 所在的網段，無法只放行區域網路裡的裝置
+clients-switch-lan-record-wrong = 區域網路網域指向了 { $found }，請在 DNS 服務商處把記錄改成：{ $record }
+clients-switch-lan-record-missing = 尚無區域網路網域的記錄，請在 DNS 服務商處新增：{ $record }
+clients-switch-lan-record-failed = 查不到區域網路網域的記錄，請稍後再試；需要的記錄是：{ $record }（{ $error }）
 clients-switch-setup = 請先在應用網頁完成首次註冊
 clients-switch-app-unavailable = 應用沒有執行，無法檢查首次註冊狀態
 clients-switch-credentials = 應用尚未成功發出密碼

@@ -1,4 +1,5 @@
-# iroh 中继（relay.808cbd.com）
+# iroh 中继
+`DOMAIN` 必填、没有默认值；本目录的例子统一用 `relay.example.com`，真实部署值放公开仓之外。`OWNER_DOMAIN` 可选，只用于把 certbot 装错的证书路径换回去。
 
 给 Wonton 隧道用的转发站：两台设备打洞失败时，端到端加密的 QUIC 流量经它中转，中继看不到内容，也不存数据。
 只转发、不存账号和业务数据（[ADR-0012](../../docs/adr/0012-updates-release-cloud.md)）。
@@ -27,22 +28,21 @@
 ```
 
 nginx 终结 TCP 443 的 TLS，再按 `Upgrade` 反代到中继；中继自己用 `--dev` 只跑 HTTP。
-这样不用把现有 443 的 http 块挪成 stream，`808cbd.com`、`*.808cbd.com`、`omarchy.online`、
-`push.808cbd.com` 的 server 块都不受影响。QUIC 的 QAD 走 UDP 7842，和 nginx 无关，所以中继仍要读一份
-`relay.808cbd.com` 的证书——由 certbot 的 deploy hook 从 `/etc/letsencrypt/live/relay.808cbd.com/`
+这样不用把现有 443 的 http 块挪成 stream，现有域的 server 块都不受影响。QUIC 的 QAD 走 UDP 7842，和 nginx 无关，所以中继仍要读一份
+`$DOMAIN` 的证书——由 certbot 的 deploy hook 从 `/etc/letsencrypt/live/$DOMAIN/`
 复制到 `/etc/wonton-iroh-relay/tls/`（0640 root:wonton-iroh-relay）。
 
 中继以 `wonton-iroh-relay` 用户运行，只读根、无 capability、端口都 > 1024（见 `wonton-iroh-relay.service`）。
 
 ### 为什么是 nginx 终结 TLS，而不是 stream 按 SNI 透传
 
-另一种做法（a）是 nginx `stream` + `ssl_preread`，按 SNI 把 `relay.808cbd.com` 原样透传给中继，让中继自己终结 TLS。
+另一种做法（a）是 nginx `stream` + `ssl_preread`，按 SNI 把 `$DOMAIN` 原样透传给中继，让中继自己终结 TLS。
 优点是中继独占证书、nginx 不碰明文；代价是这台机的 443 已经被 nginx 的 `http` 块占着，要改成 `stream` 监听 443
-就必须把 `808cbd.com`、`omarchy.online`、`push.808cbd.com` 所有现有 server 块的 `listen 443` 挪到别的端口，
+就必须把现有所有站点的 `listen 443` 挪到别的端口，
 再给 `http` 加 PROXY protocol 恢复客户端 IP——动的是主人两个站和推送中继的配置，回归面大。
 
 我们选（b）：nginx 照旧占用 443 并终结 TLS，新增一个精确 `server_name` 块，按 WebSocket Upgrade 反代到中继的回环 HTTP 端口。
-现有 server 块一个都不动；证书由 certbot 单独签 `relay.808cbd.com` 这一张子域证书。
+现有 server 块一个都不动；证书由 certbot 单独签 `$DOMAIN` 这一张证书。
 核实过上游 iroh-relay 1.4.1 的 relay 协议就是标准 RFC 6455 WebSocket upgrade（`src/server/http_server.rs` 校验
 `Upgrade: websocket`），nginx 用 `proxy_http_version 1.1` + `Upgrade`/`Connection` 能代理；`test/relay-e2e.sh`
 就是用这份 nginx 配置实跑 101、30 秒吞吐和错令牌拒绝。
@@ -57,12 +57,13 @@ ADR-0048 写的是用上游官方镜像；这台目标机没有 Docker，而旁�
 目标机是 Ubuntu 26.04，不用 Docker。把整个 `cloud/iroh-relay/` 目录拷到目标机（例如 `/root/iroh-relay/`），然后：
 
 ```bash
-bash install.sh --email ops@example.com   # 装服务、vhost、签证书
+# DOMAIN 必填；真值从 ~/wonton-dev/deploy-private/ 取，这里用示例域演示
+DOMAIN=relay.example.com bash install.sh --email ops@example.com   # 装服务、vhost、签证书
 ```
 
-- 首次必须先有 DNS：`relay.808cbd.com` A/AAAA 指到本机、安全组放行 443/tcp、80/tcp、7842/udp，否则 http-01 签不过。
+- 首次必须先有 DNS：`$DOMAIN` 的 A/AAAA 指到本机、安全组放行 443/tcp、80/tcp、7842/udp，否则 http-01 签不过。
 - 没有 certbot 先 `apt install certbot python3-certbot-nginx`。
-- certbot 会被主人的 `*.808cbd.com` 块骗到、把证书装到 `808cbd.com` 块上；`install.sh` 装完会换回主人的证书路径（同 `cloud/push-relay`）。
+- **不要留默认真实域**：部署时 `DOMAIN`/`OWNER_DOMAIN` 从私有清单取，见 `~/wonton-dev/deploy-private/`。设了 `OWNER_DOMAIN` 才会把主人块的证书路径换回去。
 - `--no-cert` 只装服务不签证书（之后自己签）；`--offline-binary /tmp/iroh-relay` 用离线二进制。
 - 可以重复跑：已有的 `config.toml`、`relay.env`、证书都不覆盖。
 
@@ -90,7 +91,7 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
 
 ## 证书和续期
 
-- 证书域名只有 `relay.808cbd.com`，certbot 自动续期。
+- 证书域名只有 `$DOMAIN`，certbot 自动续期。
 - deploy hook `/etc/letsencrypt/renewal-hooks/deploy/wonton-iroh-relay.sh` 在每次续期后复制证书、reload nginx。
 - 中继的 TLS 用 `cert_mode = "Reloading"`：每 24h 重读证书文件，续期后最迟一天内生效，不用重启。
   QAD 用旧证书到续期后 24h 也没问题（Let's Encrypt 有效期 90 天，提前 30 天续）。
@@ -99,7 +100,7 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
 ## 日志和指标
 
 - 服务日志：`journalctl -u wonton-iroh-relay`（一行一条连接/断开，不带内容）。
-- nginx：`/var/log/nginx/relay.808cbd.com.access.log`。
+- nginx：`/var/log/nginx/$DOMAIN.access.log`。
 - 指标：`curl --noproxy '*' http://127.0.0.1:19090/metrics`。主要看
   `relayserver_bytes_sent_total` / `relayserver_bytes_recv_total`、`relayserver_connects_total` /
   `relayserver_disconnects_total`、`relayserver_send_packets_dropped_total`。
@@ -107,6 +108,39 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
 - **令牌默认不进日志**：systemd 单元默认 `RUST_LOG=info`（`EnvironmentFile` 里同名变量可覆盖），journal 里 grep 不到令牌。上游 1.4.1 在 debug/trace 下
   启动时会 dump 整份配置、包含令牌，开 debug 排错时别把日志原样贴出去。
   验收：`journalctl -u wonton-iroh-relay | grep -F -- "$(cut -d= -f2 /etc/wonton-iroh-relay/relay.env)"` 应无输出。
+
+## 运行期健康自检（可选，不默认装）
+
+`install.sh` 的 `post_start_check` 只在安装那一次跑。之后证书快过期、QAD 7842 被改回只监听回环、
+`/healthz` 5xx、二进制被换成本地编译的版本，都不会有人发现。这个 systemd timer 每 5 分钟在本机跑
+`healthcheck.sh` 查五件事，任一失败就把 `FAIL <项> …` 写进 journal 并以 1 退出，进 `systemctl --failed`：
+
+- `/etc/wonton-iroh-relay/config.toml` 和 `relay.env` 存在、权限是 600 或 640；
+- `http://127.0.0.1:8742/healthz` 返回 200；
+- UDP 7842 监听在 `0.0.0.0`/`[::]`（判定同 `install.sh`）；
+- `/etc/wonton-iroh-relay/tls/fullchain.pem` 30 天内不过期；
+- 二进制 `--version` 和 `release.env` 的固定版本一致。
+
+只报警，不重启服务（重启仍由 systemd 管）。缺 `curl`、`ss`、`openssl` 时对应项打 `SKIP` 并注明，不当成通过。
+
+装（root，在部署目录里；timer 是可选步骤，`install.sh` 不会装）：
+
+```bash
+install -m 0755 healthcheck.sh /opt/wonton-iroh-relay/healthcheck.sh
+install -m 0644 release.env /opt/wonton-iroh-relay/release.env   # 版本比对的固定值
+install -m 0644 wonton-iroh-relay-healthcheck.service /etc/systemd/system/
+install -m 0644 wonton-iroh-relay-healthcheck.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now wonton-iroh-relay-healthcheck.timer
+```
+
+手动跑一次看输出（root；0 = 全过，1 = 有失败项）：`/opt/wonton-iroh-relay/healthcheck.sh`。
+日志：`journalctl -u wonton-iroh-relay-healthcheck`；上次结果：`systemctl status wonton-iroh-relay-healthcheck`；
+下次时间：`systemctl list-timers wonton-iroh-relay-healthcheck.timer`。
+
+停用：`systemctl disable --now wonton-iroh-relay-healthcheck.timer`，再删掉两个单元和 `/opt/wonton-iroh-relay/healthcheck.sh`。
+
+测试（纯 shell 假命令，不用 Docker、不连网）：`cloud/iroh-relay/test/healthcheck-test.sh`。
 
 ## 验收
 
@@ -118,15 +152,21 @@ curl --noproxy '*' -o /dev/null -w '%{http_code}\n' -H 'Connection: Upgrade' \
   -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
   -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
   -H 'Sec-WebSocket-Protocol: iroh-relay-v2' -H "Authorization: Bearer $(cut -d= -f2 /etc/wonton-iroh-relay/relay.env)" \
-  https://relay.808cbd.com/relay   # 101
+  https://$DOMAIN/relay   # 101
 
 # 端到端（开发机，docker；测连接、30 秒吞吐、错令牌被拒，命令见 test/relay-e2e.sh）
 cloud/iroh-relay/test/relay-e2e.sh
+
+# 健康自检脚本的行为测试（假命令，不用 Docker、不连网）
+cloud/iroh-relay/test/healthcheck-test.sh
+
+# 域名参数化行为测试（缺/非法 DOMAIN 退出，不用 root、不连网）
+cloud/iroh-relay/test/domain-required-test.sh
 ```
 
 `test/relay-e2e.sh` 用同版本官方二进制 + nginx（TLS 终结）+ 上游 `transfer` 示例当一对 `--relay-only` 端点：
 断言经中继连接成功、下载 ≥ 1.5 Mbps（默认 256 KiB/s 限速下实测约 2.2 Mbps）、路径是中继、中继字节计数上涨、错令牌拿不到数据。
-它把 `config.toml.example` 和 `nginx/relay.808cbd.com.conf` 过一遍 sed 后在临时端口跑，同时钉住这两个文件。
+它把 `config.toml.example` 和 `nginx/relay.conf.template` 过一遍 sed 后在临时端口跑，同时钉住这两个文件。
 
 ## 容量：出口只有约 5 Mbps
 
@@ -171,18 +211,24 @@ cloud/iroh-relay/test/relay-e2e.sh
 改 `release.env` 的版本和 sha256（和仓库 `Cargo.lock` 里的 iroh 版本一起），在开发机跑
 `test/relay-e2e.sh` 过，再在目标机重跑 `install.sh`。二进制是 rename 替换，失败回滚就改回 `release.env` 重跑。
 
+装了健康自检 timer 的，升级时把新的 `release.env` 一并装到 `/opt/wonton-iroh-relay/release.env`
+（`install -m 0644 release.env /opt/wonton-iroh-relay/release.env`），否则 timer 会一直报版本漂移。
+
 ## 回滚和卸载
 
 - 回滚：`install.sh` 重装旧版本；配置和令牌没被覆盖，不用回滚。
-- 卸载：`bash uninstall.sh`（保留配置和令牌）；`bash uninstall.sh --purge` 连用户、数据、证书一起删。
-- 目标机上的 nginx 只删 `/etc/nginx/sites-{available,enabled}/relay.808cbd.com` 这一个 vhost，主人其他站不动。
+- 卸载：`DOMAIN=relay.example.com bash uninstall.sh`（保留配置和令牌）；加 `--purge` 连用户、数据、证书一起删。
+- 装了健康自检 timer 的，跑 `uninstall.sh` 前先 `systemctl disable --now wonton-iroh-relay-healthcheck.timer`，
+  再删 `/etc/systemd/system/wonton-iroh-relay-healthcheck.{service,timer}` 并 `systemctl daemon-reload`。
+  `uninstall.sh` 不处理这两个单元（它删 `/opt/wonton-iroh-relay` 后，留着的 timer 会每 5 分钟失败一次）。
+- 目标机上的 nginx 只删 `/etc/nginx/sites-{available,enabled}/$DOMAIN` 这一个 vhost，主人其他站不动。
 
 ## 排错
 
 - `systemctl status wonton-iroh-relay` 报 `access.shared_token must not be empty`：`relay.env` 缺令牌或为空。
 - 启动报 TLS/cert：`/etc/wonton-iroh-relay/tls/` 里没有证书，先跑 certbot 或 `install.sh`。
 - 公网 502：中继没起或没监听 8742，看 journal。
-- WebSocket 101 但很快断：nginx 少了 `proxy_read_timeout`/`Upgrade` 头（对照 `nginx/relay.808cbd.com.conf`）。
+- WebSocket 101 但很快断：nginx 少了 `proxy_read_timeout`/`Upgrade` 头（对照 `nginx/relay.conf.template`）。
 - QAD 不生效：安全组没放 UDP 7842，或 `quic_bind_addr` 不是 `0.0.0.0:7842`。
 - 401/拿不到数据：客户端令牌和 `relay.env` 不一致。
 

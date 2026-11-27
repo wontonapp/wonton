@@ -3,6 +3,7 @@
 use bollard::models::{MountType, RestartPolicyNameEnum};
 
 use super::compose::DependCondition;
+pub(super) use super::docker;
 use super::hostdir::Owner;
 use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
@@ -40,6 +41,7 @@ mod egress_plugin_docker;
 mod egress_probe;
 mod egress_relay;
 mod egress_switch;
+mod external_url;
 mod friend_namespace;
 mod github;
 mod gpu;
@@ -104,6 +106,7 @@ mod static_web_storage;
 mod stopped;
 mod stopped_docker;
 mod store;
+mod store_install;
 mod store_refresh;
 mod tabs;
 mod tunnel_ports;

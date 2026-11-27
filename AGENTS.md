@@ -112,8 +112,8 @@
 - 只维护：README、本文件、`docs/GOAL.md`、`docs/ARCHITECTURE.md`、`docs/glossary.md`（术语表）、公开仓库里的插件规范、
   `docs/adr/`，以及各模块目录下简短的 README。
 - 改变架构、协议或用户可见行为的 PR，必须在同一个 PR 里更新对应文档。
-- 插件规范在公开仓库 [wonton-docs](https://github.com/wontonapp/wonton-docs)，插件作者要看，主仓库是私有的。改规范的核心 PR
-  同时在那边提 PR，核心合并后再合。那边是公开文档，不引用 ADR 和里程碑。
+- 插件规范在公开仓库 [wonton-docs](https://github.com/wontonapp/wonton-docs)，插件作者要看，主仓库已公开。改规范的核心 PR
+  同时在那边提 PR，核心合并后再合。两个仓库都是公开文档，不引用 ADR 和里程碑。
 - 重大决策写 ADR，写法见 [docs/adr/README.md](docs/adr/README.md)。
 - 不写进度报告、按日期的笔记和已完成的实施计划。进度看 GitHub issue 和里程碑。
 - 注释只写代码表达不了的：为什么这样写（包括没选的写法）、约束和不变量、外部系统的实测行为。不写复述
@@ -154,7 +154,7 @@
 - 提交前运行 `git status --short` 和 `git diff --cached --stat`，确认只包含本次任务的改动。
   截图、录屏、`.xcresult` 等调试产物放在仓库外（截图测试的参考图除外）。
 - 不提交密钥。测试用的示例配置放 `.env.example`。
-- 公开仓库（wonton-docs、各插件仓库、wonton-store）的提交、PR 和截图里，不带真实地址、主机名和内部渠道名。
+- 公开仓库（主仓库、wonton-docs、各插件仓库、wonton-store）的提交、PR 和截图里，不带真实地址、主机名和内部渠道名。
   示例地址用 `192.0.2.10`。
 
 ## 多 Agent 并行开发

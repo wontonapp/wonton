@@ -74,6 +74,16 @@ pub(super) fn upstream(
     }
 }
 
+/// `clients.http.single_host` 时给转发层的规范对外地址（入口快照里算好的）；没声明时 `None`，Host 原样转发。
+fn external_url(gateway: &Gateway, route: &crate::plugin::manager::Route) -> Option<String> {
+    route
+        .clients
+        .as_ref()
+        .is_some_and(|clients| clients.http.single_host)
+        .then(|| gateway.clients.external_url(&route.id))
+        .flatten()
+}
+
 /// 插件自己的容器访问自己的网页地址（ADR-0063）：不要会话，直接转给上游。不代表任何人：代登录的
 /// 请求头和 Cookie 只剥掉、不注入（来源是真的浏览器请求经插件后端转发时，这些值也属于别人）。
 pub(super) async fn self_request(
@@ -90,10 +100,12 @@ pub(super) async fn self_request(
     if let Some(auth) = &route.proxy {
         proxy_sso::strip(req.headers_mut(), auth);
     }
+    let external = external_url(gateway, route);
     let fwd = proxy::Forwarded {
         web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
+        external_url: external.as_deref(),
     };
     let target = proxy::Target {
         endpoint: &upstream,
@@ -131,6 +143,7 @@ pub(super) async fn request(gateway: &Gateway, label: &str, req: Request) -> Res
     plugin_request_path(gateway, label, &host, &langs, format, req).await
 }
 
+#[allow(clippy::too_many_lines)]
 /// 非 Bot 插件网页的转发，沿用角色授权及受限回调例外。
 async fn plugin_request_path(
     gateway: &Gateway,
@@ -183,6 +196,8 @@ async fn plugin_request_path(
         .as_ref()
         .filter(|_| !callback)
         .map(|person| matrix_user_id(gateway, &person.username));
+    // 规范对外地址只在声明了 `single_host` 时用；托管路和普通网页路带同一个值（ADR-0089 第 5 节）。
+    let external = external_url(gateway, &route);
     // 数据存储不经网页的提供方，不看它的状态（ADR-0080 第 6 节）。
     if let Some(hosted) = &route.hosted
         && web_storage::is_data_path(req.uri().path())
@@ -195,6 +210,7 @@ async fn plugin_request_path(
             &origin,
             web_user.as_deref(),
             langs,
+            external.as_deref(),
         )
         .await;
     }
@@ -211,6 +227,7 @@ async fn plugin_request_path(
             req,
             web_user.as_deref(),
             langs,
+            external.as_deref(),
         )
         .await;
     }
@@ -224,6 +241,7 @@ async fn plugin_request_path(
         web_user: web_user.as_deref(),
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
+        external_url: external.as_deref(),
     };
     let target = proxy::Target {
         endpoint: &upstream,
@@ -286,10 +304,12 @@ async fn bot_request(
     {
         return *response;
     }
+    let external = external_url(gateway, &route);
     let fwd = proxy::Forwarded {
         web_user: web_user.as_deref(),
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
+        external_url: external.as_deref(),
     };
     let target = proxy::Target {
         endpoint: upstream,

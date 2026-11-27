@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use tokio::sync::watch;
@@ -34,14 +34,20 @@ pub(crate) use files::{allowlist_toml, blocks_toml};
 /// 网络别名和 `WONTON_FEDERATION_LISTEN` 用的是同一个值，一起改。
 pub(crate) const PROXY_ADDR: &str = "federation-proxy.wonton.internal:8448";
 
-/// 盯着配对名单，变了就把 Tuwunel 的配置跟上来。
+/// 盯着配对名单，变了就把 Tuwunel 的配置跟上来；顺便按待钉窗口开关 `allow_invalid_tls_certificates`。
 pub struct FederationConfig {
     /// 发给 Tuwunel 的重读命令走它。
     matrix: Arc<Matrix>,
     /// 安装目录，`secrets/tuwunel/wonton-fed.toml` 由这里重写。
     install_dir: PathBuf,
+    /// 数据目录，`core/peers.json` 从这里读（待钉窗口的依据）。
+    data_dir: PathBuf,
     notice: Option<Arc<NoticeRoom>>,
     server_name: String,
+    /// 上一次成功让 Tuwunel 用上的 `allow_invalid` 值；写成功但热加载失败时留空重试。
+    window_applied: Mutex<Option<bool>>,
+    /// 主人手改文件顶掉的自动值：文件值和它不同就一直不覆盖（ADR-0112 §5b）。
+    window_manual: Mutex<Option<bool>>,
 }
 
 impl FederationConfig {
@@ -49,6 +55,7 @@ impl FederationConfig {
     pub fn spawn(
         matrix: Option<Arc<Matrix>>,
         install_dir: Option<PathBuf>,
+        data_dir: PathBuf,
         notice: Option<Arc<NoticeRoom>>,
         mut peers: watch::Receiver<BTreeSet<String>>,
         server_name: String,
@@ -61,8 +68,11 @@ impl FederationConfig {
         let config = Arc::new(Self {
             matrix,
             install_dir,
+            data_dir,
             notice,
             server_name,
+            window_applied: Mutex::new(None),
+            window_manual: Mutex::new(None),
         });
         tokio::spawn(async move {
             let mut forbidden = blocks.subscribe();
@@ -70,6 +80,7 @@ impl FederationConfig {
             let initial = peers.borrow_and_update().clone();
             let initial_forbidden = forbidden.borrow_and_update().clone();
             config.apply(initial, initial_forbidden).await;
+            config.apply_window().await;
             loop {
                 tokio::select! {
                     result = peers.changed() => if result.is_err() { break; },
@@ -78,6 +89,7 @@ impl FederationConfig {
                         if let Err(error) = blocks.reload() {
                             tracing::error!(%error, "联邦黑名单读取失败，保留上一次已生效的名单");
                         }
+                        config.apply_window().await;
                         continue;
                     }
                 }
@@ -93,6 +105,103 @@ impl FederationConfig {
         if let Err(failure) = self.apply_inner(&names, &forbidden).await {
             tracing::error!(error = %failure.error, kind = ?failure.kind, "联邦名单更新失败");
             self.notify(failure.kind).await;
+        }
+    }
+
+    /// 按待钉窗口（ADR-0112 §5b）开关 Tuwunel 的 `allow_invalid_tls_certificates`：还有没钉住的老对端就
+    /// 开着；钉齐或窗口到期就关掉。值没变不动文件、不热加载；读不懂记录时保留现值（放宽着也不断线），下一
+    /// 轮再看。
+    async fn apply_window(&self) {
+        let state = match crate::peer_window::window_state(
+            Some(&self.data_dir),
+            crate::build_info::version(),
+        ) {
+            Ok(state) => state,
+            Err(error) => {
+                tracing::error!(%error, "读不出待钉窗口状态，allow_invalid 保持原值");
+                return;
+            }
+        };
+        let needed = state.needed;
+        let path = self.install_dir.join("secrets/tuwunel/tuwunel.toml");
+        // 上次自动写的值从数据目录读回（跨重启）：文件值和它不同就是主人手改的，以文件为准。
+        let mut applied = *self.window_applied.lock().expect("窗口状态锁中毒");
+        if applied.is_none() {
+            applied = crate::peer_window::load_last_applied(&self.data_dir);
+            *self.window_applied.lock().expect("窗口状态锁中毒") = applied;
+        }
+        let had_applied = applied.is_some();
+        if self.window_manual.lock().expect("窗口状态锁中毒").is_none() {
+            *self.window_manual.lock().expect("窗口状态锁中毒") =
+                crate::peer_window::load_manual(&self.data_dir);
+        }
+        match crate::peer_window::allow_invalid(&path).await {
+            Ok(on_disk) if applied != Some(on_disk) => {
+                // 主人手改（或升级时的安装脚本写了别的值）：认文件值。没有上次记录的第一轮算自动值。
+                *self.window_applied.lock().expect("窗口状态锁中毒") = Some(on_disk);
+                let manual = (had_applied && on_disk != needed).then_some(on_disk);
+                *self.window_manual.lock().expect("窗口状态锁中毒") = manual;
+                if let Some(value) = manual {
+                    crate::peer_window::store_manual(&self.data_dir, value).await;
+                }
+                crate::peer_window::store_last_applied(&self.data_dir, on_disk).await;
+                if had_applied {
+                    if let Err(error) = self.matrix.reload_config().await {
+                        tracing::error!(%error, "主人手改了 allow_invalid，热加载失败，下一轮重试");
+                    }
+                    tracing::info!(allow_invalid = on_disk, "按文件里的 allow_invalid 热加载");
+                }
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "读不出 Tuwunel 的 allow_invalid，按上次写的值判断");
+            }
+        }
+        let manual = *self.window_manual.lock().expect("窗口状态锁中毒");
+        if manual.is_some() {
+            if needed && manual != Some(needed) {
+                tracing::debug!(allow_invalid = manual, "主人手动开关着窗口，本轮不自动改");
+                return;
+            }
+            // 对端都钉齐（needed=false）或文件已回到自动值：交回自动；之后新的待钉对端会重新开。
+            *self.window_manual.lock().expect("窗口状态锁中毒") = None;
+            crate::peer_window::clear_manual(&self.data_dir).await;
+        }
+        if *self.window_applied.lock().expect("窗口状态锁中毒") == Some(needed) {
+            return;
+        }
+        if state.expired > 0 {
+            tracing::warn!(
+                expired = state.expired,
+                "待钉窗口已到期，对端还没升级；握手仍按证书名字放行"
+            );
+        }
+        if let Err(error) = crate::peer_window::set_allow_invalid(&path, needed).await {
+            tracing::error!(%error, "改写 allow_invalid_tls_certificates 失败");
+            return;
+        }
+        if let Err(error) = self.matrix.reload_config().await {
+            tracing::error!(%error, "改了 allow_invalid 之后热加载失败，下一轮重试");
+            return;
+        }
+        *self.window_applied.lock().expect("窗口状态锁中毒") = Some(needed);
+        crate::peer_window::store_last_applied(&self.data_dir, needed).await;
+        tracing::info!(
+            allow_invalid = needed,
+            "按待钉窗口改写了 Tuwunel 的证书校验"
+        );
+        if !needed {
+            self.notify_window_closed().await;
+        }
+    }
+
+    /// 窗口关掉时给主人一句话（对端还没升级、钉住了都会关）。
+    async fn notify_window_closed(&self) {
+        let Some(notice) = &self.notice else { return };
+        let body = crate::l10n::text(&(notice.languages)(), "federation-window-closed", &[]);
+        let content = serde_json::json!({"msgtype": "m.text", "body": body});
+        if let Err(error) = notice.send(&content).await {
+            tracing::error!(%error, "窗口关闭的通知发不出去");
         }
     }
 

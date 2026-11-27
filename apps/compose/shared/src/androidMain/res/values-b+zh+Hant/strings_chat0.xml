@@ -49,4 +49,10 @@
     <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
     <string name="chat_status_reconnecting">正在重新連線…</string>
     <string name="chat_plugin_starting">正在啟動 Agent…</string>
+    <string name="chat_ask_failed_no_bot">沒有可以問的 Bot。</string>
+    <string name="chat_ask_failed_bot_problem">這個 Bot 的主房間壞了。</string>
+    <string name="chat_ask_failed_not_in_room">這個房間不是和 Bot 的私訊。</string>
+    <string name="chat_ask_failed_forbidden">Bot 沒有收下這句話。</string>
+    <string name="chat_ask_failed_not_ready">還沒準備好。</string>
+    <string name="chat_start_unavailable">暫時不能聊</string>
 </resources>

@@ -91,6 +91,21 @@ pub struct ClientsPlugin {
     pub public_rules: Option<PublicRules>,
     /// 现在开不了时为什么；能开时为空。
     pub blocked: Option<EntryBlock>,
+    /// 这次开关之后要发生的事，App 的确认页按类别写文字；没有时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<EntryEffect>,
+}
+
+/// 一次开关的副作用（ADR-0089 第 5 节）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum EntryEffect {
+    /// 规范对外地址变了，用到它的服务会重建；应用里正在做的操作会被打断。
+    Restart,
+    /// 比这个 App 新的核心给的效果。
+    #[serde(other)]
+    Other,
 }
 
 /// 谁验证访问（ADR-0021“专用密码”），决定 App 里显示密码还是只说“用应用自己的账号”。

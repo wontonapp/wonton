@@ -24,6 +24,11 @@ jobs:
           persist-credentials: false
       - name: 残留的合并冲突标记
         run: bash scripts/check-conflict-markers.sh
+      # cloud 的安装脚本要求显式 DOMAIN；这条守住“缺域就失败”，别让测试只停在本地。
+      - name: cloud 部署脚本的必填域名测试
+        run: |
+          bash cloud/iroh-relay/test/domain-required-test.sh
+          bash cloud/push-relay/test/domain-required-test.sh
       # ADR 多半是只改文档的 PR，不能挂在结构门禁后面（那些步骤只改文档时跳过）。
       - name: ADR 的文件名和标题编号一致、不重号
         run: python3 scripts/adr-index.py --check
@@ -96,6 +101,9 @@ jobs:
       - name: 许可表检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/licenses -t scripts -p '*_test.py'
+      - name: 夜跑报告脚本自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s .github/scripts
       - name: 开发栈端口检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/dev_ports -t scripts

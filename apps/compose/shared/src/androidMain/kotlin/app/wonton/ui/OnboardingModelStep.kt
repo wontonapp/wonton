@@ -33,6 +33,7 @@ internal fun OnboardingModelStep(
                 title = stringResource(R.string.onboarding_model_use_current),
                 selected = model.choice == OnboardingModelChoice.CURRENT,
                 onSelect = { send(Action.Onboarding(OnboardingAction.UseCurrentModel)) },
+                neutralSelection = true,
             )
         }
         model.settings?.let { settings ->

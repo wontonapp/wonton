@@ -43,4 +43,10 @@
     <!-- Value on the Settings row: backup or recovery is running. -->
     <string name="chat_backup_value_in_progress">處理中</string>
     <string name="chat_plugin_stopped">此 Agent 已停止，啟動後才能回覆。</string>
+    <string name="chat_ask_failed_bot_not_ready">這個 Bot 還沒準備好。</string>
+    <string name="chat_ask_failed_read_only_room">這是通知頻道，到不了 Bot。</string>
+    <string name="chat_ask_failed_contact_required">這個 Bot 還沒把你當聯絡人。</string>
+    <string name="chat_ask_failed_transport">連不上家裡的伺服器。</string>
+    <string name="chat_ask_failed_upstream">家裡的伺服器出錯了。</string>
+    <string name="chat_ask_failed_other">這句話沒能送出去。</string>
 </resources>

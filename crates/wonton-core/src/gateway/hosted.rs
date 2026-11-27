@@ -44,7 +44,7 @@ pub(crate) fn seal(response: &mut Response, hosted: &HostedRoute, cross_origin_i
     }
 }
 
-/// 转发一次；`GET`、`HEAD` 回 404 且清单写了 `fallback` 时，换成 `fallback` 再取一次（单页应用）。
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn forward(
     gateway: &Gateway,
     route: &Route,
@@ -53,6 +53,7 @@ pub(super) async fn forward(
     mut req: Request,
     web_user: Option<&str>,
     langs: &Languages,
+    external_url: Option<&str>,
 ) -> Response {
     let format = pages::Format::of(req.headers());
     mark(req.headers_mut(), route.id.as_str());
@@ -62,14 +63,36 @@ pub(super) async fn forward(
         .filter(|_| matches!(*req.method(), Method::GET | Method::HEAD))
         .and_then(|fallback| fallback_request(&req, fallback));
     let client = client_addr(&req);
-    let mut response = match send(gateway, route, upstream, req, client, web_user, langs).await {
+    let mut response = match send(
+        gateway,
+        route,
+        upstream,
+        req,
+        client,
+        web_user,
+        langs,
+        external_url,
+    )
+    .await
+    {
         Ok(response) => response,
         Err(error) => return error.response(route.id.as_str(), langs, format),
     };
     if response.status() == StatusCode::NOT_FOUND
         && let Some(again) = retry
     {
-        response = match send(gateway, route, upstream, again, client, web_user, langs).await {
+        response = match send(
+            gateway,
+            route,
+            upstream,
+            again,
+            client,
+            web_user,
+            langs,
+            external_url,
+        )
+        .await
+        {
             Ok(response) => response,
             Err(error) => return error.response(route.id.as_str(), langs, format),
         };
@@ -79,6 +102,7 @@ pub(super) async fn forward(
     response
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn send(
     gateway: &Gateway,
     route: &Route,
@@ -87,11 +111,13 @@ pub(super) async fn send(
     client: Option<std::net::SocketAddr>,
     web_user: Option<&str>,
     langs: &Languages,
+    external_url: Option<&str>,
 ) -> Result<Response, proxy::ForwardError> {
     let fwd = proxy::Forwarded {
         web_user,
         client,
         scheme: &gateway.public.scheme,
+        external_url,
     };
     let target = proxy::Target {
         endpoint: upstream,

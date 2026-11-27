@@ -21,7 +21,10 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 受管设备 / 受管电脑 | managed device | 受管裝置 | 管理対象デバイス | 挂在枢纽下、跑 Agent 的电脑；界面不出现“受管设备”，显示电脑自己的名字（如“某某的 MacBook”） |
 | 主机 | computer | 主機 | ホスト | 跑家里服务器的那台机器，讲安装命令时用 |
 | 底栏 | iOS：Tab Bar；Android：Navigation bar | iOS：標籤列；Android：底部導覽列 | iOS：タブバー；Android：ナビゲーションバー | |
-| 固定到底栏 | iOS：Add to Tab Bar；Android：Pin to navigation bar | iOS：加到標籤列；Android：固定到底部導覽列 | iOS：タブバーに追加；Android：ナビゲーションバーに追加 | |
+| 加到 底栏 | iOS：Add to Tab Bar；Android：Add to navigation bar | iOS：加到標籤列；Android：加到底部導覽列 | iOS：タブバーに追加；Android：ナビゲーションバーに追加 | 应用页长按、我的应用编辑态；应用卸载时一起拿掉 |
+| 从底栏移除 | iOS：Remove from Tab Bar；Android：Remove from navigation bar | iOS：從標籤列移除；Android：從底部導覽列移除 | iOS：タブバーから外す；Android：ナビゲーションバーから外す | |
+| 原来的首页 | old Home | 原本的首頁 | 元のホーム | 2026-11-26 撤掉的主界面第一页；现在第一个根页是 Agent 的会话列表，单独说的“首页”指旧版 |
+| 云朵 | cloud | 雲朵 | クラウド | Agent 的形象，每个 Bot 一只 |
 | 全屏 | Full Screen | 全螢幕 | 全画面 | |
 | 引导 | Setup（动词 Set Up） | 初始設定 | セットアップ | 配对后的几步 |
 | 你的资料 | Your Profile | 個人資料 | プロフィール | |
@@ -30,7 +33,8 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 分身（私人 profile） | profile | 分身 | プロフィール | 用户另建的独立身份，独立 Matrix 账号和私聊；界面一律叫“分身”，不出现 profile，英文界面用 Profile；共享 Bot 也是 profile，但不是分身 |
 | 派活 | dispatch | 派活 | 仕事を渡す | 让某台设备上的 Agent 去干一件事 |
 | 工作区 | workspace | 工作區 | ワークスペース | 设备上给一个任务专用的目录 |
-| 默认 Agent | Default Agent | 預設 Agent | デフォルトのエージェント | |
+| 默认 Agent | Default Agent | 預設 Agent | デフォルトのエージェント | 开发文档和插件用语；界面称“助手” |
+| 助手 / 默认助手 | assistant / Default Assistant | 助理 / 預設助理 | アシスタント / デフォルトのアシスタント | 界面对默认 Agent 和默认 Bot 的称呼；插件与开发文档仍称 Agent |
 | Bot | bot | Bot | ボット | 类别名，英文界面也不改叫 Assistant；每个 Bot 有自己的名字，指具体的那一个时写它的名字 |
 | 成员 | member | 成員 | メンバー | 服务器主人邀请进来的人，每人一个账号；设置里的入口也叫这个，不说“家人” |
 | 角色 | role | 角色 | ロール | 给成员的一组勾选好的权限；主人在角色之外，不受角色限制 |

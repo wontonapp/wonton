@@ -46,7 +46,9 @@ use endpoint::loopback_endpoint;
 use fake_core::fake_core;
 pub(super) use io::{read_body, relay};
 
-pub const WAIT: Duration = Duration::from_secs(60);
+/// 一次等待的上限。换服务器、隧道刚抖过时，旧会话的 `stop_sync` 可能先挂住几十秒，`wait_ready`/`signed_in` 要熬过
+/// 这段窗口；CI 的 Docker 作业挤在几核里，登录比本机慢得多，60s 会先到。nextest 的 docker 档案 10 分钟内杀掉测试。
+pub const WAIT: Duration = Duration::from_secs(300);
 /// 探针的间隔。探针只在本地看会话装没装好，不碰网络；隔一会儿再看是给换服务器、重连留插进来的空档。
 const SIGNED_IN_PROBE: Duration = Duration::from_millis(25);
 /// 探通之后还要把这一份会话盯住这么久，没被换掉、也没断开，才算真的就位：隧道刚抖过时会话会马上又被收起来。
@@ -211,6 +213,8 @@ struct Core {
     sync_recording_released: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
+    /// 本人的私人 Bot 接口应答：没有就是没有这个接口（404）。
+    own_private_bot: Mutex<Option<Value>>,
     /// `GET /_wonton/api/me` 的资料，`PUT` 改名字和邮箱。
     me: Mutex<Value>,
     /// “添加设备”发的配对码（`POST /_wonton/api/pairing-codes`），隧道起来后填上；每次要码换一个新 secret。
@@ -301,6 +305,7 @@ impl Core {
             sync_recording_held: watch::Sender::new(None),
             sync_recording_released: watch::Sender::new(false),
             onboarding: Mutex::default(),
+            own_private_bot: Mutex::default(),
             me: Mutex::new(serde_json::json!({
                 "user_id": OWNER,
                 "username": "owner",
@@ -446,6 +451,11 @@ impl Home {
     /// 设置假核心的引导状态；没设置时引导接口回 404。
     pub fn set_onboarding(&self, onboarding: Value) {
         *self.core.onboarding.lock().unwrap() = Some(onboarding);
+    }
+
+    /// 设置假核心的“本人私人 Bot”应答；没设置时这个接口回 404，客户端显示读取问题。
+    pub fn set_own_private_bot(&self, own_private_bot: Value) {
+        *self.core.own_private_bot.lock().unwrap() = Some(own_private_bot);
     }
 
     /// 设置假核心的已装列表应答；没设置时这个接口回 404。
@@ -919,7 +929,16 @@ impl Phone {
                         return;
                     }
                 }
-                Err(error) => last = Some(error.to_string()),
+                Err(error) => {
+                    let view = self.chat();
+                    eprintln!(
+                        "wait_ready: NotReady while account={:?} sync={:?} rooms={} err={error}",
+                        view.account,
+                        view.sync,
+                        view.rooms.len()
+                    );
+                    last = Some(error.to_string());
+                }
             }
             let now = tokio::time::Instant::now();
             if now >= deadline {

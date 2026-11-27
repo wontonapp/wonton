@@ -144,6 +144,9 @@ struct TabPageView: View {
                         PageExitHintMemory.current.remember()
                         showsExitHint = false
                     }
+                    // 网页是 UIKit 的视图，重新打开这一页时它会被重新插到兄弟层的最后，盖住引导的按钮
+                    // （辅助功能树里 WebView 排在引导后面，iOS 26.5 模拟器实测）。显式压上去。
+                    .zIndex(1)
                 }
             }
             .background { Color(colors.canvas).ignoresSafeArea(.container) }
@@ -176,7 +179,8 @@ struct TabPageView: View {
                     page: page, tab: tab, placed: placed, pages: pages, session: session, takeover: takeover,
                     details: { showsDetails = true },
                     shown: capsuleAllowed, panel: panel,
-                    close: close ?? { pages.send(.pages(action: .closePage)) }
+                    close: close ?? { pages.send(.pages(action: .closePage)) },
+                    closePage: closePage
                 )
                 // 面板里按网页框的顶边放：房间的面板第 1 级从屏幕中间开始，那里没有状态栏要让。
                 .padding(.top, panel?.insetTop ?? safe.top)

@@ -53,6 +53,7 @@ gateway-name-models = 模型网关
 # TLS 入口容器后面的客户端入口（ADR-0021）。
 gateway-entry-header-invalid = 入口网关没有给这个请求打上正确的标记
 gateway-entry-closed = 这个入口没有打开，主人可以在 Wonton 应用里打开
+gateway-public-access-off = 公网访问已关，主人可以在 Wonton 应用里打开
 gateway-entry-public-denied = 公网地址上访问不了这个路径
 gateway-entry-setup-pending = 请先在这个应用的网页上完成首次注册，然后再试
 gateway-entry-auth-required = 请用在云吞里给这个应用发的专用密码登录
@@ -180,6 +181,17 @@ clients-credentials-missing-command = 清单里没有 { $op } 命令
 clients-credentials-failed = 应用里的命令失败：{ $error }
 gateway-entry-credentials-not-issued = 应用还没有密码，入口先不开
 clients-domain-read-failed = 域名设置读不了：{ $error }
+clients-public-access-save-failed = 公网访问开关保存不了：{ $error }
+# 公网访问开关的各道闸门：哪道没做成，就按道写哪道（ADR-0090）。
+clients-gate-core-not-in-container-connector = 核心没跑在容器里，连接器起不来
+clients-gate-core-not-in-container-entry = 核心没跑在容器里，入口容器不在
+clients-gate-connector-still-running = 连接器还开着
+clients-gate-connector-not-running = 连接器没起来
+clients-gate-public-list-still-empty = 公网证书列表还是空的
+clients-gate-public-list-not-cleared = 公网证书列表没清空
+clients-gate-entry-not-reloaded = 入口没有重读配置：{ $error }
+clients-gate-connector-mismatch = 连接器容器和开关不一致
+clients-gate-public-list-mismatch = 公网证书列表和开关不一致
 gateway-chains-disabled = 家里的服务器没有启用调用链账本
 
 # agent_acp 的转发（ADR-0061 第 5 块）：建连时的拒绝和逐帧转发里的错误，按类别回给使用方。
@@ -209,7 +221,14 @@ gateway-install-card-setting = 请求里填的设置：{ $title } = { $value }
 gateway-install-changed = 卡片发出后 { $id } 的权限、设备或设置已经改过，没有升级。请重新发起。
 clients-switch-container = 核心没有运行在容器里，无法接入入口网络
 clients-switch-domain = 请先配置域名和有效证书，再打开入口
-clients-switch-lan = 局域网入口还没开放：局域网转发容器尚未就绪
+clients-switch-lan = 还没检测过这台主机的局域网地址，请稍后再试
+clients-switch-lan-selection = 选不出局域网地址，无法开放局域网入口：{ $reason }
+clients-switch-lan-not-private = 这台主机的局域网地址（{ $addresses }）不是私有 IPv4 地址，局域网入口只能开在 10.x、172.16–31.x、192.168.x 上
+clients-switch-lan-wide-subnet = 局域网地址所在的网段 { $subnet } 超出了私有地址范围，无法只放行局域网里的设备
+clients-switch-lan-unknown-subnet = 不知道局域网地址 { $address } 所在的网段，无法只放行局域网里的设备
+clients-switch-lan-record-wrong = 局域网域名指向了 { $found }，请在 DNS 服务商处把记录改成：{ $record }
+clients-switch-lan-record-missing = 还没有局域网域名的记录，请在 DNS 服务商处添加：{ $record }
+clients-switch-lan-record-failed = 查不到局域网域名的记录，请稍后再试；需要的记录是：{ $record }（{ $error }）
 clients-switch-setup = 请先在应用网页完成首次注册
 clients-switch-app-unavailable = 应用没有运行，无法检查首次注册状态
 clients-switch-credentials = 应用还没有成功发过一次密码

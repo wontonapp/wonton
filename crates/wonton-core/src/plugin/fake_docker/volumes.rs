@@ -7,7 +7,7 @@ use axum::http::{Method, StatusCode};
 use axum::response::Response;
 use serde_json::{Value, json};
 
-use super::{Resources, gone, json_reply, labeled, labels_of};
+use super::{FakeDocker, Resources, gone, json_reply, labeled, labels_of, owned_by};
 
 type Labels = BTreeMap<String, String>;
 
@@ -47,4 +47,17 @@ fn volume(name: &str, labels: &Labels) -> Value {
         "Name": name, "Driver": "local", "Mountpoint": format!("/var/lib/docker/volumes/{name}"),
         "Labels": labels, "Options": {}, "Scope": "local"
     })
+}
+
+impl FakeDocker {
+    pub fn volumes(&self) -> Vec<String> {
+        self.lock().volumes.keys().cloned().collect()
+    }
+
+    /// 放进一个已有的卷，比如别的插件的。
+    pub fn add_volume(&self, name: &str, plugin: &str) {
+        self.lock()
+            .volumes
+            .insert(name.to_owned(), owned_by(plugin));
+    }
 }

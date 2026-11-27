@@ -303,6 +303,10 @@ plugin-settings-models-connect-first = Bot が返信できるように、「モ�
 plugin-settings-models-not-ready = モデルゲートウェイ{ $provider }の準備ができていません：{ $error }
 plugin-settings-models-command-rejected = モデルゲートウェイ{ $provider }が資格情報のコマンドを拒否しました（{ $command }、終了コード{ $code }）：{ $stderr }
 
+plugin-settings-models-command-outcome-unknown = モデルゲートウェイでの前回の資格情報コマンドの結果はまだわかりません
+plugin-settings-models-credential-container-missing = モデルゲートウェイ{ $gateway }の資格情報コンテナが存在しません
+plugin-settings-models-credential-missing = モデルゲートウェイの利用元{ $id }に資格情報{ $name }がありません
+
 # ── ストアのインデックス（storefront）────────────────────────────────────
 
 plugin-settings-store-index-fetch-failed = 公式インデックスを取得できません：{ $error }
@@ -333,6 +337,8 @@ plugin-settings-secret-not-text = アプリのシークレット{ $name }がテ�
 plugin-settings-secret-invalid = アプリのシークレット{ $name }：コンテナ{ $container }の{ $path }は{ $reason }
 plugin-settings-secret-not-regular = 通常のファイルではありません
 plugin-settings-secret-too-big = 64 KiBを超えています
+plugin-settings-secret-not-collected = 書かれていません（インストールが終わる前にサービスが書くはずです。collect.path を確認してください）
+plugin-settings-secret-no-container = 起動していません（サービスが起動していないか、collect.service が間違っています）
 
 # ── 外部プラグインのBot（bots.rs）────────────────────────────────────────
 

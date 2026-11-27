@@ -16,6 +16,7 @@ mod owner_secrets;
 mod polling;
 mod registry_mirror;
 mod settings;
+mod shared_bots;
 mod sharing;
 mod start;
 pub(crate) mod store_api;

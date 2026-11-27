@@ -26,6 +26,7 @@ use super::api::languages;
 use super::pages::{ERROR_HEADER, escape, layout};
 use super::{Gateway, Person};
 use crate::l10n;
+use crate::matrix::invite_filter::ExactUserId;
 use crate::mcp::{Draft, Refusal};
 use crate::plugin::languages::Languages;
 
@@ -223,7 +224,7 @@ async fn submit(gateway: Arc<Gateway>, req: Request, langs: Languages) -> Respon
             &langs,
         );
     };
-    let id = match gateway.friend_requests.reserve(&target, &requester) {
+    let id = match gateway.friend_requests.reserve(&target, requester.as_str()) {
         Ok(id) => id,
         Err(err) => {
             let (status, kind, text) = match err {
@@ -245,7 +246,10 @@ async fn submit(gateway: Arc<Gateway>, req: Request, langs: Languages) -> Respon
     let draft = draft(&gateway, &gateway.plugins.owner_languages(), &target);
     let location = format!("{PATH}/{id}");
     let asking = async move {
-        let outcome = match bus.ask_plugin_admin(requester.clone(), draft).await {
+        let outcome = match bus
+            .ask_plugin_admin(requester.as_str().to_owned(), draft)
+            .await
+        {
             Ok(_ticket) => approve(&gateway, &target, &requester).await,
             Err(Refusal::Rejected) => Outcome::Denied,
             Err(Refusal::Expired) => Outcome::Expired,
@@ -273,23 +277,21 @@ fn invalid(langs: &Languages) -> Response {
     )
 }
 
-/// 两个 ID 都过关才返回（发起人，对方成员用户名）；拒绝的原因小，响应到调用处再拼。
-fn check(gateway: &Gateway, requester: &str, to: &str) -> Result<(String, String), Refused> {
+/// 两个 ID 都过关才返回（发起人，对方成员用户名）；拒绝的原因小，响应到调用处再拼。发起人要是一个具体的
+/// Matrix 用户（[`ExactUserId`]）：批准会把它原样写进名单。
+fn check(gateway: &Gateway, requester: &str, to: &str) -> Result<(ExactUserId, String), Refused> {
     let Some(target) = local_member(gateway, to).map(str::to_owned) else {
         return Err(Refused::Unknown);
     };
-    if !valid_user_id(requester) {
+    let Some(requester) = ExactUserId::parse(requester) else {
         return Err(Refused::Invalid);
-    }
+    };
     let server = gateway
         .matrix
         .as_ref()
         .map(|matrix| matrix.server_name())
         .unwrap_or_default();
-    if requester
-        .split_once(':')
-        .is_some_and(|(_, host)| host.eq_ignore_ascii_case(server))
-    {
+    if requester.server_name().eq_ignore_ascii_case(server) {
         return Err(Refused::Local);
     }
     if target == gateway.owner.username() {
@@ -299,7 +301,7 @@ fn check(gateway: &Gateway, requester: &str, to: &str) -> Result<(String, String
         Gate::Allow => Err(Refused::Open),
         // “朋友”模板（以及不认识、按 Deny 处理的取值）不能自己加好友，邀请会被拦在这里，页面也帮不上。
         Gate::Deny | Gate::Other => Err(Refused::Forbidden),
-        Gate::AskAdmin => Ok((requester.to_owned(), target)),
+        Gate::AskAdmin => Ok((requester, target)),
     }
 }
 
@@ -377,7 +379,7 @@ fn draft(gateway: &Gateway, langs: &Languages, target: &str) -> Draft {
 }
 
 /// 批准之后的落账：在锁里重看这个成员，还受限才记名单。
-async fn approve(gateway: &Gateway, target: &str, requester: &str) -> Outcome {
+async fn approve(gateway: &Gateway, target: &str, requester: &ExactUserId) -> Outcome {
     let _sync = gateway.member_sync.lock().await;
     let Some(record) = gateway
         .members
@@ -396,7 +398,7 @@ async fn approve(gateway: &Gateway, target: &str, requester: &str) -> Outcome {
         return Outcome::Unavailable("没有接上 Matrix".to_owned());
     };
     match matrix
-        .allow_invitees(&record.username, &[requester.to_owned()])
+        .allow_invitees(&record.username, std::slice::from_ref(requester))
         .await
     {
         Ok(()) => Outcome::Approved,
@@ -471,14 +473,6 @@ fn status(gateway: &Gateway, langs: &Languages, id: &str) -> Response {
             reply(status, kind, text, langs)
         }
     }
-}
-
-fn valid_user_id(id: &str) -> bool {
-    id.starts_with('@')
-        && !id.contains(char::is_whitespace)
-        && id
-            .split_once(':')
-            .is_some_and(|(localpart, host)| localpart.len() > 1 && !host.is_empty())
 }
 
 /// 登记一条待批；同一个人对同一个人只留一条。

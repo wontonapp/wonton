@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use axum::response::Response;
 use serde_json::{Value, json};
 
-use super::{Resources, json_reply};
+use super::{FakeDocker, Resources, json_reply};
 
 /// `POST /containers/{name}/update`：把资源字段的值合并进容器创建时的 `HostConfig`，
 /// 之后 inspect 报告的就是新值（Docker 重建前 update 也是这样立刻生效）。
@@ -30,4 +30,11 @@ pub(super) fn update_container(docker: &mut Resources, name: &str, raw: &Bytes) 
         }
     }
     json_reply(StatusCode::OK, json!({"Warnings": []}))
+}
+
+impl FakeDocker {
+    /// 下次容器更新时返回 Docker 错误；`None` 恢复正常。
+    pub fn fail_updates(&self, message: Option<&str>) {
+        self.lock().update_error = message.map(str::to_owned);
+    }
 }

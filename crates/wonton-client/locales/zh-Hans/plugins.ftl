@@ -19,6 +19,9 @@ files-api-tunnel-unavailable = 隧道不可用（{ $code }）
 # $status 是原始 HTTP 状态码。
 files-api-status = 核心回了 { $status }
 
+# 详情里的一行：$status 是原始 HTTP 状态码，$said 是上传服务原样给的错误（英文）。
+files-api-status-said = 核心回了 { $status }：{ $said }
+
 # 原文件和选择时不一样时显示。
 files-upload-source-changed = 原文件改过了，要重新选择
 

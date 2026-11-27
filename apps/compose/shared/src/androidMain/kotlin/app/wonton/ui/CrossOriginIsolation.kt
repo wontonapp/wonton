@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -13,10 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,20 +55,23 @@ private const val KEEP_ALIVE_SERVICE = "app.wonton.android.browser.BrowserKeepAl
 /**
  * 要跨源隔离的插件页（`TabPage.opensInBrowser`，ADR-0033）：Android WebView 给不了，App 里不加载。
  * [autoOpen] 时进来就交给浏览器一次。开过之后这一页讲明它已交给浏览器，并给回聊天和再打开一次，
- * 从浏览器（HOME 再点图标、关掉标签）回来不会停在无出路的页面上。
+ * 从浏览器（HOME 再点图标、关掉标签）回来不会停在无出路的页面上；页面关掉重开是新的交接，才再自动开一次。
  */
 @Composable
-internal fun BrowserPageStatus(page: TabPage, core: ClientCore, autoOpen: Boolean, onBackToChat: () -> Unit) {
+internal fun BrowserPageStatus(
+    page: TabPage, core: ClientCore, autoOpen: Boolean, attempted: MutableState<Boolean>,
+    allowed: Boolean, onBackToChat: () -> Unit,
+) {
     val context = LocalContext.current
-    val url = page.url ?: return
+    val url = page.url?.takeIf { allowed } ?: return
     var problem by remember(url) { mutableStateOf<Problem?>(null) }
-    var opened by rememberSaveable(url, page.reload) { mutableStateOf(false) }
     val open = {
-        opened = true
+        attempted.value = true
         problem = openPluginInBrowser(context, core, url)
+        if (problem == null) Toast.makeText(context, R.string.tab_browser_return_hint, Toast.LENGTH_LONG).show()
     }
-    LaunchedEffect(url, page.reload, autoOpen) {
-        if (autoOpen && !opened) open()
+    LaunchedEffect(url, page.reload, autoOpen, allowed) {
+        if (autoOpen && allowed && !attempted.value) open()
     }
     problem?.let {
         ProblemView(it, onRetry = open)
@@ -79,11 +83,14 @@ internal fun BrowserPageStatus(page: TabPage, core: ClientCore, autoOpen: Boolea
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            stringResource(if (opened) R.string.tab_opened_in_browser else R.string.tab_opens_in_browser, page.title),
+            stringResource(
+                if (attempted.value) R.string.tab_opened_in_browser else R.string.tab_opens_in_browser,
+                page.title,
+            ),
             style = WontonTheme.typography.itemTitle,
             color = WontonTheme.colors.textPrimary.toColor(),
         )
-        if (opened) {
+        if (attempted.value) {
             WontonButton(stringResource(R.string.tab_back_to_chat), onBackToChat)
             WontonButton(stringResource(R.string.tab_reopen_in_browser), open, kind = WontonButtonKind.SECONDARY)
         } else {
@@ -115,6 +122,12 @@ internal fun openPluginInBrowser(context: Context, core: ClientCore, url: String
         Problem(
             titleRes = R.string.tab_no_browser,
             nextStepRes = R.string.tab_no_browser_next_step,
+            detail = failure.javaClass.simpleName,
+        )
+    } catch (failure: SecurityException) {
+        Problem(
+            titleRes = R.string.tab_no_browser,
+            nextStepRes = R.string.tab_browser_denied_next_step,
             detail = failure.javaClass.simpleName,
         )
     }

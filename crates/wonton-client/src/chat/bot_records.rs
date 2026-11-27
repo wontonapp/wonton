@@ -15,7 +15,7 @@ impl Bots {
         let (views, refresh) = reconcile(&mut local, &old, &self.layouts.current(), || {
             self.refresh_serial.fetch_add(1, Ordering::SeqCst) + 1
         });
-        self.view.send_modify(|view| view.bots = views);
+        self.publish_bots_and_contacts(&local, views);
         drop(local);
         self.update_activity();
         for id in refresh {

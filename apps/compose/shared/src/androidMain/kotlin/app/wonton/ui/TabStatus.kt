@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -28,16 +29,19 @@ import app.wonton.ui.design.toColor
 @Composable
 internal fun PluginTabStatus(
     page: TabPage, tab: TabRef, tabs: PagesState, problem: Problem?, supported: Boolean,
-    crossOriginBlocked: Boolean, onDetails: (String) -> Unit, place: PlacedTab? = null,
+    crossOriginBlocked: Boolean, onDetails: (String) -> Unit, place: PlacedTab?,
+    browserAttempted: MutableState<Boolean>, browserAllowed: Boolean,
 ) {
     val state = page.state
-    // 核心让它在系统浏览器里打开（ADR-0033 的“跨源隔离”）：App 里只留一行说明。
+    // 核心让它在系统浏览器里打开（ADR-0033 的“跨源隔离”）。
     val inBrowser = crossOriginBlocked && problem == null &&
         (state is TabState.Ready || state is TabState.Upgrading)
     if (inBrowser) {
         BrowserPageStatus(
             page, tabs.core,
             autoOpen = place !is PlacedTab.Panel,
+            attempted = browserAttempted,
+            allowed = browserAllowed,
             onBackToChat = {
                 when (place) {
                     is PlacedTab.Panel -> tabs.send(Action.Pages(PageAction.RemovePanelPage(place.scope, tab)))

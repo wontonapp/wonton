@@ -51,4 +51,10 @@
     <!-- Value on the Settings row: backup or recovery is running. -->
     <string name="chat_backup_value_in_progress">Working</string>
     <string name="chat_plugin_stopped">This agent is stopped. Start it to receive replies.</string>
+    <string name="chat_ask_failed_bot_not_ready">This Bot isn\'t ready yet.</string>
+    <string name="chat_ask_failed_read_only_room">This is a notification channel; it can\'t reach a Bot.</string>
+    <string name="chat_ask_failed_contact_required">This Bot doesn\'t have you as a contact yet.</string>
+    <string name="chat_ask_failed_transport">Can\'t reach your home server.</string>
+    <string name="chat_ask_failed_upstream">Your home server had a problem.</string>
+    <string name="chat_ask_failed_other">The message couldn\'t be sent.</string>
 </resources>

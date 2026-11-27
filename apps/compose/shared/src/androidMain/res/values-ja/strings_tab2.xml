@@ -30,4 +30,5 @@
     <string name="tab_back_to_chat">チャットに戻る</string>
     <!-- この案内を閉じて以後表示しないボタン。引数なし。短いラベル。 -->
     <string name="tab_exit_hint_got_it">了解</string>
+    <string name="tab_browser_return_hint">Wontonに戻るには、システムの戻る操作かブラウザのページを閉じる操作をお試しください。</string>
 </resources>

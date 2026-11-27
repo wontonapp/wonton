@@ -11,8 +11,8 @@
     <!-- Next step: try after the update finishes. -->
     <string name="problem_plugin_core_upgrading_next_step">更新完成後再試。</string>
     <string name="problem_plugin_health_timeout_title">應用程式還沒就緒</string>
-    <!-- Next step: contact the app's author. -->
-    <string name="problem_plugin_invalid_next_step">請聯絡應用程式的作者。</string>
+    <!-- Next step: read the reason in Details; a key the app must write being missing needs the app's author. -->
+    <string name="problem_plugin_invalid_next_step">看「詳細資訊」裡的原因；如果缺的是 App 要寫的密鑰，聯絡 App 的作者。</string>
     <!-- Problem title: the app's package is broken. -->
     <string name="problem_plugin_invalid_title">這個應用程式的安裝套件有問題</string>
     <!-- Next step: stop the container or program using this port, then try again. -->

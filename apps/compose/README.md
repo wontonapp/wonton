@@ -116,12 +116,12 @@ adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<�
 
 配对后的四步引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md)：资料、模型、应用、确认；不再选 Agent，默认 Bot 由核心按默认 Agent 插件重建。
 每一步只在客户端核心的内存里记下选择，最后一页列出权限和说明，点“完成”才保存资料、模型并在后台安装应用。
-每项显示进展和失败重试；保存完成即可进入聊天，不等待镜像下载。核心没有给出默认 Agent 的聊天身份时留在聊天列表。
+每项显示进展和失败重试；选项选中用勾选标志，没装且装不了时显示原因并禁用，已安装的不因安装限制被禁选；保存完成即可进入聊天，不等待镜像下载。核心没有给出默认 Agent 的聊天身份时留在聊天列表。
 首次状态加载失败会显示整屏错误，可重试或只在这次运行里先跳过；设置里的“重看引导”会重新打开完整流程。
 验证首次体验使用独立开发数据目录；重看时显示服务器上现有设置，不删除既有应用或模型配置。
 
 名字必填、邮箱选填，字段错误由核心给出。模型页只有“沿用当前模型”和打开上游设置页的入口，供应商、key 和登录都在设置页里选。
-取 key 的厂商链接交给系统浏览器。
+网页里的保存立即生效，不属于引导草稿；网关未就绪时显示原因，跳过或打开网页都不表示模型已经可用。取 key 的厂商链接交给系统浏览器。
 
 ## 插件页
 
@@ -145,7 +145,8 @@ adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<�
 [ADR-0033 的 Android 验证](../../docs/adr/0033-plugin-tabs.md#android-标签页容器)。
 
 声明跨源隔离的插件遵循 [ADR-0033 的跨源隔离规则](../../docs/adr/0033-plugin-tabs.md#跨源隔离)：核心标出
-`TabPage.opensInBrowser`，App 里不加载，交给系统浏览器（Custom Tabs）打开，页内只留一行说明和重新打开的按钮。
+`TabPage.opensInBrowser`，App 里不加载，交给系统浏览器（Custom Tabs）打开，页内说明并给回聊天和重新打开。交接时提示
+可尝试系统返回或关闭浏览器页面；面板页只在点击打开时交接。实际返回方式取决于浏览器和系统。
 
 ## App 链接和桌面快捷方式
 
@@ -187,13 +188,14 @@ Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将
 用真核心和真入口，不走 `ui-fake`。
 
 - 栈：开发栈（`remote-dev.sh`/`stack-slot.sh` 起的），**别连正式安装**；配对码从自己那套栈现取（10 分钟、单次）。
-- 两个 APK 必须同一台机器上编：本机和 194 的 debug keystore 不同，混着装会签名不符、`am instrument` 直接被拒。
+- 两个 APK 必须同一台机器上编：本机和验证机的 debug keystore 不同，混着装会签名不符、`am instrument` 直接被拒。
+- `ssh <机>-stack` / `remote-dev.sh --host <机>` 里的 `<机>` 是开发机名，下面命令同理。
 - 没传 `-e code` 时用例 `Assume` 跳过（nightly 的安卓作业不带参数，见 `nightly-ui.yml`）。
 - 已知软失败在用例的 `knownIssues` 里放行（现在只有“没配模型时 `/` 没有命令菜单”），新问题照红。
 - 截图由用例写进设备相册 `Pictures/WontonUITests/`；侧栏只验入口存在和点得开，进页面以后的内容属于各页面自己的测试。
 
 ```bash
-code=$(ssh 194-stack dev <栈名> pair 192.168.0.194:<隧道端口> | grep -o 'wonton://pair[^[:space:]]*' | tail -1)
+code=$(ssh <机>-stack dev <栈名> pair <机局域网地址>:<端口> | grep -o 'wonton://pair[^[:space:]]*' | tail -1)
 adb shell "am instrument -w -r -e class app.wonton.android.FirstRunWalkthroughTest \
   -e phase light -e code '$code' app.wonton.android.test/androidx.test.runner.AndroidJUnitRunner"
 ```

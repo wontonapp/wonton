@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -44,12 +44,14 @@ impl ChatLink {
         reuse(
             view,
             ChatViewModel {
+                ask: None,
                 chat_layout_default: Default::default(),
                 account: ChatAccount::SignedOut,
                 sync: ChatSync::Idle,
                 encryption,
                 installing_bots: Vec::new(),
                 rooms: Vec::new(),
+                shared_contacts: Vec::new(),
                 problem: None,
                 push: PushStatus::NoEndpoint,
                 pending_confirmations: Vec::new(),
@@ -117,6 +119,7 @@ impl ChatLink {
             retry_confirmations: Arc::new(tokio::sync::Notify::new()),
             card_success,
             resetting_recovery: AtomicBool::default(),
+            ask_seq: AtomicU64::default(),
             default_bot: Arc::new(Mutex::new(None)),
             room_order: Arc::new(onboarding::RoomOrder::new()),
             sent: watch::Sender::new(Vec::new()),
@@ -191,6 +194,7 @@ impl ChatLink {
     pub(crate) fn dispatch(self: &Arc<Self>, action: ChatAction) -> Result<(), CoreError> {
         match action {
             ChatAction::DismissChatProblem => {
+                self.invalidate_ask();
                 self.view.send_modify(|view| view.problem = None);
                 Ok(())
             }

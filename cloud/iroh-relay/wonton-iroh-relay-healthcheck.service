@@ -1,0 +1,31 @@
+[Unit]
+Description=Wonton iroh-relay 本机健康自检（只报警，不重启服务）
+Documentation=https://github.com/wontonapp/wonton/blob/main/cloud/iroh-relay/README.md
+After=wonton-iroh-relay.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/wonton-iroh-relay/healthcheck.sh
+Nice=10
+
+# 只读检查：证书 0640、relay.env 0600 都要能读；不需要任何 capability。
+NoNewPrivileges=true
+CapabilityBoundingSet=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

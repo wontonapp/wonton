@@ -91,6 +91,7 @@ impl PluginManager {
 
     pub fn attach_clients_gateway(&self, gateway: &Arc<crate::gateway::Gateway>) {
         let _ = self.clients_gateway.set(Arc::downgrade(gateway));
+        self.refresh_clients();
     }
 
     pub(in crate::plugin) fn clients_gateway(&self) -> Option<Arc<crate::gateway::Gateway>> {

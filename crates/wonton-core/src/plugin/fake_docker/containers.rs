@@ -5,10 +5,11 @@ use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Value, json};
 
+use super::files::archive_of;
 use super::networks::{endpoint_settings, published, running, state_name};
 use super::update::update_container;
 use super::{
-    FakeExec, Resources, archive_of, drop_container, gone, json_reply, labeled, labels_of,
+    FakeDocker, FakeExec, Labels, Resources, gone, json_reply, labeled, labels_of, owned_by,
     query_param,
 };
 
@@ -172,11 +173,15 @@ fn container_details(
             let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
             let cmd = serde_json::from_value(body["Cmd"].clone()).unwrap_or_default();
             let id = format!("exec{}", docker.execs.len() + 1);
+            let created = docker.next_exec;
+            docker.next_exec += 1;
             let exec = FakeExec {
                 container: (*name).to_owned(),
                 cmd,
                 stdin: Vec::new(),
+                started: false,
                 exit_code: None,
+                created,
             };
             docker.execs.insert(id.clone(), exec);
             json_reply(StatusCode::CREATED, json!({"Id": id}))
@@ -376,4 +381,181 @@ fn list_containers(docker: &Resources, query: &str) -> Response {
         })
         .collect();
     json_reply(StatusCode::OK, json!(list))
+}
+
+impl FakeDocker {
+    /// 放进一个运行中的容器，比如核心重启前就装好的插件的容器。
+    pub fn add_container(&self, name: &str, plugin: &str) {
+        self.lock()
+            .containers
+            .insert(name.to_owned(), owned_by(plugin));
+    }
+
+    pub fn containers(&self) -> Vec<String> {
+        self.lock().containers.keys().cloned().collect()
+    }
+
+    /// 放进一个不是核心创建的容器，`body` 是创建它的请求。
+    pub fn add_stranger_container(&self, name: &str, body: Value) {
+        let mut docker = self.lock();
+        docker.containers.insert(name.to_owned(), Labels::new());
+        let networks = body["NetworkingConfig"]["EndpointsConfig"].as_object();
+        for (network, endpoint) in networks.into_iter().flatten() {
+            docker
+                .endpoints
+                .entry(network.clone())
+                .or_default()
+                .insert(name.to_owned(), endpoint.clone());
+        }
+        docker.created.insert(name.to_owned(), body);
+    }
+
+    /// 把容器接进网络，如核心升级前的容器。
+    pub fn add_endpoint(&self, network: &str, container: &str, endpoint: Value) {
+        self.lock()
+            .endpoints
+            .entry(network.to_owned())
+            .or_default()
+            .insert(container.to_owned(), endpoint);
+    }
+
+    /// 容器在网络里的端点。
+    pub fn endpoint(&self, network: &str, container: &str) -> Option<Value> {
+        self.lock().endpoints.get(network)?.get(container).cloned()
+    }
+
+    /// 让这个名字的容器（现在的或之后创建的）报告给定的状态，如
+    /// `{"Status": "exited", "ExitCode": 0}`。
+    pub fn set_state(&self, container: &str, state: Value) {
+        let mut docker = self.lock();
+        docker.restartable.remove(container);
+        docker.states.insert(container.to_owned(), state);
+    }
+
+    /// 容器从 Docker 里不见了（被外部删掉）：连创建记录和归档一起清，模拟它没出现过。
+    pub fn remove(&self, container: &str) {
+        let mut docker = self.lock();
+        drop_container(&mut docker, container);
+        docker.created.remove(container);
+        docker.archives.remove(container);
+    }
+
+    /// 容器被标了删除（`docker rm` 或 Compose 换容器）：端点还在，断开被 Docker 拒绝；
+    /// 再被 inspect `inspects_left` 次之后容器连同端点一起没。
+    pub fn mark_removing(&self, container: &str, inspects_left: u32) {
+        self.lock()
+            .removing
+            .insert(container.to_owned(), inspects_left);
+    }
+
+    /// 这个容器被 inspect 过的次数。
+    pub fn inspect_count(&self, container: &str) -> u32 {
+        self.lock()
+            .inspect_count
+            .get(container)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// 容器连端点一起没掉时已发生的写操作条数；还没没掉时 `None`。
+    pub fn removed_at(&self, container: &str) -> Option<usize> {
+        self.lock().removed_at.get(container).copied()
+    }
+
+    pub fn fail_stops(&self, message: Option<&str>) {
+        self.lock().stop_error = message.map(str::to_owned);
+    }
+
+    pub fn set_start_state(&self, container: &str, state: Value) {
+        self.lock().start_states.insert(container.to_owned(), state);
+    }
+
+    pub fn fail_starts(&self, message: Option<&str>) {
+        self.lock().start_error = message.map(str::to_owned);
+    }
+
+    /// 下一次创建指定容器时返回错误；消费后自动恢复正常。
+    pub fn fail_next_create(&self, container: &str, message: &str) {
+        self.lock().create_error = Some((container.to_owned(), message.to_owned()));
+    }
+
+    /// 让这个容器的 inspect（`GET /containers/{name}/json`）一直报这个错；`None` 恢复。
+    pub fn fail_inspect(&self, container: &str, message: Option<&str>) {
+        self.lock().inspect_error = message.map(|m| (container.to_owned(), m.to_owned()));
+    }
+
+    /// 下一次 kill 失败；开关测试改用管理端口后暂时没调用方，留给以后按信号路径重测。
+    #[allow(dead_code)]
+    pub fn fail_next_kill(&self, container: &str, message: &str) {
+        self.lock().kill_error = Some((container.to_owned(), message.to_owned()));
+    }
+
+    pub fn fail_remove(&self, container: &str, message: Option<&str>) {
+        self.lock().remove_error =
+            message.map(|message| (container.to_owned(), message.to_owned()));
+    }
+
+    /// 这个名字的容器（之后创建的）跑完时的退出码和输出。
+    pub fn set_output(&self, container: &str, code: i64, stdout: &str, stderr: &str) {
+        let output = (code, stdout.to_owned(), stderr.to_owned());
+        self.lock().outputs.insert(container.to_owned(), output);
+    }
+
+    /// 容器最近一次创建时的环境变量。
+    pub fn env(&self, container: &str) -> Vec<String> {
+        let created = self.created(container).unwrap_or_default();
+        let env = created["Env"].as_array().cloned().unwrap_or_default();
+        env.iter()
+            .filter_map(|e| e.as_str().map(str::to_owned))
+            .collect()
+    }
+
+    /// 容器最近一次创建时的请求。
+    pub fn created(&self, container: &str) -> Option<Value> {
+        self.lock().created.get(container).cloned()
+    }
+
+    /// 容器被创建过的次数（重建会计数）。
+    pub fn creations(&self, container: &str) -> u32 {
+        self.lock()
+            .creation_count
+            .get(container)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// 放进一个从 `image` 创建的运行中的容器，比如核心自己的容器。
+    pub fn add_image_container(&self, name: &str, image: &str) {
+        let mut docker = self.lock();
+        docker.containers.insert(name.to_owned(), Labels::new());
+        docker
+            .created
+            .insert(name.to_owned(), json!({"Image": image}));
+    }
+
+    /// 放进一个核心容器：跑着的镜像 ID 和创建时的镜像引用（`Config.Image`）可以不一样，
+    /// 模拟核心镜像的标签已被移走（#666）。
+    pub fn add_core_container(&self, name: &str, image_id: &str, reference: &str) {
+        let mut docker = self.lock();
+        docker.containers.insert(name.to_owned(), Labels::new());
+        docker.created.insert(
+            name.to_owned(),
+            json!({"Image": image_id, "Config": {"Image": reference}}),
+        );
+    }
+}
+
+/// 容器连同端点、状态一起从假 Docker 里没掉，记下当时的写操作条数。`created` / `archives` 是历史记录
+/// （最近一次创建请求、一次性容器写下的东西），容器没了也留着，测试靠它们看它怎么被建的。
+fn drop_container(docker: &mut Resources, name: &str) {
+    docker.removing.remove(name);
+    docker.containers.remove(name);
+    docker.states.remove(name);
+    docker.restartable.remove(name);
+    for endpoints in docker.endpoints.values_mut() {
+        endpoints.remove(name);
+    }
+    docker
+        .removed_at
+        .insert(name.to_owned(), docker.writes.len());
 }

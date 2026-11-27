@@ -37,7 +37,8 @@ jobs:
     runs-on: xcode-27
     # 上限按跑完全套留足：跑测试前的准备（Rust 核心、测试包、模拟器）约 30 分钟，全套 UI 测试
     # 在 Apple 芯片的开发机上 40 多分钟（2026-11，约 90 个用例），托管机器更慢。
-    timeout-minutes: 180
+    # 11-25 实测：约 103 条只跑了一半就到 120 分钟被砍；上限再放宽，给全套留时间（托管机更慢）。
+    timeout-minutes: 240
     permissions:
       contents: read
       issues: write
@@ -115,6 +116,16 @@ jobs:
           xcrun simctl erase "$UDID" || true
           xcrun simctl boot "$UDID" || true
           xcrun simctl bootstatus "$UDID" -b
+      # 相册是空的，附件面板里的照片格就不出；权限靠系统弹窗问，第一次问得比测试等的 10 秒晚，测试没点到，
+      # 自动挂起的弹窗又按了“不允许”，后面所有用例都只看到没有相册权限（ChatTelegramUITests、
+      # ComposerSendRejectUITests）。两条都在这里就地办好：直接授权，再放两张固定的小图进去。
+      # 导入是异步的，但离跑测试还有编测试包的三十多分钟，导入早就完了。
+      - name: 给相册授权并放两张照片
+        timeout-minutes: 5
+        run: |
+          xcrun simctl privacy "$SIMULATOR_UDID" grant photos app.wonton.ios
+          xcrun simctl addmedia "$SIMULATOR_UDID" apps/ios/WontonUITests/Fixtures/photo-1.png \
+            apps/ios/WontonUITests/Fixtures/photo-2.png
       # 先只编测试包：录屏和跑测试分开，安装 App 时不和启动的模拟器抢。
       - name: 编测试包
         timeout-minutes: 30
@@ -129,7 +140,7 @@ jobs:
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
       - name: 跑 WontonUITests 并录屏
-        timeout-minutes: 120
+        timeout-minutes: 170
         run: |
           set -o pipefail
           rm -rf "$RUNNER_TEMP/ui.xcresult"
@@ -150,7 +161,7 @@ jobs:
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 90 \
             -maximum-test-execution-time-allowance 600 \
-            -collect-test-diagnostics never \
+            -collect-test-diagnostics on-failure \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
             -skip-testing:WontonUITests/PasteUITests/testPeerShowsImage \

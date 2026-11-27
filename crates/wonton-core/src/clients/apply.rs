@@ -8,6 +8,7 @@ use crate::gateway::Gateway;
 use crate::plugin::clients_entry::SetupCheck;
 use crate::plugin::manager::ClientPlugin;
 use crate::plugin::manifest::PluginId;
+use crate::plugin::store::InstalledRecord;
 use wonton_protocol::{CertificateState, ClientAuthKind, ClientsFailure, EntryBlock};
 
 pub(crate) struct ApplyError {
@@ -78,12 +79,18 @@ pub(crate) fn keyed(
     }
 }
 
+/// 开关改完之后的样子：要回给 App 的阻断原因，和这次会不会让应用重启。
+pub(crate) struct Applied {
+    pub blocked: Option<EntryBlock>,
+    pub restarts: bool,
+}
+
 pub(crate) async fn set_entry(
     gateway: &Gateway,
     id: &PluginId,
     kind: Kind,
     enabled: bool,
-) -> Result<Option<EntryBlock>, ApplyError> {
+) -> Result<Applied, ApplyError> {
     let _serial = gateway.clients_apply.lock().await;
     let client = find_client(gateway, id)?;
     if enabled {
@@ -93,6 +100,11 @@ pub(crate) async fn set_entry(
     let _record = gateway.plugins.clients_record_lock().await;
     // 验证可能会等待 setup 检查；重新确认插件仍然存在后再修改记录。
     find_client(gateway, id)?;
+    let before = client.record.clone();
+    let after = switched(&before, kind, enabled);
+    // 规范对外地址变了就得重启用到它的服务；没变的不动（ADR-0089 第 5 节）。
+    let value_changed =
+        external_url_of(gateway, &before).await != external_url_of(gateway, &after).await;
     if enabled {
         apply_model(gateway, Some((id, kind))).await?;
         if let Err(message) = gateway.plugins.update_client_entry(id, kind, true) {
@@ -117,12 +129,58 @@ pub(crate) async fn set_entry(
             return Err(failure);
         }
     }
+    let mut restarts = false;
+    if value_changed {
+        match rebuild_external_url(gateway, &after).await {
+            Ok(did) => restarts = did,
+            Err(mut failure) => {
+                // 重启失败：开关、入口模型和容器都退回原样，回不去的逐项写进详情。
+                if let Err(rollback) = gateway.plugins.restore_client_entry(&before) {
+                    failure.note(
+                        "clients-switch-rollback-switch",
+                        error(ClientsFailure::PluginUnavailable, rollback),
+                    );
+                } else {
+                    if let Err(rollback) = apply_model(gateway, None).await {
+                        failure.note("clients-switch-rollback-entry", rollback);
+                    }
+                    let _ = rebuild_external_url(gateway, &before).await;
+                }
+                return Err(failure);
+            }
+        }
+    }
     // 开启只在配置应用成功后发布；关闭先撤销连接，失败回滚也不能复活旧连接。
     gateway.plugins.publish_client_entries();
-    Ok(
-        (kind == Kind::Public && enabled && !gateway.public_access_enabled())
+    Ok(Applied {
+        blocked: (kind == Kind::Public && enabled && !gateway.public_access_enabled())
             .then_some(EntryBlock::PublicAccessOff),
-    )
+        restarts,
+    })
+}
+
+fn switched(record: &InstalledRecord, kind: Kind, enabled: bool) -> InstalledRecord {
+    let mut next = record.clone();
+    match kind {
+        Kind::Lan => next.clients_entries.lan = enabled,
+        Kind::Public => next.clients_entries.public = enabled,
+    }
+    next
+}
+
+async fn external_url_of(gateway: &Gateway, record: &InstalledRecord) -> Option<String> {
+    crate::clients::external_url::for_record(gateway, record).await
+}
+
+async fn rebuild_external_url(
+    gateway: &Gateway,
+    record: &InstalledRecord,
+) -> Result<bool, ApplyError> {
+    gateway
+        .plugins
+        .rebuild_external_url_users(record)
+        .await
+        .map_err(|cause| error(ClientsFailure::PluginUnavailable, cause.to_string()))
 }
 
 pub(crate) async fn block_reason(
@@ -155,7 +213,7 @@ pub(crate) async fn block_reason(
         && gateway
             .entry
             .as_ref()
-            .is_none_or(|entry| !entry.lan_forward_available())
+            .is_none_or(|entry| !entry.lan().usable())
     {
         return Ok(Some(EntryBlock::LanUnavailable));
     }
@@ -315,12 +373,13 @@ async fn check_can_open(
             vec![("error", format!("{cause:#}"))],
         )
     })?;
-    if view.suffix.is_none() || !certificate_ready(&view.certificate) {
-        return Err(error(ClientsFailure::Conflict, "clients-switch-domain"));
-    }
+    let suffix = match view.suffix {
+        Some(suffix) if certificate_ready(&view.certificate) => suffix,
+        _ => return Err(error(ClientsFailure::Conflict, "clients-switch-domain")),
+    };
 
-    if kind == Kind::Lan && !entry.lan_forward_available() {
-        return Err(error(ClientsFailure::LanUnavailable, "clients-switch-lan"));
+    if kind == Kind::Lan {
+        super::lan_forward::check_open(gateway, entry, &suffix).await?;
     }
 
     let route = gateway

@@ -69,6 +69,7 @@ pub(super) async fn request(gateway: &Gateway, mut req: Request) -> Response {
         web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
+        external_url: None,
     };
     match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {
         Ok(response) => response,

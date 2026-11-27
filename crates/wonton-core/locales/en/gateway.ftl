@@ -53,6 +53,7 @@ gateway-name-models = model gateway
 # Client entries behind the TLS entry container (ADR-0021).
 gateway-entry-header-invalid = The entry gateway didn't label this request correctly
 gateway-entry-closed = This entry is turned off; the owner can turn it on in the Wonton app
+gateway-public-access-off = Public access is off; the owner can turn it on in the Wonton app
 gateway-entry-public-denied = This path isn't available on the public address
 gateway-entry-setup-pending = Finish the app's first-time setup on its web page first, then try again
 gateway-entry-auth-required = Sign in with the app password issued in Wonton
@@ -180,6 +181,17 @@ clients-credentials-missing-command = The app manifest has no { $op } command
 clients-credentials-failed = The command in the app failed: { $error }
 gateway-entry-credentials-not-issued = The app has no password yet, so its entry stays closed
 clients-domain-read-failed = Couldn't read the domain settings: { $error }
+clients-public-access-save-failed = Couldn't save the public access switch: { $error }
+# The public access switch's gates: what didn't get done, per gate (ADR-0090).
+clients-gate-core-not-in-container-connector = The core isn't running in a container, so the connector can't start
+clients-gate-core-not-in-container-entry = The core isn't running in a container, so there's no entry container
+clients-gate-connector-still-running = The connector is still running
+clients-gate-connector-not-running = The connector didn't start
+clients-gate-public-list-still-empty = The public certificate list is still empty
+clients-gate-public-list-not-cleared = The public certificate list wasn't cleared
+clients-gate-entry-not-reloaded = The entry didn't reload its configuration: { $error }
+clients-gate-connector-mismatch = The connector container doesn't match the switch
+clients-gate-public-list-mismatch = The public certificate list doesn't match the switch
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
 
 # agent_acp forwarding (ADR-0061, block 5): connect-time refusals and per-frame errors, returned to the consumer by category.
@@ -209,7 +221,14 @@ gateway-install-card-setting = Setting filled in by the request: { $title } = { 
 gateway-install-changed = The permissions, devices or settings of { $id } changed after the card was sent, so it was not upgraded. Please ask again.
 clients-switch-container = The core is not running in a container, so the entry network is unavailable
 clients-switch-domain = Configure a domain and a valid certificate before opening this entry
-clients-switch-lan = LAN access is unavailable because the LAN forwarder is not ready
+clients-switch-lan = This host's LAN address has not been detected yet. Try again shortly
+clients-switch-lan-selection = No LAN address could be chosen, so LAN access cannot be opened: { $reason }
+clients-switch-lan-not-private = This host's LAN addresses ({ $addresses }) are not private IPv4 addresses. LAN access only works on 10.x, 172.16–31.x and 192.168.x
+clients-switch-lan-wide-subnet = The LAN subnet { $subnet } extends beyond private addresses, so access cannot be limited to devices on the LAN
+clients-switch-lan-unknown-subnet = The subnet of LAN address { $address } is unknown, so access cannot be limited to devices on the LAN
+clients-switch-lan-record-wrong = The LAN domain points to { $found }. Change the record at your DNS provider to: { $record }
+clients-switch-lan-record-missing = The LAN domain has no record yet. Add this at your DNS provider: { $record }
+clients-switch-lan-record-failed = The LAN domain record could not be checked. Try again shortly. The record needed is: { $record } ({ $error })
 clients-switch-setup = Complete the app's initial registration on its website first
 clients-switch-app-unavailable = The app is not running, so its setup cannot be checked
 clients-switch-credentials = The app has not issued a password successfully

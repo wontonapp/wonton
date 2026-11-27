@@ -73,12 +73,12 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 不把端口声明当作已绑定成功。iOS 不提供第三方 App 用的手动映射开关。
 
 新用户引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md)：`OnboardingGate` 在配对后按核心步骤接管页面；首次获取失败时显示重试和本次运行的跳过入口。
-`Design/StepCardFrame` 和 `StepOptionRow` 只渲染导航与选项，不推算步骤。资料和选择只发草稿操作。
-模型页只有“沿用当前模型”和打开上游设置页的入口，供应商、key 和登录都在设置页里选；其他按钮只看核心导航。
+`Design/StepCardFrame` 和 `StepOptionRow` 只渲染导航与选项，不推算步骤。选项选中用勾选标志，没装且装不了时显示原因并禁用，已安装的不因安装限制被禁选。
+资料和应用选择只发草稿操作；模型页只有“沿用当前模型”和打开上游设置页的入口，供应商、key 和登录都在设置页里选。
 最后一页复用安装确认页的权限和说明，点完成才统一保存、后台安装；每项进展和重试由核心驱动，保存完成后可进入聊天，不等下载。
 安装结果不确定时不重复发起安装，提示去应用页查看；原始原因留在收起的详情中。
 资料输入框同时供设置和安装确认使用，邮箱选填。推荐问题和网页文字共用房间草稿，只有发送按钮发送；设置可以重看引导。
-重看引导显示核心给的已有配置，不跳步；设置页经已安装插件的网页容器、配对隧道和单点登录打开，关闭网页后刷新引导。
+重看引导显示核心给的已有配置，不跳步；设置页经已安装插件的网页容器、配对隧道和单点登录打开，关闭网页后刷新引导；网关未就绪时显示原因，打开网页或跳过不表示模型已经可用。
 
 底栏根页不显示大标题，连接状态仍在顶栏显示，状态栏下垫系统材质。聊天列表右下角的材质加号在底栏胶囊上方，点按进入“发起私聊”；列表可滚动到按钮上方。
 
@@ -117,6 +117,18 @@ xcodegen generate --spec apps/ios/project.yml
 
 然后用 Xcode 打开 `apps/ios/Wonton.xcodeproj` 运行。改了 Rust 代码后重新运行 `build-core.sh`；
 增删 Swift 文件后重新运行 `xcodegen`。模拟器只支持 Apple 芯片的 Mac。
+
+发版归档用 Release，核心也要 release 的，**顺序反过来：先 `apps/ios/scripts/build-core.sh release`，再归档**：
+
+```bash
+xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath build/Wonton.xcarchive archive
+```
+
+Release 的配置在归档时把符号全剥掉（`project.yml` 的 `DEPLOYMENT_POSTPROCESSING`、`STRIP_STYLE=all`），函数名和
+行号只留在归档目录的 `dSYMs/` 里：崩溃栈要还原就靠它，归档和 dSYM 一起留，别删上一次的。体积用
+`WONTON_MAX_APP_MB=<上限> bash scripts/check-app-size.sh build/Wonton.xcarchive` 量，它打成 ipa 报下载大小、
+按位置列各部分、查主二进制是不是真剥过，超上限就退出 1；CI 在 `ios-size.yml` 里跑同一支脚本。
 
 真机要用自己的开发团队签名：在 Xcode 里登录 Apple ID 后，命令行这样构建（团队 ID 是开发证书的 OU）：
 
@@ -168,7 +180,7 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 长按菜单、`/`、侧栏），浅色和深色各一例，每步留截图。两例都是新设备（每例换数据目录），**每例要一个码**，一例只给它一个码时
 那一例会 `XCTSkip`；没有一个码时整类跳过。
 
-用 `mini-walkthrough.sh up <名字> <检出> --host 194` 起栈和模拟器，`build` 一次，再 `test <名字> FirstRunWalkthroughUITests`
+用 `mini-walkthrough.sh up <名字> <检出> --host <机>` 起栈和模拟器（`<机>` 是开发机名），`build` 一次，再 `test <名字> FirstRunWalkthroughUITests`
 （它的 `test` 会按用例数现取码）。已知软失败在 `knownIssues` 里放行，新问题照红。
 
 ## 检查
@@ -233,7 +245,7 @@ apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
   重置那条用上一台已删、手里的密钥已作废的状态。栈在别的机器上时这两个命令要在那套栈上跑
   （`ssh <机>-stack dev <栈名> devices` / `revoke <ID>`），在调用机直接跑会打到本机 Docker。
 - 交接那条要比较两端表情：示例打出 `表情：` 那行后，把后面的 7 个符号（一个空格分隔，用例按空格拆）写进 App 容器的
-  `Documents/sas-emoji.txt`。用例只等 120 秒，得用命令写；在 mini 上跑时这三条经 `ssh mini-ios light <名字> -- …` 执行：
+  `Documents/sas-emoji.txt`。用例只等 120 秒，得用命令写；在开发机上跑时这三条经 `ssh mini-ios light <名字> -- …` 执行：
 
 ```bash
 symbols=$(grep '^表情：' <示例日志> | tail -n 1 | sed 's/^表情：//')

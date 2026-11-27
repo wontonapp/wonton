@@ -205,7 +205,7 @@ impl PluginManager {
         let storefront =
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
-        let clients = Arc::new(crate::clients::state::State::new(&store));
+        let clients = Arc::new(crate::clients::state::State::new(&store, &cfg.public));
         let client_passwords = match crate::clients::passwords::PasswordStore::open(&cfg.data_dir) {
             Ok(passwords) => Some(Arc::new(passwords)),
             // 打开失败时客户端列表和开关都会报密码库不可用；留下原因，不然只能看到那句报错。
@@ -281,9 +281,21 @@ impl PluginManager {
     }
 
     pub(super) fn changed(&self) {
-        self.clients.refresh(&self.store);
+        self.refresh_clients();
         self.changes.send_modify(|generation| *generation += 1);
         self.activity.changed();
+    }
+
+    /// 入口快照里的规范对外地址跟着记录和域名后缀走：记录一变（`changed`）和挂上网关时各刷一次。
+    fn refresh_clients(&self) {
+        let suffix = self.clients_gateway().and_then(|gateway| {
+            gateway
+                .domain
+                .as_ref()
+                .and_then(|domain| domain.suffix().ok().flatten())
+        });
+        self.clients
+            .refresh(&self.store, suffix.as_deref(), &self.cfg.public);
     }
 
     /// 声明了 `mcp`、MCP 服务现在能用的插件：运行中，或者异常但 MCP 服务自己好着。

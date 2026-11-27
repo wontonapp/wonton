@@ -135,10 +135,11 @@ pub use bot_web::{
 };
 pub use bot_web_registration::{BotWebConflict, bot_web_registration};
 pub use chat::{
-    BackupReminder, BotInstallRow, BotInstallState, ChatAccount, ChatContact, ChatFailure,
-    ChatProblem, ChatSync, ChatViewModel, DeviceVerification, EncryptionStatus, ImageThumbnail,
-    ImageUpload, MessageSummary, OwnBotFailure, OwnBotProblem, OwnPrivateBotView,
-    PendingConfirmation, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
+    AskFailure, AskProblem, AskReceipt, AskState, BackupReminder, BotInstallRow, BotInstallState,
+    ChatAccount, ChatContact, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
+    DeviceVerification, EncryptionStatus, ImageThumbnail, ImageUpload, MessageSummary,
+    OwnBotFailure, OwnBotProblem, OwnPrivateBotView, PendingConfirmation, RecoveryNextStep,
+    RecoveryStatus, RoomBot, RoomMembership, RoomPreview, RoomRow,
 };
 pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
@@ -148,13 +149,13 @@ pub use clients::{
     Ban, CLIENTS_ERROR_HEADER, CLIENTS_HEADER, CaaState, CertificateState, ClientAuthKind,
     ClientsBlocked, ClientsErrorBody, ClientsFailure, ClientsGuests, ClientsPassword,
     ClientsPlugin, ClientsProblem, ClientsSettingsViewModel, ClientsState, ClientsStatus,
-    ClientsViewModel, CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryKind,
-    EntrySwitch, GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState, GuestLink,
-    IngressKind, IngressSettings, LanRecordState, NewGuestLinkRequest, NewPasswordRequest,
-    PASSWORD_ID_HEADER, PASSWORD_PENDING_HEADER, PasswordSummary, PasswordValue, PendingChange,
-    PendingChangeKind, PendingOp, ProbeResult, PublicAccess, PublicItem, PublicReach,
-    PublicRuleMode, PublicRules, PublicSwitchState, PutDomainRequest, PutIngressRequest,
-    RevokeDeviceRequest, SetEntryRequest, clients_ban_path, clients_domain_path,
+    ClientsViewModel, CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryEffect,
+    EntryKind, EntrySwitch, GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState,
+    GuestLink, IngressKind, IngressSettings, LanRecordState, NewGuestLinkRequest,
+    NewPasswordRequest, PASSWORD_ID_HEADER, PASSWORD_PENDING_HEADER, PasswordSummary,
+    PasswordValue, PendingChange, PendingChangeKind, PendingOp, ProbeResult, PublicAccess,
+    PublicItem, PublicReach, PublicRuleMode, PublicRules, PublicSwitchState, PutDomainRequest,
+    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, clients_ban_path, clients_domain_path,
     clients_entry_path, clients_guest_path, clients_guests_path, clients_ingress_path,
     clients_password_path, clients_passwords_path, clients_path, clients_public_access_path,
     clients_status_path, dns_providers_path,
@@ -191,13 +192,14 @@ pub use error::{CoreError, set_core_error_formatter};
 pub use family::FAMILY_ROOM_SYNC_PATH;
 pub use family::MEMBER_SYNC_PATH;
 pub use family::{
-    BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, FamilyFailure, FamilyProblem,
-    FamilyViewModel, GATEWAY_REFUSAL_HEADER, GatewayRefusal, HOP_LIMIT_ERRCODE, JoinRequestRow,
-    JoinRequestsViewModel, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH,
-    MY_PRIVATE_BOT_PATH, Me, Member, MemberCode, MemberInvite, MemberInviteView, MemberList,
-    MemberPairingCode, MemberRemoval, MemberRow, MemberStatus, MembersViewModel, MyAvatarProblem,
-    NewSharedBot, OwnPrivateBotResponse, OwnPrivateBotResult, PrivateBotIdentity,
-    PrivateBotRoomProblem, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path,
+    BotAccess, BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, FamilyFailure, FamilyProblem,
+    FamilyViewModel, GATEWAY_REFUSAL_ERRCODE_PREFIX, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
+    HOP_LIMIT_ERRCODE, JoinRequestRow, JoinRequestsViewModel, ME_PATH,
+    MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, MY_PRIVATE_BOT_PATH, Me, Member, MemberCode,
+    MemberInvite, MemberInviteView, MemberList, MemberPairingCode, MemberRemoval, MemberRow,
+    MemberStatus, MembersViewModel, MyAvatarProblem, NewSharedBot, OwnPrivateBotResponse,
+    OwnPrivateBotResult, PrivateBotIdentity, PrivateBotRoomProblem, Role, SHARED_BOTS_PATH,
+    SharedBot, SharedBotsState, SharedBotsView, TOOL_CALL_USER_META, member_pairing_code_path,
     member_removal_path,
 };
 pub use file::{

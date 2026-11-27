@@ -52,12 +52,16 @@ async fn run(dir: &str, code: &str) {
     if !paired {
         pair_home();
     }
-    // 加入别人家的码要管理员同意：等批是一个状态，不是失败。同意之后拿同一个码再配一次才会配上，
-    // 所以在等批期间自己重试。
+    // 加入别人家的码要管理员同意（JoinPending）；同意之后拿同一个码再配一次才会配上，所以停在这一步就自己重试。
     let deadline = Instant::now() + WAIT;
     let mut pending = false;
     loop {
-        if !paired && let Some(PairingStatus::JoinPending { .. }) = &core.home().pairing {
+        if !paired
+            && matches!(
+                &core.home().pairing,
+                Some(PairingStatus::JoinPending { .. })
+            )
+        {
             if !pending {
                 println!("等管理员同意加入");
                 let _ = std::io::stdout().flush();

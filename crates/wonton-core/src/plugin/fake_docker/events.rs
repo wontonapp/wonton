@@ -5,8 +5,10 @@ use std::convert::Infallible;
 use axum::body::{Body, Bytes};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::sync::broadcast;
+
+use super::FakeDocker;
 
 pub(super) fn events_response(receiver: broadcast::Receiver<Value>) -> Response {
     let stream = futures_util::stream::unfold(receiver, |mut receiver| async move {
@@ -28,4 +30,15 @@ pub(super) fn events_response(receiver: broadcast::Receiver<Value>) -> Response 
         Body::from_stream(stream),
     )
         .into_response()
+}
+
+impl FakeDocker {
+    /// 发一条 Docker 容器 OOM 事件，事件里的 ID 使用容器名，和 Docker inspect 一样可查询。
+    pub fn emit_oom(&self, container: &str) {
+        let _ = self.events.send(json!({
+            "Type": "container",
+            "Action": "oom",
+            "Actor": {"ID": container},
+        }));
+    }
 }

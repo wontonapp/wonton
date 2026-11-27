@@ -94,6 +94,8 @@ pub struct Config {
     /// 启动器声明的宣告地址（`WONTON_ANNOUNCE_ADDRESSES`，ADR-0019）：设了就不再自动选，端口绑通配地址、告诉手机用它。
     /// 每项是私有地址，可以带前缀（直连网段用）。
     pub announce_addresses: Option<Vec<Announced>>,
+    /// 第三方客户端的局域网入口在宿主上发布的端口（`WONTON_CLIENT_PORT`，ADR-0021），默认 8483。
+    pub client_port: std::num::NonZeroU16,
     /// 出网插件走的代理（`WONTON_EGRESS_PROXY`，ADR-0023）。设了就只用它，App 里不能改。
     pub egress_proxy: Option<ProxyAddress>,
     /// 安装脚本检测到的代理（`WONTON_EGRESS_PROXY_DETECTED`）：只作初值，App 里能改。
@@ -163,6 +165,9 @@ pub struct Config {
     pub federation_listen: String,
     /// Tuwunel 的联邦端口（`WONTON_MATRIX_FEDERATION_ADDR`，ADR-0050），主机名用时解析。
     pub matrix_federation_addr: String,
+    /// 配对联邦的证书材料目录（`WONTON_PEER_TLS_DIR`，ADR-0112）：本机 CA 的证书和私钥。
+    /// 不设时出站不终结 TLS（还没装过证书材料）。
+    pub peer_tls_dir: Option<PathBuf>,
     /// 升级时看的渠道（`WONTON_CORE_SOURCE`）：`仓库:tag`。正式安装才有（ADR-0025）。
     pub core_source: Option<String>,
     /// compose 文件和 `.env` 所在的目录（`WONTON_INSTALL_DIR`）。正式安装才有。
@@ -292,6 +297,12 @@ impl Config {
             host_udev,
             lan_addresses,
             announce_addresses,
+            client_port: parse(
+                &get,
+                "WONTON_CLIENT_PORT",
+                std::num::NonZeroU16::new(crate::entry_containers::DEFAULT_CLIENT_PORT)
+                    .expect("默认端口不是 0"),
+            )?,
             egress_proxy: proxy_address(&get, "WONTON_EGRESS_PROXY")?,
             egress_proxy_detected: proxy_address(&get, "WONTON_EGRESS_PROXY_DETECTED")?,
             doh_url: doh_url(&get)?,
@@ -335,6 +346,9 @@ impl Config {
                 .unwrap_or_else(|| "0.0.0.0:8448".into()),
             matrix_federation_addr: get("WONTON_MATRIX_FEDERATION_ADDR")
                 .unwrap_or_else(|| "tuwunel.wonton.internal:8448".into()),
+            peer_tls_dir: get("WONTON_PEER_TLS_DIR")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from),
             core_source: get("WONTON_CORE_SOURCE"),
             install_dir: get("WONTON_INSTALL_DIR").map(PathBuf::from),
         })

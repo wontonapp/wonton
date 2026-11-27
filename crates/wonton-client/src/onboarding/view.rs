@@ -224,6 +224,7 @@ mod tests {
 
     fn chat(room_id: &str, bot: Option<&str>) -> ChatViewModel {
         ChatViewModel {
+            ask: None,
             chat_layout_default: Default::default(),
             account: ChatAccount::SignedIn {
                 user_id: "@owner:home".to_owned(),
@@ -242,6 +243,7 @@ mod tests {
                 key_handoff: None,
             },
             installing_bots: Vec::new(),
+            shared_contacts: Vec::new(),
             rooms: vec![RoomRow {
                 unread_mentions: 0,
                 layout: Default::default(),
@@ -252,6 +254,7 @@ mod tests {
                 direct_user_id: bot.map(str::to_owned),
                 plugin: None,
                 bot_chat: None,
+                bot: None,
                 is_encrypted: true,
                 is_read_only: false,
                 membership: wonton_protocol::RoomMembership::Joined,
