@@ -101,6 +101,11 @@ fn provider_target(
     query: Option<&str>,
 ) -> Result<(String, Option<String>), MediaFailure> {
     let path = path.strip_prefix(MEDIA_API_PREFIX).unwrap_or(path);
+    // 根路径结尾的 `/` 不算空段：`/library/` 就是 `/library`。
+    let path = path
+        .strip_suffix('/')
+        .filter(|root| root.get(1..).is_some_and(|rest| !rest.contains('/')))
+        .unwrap_or(path);
     let bad = || {
         failure(
             MediaFailureCode::Protocol,
@@ -122,8 +127,9 @@ fn provider_target(
     {
         match pair.strip_prefix("source=") {
             Some(value) => {
+                // `source=` 空着当没带，照默认规则选。
                 let value = percent_decode_str(value).decode_utf8().map_err(|_| bad())?;
-                source = Some(value.into_owned());
+                source = (!value.is_empty()).then(|| value.into_owned());
             }
             None => kept.push(pair),
         }

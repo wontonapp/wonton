@@ -106,6 +106,11 @@ pub(super) fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
         .route(&at("/queue"), get(queue::read).post(queue::change))
         .route(&at("/items"), get(bytes::items))
         .route(&at("/items/{id}/artwork"), get(bytes::artwork))
+        // 根路径（这家接哪些写操作）带不带结尾的 `/` 都认；`{*rest}` 不匹配空串。
+        .route(&at("/library"), get(browse::library))
+        .route(&at("/library/"), get(browse::library))
+        .route(&at("/catalog"), get(browse::catalog))
+        .route(&at("/catalog/"), get(browse::catalog))
         .route(
             &at("/library/{*rest}"),
             get(browse::library).post(browse::library),

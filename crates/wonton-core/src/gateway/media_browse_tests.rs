@@ -64,3 +64,29 @@ async fn catalog_requests_reach_the_provider_as_sent_without_the_source() {
         (StatusCode::SERVICE_UNAVAILABLE, Some("plugin_unavailable"))
     );
 }
+
+#[tokio::test]
+async fn the_browse_roots_and_an_empty_source_follow_the_usual_rules() {
+    let f = fixture().await;
+    // 根路径带不带结尾的 `/` 都进媒体路由：这里没有提供方声明 `library`，回失败信封，不落到核心的兜底页。
+    for path in ["/_wonton/api/media/library", "/_wonton/api/media/library/"] {
+        let (status, _, body) = f.send(Method::GET, path, &[], Body::empty()).await;
+        let failure: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(
+            (status, failure["code"].as_str()),
+            (StatusCode::SERVICE_UNAVAILABLE, Some("plugin_unavailable")),
+            "{path}"
+        );
+    }
+    // `source=` 空着当没带：按默认规则选到唯一那家，转过去的查询串里也没有它。
+    let (status, _, _) = f
+        .send(
+            Method::GET,
+            "/_wonton/api/media/catalog/entries/abc?source=",
+            &[],
+            Body::empty(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(f.hits("GET /catalog/entries/abc"), 1);
+}
