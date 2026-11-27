@@ -173,6 +173,8 @@ async fn leave_history(core: &Arc<ClientCore>) -> Result<(), String> {
         .dispatch(Action::Chat {
             action: ChatAction::AskAgent {
                 text: history.clone(),
+                room_id: None,
+                request_id: None,
             },
         })
         .is_ok();

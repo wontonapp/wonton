@@ -116,3 +116,12 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = 沒發出去：家裡伺服器拒收。（{ $error }）
+
+chat-ask-failed-no-bot = 沒有可以問的 Bot。
+chat-ask-failed-bot-not-ready = 這個 Bot 還沒準備好。
+chat-ask-failed-bot-problem = 這個 Bot 的主房間壞了。
+chat-ask-failed-read-only-room = 這是通知頻道，到不了 Bot。
+chat-ask-failed-transport = 連不上家裡的伺服器。
+chat-ask-failed-upstream = 家裡的伺服器出錯了。
+chat-ask-failed-other = 這句話沒能送出去。
+chat-ask-target-missing = 沒有目標。

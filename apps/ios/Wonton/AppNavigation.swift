@@ -168,9 +168,9 @@ final class AppNavigation {
             try select(.chat)
             chat.startNewChat()
         case .agentChat:
-            let bot = try primaryBot()
             try select(.chat)
-            chat.openDirectChat(with: bot, acceptingInvitation: true)
+            // 空一句话只解析并打开默认 Agent 的私聊；写不写由用户决定。
+            try chat.startAsk(text: "", roomId: nil)
         case let .room(roomId):
             try select(.chat)
             chat.openRoom(id: roomId)
@@ -243,13 +243,9 @@ final class AppNavigation {
         guard try await navigationReady() else {
             throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyAskAgent))
         }
-        let bot = try primaryBot()
-        // 新操作不能被上一次后台失败留下的 problem 提前判成失败。
-        try chat.core.dispatch(action: .chat(action: .dismissChatProblem))
-        try chat.core.dispatch(action: .chat(action: .askAgent(text: text)))
+        // 当前房间只原样带上 Bot 私聊（含只读的通知房）；回执说发到哪就开哪，不再按 peer 扫房间。
+        try chat.startAsk(text: text, roomId: chat.currentBotRoomId)
         try select(.chat)
-        // AskAgent 已负责建房和接受邀请，不能再发一次 StartDirectChat。
-        chat.openAskedAgentChat(with: bot)
     }
 
     /// 已配对设备冷启动时引导状态先为空；只等恢复，不等用户走完真实的引导步骤。`deadline` 给在后台运行、
@@ -283,20 +279,6 @@ final class AppNavigation {
             }
             try await Task.sleep(for: .milliseconds(100))
         }
-    }
-
-    private func primaryBot() throws -> String {
-        let onboarding = chat.core.onboarding()
-        guard onboarding.defaultBotVisibility == .visible, let bot = onboarding.defaultBotUserId, !bot.isEmpty else {
-            if let problem = onboarding.problem {
-                throw IntentProblem(problem: problem.problem)
-            }
-            if onboarding.defaultBotVisibility == .absent, onboarding.defaultBotUserId == nil {
-                throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyDefaultAgentAbsent))
-            }
-            throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyAgentUnverified))
-        }
-        return bot
     }
 
     private func select(_ tab: TabRef) throws {

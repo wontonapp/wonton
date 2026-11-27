@@ -107,6 +107,7 @@ fn paired() -> HomeViewModel {
 
 fn chat(account: ChatAccount, sync: ChatSync, rooms: Vec<RoomRow>) -> ChatViewModel {
     ChatViewModel {
+        ask: None,
         chat_layout_default: Default::default(),
         account,
         sync,

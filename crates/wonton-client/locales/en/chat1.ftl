@@ -49,6 +49,9 @@ chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
 chat-ask-invalid-room-id = The direct chat's room ID isn't valid.
 
+# Shown when asking the default Bot fails. The shell writes the main sentence; this is the
+# default-collapsed detail. Keep the category names in docs/glossary.md.
+
 chat-invalid-action = Not a chat action.
 
 # Shown when the shell sends an answer this core doesn't know.
@@ -104,3 +107,7 @@ chat-op-agent-answer-failed = Can't answer the option: { $error }
 
 # 附言没进发送队列或没被服务器收下，转发也没发。
 chat-forward-comment-failed = The comment wasn't sent, so the forward wasn't sent: { $error }
+chat-ask-failed-not-in-room = This room isn't a chat with a Bot.
+chat-ask-failed-contact-required = This Bot doesn't have you as a contact yet.
+chat-ask-failed-forbidden = The Bot didn't accept the message.
+chat-ask-failed-not-ready = Not ready yet.

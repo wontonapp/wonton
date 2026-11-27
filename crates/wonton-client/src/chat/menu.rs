@@ -491,6 +491,7 @@ mod tests {
 
     fn empty_chat() -> (watch::Sender<ChatViewModel>, watch::Receiver<ChatViewModel>) {
         watch::channel(ChatViewModel {
+            ask: None,
             account: wonton_protocol::ChatAccount::SignedOut,
             sync: wonton_protocol::ChatSync::Idle,
             encryption: wonton_protocol::EncryptionStatus {

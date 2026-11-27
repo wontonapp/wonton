@@ -66,6 +66,7 @@ fn empty_chat() -> ChatViewModel {
         },
         push: wonton_protocol::PushStatus::NoEndpoint,
         chat_layout_default: Default::default(),
+        ask: None,
         installing_bots: Vec::new(),
         rooms: Vec::new(),
         problem: None,
