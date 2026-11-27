@@ -454,7 +454,10 @@ impl ModelCatalog {
             text("providers.name", &provider.name, MAX_MODELS_TEXT_CHARS)?;
             optional_text("providers.account", provider.account.as_deref())?;
             if !seen.insert(provider.id.as_str()) {
-                return Err(ModelsOutputProblem(format!("duplicate provider {}", provider.id)));
+                return Err(ModelsOutputProblem(format!(
+                    "duplicate provider {}",
+                    provider.id
+                )));
             }
             for auth in &provider.auth {
                 if let ModelAuth::ApiKey {
