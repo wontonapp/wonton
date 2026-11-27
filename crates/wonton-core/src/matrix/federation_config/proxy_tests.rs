@@ -223,13 +223,10 @@ impl Stack {
         let secrets = dir.join("secrets");
         let read = |name: &str| std::fs::read_to_string(secrets.join(name)).unwrap();
         // 入站 TLS 还是 Tuwunel 自己的事（server.rs：入站半段还没接，流原样交给 Tuwunel）；核心只终结
-        // 出站。所以这里保留 [global.tls] 让 Tuwunel 当 TLS 服务端，allow_invalid 接受对方的自签叶；
-        // trust.pem 挂进来是给 Tuwunel 验“核心出示的那张 CA 签证书”（出站由核心当客户端）。
-        let tuwenel = std::fs::read_to_string(dir.join("secrets/tuwunel/tuwunel.toml")).unwrap();
-        let tuwenel = tuwenel.replace(
-            "allow_invalid_tls_certificates = false",
-            "allow_invalid_tls_certificates = true",
-        ) + "\n[global.tls]\ncerts = \"/etc/wonton-peer-tls/peer.pem\"\nkey = \"/etc/wonton-peer-tls/peer.key\"\ndual_protocol = true\n";
+        // 出站。所以这里保留 [global.tls] 让 Tuwunel 当 TLS 服务端；allow_invalid 保持 false，Tuwunel 必须
+        // 真的用挂进来的 trust.pem 验过核心按 CONNECT 目标名签的那张证书（出站由核心当客户端）。
+        let tuwenel = std::fs::read_to_string(dir.join("secrets/tuwunel/tuwunel.toml")).unwrap()
+            + "\n[global.tls]\ncerts = \"/etc/wonton-peer-tls/peer.pem\"\nkey = \"/etc/wonton-peer-tls/peer.key\"\ndual_protocol = true\n";
         std::fs::write(dir.join("secrets/tuwunel/tuwunel.toml"), tuwenel).unwrap();
         let token = crate::secret::random_token();
         Self {
