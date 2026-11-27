@@ -5,7 +5,6 @@
 
 mod account;
 mod http;
-#[path = "../fake_rooms.rs"]
 mod rooms;
 mod state;
 
@@ -31,6 +30,10 @@ use self::account::{
     query_user, register, set_profile, sync, whoami,
 };
 use self::http::{Reply, auth, error, ok, reply};
+use self::rooms::{
+    directory_room, get_direct, join, joined_members, member_state, membership, put_direct,
+    send_message,
+};
 pub use self::state::*;
 
 use crate::config::MatrixConfig;
@@ -71,176 +74,6 @@ async fn download(
     };
     let (content_type, data) = &state.media[*index];
     ([("content-type", content_type.clone())], data.clone()).into_response()
-}
-
-/// 加入、退出、邀请和撤回邀请（`kick`）。
-async fn membership(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((room, action)): Path<(String, String)>,
-    body: Option<Json<Value>>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        if action == "kick" && state.refuse_kicks
-            || action == "invite" && state.refuse_invites
-            || action == "join" && state.refuse_joins
-        {
-            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
-        }
-        let room_state = state
-            .rooms
-            .get_mut(&room)
-            .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))?;
-        let target = body.and_then(|Json(b)| b["user_id"].as_str().map(str::to_owned));
-        let target = target.unwrap_or_default();
-        match action.as_str() {
-            "join" if room_state.invited.remove(&user) || room_state.members.contains(&user) => {
-                room_state.left.remove(&user);
-                room_state.members.insert(user);
-            }
-            "leave" => {
-                room_state.members.remove(&user);
-                room_state.left.insert(user);
-            }
-            "invite"
-                if room_state.members.contains(&user) && !room_state.members.contains(&target) =>
-            {
-                room_state.left.remove(&target);
-                room_state.invited.insert(target);
-            }
-            "kick" if room_state.members.contains(&user) => {
-                room_state.invited.remove(&target);
-                room_state.members.remove(&target);
-                room_state.left.insert(target);
-            }
-            _ => return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN")),
-        }
-        Ok(ok(json!({"room_id": room})))
-    }))
-}
-
-/// 房间别名解析：只有管理房间的别名。
-async fn directory_room(State(fake): State<Fake>, Path(alias): Path<String>) -> Reply {
-    let state = fake.state();
-    if alias == ADMIN_ROOM_ALIAS {
-        ok(json!({"room_id": state.admin_room, "servers": [SERVER]}))
-    } else {
-        error(StatusCode::NOT_FOUND, "M_NOT_FOUND")
-    }
-}
-
-/// 不在房间里时发不了。
-async fn send_message(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((room, _txn)): Path<(String, String)>,
-    Json(content): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        let room_state = state
-            .rooms
-            .get(&room)
-            .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))?;
-        if !room_state.members.contains(&user) || std::mem::take(&mut state.refuse_next_send) {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        let event = format!("$event{}", state.sent.len());
-        state.sent.push((room.clone(), content));
-        Ok(ok(json!({"event_id": event})))
-    }))
-}
-
-/// 房间成员才能查别人的成员状态；从来没进过房间的人没有这个状态事件（404）。
-async fn member_state(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((room, target)): Path<(String, String)>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        let room = state
-            .rooms
-            .get(&room)
-            .filter(|r| r.members.contains(&user))
-            .ok_or_else(|| error(StatusCode::FORBIDDEN, "M_FORBIDDEN"))?;
-        let membership = if room.members.contains(&target) {
-            "join"
-        } else if room.invited.contains(&target) {
-            "invite"
-        } else if room.left.contains(&target) {
-            "leave"
-        } else {
-            return Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND"));
-        };
-        Ok(ok(json!({"membership": membership})))
-    }))
-}
-
-async fn join(state: State<Fake>, headers: HeaderMap, Path(room): Path<String>) -> Reply {
-    membership(state, headers, Path((room, "join".to_owned())), None).await
-}
-
-async fn joined_members(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path(room): Path<String>,
-) -> Reply {
-    let state = fake.state();
-    if state.refuse_room_reads {
-        return reply(Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN")));
-    }
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        if state.broken_rooms.contains(&room) {
-            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
-        }
-        let room = state
-            .rooms
-            .get(&room)
-            .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))?;
-        if !room.members.contains(&user) {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        let joined: serde_json::Map<String, Value> = room
-            .members
-            .iter()
-            .map(|m| (m.clone(), json!({})))
-            .collect();
-        Ok(ok(json!({"joined": joined})))
-    }))
-}
-
-async fn get_direct(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path(user): Path<String>,
-) -> Reply {
-    let state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        let direct = state.users.get(&user).and_then(|u| u.direct.clone());
-        match direct {
-            Some(direct) if caller == user => Ok(ok(direct)),
-            _ if caller != user => Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN")),
-            _ => Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND")),
-        }
-    }))
-}
-
-async fn put_direct(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path(user): Path<String>,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(caller, _)| {
-        if caller != user {
-            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
-        }
-        state.users.entry(user).or_default().direct = Some(body);
-        Ok(ok(json!({})))
-    }))
 }
 
 /// 空状态的假服务器和一张新签发密钥的私钥 PEM。
