@@ -216,19 +216,12 @@ impl Permissions {
         }
     }
 
-    /// 放行的权限项，按 [`PermissionItem::ALL`] 的顺序。给“这个角色能做什么”一页用。
-    pub fn granted_items(&self) -> Vec<PermissionItem> {
-        PermissionItem::ALL
-            .into_iter()
-            .filter(|item| self.allows(*item))
-            .collect()
-    }
-
     /// 每一项权限和它是放行、要管理员批还是不行，按 [`PermissionItem::ALL`] 的顺序。
     /// 给被别人邀请时看的加入页用：`allowed` 的布尔表达看不出“要管理员批”。
     pub fn abilities(&self) -> Vec<crate::JoinAbility> {
         PermissionItem::ALL
             .into_iter()
+            .filter(|item| *item != PermissionItem::Owner)
             .map(|item| crate::JoinAbility {
                 item,
                 state: self.ability_state(item),

@@ -183,6 +183,12 @@ pub async fn danger(
         );
         return not_found(&message);
     }
+    // ADR-0091：危险模式只给主人的 Bot；家人的私人 Bot 和共享 Bot 打开都回非法输入。
+    if !keeper_is_owner(&gateway, &granted.plugin) {
+        let langs = gateway.plugins.owner_languages();
+        let message = l10n::text(&langs, "gateway-danger-owner-bot", &[]);
+        return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+    }
     apply(
         granted,
         PolicyChange::Danger {
@@ -192,6 +198,28 @@ pub async fn danger(
         &method,
     )
     .await
+}
+
+fn keeper_is_owner(gateway: &Gateway, id: &PluginId) -> bool {
+    gateway
+        .plugins
+        .store()
+        .bots()
+        .load(id)
+        .ok()
+        .and_then(|record| {
+            record
+                .bots
+                .get(crate::plugin::bot_services::DEFAULT_BOT)
+                .map(|bot| &bot.keeper)
+                .cloned()
+        })
+        .is_some_and(|keeper| match keeper {
+            wonton_protocol::BotKeeper::User { username } => {
+                username == gateway.plugins.owner_name()
+            }
+            wonton_protocol::BotKeeper::Household | wonton_protocol::BotKeeper::Other => false,
+        })
 }
 
 /// `PUT`、`DELETE /_wonton/api/plugins/{id}/tool-policy/read-only/{tool}`

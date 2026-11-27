@@ -866,6 +866,19 @@ async fn listings_mark_shared_bots_and_danger_mode() {
     assert!(!owner_listing.bot_shared, "默认 Bot 先是主人的私人 Bot");
     assert!(owner_listing.bot_danger_can_toggle);
 
+    // 家人的私人 Bot 不算主人的，开关不显示（ADR-0091）。
+    let mut bots = m.store().bots().load(&id()).unwrap();
+    bots.bots.get_mut("default").unwrap().keeper = BotKeeper::User {
+        username: "family".to_owned(),
+    };
+    m.store().bots().save(&id(), &bots).unwrap();
+    let family_listing = m.installed_plugin(&id(), &super::langs()).unwrap();
+    assert!(!family_listing.bot_danger_can_toggle);
+    bots.bots.get_mut("default").unwrap().keeper = BotKeeper::User {
+        username: "owner".to_owned(),
+    };
+    m.store().bots().save(&id(), &bots).unwrap();
+
     m.add_bot(&id(), "family", BotKeeper::Household)
         .await
         .unwrap();

@@ -54,8 +54,12 @@ impl PluginManager {
                     .get(super::bot_services::DEFAULT_BOT)
                     .map(|bot| &bot.keeper);
                 plugin.bot_shared = keeper == Some(&wonton_protocol::BotKeeper::Household);
-                plugin.bot_danger_can_toggle =
-                    matches!(keeper, Some(wonton_protocol::BotKeeper::User { .. }));
+                plugin.bot_danger_can_toggle = match keeper {
+                    Some(wonton_protocol::BotKeeper::User { username }) => {
+                        username == self.owner_name()
+                    }
+                    _ => false,
+                };
             }
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读 Bot 记录失败"),
         }
