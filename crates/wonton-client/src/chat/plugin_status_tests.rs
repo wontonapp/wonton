@@ -94,7 +94,7 @@ fn a_room_with_a_missing_bot_record_matches_the_plugin_by_bot_ref() {
 #[test]
 fn stopped_starting_failed_and_running_are_distinct_without_changing_send_permissions() {
     let mut rooms = rooms();
-    let plugins = view(PluginState::Stopped);
+    let mut plugins = view(PluginState::Stopped);
     assert!(refresh(&mut rooms, &plugins));
     let stopped = rooms[0].plugin.as_ref().unwrap();
     assert_eq!(stopped.plugin_id, "app.agent");
