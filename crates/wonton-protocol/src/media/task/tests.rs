@@ -139,9 +139,10 @@ fn every_failure_code_has_its_backoff() {
         (MediaFailureCode::UpstreamError, Backoff::Standard),
         (MediaFailureCode::ServerStorageFull, Backoff::None),
         (MediaFailureCode::SuspendedBySystem, Backoff::SystemPause),
+        (MediaFailureCode::SourceRequired, Backoff::None),
         (MediaFailureCode::Other("quantum".into()), Backoff::None),
     ];
-    assert_eq!(expected.len(), 16);
+    assert_eq!(expected.len(), 17);
     for (code, backoff) in expected {
         assert_eq!(code.backoff(), backoff, "{code:?}");
     }

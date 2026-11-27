@@ -51,6 +51,8 @@ pub enum MediaFailureCode {
     UpstreamError,
     ServerStorageFull,
     SuspendedBySystem,
+    /// 能做这件事的媒体源不止一家，主人又没定默认：App 请用户选一家，带 `source` 再来。
+    SourceRequired,
     /// 新版本新加的失败码，原值在里；退避按不退避算。
     Other(String),
 }
@@ -71,6 +73,7 @@ known_or_other!(MediaFailureCode {
     UpstreamError => "upstream_error",
     ServerStorageFull => "server_storage_full",
     SuspendedBySystem => "suspended_by_system",
+    SourceRequired => "source_required",
 });
 
 impl MediaFailureCode {
@@ -90,7 +93,8 @@ impl MediaFailureCode {
             | Self::PermissionDenied
             | Self::UnsupportedByDevice
             | Self::MediaGone
-            | Self::ServerStorageFull => Backoff::None,
+            | Self::ServerStorageFull
+            | Self::SourceRequired => Backoff::None,
         }
     }
 

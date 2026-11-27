@@ -179,7 +179,7 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 - 计划里带音轨和字幕轨两份 `MediaTrack` 列表，`ControlOp` 有 `SetAudio`/`SetSubtitle`（字幕可 `None`）：这两个由核心**重新向提供方要 plan** 再下发，新 plan 到位前客户端继续用旧轨，失败保留旧轨并报错；可 seek 范围以 plan 的 `seekable` 与 `duration` 为准。
 - 队列改动（入队、插队、移除、跳转、清空、模式切换）都带本次读到的 `revision`，并在成功时把整条队列用 `PUT /queue` 推给提供方（`savePlayQueue` 的翻法），需要时带 `position` 与 `mode`；核心比对不相等就回 `409 stale_revision` 连同当前队列快照，客户端重新拉一次再重放操作。选 409 不选“服务端自动合并”：Agent 与两台手机同时改队列时自动合并会出谁也预料不到的次序，宁可让调用方重试。
 - **一人同时只有一个活动会话。** 另一台设备发 `play` 时走接管：旧设备收到 `media.session.taken_over` 事件，壳停声、上报最后位置、转入只读。选“一人多活动会话”就得回答“锁屏上显示哪一个、scrobble 记给谁”，第一版不值得。
-- 会话的终态带 `stop_reason`（`user`/`agent`/`taken_over`/`finished`/`error`），停了不再改；重复的停止只把位置往后推。库里按人建一条唯一索引，只允许一条停因为空的活动会话。
+- 会话的终态带 `stop_reason`（`user`/`agent`/`taken_over`/`finished`/`error`/`removed`，最后一个是退出家庭时核心替他停的），停了不再改；重复的停止只把位置往后推。库里按人建一条唯一索引，只允许一条停因为空的活动会话。
 - 位置上报：播放中每 5 秒一次，另外在 pause/seek/stop 各报一次；核心按会话节流后再转给提供方（Subsonic `scrobble`、Jellyfin `Sessions/Playing/Progress`）。节流放在核心不放在壳，免得每个壳各写一份、重试风暴直接打到插件。位置就是本会话的断点恢复点，恢复时以最近一次上报为准，不重头。
 - 锁屏、通知栏、耳机按键由壳接系统：Android **只保留一个** `MediaSessionService`，现有的 `PageMediaService` 被新的播放服务吸收、页面媒体降为它的一个 renderer；iOS 走 `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`，壳把按键翻成第 3 节的 `MediaAction` 回给核心。控制逻辑不在壳里重复实现。
 - 画中画（PiP）两端壳各做一份，核心只保证进 PiP、出 PiP 不会停会话。
@@ -304,8 +304,9 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `/library/actions` | `POST` | 体 `LibraryAction`（收藏、建相册、加进/移出相册、共享给家人、进回收站、恢复），回 `LibraryActionResult` |
 
 - 服务器核对 `library` 只转发：按设备归属的人填 `X-Wonton-User`、换上提供方签的能力凭据、`Range` 原样过，不缓存、不落盘、
-  不改写回包。客户端走 `/_wonton/api/media/library/…`，后半段就是上表的提供方路径。家里有不止一个声明了 `library` 和 `photo`
-  的提供方时用 `?source=<插件 id>` 选；只有一个就取它；多个又没选回 `protocol`，不替人挑。
+  不改写回包。客户端走 `/_wonton/api/media/library/…`，后半段就是上表的提供方路径。用哪一家照“选哪个提供方”的统一规则
+  （`notes/0113-interfaces.md`）：带 `?source=<插件 id>` 用它，没带用主人定的默认，只有一家就用它，多家又没定默认回
+  `source_required`，不替人挑。
 - 这个人没被授权打开这个插件（ADR-0088 的应用清单）回 `permission_denied`，和打开插件网页是同一个判断。
 - 客户端核持有浏览的状态：游标、按日分组、选择集、缩略图磁盘缓存（按条目 id 和档位，有上限、按最近使用淘汰）；壳只画网格、
   手势和转场（ADR-0120 手写白名单里的“相册看图”）。字节经客户端核的本机回环交给原生图片加载器和播放器，不经绑定层搬。
@@ -374,11 +375,13 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `POST /playback/{session}/stopped` | 结束 | 带最终位置与原因 |
 | `GET /items/{id}/segments` | 章节/片头片尾 | 回 `segments`（类型、起点、终点）；没有就 404。plan 里带了就以 plan 为准，起播后新抓到的以新抓的为准 |
 | `GET /items/{id}/download` | 下离线 | 支持 `Range`/`If-Range`，回 206 与 `Content-Range` |
-| `GET /items/{id}/artwork` | 封面、海报、缩略图 | 回图片字节，带 `Content-Type`；没有就 404。原生页的浏览靠它和 `list`，手机连不到 `artwork_url` 里提供方的内部地址 |
+| `GET /items/{id}/artwork?type=&width=` | 封面、海报、缩略图 | `type` 取 `primary`（不带时）、`backdrop`、`thumb`、`logo`，认不得的按 `primary`；`width` 是要的像素宽，提供方按它缩、不放大。回图片字节，带 `Content-Type`；没有就 404。原生页的浏览靠它和 `list`，手机连不到 `artwork_url` 里提供方的内部地址 |
 | `/library/…` | 相册浏览 | 声明了 `library` 操作的提供方实现，路径和回包见第 9 节的表 |
 | `POST /revoke` | 收回 | 体只带 `name`；提供方只注销上游凭据、停掉上游会话（任务表在核心，核心自己取消任务、结束会话） |
 
 失败回 `MediaFailure` 信封（`code`、`message`、`retry_after?`），码即下面失败类别的名字。
+
+提供方回包里的地址（`PlaybackPlan` 的 `stream`、`origin_stream`，`MediaItemRef.artwork_url`）写相对这个提供方服务根的路径，可带查询串：提供方不知道核心怎么叫它，手机也进不了插件网段。写成绝对地址时核心也只取路径和查询串，主机名不认。
 
 契约测试照 `plugin/tests/personal_data_contract/mod.rs:1-10` 的样板：两个假提供方（一个只实现 `upload`、像相册；一个只实现 `playback`/`download`/`list`、像点播）跑同一组用例，断言核心的 ViewModel、退避次数、断点续传、换提供方时客户端壳不改。
 
@@ -403,6 +406,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `plugin_unavailable` | 插件没装/没起来 | “插件没在跑”，带重试 | 1/2/4 秒，最多三次 |
 | `upstream_error` | 上游 5xx | “服务器出错”，带重试 | 同传输 |
 | `server_storage_full` | 服务器空间不足 | “家里硬盘满了”，列占用 | 不退避 |
+| `source_required` | 能做这件事的媒体源不止一家，主人没定默认 | 请用户选一家，带 `source` 再来 | 不退避 |
 | `suspended_by_system` | 平台暂停（iOS 挂起、Android 配额到） | 进 `Paused{reason}`，不报错；它只在 `Paused` 里用，不进 `Failed` | 恢复时从断点续 |
 
 退避用完标 `Failed`，不藏也不无限重试；手动重试重置计数。

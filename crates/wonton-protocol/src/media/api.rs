@@ -96,18 +96,24 @@ pub fn queue_path() -> String {
     format!("{MEDIA_API_PREFIX}/queue")
 }
 
-/// `GET /items?…`：按种类列条目，核心转给这个种类的提供方；查询参数同提供方的 `GET /items`。
+/// `GET /items?…`：按种类列条目，核心转给这个种类的提供方；查询参数同提供方的 `GET /items`，另可带
+/// `source` 指定哪一家（[`super::provider::ItemsQuery::source`]）。
 pub fn items_path() -> String {
     format!("{MEDIA_API_PREFIX}/items")
 }
 
-/// `GET /items/{id}/artwork?kind=…`：封面、海报、缩略图的字节。
-pub fn item_artwork_path(item: &str, kind: &super::MediaKind) -> String {
-    format!(
+/// `GET /items/{id}/artwork?kind=…&source=…`：封面、海报、缩略图的字节，按条目的种类和来源找提供方。
+/// 要哪一张、多宽，在后面接 `&` 和 [`super::provider::ArtworkQuery::pairs`]。
+pub fn item_artwork_path(item: &super::MediaItemRef) -> String {
+    let mut path = format!(
         "{MEDIA_API_PREFIX}/items/{}/artwork?kind={}",
-        segment(item),
-        segment(kind_param(kind))
-    )
+        segment(&item.id),
+        segment(kind_param(&item.kind))
+    );
+    if let Some(source) = &item.source {
+        path.push_str(&format!("&source={}", segment(source)));
+    }
+    path
 }
 
 pub fn commands_path() -> String {
@@ -257,9 +263,18 @@ mod tests {
             session_stream_path(task),
             "/_wonton/api/media/sessions/00000000-0000-0000-0000-000000000000/stream"
         );
+        let mut album = super::super::tests::item();
+        album.id = "al 1".into();
+        album.kind = MediaKind::Audio;
+        album.source = None;
         assert_eq!(
-            item_artwork_path("al 1", &MediaKind::Audio),
+            item_artwork_path(&album),
             "/_wonton/api/media/items/al%201/artwork?kind=audio"
+        );
+        album.source = Some("app.example.music".into());
+        assert_eq!(
+            item_artwork_path(&album),
+            "/_wonton/api/media/items/al%201/artwork?kind=audio&source=app.example.music"
         );
         assert_eq!(queue_path(), "/_wonton/api/media/queue");
         assert_eq!(

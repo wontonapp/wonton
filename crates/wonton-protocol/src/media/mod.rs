@@ -136,6 +136,10 @@ pub struct MediaItemRef {
     pub index: Option<u32>,
     pub played: bool,
     pub starred: bool,
+    /// 给出这一条的媒体源插件 id。核心转出去的条目都由核心填上（提供方自己填的不算数）；客户端拿条目
+    /// 回来起播、下载、取封面时原样带着，核心就找同一家（选提供方的规则见 `notes/0113-interfaces.md`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// 设备能力档：少数说死要比整套更好维护（编解码、HDR、最大码率）。
@@ -225,6 +229,7 @@ mod tests {
             index: Some(3),
             played: true,
             starred: false,
+            source: Some("app.example.video".into()),
         }
     }
 
