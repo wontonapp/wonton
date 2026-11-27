@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Entry and section title in the native music library: the playlists. -->
+    <string name="music_playlists">プレイリスト</string>
+    <!-- Entry and section title in the native music library: the albums. -->
+    <string name="music_albums">アルバム</string>
+    <!-- Row title on the music library home: albums played the most. -->
+    <string name="music_most_played">よく聴く</string>
+    <!-- Button next to a row title on the music library home: open the full list. -->
+    <string name="music_see_all">すべて表示</string>
+    <!-- Toolbar button and page title: search the music library. -->
+    <string name="music_search">検索</string>
+    <!-- Shown when a music search finds nothing. Argument: what the person typed. -->
+    <string name="music_no_results">「%1$s」は見つかりませんでした</string>
+    <!-- Album order: newest additions first. -->
+    <string name="music_sort_newest">追加日</string>
+    <!-- Album order: most recently played first. -->
+    <string name="music_sort_recent">最近再生</string>
+    <!-- Menu item on the native music library: open the plugin's own web page instead. -->
+    <string name="music_web_version">Web 版</string>
+    <!-- Menu item: remove a song, album or artist from favorites. -->
+    <string name="music_unstar">お気に入りから削除</string>
+    <!-- How long an album or playlist plays. Argument: whole minutes. -->
+    <plurals name="music_minutes">
+        <item quantity="other">%1$d 分</item>
+    </plurals>
+    <!-- Line under an album or playlist. Arguments: the song count text and the minutes text. -->
+    <string name="music_summary">%1$s、%2$s</string>
+    <!-- Problem title: the music library plugin is not running yet. -->
+    <string name="music_problem_not_ready_title">ミュージックライブラリの準備ができていません</string>
+    <!-- Next step under the not-ready problem. -->
+    <string name="music_problem_not_ready_next_step">起動が終わってからもう一度お試しください。</string>
+    <!-- Problem title: the music library refused to show this to this person. -->
+    <string name="music_problem_forbidden_title">ミュージックライブラリがこの内容の表示を拒否しました</string>
+    <!-- Next step under the refused problem. -->
+    <string name="music_problem_forbidden_next_step">ミュージックライブラリの管理者にアクセス権を依頼してください。</string>
+    <!-- Next step under the not-found problem. -->
+    <string name="music_problem_not_found_next_step">削除された可能性があります。戻って更新してください。</string>
+    <!-- Problem title: the music library returned an error code this app does not know. -->
+    <string name="music_problem_unknown_title">ミュージックライブラリから不明なエラーが返されました</string>
+    <!-- Problem title: the music library's reply could not be understood. -->
+    <string name="music_problem_protocol_title">ミュージックライブラリの応答を読み取れません</string>
+</resources>
