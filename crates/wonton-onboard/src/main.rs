@@ -73,7 +73,11 @@ fn run() -> Result<()> {
                 recover,
                 prs: prs.into_iter().collect(),
             };
-            report(finish::finish(&root, &request, &api, finish::LOCK_TIMEOUT)?);
+            let outcome = finish::finish(&root, &request, &api, finish::LOCK_TIMEOUT)?;
+            report(&outcome);
+            if outcome == finish::Outcome::JsonPending {
+                std::process::exit(1);
+            }
         }
         Command::Verify { prs } => verify_only(&root, prs, &api)?,
         Command::Cancel => {
@@ -87,7 +91,7 @@ fn run() -> Result<()> {
                 }
             );
         }
-        Command::Recover => report(finish::recover(&root, &api)?),
+        Command::Recover => report(&finish::recover(&root, &api)?),
         Command::Watch { every, once } => watch_loop(&root, &every, once, &api)?,
         Command::CompareNotes => match watch::compare_notes(&root)? {
             watch::CompareOutcome::Busy => println!("busy: owner alive"),
@@ -138,6 +142,9 @@ fn parse_duration(text: &str) -> Result<Duration> {
     let number: u64 = number
         .parse()
         .with_context(|| format!("间隔不合法：{text}"))?;
+    if number == 0 {
+        return Ok(Duration::from_secs(300));
+    }
     match unit {
         "" | "s" => Ok(Duration::from_secs(number)),
         "m" => Ok(Duration::from_secs(number * 60)),
@@ -146,7 +153,7 @@ fn parse_duration(text: &str) -> Result<Duration> {
     }
 }
 
-fn report(outcome: finish::Outcome) {
+fn report(outcome: &finish::Outcome) {
     match outcome {
         finish::Outcome::Busy => println!("busy: owner alive"),
         finish::Outcome::JsonPending => println!("未收尾记录还在：先跑 finish --recover"),
@@ -162,7 +169,7 @@ fn report(outcome: finish::Outcome) {
         } => {
             println!(
                 "已收尾 {cycle}（{}）",
-                if within_cycle {
+                if *within_cycle {
                     "同 cycle 重试"
                 } else {
                     "新 cycle"

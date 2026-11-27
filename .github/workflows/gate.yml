@@ -73,6 +73,8 @@ jobs:
           filters: |
             rust:
               - "crates/**"
+              # 开发工具 crate，和产品 crate 同规则。
+              - "crates/wonton-onboard/**"
               # 测试和预热读的部署文件（include_str! 和 Dockerfile）；deploy/dev 其余的只给本机开发栈，改了不用跑。
               # 新的 include_str! 指向 deploy/ 时要补在这里。
               - "deploy/install/**"

@@ -56,7 +56,7 @@ pub enum Outcome {
     Busy,
     /// `.git/wonton-finish.json` 还在，先 `finish --recover`。
     JsonPending,
-    /// 冲突里有活着的 owner，已写 json 留给下一次 `--recover`。
+    /// 冲突里有活着的 owner：已落收尾记录，下一次必须 `--recover`。
     ConflictAborted(Vec<String>),
     Closed {
         cycle: String,
@@ -112,20 +112,15 @@ pub fn finish(
     if !conflicts.is_empty() && !is_first_run(&board, &conflicts) {
         let reasons = reconcile_conflicts(root, &mut board)?;
         if reasons.iter().any(|reason| reason.contains("alive")) {
+            write_conflict_notes(root, &board, &notes, request)?;
             return Ok(Outcome::ConflictAborted(reasons));
         }
     }
 
-    let mut recovered = board.recover_in_progress()?;
-    if recovered.is_empty()
-        && request.recover
-        && !notes.prs.is_empty()
-        && let Some(cycle) = pending_cycle(&board, &notes)
-    {
-        recovered.push(cycle);
-    }
+    let recovered = board.recover_in_progress()?;
+    let resume = next_resume(&board, &notes, &recovered, request.recover);
     let owner = Owner::current()?;
-    let (cycle, prs, within_cycle) = claim(&mut board, &recovered, request, &owner)?;
+    let (cycle, prs, within_cycle) = claim(&mut board, resume.as_deref(), request, &owner)?;
 
     let result = run_claimed(root, &mut board, &cycle, &prs, within_cycle, api);
     if let Err(err) = &result {
@@ -149,21 +144,98 @@ fn pending_cycle(board: &Board, notes: &Notes) -> Option<String> {
     board.state().last_cycle.clone()
 }
 
+/// 续跑顺序：json 指的 cycle → last_cycle → 剩下的 recovered 里任选。
+/// uuid 顺序和先后无关，不能拿 BTreeMap 的排序当“当前”。
+fn preferred_cycle(board: &Board, notes: &Notes, recovered: &[String]) -> Option<String> {
+    if recovered.is_empty() {
+        return None;
+    }
+    pending_cycle(board, notes)
+        .filter(|cycle| recovered.contains(cycle))
+        .or_else(|| recovered.first().cloned())
+}
+
+fn next_resume(
+    board: &Board,
+    notes: &Notes,
+    recovered: &[String],
+    recover: bool,
+) -> Option<String> {
+    if let Some(cycle) = preferred_cycle(board, notes, recovered) {
+        return Some(cycle);
+    }
+    if !recover {
+        return None;
+    }
+    // 上一轮只收了一条时，其余记录停在 recovered；优先 last_cycle，再任选。
+    let waiting: Vec<String> = board
+        .state()
+        .records
+        .iter()
+        .filter(|(_, record)| record.status == Status::Recovered)
+        .map(|(cycle, _)| cycle.clone())
+        .collect();
+    board
+        .state()
+        .last_cycle
+        .clone()
+        .filter(|cycle| waiting.contains(cycle))
+        .or_else(|| waiting.first().cloned())
+        .or_else(|| pending_cycle(board, notes))
+}
+
+/// 活 owner 冲突被收敛后落一份 json，下一次普通 finish 才会被门挡住。
+fn write_conflict_notes(
+    root: &Path,
+    board: &Board,
+    notes: &Notes,
+    request: &FinishRequest,
+) -> Result<()> {
+    let mut prs = notes.prs.clone();
+    if prs.is_empty() {
+        for record in board
+            .state()
+            .records
+            .values()
+            .filter(|record| record.status == Status::Aborted)
+        {
+            let Some(cycle) = record.cycle.as_ref() else {
+                continue;
+            };
+            if let Some(batch) = board.state().batches.get(cycle) {
+                for pr in &batch.prs {
+                    prs.entry(*pr).or_default();
+                }
+            }
+        }
+    }
+    if prs.is_empty() {
+        for pr in &request.prs {
+            prs.entry(*pr).or_default();
+        }
+    }
+    if prs.is_empty() {
+        return Ok(());
+    }
+    let cycle = pending_cycle(board, notes).unwrap_or_default();
+    Notes { cycle, prs }.save(root)
+}
+
 fn claim(
     board: &mut Board,
-    recovered: &[String],
+    resume: Option<&str>,
     request: &FinishRequest,
     owner: &Owner,
 ) -> Result<(String, BTreeSet<u64>, bool)> {
-    if let Some(cycle) = recovered.last().cloned() {
+    if let Some(cycle) = resume {
         let prs = board
             .state()
             .batches
-            .get(&cycle)
+            .get(cycle)
             .map(|batch| batch.prs.clone())
             .unwrap_or_default();
-        reown(board, &cycle, owner)?;
-        return Ok((cycle, prs, false));
+        reown(board, cycle, owner)?;
+        return Ok((cycle.to_owned(), prs, false));
     }
 
     let decision = match board.current_batch() {
@@ -187,6 +259,7 @@ fn claim(
         let prs = request.prs.clone();
         if let Some(record) = board.state_mut().records.get_mut(&cycle) {
             record.retries += 1;
+            record.owner = Some(owner.clone());
         }
         board.state_mut().job = Some(owner.clone());
         board.save()?;
@@ -244,7 +317,10 @@ fn run_claimed(
     }
 
     board.complete(cycle, true, None)?;
-    Notes::clear(root)?;
+    // 还有别的 recovered 记录没续跑时保留 json，下一次接着收。
+    if !board.record_has_status(Status::Recovered) {
+        Notes::clear(root)?;
+    }
     Ok(Outcome::Closed {
         cycle: cycle.to_owned(),
         within_cycle,

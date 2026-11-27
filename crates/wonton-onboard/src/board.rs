@@ -288,6 +288,7 @@ impl Board {
         Ok(recovered)
     }
 
+    /// 只改记录和批次；job 归调用方，多冲突时不能边遍历边清。
     pub fn abort_record(&mut self, cycle: &str, reason: &str) -> Result<()> {
         if let Some(record) = self.state.records.get_mut(cycle) {
             record.status = Status::Aborted;
@@ -297,7 +298,6 @@ impl Board {
         if let Some(batch) = self.state.batches.get_mut(cycle) {
             batch.status = BatchStatus::Aborted;
         }
-        self.state.job = None;
         self.save()
     }
 
@@ -403,17 +403,24 @@ pub fn detect_conflicts(root: &Path) -> Result<Vec<Conflict>> {
 /// 死了就地清 job。都落到 aborted，不无限 failed。
 pub fn reconcile_conflicts(root: &Path, board: &mut Board) -> Result<Vec<String>> {
     let conflicts = detect_conflicts(root)?;
-    let mut reasons = Vec::new();
+    let job = board.state().job.clone();
+    struct Pending {
+        cycle: Option<String>,
+        reason: &'static str,
+    }
+
+    // 先把每个冲突的 owner 快照下来再动状态，后面的冲突才读得到原 job。
+    let mut pending = Vec::new();
     for conflict in conflicts {
         let (cycle, owner) = match &conflict {
             Conflict::BatchWithoutOwner(cycle) => (
-                cycle.clone(),
+                Some(cycle.clone()),
                 board
                     .state
                     .records
                     .get(cycle)
                     .and_then(|record| record.owner.clone())
-                    .or_else(|| board.state.job.clone()),
+                    .or_else(|| job.clone()),
             ),
             Conflict::OwnerWithoutBatch | Conflict::NoBatch => {
                 let cycle = board
@@ -423,21 +430,29 @@ pub fn reconcile_conflicts(root: &Path, board: &mut Board) -> Result<Vec<String>
                     .rev()
                     .find(|(_, record)| record.status == Status::InProgress)
                     .map(|(cycle, _)| cycle.clone());
-                (cycle.unwrap_or_default(), board.state.job.clone())
+                (cycle, job.clone())
             }
         };
-        let alive = owner.as_ref().is_some_and(Owner::alive);
-        let reason = if alive {
+        let reason = if owner.as_ref().is_some_and(Owner::alive) {
             "aborted: owner alive→json"
         } else {
             "aborted: owner dead→job reconcile"
         };
-        if !cycle.is_empty() {
-            board.abort_record(&cycle, reason)?;
-        } else {
-            board.clear_job()?;
+        pending.push(Pending { cycle, reason });
+    }
+
+    let mut reasons = Vec::new();
+    for item in pending {
+        if let Some(cycle) = item.cycle {
+            board.abort_record(&cycle, item.reason)?;
         }
-        reasons.push(reason.to_owned());
+        reasons.push(item.reason.to_owned());
+    }
+    // 死的 job 就地清；活的留着给下一次 --recover。
+    if job.as_ref().is_some_and(|owner| !owner.alive()) {
+        board.clear_job()?;
+    } else if job.is_some() {
+        board.save()?;
     }
     Ok(reasons)
 }

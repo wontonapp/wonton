@@ -38,16 +38,25 @@ pub fn compare_notes(root: &Path) -> Result<CompareOutcome> {
     let mut reasons = board.recover_in_progress()?;
     let notes_stale = !notes.prs.is_empty() && board.in_progress().next().is_none();
     if notes_stale {
-        let latest = board
+        // json 指的批次才算当前；uuid 排序和先后无关。
+        let target = if board.state().batches.contains_key(&notes.cycle) {
+            notes.cycle.clone()
+        } else {
+            board.state().last_cycle.clone().unwrap_or_default()
+        };
+        if !target.is_empty() {
+            let reason = "aborted: owner dead→job reconcile";
+            board.abort_record(&target, reason)?;
+            reasons.push(reason.to_owned());
+        }
+        if board
             .state()
-            .records
-            .keys()
-            .next_back()
-            .cloned()
-            .unwrap_or_else(|| notes.cycle.clone());
-        let reason = "aborted: owner dead→job reconcile";
-        board.abort_record(&latest, reason)?;
-        reasons.push(reason.to_owned());
+            .job
+            .as_ref()
+            .is_some_and(|owner| !owner.alive())
+        {
+            board.clear_job()?;
+        }
     }
     if reasons.is_empty() {
         Ok(CompareOutcome::Clean)
