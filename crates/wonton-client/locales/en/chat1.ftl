@@ -8,6 +8,8 @@ chat-sign-in-external-missing = This Matrix account's sign-in on this phone is g
 
 chat-sign-in-login-failed = Can't sign in to Matrix: { $reason }
 
+chat-sign-in-timeout = Sign-in timed out. Will try again shortly.
+
 # $reason is the HTTP client's original error.
 chat-login-http-client = Can't create an HTTP client: { $reason }
 
