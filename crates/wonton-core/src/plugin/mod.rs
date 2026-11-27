@@ -109,6 +109,9 @@ pub mod package_archive;
 pub mod package_files;
 pub mod pdf;
 mod private_homes;
+// 媒体接口（ADR-0113 M46）接上之前没有调用点，测试也只用到一部分。
+#[allow(dead_code)]
+pub(crate) mod media_source;
 // 第 3 步的 MCP 工具接上之前没有非测试调用点。
 mod permissions_switch;
 #[cfg_attr(not(test), allow(dead_code))]
