@@ -140,7 +140,6 @@ pub use chat::{
     ImageUpload, MessageSummary, OwnBotFailure, OwnBotProblem, OwnPrivateBotView,
     PendingConfirmation, RecoveryNextStep, RecoveryStatus, RoomBot, RoomMembership, RoomPreview,
     RoomRow,
->>>>>>> 5920e0e3 (feat(chat): 客户端核心消费 Bot 可达清单)
 };
 pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
