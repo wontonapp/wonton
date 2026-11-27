@@ -150,7 +150,7 @@ x-wonton:
 | 顶栏 | 带栏时是 App 的标题栏，标题取清单，能后退时显示返回。没适配的页面从它下面开始，它不垫底色；适配过的页面内容从下面滚过，iOS 垫材质，Android 不透明（ADR-0029）。全屏时没有标题栏，见“全屏” |
 | 网页框 | 带栏时没适配的页面限在标题栏和底栏之间，不铺到底栏后面：现成应用常有自己的底部按钮栏，铺过去会和我们的底栏叠在一起，被挡住或要页面另外让（主人 2026-11-06 定）。底栏周围是 App 底色，不取网页的颜色 |
 | 返回 | iOS 边缘滑动走 WebView 历史，Android 返回键先退网页历史，到头再按平台习惯回到第一项。全屏时见“全屏” |
-| 再点一次当前标签 | 回到页面最上面（文档滚动的页面由壳做）。有内层滚动的页面监听 `window` 上的 `wonton:tab-reselected` 自己处理 |
+| 再点一次当前标签 | 回到页面最上面（文档滚动的页面由壳做）。`wonton:tab-reselected` 事件已随聊天页面板删掉（ADR-0052） |
 | 键盘 | 底栏和聊天一样让开 |
 | 点输入框时放大 | iOS 上输入框字号小于 16px 时 WebKit 会在聚焦时放大页面，失焦不缩回。壳打开 `ignoresViewportScaleLimits`（和 Safari 一样，页面禁了缩放也能双指缩放），文档结束时给没写 `maximum-scale` 的 viewport 补上 `maximum-scale=1`：聚焦放大以它为上限，双指缩放不受它限制。没有 viewport 的桌面宽度页面不补，聚焦放大对它有用。Android 的 WebView 聚焦不放大（API 35、WebView 124 实测，13px 的输入框）。壳打开 `builtInZoomControls`（不显示缩放按钮），`DOMContentLoaded` 时去掉 viewport 的 `user-scalable=no` 和小于 5 的 `maximum-scale`，和 iOS 一样页面禁了缩放也能双指缩放 |
 | 外部链接 | 主框架只能留在插件自己的域名、`auth.<基础域名>` 和核心的 `/_wonton/oidc/`（OIDC 登录要经过），别的地址用系统浏览器打开，桥也只对插件自己的主框架开放 |

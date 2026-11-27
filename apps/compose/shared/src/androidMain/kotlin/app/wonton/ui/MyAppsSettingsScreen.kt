@@ -103,16 +103,13 @@ fun MyAppsSettingsScreen(onBack: () -> Unit, open: (PluginEntry) -> Unit, checkI
                 item(key = "current") {
                     CurrentAppsGroup(pages.plugins.viewModel.sidebar.apps, list, navigation)
                 }
-                if (pages.viewModel.myAppCandidates.isNotEmpty()) {
-
-                    item(key = "add") {
-                        WontonGroup {
-                            WontonRow(
-                                stringResource(R.string.myapp_add_more),
-                                showsForward = true,
-                                onClick = { adding = true },
-                            )
-                        }
+                item(key = "add") {
+                    WontonGroup {
+                        WontonRow(
+                            stringResource(R.string.myapp_add_more),
+                            showsForward = true,
+                            onClick = { adding = true },
+                        )
                     }
                 }
                 item(key = "problem") { PagesConfigurationProblem(pages.viewModel) }
@@ -277,9 +274,11 @@ private fun TabDragHandle() {
     }
 }
 
+/** 还没加进"我的应用"的页面，逐行加进去；最后一行填网址加公网网页或插件里的某一页。 */
 @Composable
 private fun MyAppCandidatesScreen(onBack: () -> Unit) {
     val pages = LocalPages.current
+    var fillingUrl by remember { mutableStateOf(false) }
     BackHandler(onBack = onBack)
     WontonScreen(bar = { MyAppsBar(stringResource(R.string.myapp_add), onBack) }) {
         LazyColumn(
@@ -289,10 +288,17 @@ private fun MyAppCandidatesScreen(onBack: () -> Unit) {
             items(pages.viewModel.myAppCandidates, key = { it.tab.toString() }) { candidate ->
                 WontonGroup { MyAppCandidateRow(candidate) }
             }
+            item(key = "url") {
+                WontonGroup {
+                    WontonRow(stringResource(R.string.myapp_url), showsForward = true, onClick = { fillingUrl = true })
+                }
+            }
             item { PagesConfigurationProblem(pages.viewModel) }
         }
     }
+    if (fillingUrl) MyAppUrlDialog { fillingUrl = false }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -164,7 +164,6 @@ private extension ChatRoomView {
             sideChatTitle: threadRoot == nil ? nil : sideChatBarTitle,
             close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId, why: "bar") }
         ) {
-            // 面板跟着主对话（ADR-0093）：旁聊页没有房间的面板，也没有这里的按钮。
             // 房间里装着的 widget（通话）：点了全屏打开，关掉回到这里（ADR-0096）。旁聊页没有。
             if threadRoot == nil, !timeline.widgets.isEmpty {
                 RoomCallEntry(widgets: timeline.widgets, active: timeline.callActive) { pages.open($0.tab) }

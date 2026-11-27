@@ -54,7 +54,7 @@ pub enum TabRef {
         page: Option<String>,
     },
     /// 插件网站里的某一页：网页入口下的路径（含查询和 `#` 后面的部分），只认同一个插件网站。
-    /// 从正在看的页面加进我的应用的（[`PageAction::PinCurrentPage`](crate::PageAction::PinCurrentPage)）。
+    /// 按网址加进我的应用的（[`PageAction::AddMyAppUrl`](crate::PageAction::AddMyAppUrl)）。
     PluginPath {
         plugin_id: String,
         path: String,
@@ -63,7 +63,7 @@ pub enum TabRef {
     /// URL 来自同一 BotRef 的 BotView.web；没有已核实的 Ready 时不能用插件 web_url 代替。
     Bot {
         bot: crate::BotRef,
-        /// 空值打开清单入口；非空为同一 Bot origin 内的路径，加进我的应用时使用，不存完整 URL。
+        /// 空值打开清单入口；非空为同一 Bot origin 内的路径，不存完整 URL。
         #[serde(default)]
         path: Option<String>,
     },
@@ -481,9 +481,9 @@ mod tests {
     }
 
     #[test]
-    fn pin_current_page_round_trips_through_json() {
+    fn add_my_app_url_round_trips_through_json() {
         round_trip(Action::Pages {
-            action: PageAction::PinCurrentPage {
+            action: PageAction::AddMyAppUrl {
                 url: "https://app.example.wonton.localhost/stats".into(),
                 title: Some("本月统计".into()),
             },

@@ -43,9 +43,9 @@ use view::*;
 mod reload;
 use reload::*;
 mod actions;
+mod add_url;
 mod bot;
 mod content;
-mod pin;
 mod room_views;
 mod sync;
 pub(crate) mod widget;
@@ -225,7 +225,7 @@ impl PagesLink {
             PageAction::ReloadTab { page } => self.reload(page),
             PageAction::TabLoadFailed { page, status } => self.load_failed(page, status),
             PageAction::TabLoadSucceeded { page } => self.load_succeeded(page),
-            PageAction::PinCurrentPage { url, title } => self.pin_current_page(&url, title),
+            PageAction::AddMyAppUrl { url, title } => self.add_my_app_url(&url, title),
             PageAction::DismissUninstalledTabs => self.dismiss_uninstalled(),
         }
     }

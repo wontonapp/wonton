@@ -322,7 +322,7 @@ pub(super) fn page_url(base: Option<&str>, page: Option<&str>) -> Option<String>
     (url.origin() == base.origin()).then(|| url.to_string())
 }
 
-/// 钉页面上来的带用户起的名字；候选页来的没有，按插件或域名补。
+/// 按网址加的带用户起的名字；候选页来的没有，按插件或域名补。
 pub(super) fn stored_item_with_title(
     state: &PagesState,
     tab: &TabRef,
@@ -375,7 +375,7 @@ pub(super) fn stored_item_with_title(
                 }),
             })
         }
-        // MCP Apps 宿主页只随 Bot 钉页出现（核心拉账号数据时建），不从这里手动打开。
+        // MCP Apps 宿主页不从这里手动打开（ADR-0050）。
         TabRef::UiResource { .. } => {
             Err(invalid(&l10n!(CATALOG, language(), "tabs-view-not-a-page")))
         }
@@ -414,10 +414,10 @@ pub(super) fn stored_item_with_title(
     }
 }
 
-/// 这个页面现在能不能打开（栈和面板共用）：插件页要清单里还有、插件网页也还在。
+/// 这个页面现在能不能打开：插件页要清单里还有、插件网页也还在。
 pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
     match tab {
-        // MCP Apps 宿主页随 Bot 钉页来：钉页拉取流程建的条目才可打开。
+        // MCP Apps 宿主页不在页面栈里打开（ADR-0050）。
         TabRef::UiResource { .. } => false,
         TabRef::Url { url } => is_https_url(url),
         TabRef::Plugin { plugin_id, page } => plugins

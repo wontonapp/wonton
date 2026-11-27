@@ -57,12 +57,6 @@ struct TabPageCapsule: View {
                         pages.send(.pages(action: .addMyApp(app: .page(tab: tab), title: nil, index: nil)))
                     }
                     Button(TabText.details, action: details)
-                } else if let url = session.webView?.url, addsByURL {
-                    Button(TabText.addToMyApps) {
-                        pages.send(.pages(action: .pinCurrentPage(
-                            url: url.absoluteString, title: session.webView?.title
-                        )))
-                    }
                 }
             } label: {
                 glyph(.more)
@@ -88,13 +82,6 @@ struct TabPageCapsule: View {
     }
 
     private var ink: Color { Color(colors.textPrimary) }
-
-    /// 正在看的这一页能不能按网址加进“我的应用”：widget 页只能从房间里打开（ADR-0096），
-    /// Bot 页不进“我的应用”，核心会拒绝。
-    private var addsByURL: Bool {
-        if case .bot = tab { return false }
-        return !tab.isWidget
-    }
 
     /// 公网网页标出来源网站的域名，和插件页面一眼分开。
     private var sourceHost: String? {

@@ -146,7 +146,7 @@ async fn bot_pages_reject_outside_or_absolute_paths() {
 }
 
 #[tokio::test]
-async fn explicit_no_bot_webui_preserves_ordinary_plugin_current_page_pinning() {
+async fn explicit_no_bot_webui_keeps_plugin_addresses_addable() {
     let rig = Rig::new();
     let mut default = bot("default", "http://app.shared.wonton.localhost/");
     default.web = Some(BotWebView::Unavailable {
@@ -154,7 +154,7 @@ async fn explicit_no_bot_webui_preserves_ordinary_plugin_current_page_pinning() 
     });
     publish(&rig, vec![default]);
     rig.tabs
-        .dispatch(PageAction::PinCurrentPage {
+        .dispatch(PageAction::AddMyAppUrl {
             url: "http://app.shared.wonton.localhost/report".into(),
             title: None,
         })
@@ -166,4 +166,36 @@ async fn explicit_no_bot_webui_preserves_ordinary_plugin_current_page_pinning() 
             path: "/report".into(),
         })
     );
+}
+
+#[tokio::test]
+async fn bot_web_page_addresses_are_not_added_to_my_apps() {
+    let rig = Rig::new();
+    let family = bot("family", "https://family.example/");
+    let default = bot("default", "http://app.shared.wonton.localhost/");
+    publish(&rig, vec![family, default]);
+    // 已核实的 Bot 网页同源、Bot 网页专用域名、默认 Bot 共用的插件网站：都不当成别的页加进去。
+    for url in [
+        "https://family.example/report?q=1",
+        "https://bot--other-app-shared-87654321.example/",
+        "http://app.shared.wonton.localhost/report",
+    ] {
+        let refused = rig.tabs.dispatch(PageAction::AddMyAppUrl {
+            url: url.into(),
+            title: None,
+        });
+        assert!(
+            matches!(refused, Err(CoreError::InvalidInput { .. })),
+            "{url}: {refused:?}"
+        );
+    }
+    assert_eq!(rig.last_app_tab(), None);
+
+    rig.tabs
+        .dispatch(PageAction::AddMyAppUrl {
+            url: "https://example.com/".into(),
+            title: None,
+        })
+        .unwrap();
+    assert_eq!(rig.last_app_tab(), Some(url_tab("https://example.com/")));
 }

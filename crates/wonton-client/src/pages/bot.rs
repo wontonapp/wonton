@@ -181,20 +181,12 @@ pub(super) fn build_page(
     }
 }
 
-pub(super) fn classify_pin(state: &PagesState, parsed: &Url) -> Option<(TabRef, Option<String>)> {
-    state.bots.iter().find_map(|view| {
-        let page = ready_page(state, &view.bot)?;
-        let base = Url::parse(&page.url).ok()?;
-        if parsed.origin() != base.origin() {
-            return None;
-        }
-        Some((
-            TabRef::Bot {
-                bot: view.bot.clone(),
-                path: Some(relative_path(parsed)),
-            },
-            Some(view.name.clone()),
-        ))
+/// 这个网址和某个已核实的 Bot 网页同源。
+pub(super) fn owns_url(state: &PagesState, url: &Url) -> bool {
+    state.bots.iter().any(|view| {
+        ready_page(state, &view.bot)
+            .and_then(|page| Url::parse(&page.url).ok())
+            .is_some_and(|base| base.origin() == url.origin())
     })
 }
 

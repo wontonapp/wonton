@@ -95,8 +95,7 @@ pub struct Endpoint {
     pub service: McpService,
 }
 
-/// `wonton__user_locale` 认人用的本服务器身份资料：Matrix 服务器名和家人记录。
-/// Bot 钉页的卡片需要的 Matrix 入口。
+/// 代 Bot 查房间成员要的 Matrix 入口和主人（收件人没给时按主人查）。
 pub struct Cards {
     matrix: Option<Arc<crate::matrix::Matrix>>,
     owner: String,
@@ -122,7 +121,7 @@ pub struct Bus {
     help: OnceLock<Arc<Help>>,
     /// 家人记录、角色记录和本服务器的 Matrix 服务器名：`wonton__user_locale` 认人、开卡挑人用（[`Bus::attach_people`]）。
     people: OnceLock<People>,
-    /// Matrix 和主人：Bot 钉进主面板的同意卡片要发进 Bot 的房间里（[`Bus::attach_matrix`]）。
+    /// Matrix 和主人：代 Bot 查房间成员用（[`Bus::attach_matrix`]）。
     matrix: OnceLock<Cards>,
     /// Bot 的联系人：有远端联系人的 Bot 只聊天（[`Bus::attach_contacts`]，ADR-0050）。
     contacts: OnceLock<Arc<crate::contacts::Contacts>>,

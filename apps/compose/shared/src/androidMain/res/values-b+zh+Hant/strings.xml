@@ -98,6 +98,8 @@
     <string name="widget_status_at">%1$s · %2$s</string>
     <string name="myapp_add">加進我的應用</string>
     <string name="myapp_add_more">新增應用</string>
+    <string name="myapp_url">填寫網址</string>
+    <string name="myapp_url_add">加入</string>
     <string name="myapp_auto_add">新裝的應用自動加入</string>
     <string name="myapp_problem">我的應用讀寫出錯</string>
     <string name="myapp_remove">從我的應用移出</string>

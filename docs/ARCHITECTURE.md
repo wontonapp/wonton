@@ -265,7 +265,7 @@ Agent／插件网络来源在 `self_request` 例外前拒绝；默认与非默�
 [`bot_web` 协议](../crates/wonton-protocol/src/bot_web.rs)区分 Bot 页身份、可用性和失败原因。
 Bot 页使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 URL，不降为插件页或公网网页。
 `None` 路径打开对应 `BotView.web.Ready.page.url`，`Some(path)` 仅允许同 origin 内的路径（含查询和片段）；
-打开沿用 `PageAction::OpenPage`，加入沿用 `PageAction::AddMyApp` 和 `PageAction::PinCurrentPage`，`PlacedTab` 保留同一 Bot 身份及路径。
+打开沿用 `PageAction::OpenPage`，`PlacedTab` 保留同一 Bot 身份及路径；Bot 页不进“我的应用”。
 聊天已有的 `BotView` watch 通道接入 `PagesLink`，网页状态变化时重算 `PagesViewModel` 的 `TabPage`；
 URL 只来自精确匹配该 `BotRef` 的 Ready 页面，不读 `plugin.web_url`，桥和媒体以 `TabPage.url` 的精确 origin 为准。
 `BotView.web: None` 没有验证可用的 URL；未知、缺失或错误时不发页面 URL，断连或身份变化时清空，不猜 URL 或回退默认 Bot。

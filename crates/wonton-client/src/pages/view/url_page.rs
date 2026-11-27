@@ -1,4 +1,4 @@
-//! 公网网页的一页：钉页和栈里的入口。
+//! 公网网页的一页：我的应用和栈里的入口。
 use url::Url;
 use wonton_protocol::{
     CoreError, PlacedTab, PluginsViewModel, TabIcon, TabLayout, TabPage, TabRef, TabState,
