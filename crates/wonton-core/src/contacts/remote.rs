@@ -52,12 +52,13 @@ impl Contacts {
                 ..
             } => {
                 if let Some(local) = local {
-                    self.received_result(&local, &from, &id, outcome, keeper_display_name);
+                    self.received_result(&local, &from, &id, outcome, keeper_display_name)
+                        .await;
                 }
             }
             ContactEvent::Remove { .. } => {
                 if let Some(local) = local {
-                    self.received_remove(&local, &from);
+                    self.received_remove(&local, &from).await;
                 }
             }
             ContactEvent::Other => {}
@@ -111,7 +112,7 @@ impl Contacts {
             });
             if committed.is_ok() {
                 if !was_active {
-                    self.ports.effects.allowed_users_changed(&local.bot);
+                    self.apply(&local.bot).await;
                 }
                 self.flush_or_later(sender_server).await;
             }
@@ -142,7 +143,7 @@ impl Contacts {
         }
     }
 
-    fn received_result(
+    async fn received_result(
         &self,
         local: &LocalBot,
         from: &str,
@@ -177,11 +178,11 @@ impl Contacts {
             .is_ok()
             && next == ContactState::Active
         {
-            self.ports.effects.allowed_users_changed(&local.bot);
+            self.apply(&local.bot).await;
         }
     }
 
-    fn received_remove(&self, local: &LocalBot, from: &str) {
+    async fn received_remove(&self, local: &LocalBot, from: &str) {
         let Some(row) = self.lock().row(&local.bot, from).cloned() else {
             return;
         };
@@ -195,7 +196,7 @@ impl Contacts {
             .is_ok()
             && row.state == ContactState::Active
         {
-            self.ports.effects.allowed_users_changed(&local.bot);
+            self.apply(&local.bot).await;
         }
     }
 

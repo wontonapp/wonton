@@ -28,6 +28,7 @@ mod clients_labels;
 mod clients_manifest_package;
 mod configs;
 mod configs_docker;
+mod contacts;
 mod device_detail;
 mod device_host;
 mod device_recovery;

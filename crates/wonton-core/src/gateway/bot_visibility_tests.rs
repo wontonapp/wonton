@@ -109,7 +109,8 @@ impl Fixture {
         let path = self.harness.data_dir.join("raw-contact-facts.json");
         std::fs::write(&path, serde_json::to_vec(&json!({"bots": rows})).unwrap()).unwrap();
         let invites = Arc::new(FakeInvites::default());
-        let effects = Arc::new(FakeEffects::default());
+        let receipts = Arc::new(crate::contacts::ApplyReceipts::default());
+        let effects = Arc::new(FakeEffects::new(receipts.clone()));
         self.gateway.contacts = Some(
             Contacts::open(
                 &path,
@@ -119,6 +120,7 @@ impl Fixture {
                     link: Arc::new(NoLink),
                     invites: invites.clone(),
                     effects: effects.clone(),
+                    receipts,
                     open_federation: false,
                 },
             )

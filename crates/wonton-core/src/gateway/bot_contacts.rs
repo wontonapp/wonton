@@ -129,11 +129,12 @@ fn person(
     Ok(person.username)
 }
 
-/// 鉴权、取联系人记录，交给 `act`。
+/// 鉴权、取联系人记录，交给 `act`；回执里带上这个 Bot 最近一次名单变更的运行时结果。
 async fn handle<F, Fut>(
     gateway: Arc<Gateway>,
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
+    bot: BotRef,
     act: F,
 ) -> Response
 where
@@ -151,8 +152,12 @@ where
             "核心没有接入 Matrix，联系人不可用",
         );
     };
-    match act(contacts, username).await {
-        Ok(contacts) => Json(BotContacts { contacts }).into_response(),
+    match act(contacts.clone(), username).await {
+        Ok(list) => Json(BotContacts {
+            contacts: list,
+            apply: contacts.last_apply(&bot),
+        })
+        .into_response(),
         Err(failure) => error(&api::languages(&headers), &failure),
     }
 }
@@ -169,9 +174,13 @@ pub async fn list(
     Path((id, bot)): Path<(String, String)>,
 ) -> Response {
     let bot = bot_ref(id, bot);
-    handle(gateway, peer, headers, |contacts, user| async move {
-        contacts.list(&bot, &user).await
-    })
+    handle(
+        gateway,
+        peer,
+        headers,
+        bot.clone(),
+        |contacts, user| async move { contacts.list(&bot, &user).await },
+    )
     .await
 }
 
@@ -194,9 +203,13 @@ pub async fn request(
         }
     };
     let bot = bot_ref(id, bot);
-    handle(gateway, peer, headers, |contacts, user| async move {
-        contacts.request(&bot, &user, &request).await
-    })
+    handle(
+        gateway,
+        peer,
+        headers,
+        bot.clone(),
+        |contacts, user| async move { contacts.request(&bot, &user, &request).await },
+    )
     .await
 }
 
@@ -208,9 +221,13 @@ pub async fn approve(
     Path((id, bot, user_id)): Path<(String, String, String)>,
 ) -> Response {
     let bot = bot_ref(id, bot);
-    handle(gateway, peer, headers, |contacts, user| async move {
-        contacts.approve(&bot, &user, &user_id).await
-    })
+    handle(
+        gateway,
+        peer,
+        headers,
+        bot.clone(),
+        |contacts, user| async move { contacts.approve(&bot, &user, &user_id).await },
+    )
     .await
 }
 
@@ -222,9 +239,13 @@ pub async fn reject(
     Path((id, bot, user_id)): Path<(String, String, String)>,
 ) -> Response {
     let bot = bot_ref(id, bot);
-    handle(gateway, peer, headers, |contacts, user| async move {
-        contacts.reject(&bot, &user, &user_id).await
-    })
+    handle(
+        gateway,
+        peer,
+        headers,
+        bot.clone(),
+        |contacts, user| async move { contacts.reject(&bot, &user, &user_id).await },
+    )
     .await
 }
 
@@ -236,8 +257,12 @@ pub async fn remove(
     Path((id, bot, user_id)): Path<(String, String, String)>,
 ) -> Response {
     let bot = bot_ref(id, bot);
-    handle(gateway, peer, headers, |contacts, user| async move {
-        contacts.remove(&bot, &user, &user_id).await
-    })
+    handle(
+        gateway,
+        peer,
+        headers,
+        bot.clone(),
+        |contacts, user| async move { contacts.remove(&bot, &user, &user_id).await },
+    )
     .await
 }

@@ -46,6 +46,7 @@ fn bots_are_addressed_by_plugin_and_bot_name() {
 fn contact_types_round_trip_through_json() {
     let contacts = BotContacts {
         contacts: vec![remote_contact()],
+        apply: None,
     };
     let json = serde_json::to_string(&contacts).unwrap();
     assert_eq!(
@@ -53,6 +54,7 @@ fn contact_types_round_trip_through_json() {
         contacts
     );
 
+    let user_id = "@hermes-sam:def67890.wonton".to_owned();
     let local: BotContact = serde_json::from_value(json!({
         "user_id": "@hermes-bob:x.wonton.internal",
         "display_name": null,
@@ -90,7 +92,6 @@ fn contact_types_round_trip_through_json() {
         );
     }
 
-    let user_id = "@hermes-sam:def67890.wonton".to_owned();
     for action in [
         Action::BotContacts {
             action: BotContactAction::RefreshBotContacts { bot: bot() },
@@ -129,6 +130,48 @@ fn contact_types_round_trip_through_json() {
         let json = serde_json::to_string(&action).unwrap();
         assert_eq!(serde_json::from_str::<Action>(&json).unwrap(), action);
     }
+}
+
+/// 契约：应用回执能往返；旧核心不给我们这格时按空。
+#[test]
+fn apply_results_round_trip_and_are_optional() {
+    for apply in [
+        None,
+        Some(ContactApply::Applied),
+        Some(ContactApply::Failed {
+            reason: ContactApplyFailure::PluginNotReady,
+            detail: "插件停着".into(),
+        }),
+    ] {
+        let contacts = BotContacts {
+            contacts: Vec::new(),
+            apply,
+        };
+        let json = serde_json::to_string(&contacts).unwrap();
+        assert_eq!(
+            serde_json::from_str::<BotContacts>(&json).unwrap(),
+            contacts
+        );
+    }
+    assert_eq!(
+        serde_json::from_value::<BotContacts>(json!({"contacts": []})).unwrap(),
+        BotContacts {
+            contacts: Vec::new(),
+            apply: None,
+        }
+    );
+    assert_eq!(
+        serde_json::to_value(ContactApply::Failed {
+            reason: ContactApplyFailure::Upstream,
+            detail: "500".into(),
+        })
+        .unwrap(),
+        json!({"state": "failed", "reason": "upstream", "detail": "500"})
+    );
+    assert_eq!(
+        serde_json::from_value::<ContactApply>(json!({"state": "newer_core"})).unwrap(),
+        ContactApply::Other
+    );
 }
 
 /// 契约：两台核心之间的事件写法。版本不同的核心靠它互通，改写法要两边一起升级。

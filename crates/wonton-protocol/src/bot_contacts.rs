@@ -61,6 +61,46 @@ pub const CONTACT_ROOM_TYPE: &str = "app.wonton.contact";
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotContacts {
     pub contacts: Vec<BotContact>,
+    /// 最近一次让这个 Bot 的授权名单变了的操作在运行时的结果（#646）；从没变过时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apply: Option<ContactApply>,
+}
+
+/// 一次联系人变更后，这个 Bot 的授权名单在运行时有没有真的换上（#646）。配置已存、任务已经起来都不算。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum ContactApply {
+    /// 运行中的服务已经换上新名单。
+    Applied,
+    /// 没换上：记录是准的，下次启动或下一次变更照记录渲染。
+    Failed {
+        reason: ContactApplyFailure,
+        /// 核心写的原因原话，给日志和“详情”。
+        detail: String,
+    },
+    /// 比这个 App 新的核心给的状态；壳按“不确定”处理，别当已应用。
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum ContactApplyFailure {
+    /// Docker 连不上、拒绝请求或超时。
+    TransportUnavailable,
+    /// 插件要的权限没有授予。
+    PermissionDenied,
+    /// 插件停着、正在换版本或记录不可用，现在不能重建。
+    PluginNotReady,
+    /// 上游服务出错：渲染、拉镜像、起服务或健康检查没过。
+    Upstream,
+    /// 插件 ID、清单或渲染输入不合法。
+    InvalidInput,
+    /// 比这个 App 新的核心给的类别。
+    #[serde(other)]
+    Other,
 }
 
 /// 一个联系人：同机的另一个 Bot，或另一台配对过的服务器上的人或 Bot。

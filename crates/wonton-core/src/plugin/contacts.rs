@@ -3,8 +3,6 @@
 
 use std::sync::Arc;
 
-use wonton_protocol::{BotKeeper, BotRef};
-
 use super::bots::is_bot;
 use super::health_gate::Gate;
 use super::manager::{InstallError, PluginManager, PluginStatus};
@@ -12,6 +10,7 @@ use super::manifest::PluginId;
 use super::render;
 use super::store::StoreError;
 use super::upgrade::installed_package;
+use wonton_protocol::{BotKeeper, BotRef, ContactApply, ContactApplyFailure};
 
 /// Bot 的 Matrix 用户 ID → 它已成立的联系人。
 pub type ContactSource = Arc<dyn Fn(&str) -> Vec<String> + Send + Sync>;
@@ -105,17 +104,39 @@ impl PluginManager {
         Some(self.owner_languages().pick_owned(&name))
     }
 
-    /// 联系人变了：插件在运行时重建这个 Bot 的服务（沿用设备和令牌），名单跟上。插件停着时不动，下次启动时渲染就带上。
-    pub async fn rebuild_for_contacts(&self, bot: &BotRef) -> Result<(), InstallError> {
-        let id =
-            PluginId::parse(&bot.plugin_id).map_err(|e| InstallError::Invalid(e.to_string()))?;
-        if self.status_of(&id) != Some(PluginStatus::Running) {
-            tracing::info!(plugin = %id, bot = %bot.bot, "联系人变了，插件没在运行，下次启动带上");
-            return Ok(());
+    /// 联系人变了：插件在运行时重建这个 Bot 的服务（沿用设备和令牌），名单跟上。
+    /// 回的是运行时的真实结果（#646）：插件停着、Docker 连不上、服务起不来都如实报没换上。
+    /// 记录是准的，失败的 Bot 下次启动或下一次变更照记录渲染。
+    pub async fn rebuild_for_contacts(&self, bot: &BotRef) -> ContactApply {
+        let id = match PluginId::parse(&bot.plugin_id) {
+            Ok(id) => id,
+            Err(e) => return failed(ContactApplyFailure::InvalidInput, e.to_string()),
+        };
+        match self.status_of(&id) {
+            Some(PluginStatus::Running) => {}
+            Some(status) => {
+                return failed(
+                    ContactApplyFailure::PluginNotReady,
+                    format!("插件 {id} 没在运行（{status:?}）"),
+                );
+            }
+            None => {
+                return failed(
+                    ContactApplyFailure::PluginNotReady,
+                    format!("插件 {id} 没有登记"),
+                );
+            }
         }
+        match self.rebuild_running(&id, bot).await {
+            Ok(()) => ContactApply::Applied,
+            Err(e) => failed(failure_of(&e), e.to_string()),
+        }
+    }
+
+    async fn rebuild_running(&self, id: &PluginId, bot: &BotRef) -> Result<(), InstallError> {
         let record = self
             .store
-            .load(&id)?
+            .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
         let langs = self.owner_languages();
         let package = installed_package(&record, &langs)?;
@@ -123,7 +144,7 @@ impl PluginManager {
             return Ok(());
         }
         if package.manifest.bots.is_some() {
-            return self.rebuild_bot(&id, &bot.bot).await;
+            return self.rebuild_bot(id, &bot.bot).await;
         }
         // 只有一个 Bot 的插件：Bot 的身份在插件级变量里，整个插件按新变量重建。
         let lan = self.lan_grant(&package, record.lan_webui, &langs).await?;
@@ -133,5 +154,26 @@ impl PluginManager {
         self.replace_containers(&ctx, plan, Gate::StartPeriod)
             .await?;
         self.reconcile_running(&package, &record).await.map(|_| ())
+    }
+}
+
+fn failed(reason: ContactApplyFailure, detail: String) -> ContactApply {
+    ContactApply::Failed { reason, detail }
+}
+
+/// 重建失败的原因归类；按 [`InstallError::kind`] 分，不认识的原样算上游出错。
+fn failure_of(error: &InstallError) -> ContactApplyFailure {
+    match error.kind() {
+        "invalid_input" | "settings_invalid" | "settings_schema_invalid" => {
+            ContactApplyFailure::InvalidInput
+        }
+        "permission_denied" => ContactApplyFailure::PermissionDenied,
+        "docker_unavailable" | "docker_rejected" | "docker_timed_out" => {
+            ContactApplyFailure::TransportUnavailable
+        }
+        "not_installed" | "record_unusable" | "not_found" | "core_upgrading" => {
+            ContactApplyFailure::PluginNotReady
+        }
+        _ => ContactApplyFailure::Upstream,
     }
 }
