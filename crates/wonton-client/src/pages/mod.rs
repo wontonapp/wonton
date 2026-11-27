@@ -227,6 +227,13 @@ impl PagesLink {
             PageAction::TabLoadSucceeded { page } => self.load_succeeded(page),
             PageAction::AddMyAppUrl { url, title } => self.add_my_app_url(&url, title),
             PageAction::DismissUninstalledTabs => self.dismiss_uninstalled(),
+            // 底栏不在这个核心里：如实报没就绪，不静默当成功。
+            PageAction::SelectBarItem { .. }
+            | PageAction::AddBarItem { .. }
+            | PageAction::RemoveBarItem { .. }
+            | PageAction::MoveBarItem { .. } => Err(CoreError::NotReady {
+                reason: "the bar is not wired yet".into(),
+            }),
         }
     }
 

@@ -124,6 +124,7 @@ pub(super) fn render(
         default_bot_visibility,
         chat_prompts,
         tips: tips(records),
+        agent_intro: None,
     };
     (view, default_bot_user_id)
 }
@@ -219,6 +220,7 @@ mod tests {
             needs: Vec::new(),
             prompts: vec!["问我能做什么".to_owned()],
             catalog_problem: None,
+            agent_intro: None,
         }
     }
 

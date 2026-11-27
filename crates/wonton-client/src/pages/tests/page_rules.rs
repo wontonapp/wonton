@@ -155,6 +155,8 @@ fn stored_public_pages_must_stay_https() {
     let mut settings = LayoutSettings {
         my_apps: vec![app_row(url_tab("http://example.com/a"))],
         auto_add: true,
+        panel: Vec::new(),
+        bar: wonton_protocol::default_bar(),
     };
     let error = adopt_layout(&mut file, settings.clone()).unwrap_err();
     assert_eq!(error, l10n!(CATALOG, language(), "page-not-https"));
@@ -193,4 +195,20 @@ fn server_change_drops_plugin_pages_but_keeps_public_pages() {
     normalize_for_server(&mut file, Some("new".to_owned()));
     let apps: Vec<_> = file.my_apps.iter().map(entry_tab).collect();
     assert_eq!(apps, vec![url_tab("https://example.com/report")]);
+}
+
+#[test]
+fn writing_the_layout_leaves_a_bar_from_another_device_alone() {
+    // 底栏是别的设备（实现了底栏的 App）存的：这台写我的应用和面板时不能把它冲回默认。
+    let stored = serde_json::json!({
+        "my_apps": [],
+        "bar": [{"type": "apps"}],
+        "future": 1,
+    });
+    let mut raw = stored.as_object().unwrap().clone();
+    let file = default_file(Some("server".to_owned()));
+    super::super::layout::overwrite_layout(&mut raw, &file.layout());
+    assert_eq!(raw["bar"], serde_json::json!([{"type": "apps"}]));
+    assert_eq!(raw["future"], serde_json::json!(1));
+    assert_eq!(raw["auto_add"], serde_json::json!(file.auto_add));
 }

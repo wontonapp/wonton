@@ -42,6 +42,9 @@ impl LayoutFile {
                 })
                 .collect(),
             auto_add: self.auto_add,
+            panel: self.panel.clone(),
+            // 这个核心不改底栏，也不写回去（见 `overwrite_layout`）。
+            bar: wonton_protocol::default_bar(),
         }
     }
 
@@ -231,19 +234,20 @@ pub(super) fn adopt_layout(file: &mut LayoutFile, settings: LayoutSettings) -> R
     Ok(())
 }
 
-/// 把本机的配置写进账号数据的原文：只换认识的两块，别的键（更新版 App 存的）原样留下。
+/// 这个核心管的几块；底栏（`bar`）不在里面，别的设备存的底栏原样留着。
+const MANAGED_LAYOUT_KEYS: [&str; 3] = ["my_apps", "auto_add", "panel"];
+
+/// 把本机的配置写进账号数据的原文：只换认识的几块，别的键（更新版 App 存的）原样留下。
 pub(super) fn overwrite_layout(
     raw: &mut serde_json::Map<String, serde_json::Value>,
     settings: &LayoutSettings,
 ) {
-    for key in ["my_apps", "auto_add"] {
-        raw.remove(key);
-    }
     let value =
         serde_json::to_value(settings).expect("the layout settings only have serializable fields");
-    if let Some(fields) = value.as_object() {
-        for (key, value) in fields {
-            raw.insert(key.clone(), value.clone());
+    for key in MANAGED_LAYOUT_KEYS {
+        raw.remove(key);
+        if let Some(value) = value.get(key) {
+            raw.insert(key.to_owned(), value.clone());
         }
     }
 }

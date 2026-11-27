@@ -42,6 +42,11 @@ pub struct Onboarding {
     pub prompts: Vec<String>,
     /// 官方索引的推荐清单取不到或者可能不是最新的原因。
     pub catalog_problem: Option<StoreProblem>,
+    /// 这个人见过 Agent 的第一次出场（ADR-0126）：按人存在服务器上，换手机不再演。不记这一项的服务器
+    /// 不给，为空：不知道见没见过，不演。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub agent_intro: Option<bool>,
 }
 
 /// `PUT /_wonton/api/onboarding` 的请求体。没写的字段不变。
@@ -50,6 +55,10 @@ pub struct Onboarding {
 pub struct OnboardingUpdate {
     #[serde(default)]
     pub step: Option<OnboardingStep>,
+    /// 写 `true` 记下见过出场；只会从没见过变成见过，重看引导也不清。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub agent_intro: Option<bool>,
 }
 
 /// 默认 Bot 插件：家人的私人 Bot 装在它上面，“问 Bot”和聊天列表置顶都找它的默认 Bot。由随核心附带的默认插件
@@ -116,6 +125,22 @@ pub struct OnboardingViewModel {
     /// 服务器太旧，引导整段打不开（连引导接口都没有）：[`Self::step`] 为空，壳只在引导该出现的地方留一条
     /// “升级服务器后可用”和服务器升级入口。
     pub too_old: Option<OnboardingTooOld>,
+    /// Agent 的第一次出场；为空时不演。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub agent_intro: Option<AgentIntroView>,
+}
+
+/// Agent 会话页第一次打开时的出场（ADR-0126 的“第一次出场”）。见过标记跟着人存在服务器上
+/// （[`Onboarding::agent_intro`]），动画演到哪不存。气泡的两句话和按钮的文字按类别写在壳里。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AgentIntroView {
+    /// 该演：默认 Agent 的私聊在、连着，这个人还没见过。壳只在 Agent 会话页刚切进来时演；
+    /// 演到一半切走，回来重演。
+    pub show: bool,
+    /// 默认 Agent 的名字，第一句气泡叫它。
+    pub name: String,
 }
 
 /// 服务器太旧，引导整段用不了。各步单独隐藏的情况不在这里，见 [`OnboardingViewModel::step`]。
@@ -358,5 +383,41 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(onboarding.step, OnboardingStep::Other);
+        // 不记出场的服务器不给这一项：不知道，不当成没见过。
+        assert_eq!(onboarding.agent_intro, None);
+    }
+
+    #[test]
+    fn the_agent_intro_mark_travels_with_the_onboarding_state() {
+        let seen: Onboarding = serde_json::from_value(json!({
+            "step": "finished", "default_bot_plugin": null, "needs": [], "prompts": [],
+            "catalog_problem": null, "agent_intro": true,
+        }))
+        .unwrap();
+        assert_eq!(seen.agent_intro, Some(true));
+        // 只改步骤的请求不带这一项，旧服务器看到的和以前一样。
+        let step_only = OnboardingUpdate {
+            step: Some(OnboardingStep::Finished),
+            agent_intro: None,
+        };
+        assert_eq!(
+            serde_json::to_value(step_only).unwrap(),
+            json!({"step": "finished"})
+        );
+        let mark = OnboardingUpdate {
+            step: None,
+            agent_intro: Some(true),
+        };
+        assert_eq!(
+            serde_json::to_value(mark).unwrap(),
+            json!({"step": null, "agent_intro": true})
+        );
+        let action = crate::Action::Onboarding {
+            action: crate::OnboardingAction::FinishAgentIntro,
+        };
+        assert_eq!(
+            serde_json::to_value(&action).unwrap(),
+            json!({"domain": "onboarding", "action": {"type": "finish_agent_intro"}})
+        );
     }
 }

@@ -246,6 +246,8 @@ mod tests {
             saving: false,
             problem: None,
             chat: Default::default(),
+            cloud: None,
+            face: None,
         }
     }
 

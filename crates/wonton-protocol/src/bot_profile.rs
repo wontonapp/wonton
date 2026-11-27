@@ -289,6 +289,9 @@ pub struct BotProfileUpdate {
     /// 改哪几个状态头像。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub states: BTreeMap<BotActivity, AvatarChange>,
+    /// 换成云朵：核心合成静态头像和状态头像写进资料，清掉主人传的那组。和 `avatar`、`states` 不同时给。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloud: Option<crate::BotCloud>,
 }
 
 /// 换成一个已经传到媒体库的文件，或者清掉。核心按文件头检查它（[`MAX_AVATAR_EDGE`] 等）。
@@ -378,6 +381,14 @@ pub struct BotView {
     pub problem: Option<BotProfileProblem>,
     /// Bot 资料页“显示”一节（ADR-0060）。
     pub chat: BotChatSettings,
+    /// 资料里的云朵（[`crate::CLOUD_FIELD`]）；为空时头像来源是主人自己的图，或者还没设头像。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub cloud: Option<crate::BotCloud>,
+    /// 现在的状态该用的表情素材 ID（ADR-0126 的“状态头像”）；没有云朵或状态不确定时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub face: Option<String>,
 }
 
 impl BotView {
@@ -566,6 +577,7 @@ mod tests {
                 ),
                 (BotActivity::Offline, AvatarChange::Clear),
             ]),
+            cloud: None,
         };
         let value = serde_json::to_value(&update).unwrap();
         assert_eq!(
@@ -623,6 +635,8 @@ mod tests {
             activity: None,
             saving: false,
             problem: None,
+            cloud: None,
+            face: None,
         };
         assert!(bot.current_state_avatar().is_none());
         bot.activity = Some(BotActivity::Working);

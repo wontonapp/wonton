@@ -149,6 +149,8 @@ fn bot_view(plugin: &str, bot: &str, url: &str, isolated: bool) -> wonton_protoc
         saving: false,
         problem: None,
         chat: Default::default(),
+        cloud: None,
+        face: None,
     }
 }
 

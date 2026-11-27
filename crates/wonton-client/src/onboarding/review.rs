@@ -485,6 +485,7 @@ impl OnboardingLink {
         }
         let update = OnboardingUpdate {
             step: Some(OnboardingStep::Finished),
+            agent_intro: None,
         };
         let result = match self.plugins.api() {
             Ok(api) => api::update(&api, &update).await,
