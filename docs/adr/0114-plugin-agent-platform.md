@@ -31,7 +31,7 @@ Agent 是 Hermes，一个家人一个容器（[ADR-0108](0108-hermes-default-ker
 | --- | --- | --- |
 | 按人的网页登录（OIDC `sub` 就是本机用户名，代理登录模板带 `{user}`） | `plugin-spec.md:710-760`、`:861-880` | 账号的建、删和凭据，以及 MCP 侧按人取 |
 | 应用按人分数据（`webui.accounts: per_user`） | `plugin-spec.md:672-676`、`protocol/src/manifest/web.rs:83` | 把它从“分享提示”升成平台能兑现的约定 |
-| 说话人请求头与轮次记录 | `plugin-spec.md:2456-2462`、`mcp/upstream.rs:216-235` | 递给插件的 `_meta`，群聊单人时可以代人 |
+| 说话人请求头与轮次记录 | `plugin-spec.md:2456-2462`、`mcp/upstream/call.rs:15-21` | 递给插件的 `_meta`，群聊单人时可以代人 |
 | 确认卡片、源会话、按人推送 | [ADR-0016](0016-mcp-bus-and-confirmations.md)、`mcp/audience.rs` | 卡片模板、结果卡 |
 | 深链 `wonton://tab/plugin-path/<插件>/<base64url 路径>` | [ADR-0041](0041-app-links-and-shortcuts.md)、`protocol/src/link.rs:66-75` | 插件自己拼、核心校验；通知字段改名 `link` |
 | 通知、按级别的推送类别 | [ADR-0047](0047-plugin-notices.md)、`gateway/notify.rs` | 收件人、`link` |
@@ -128,7 +128,7 @@ Navidrome 要每人一个用户，都不是“发一个口令就够”的形状�
 - `app.wonton/user`（`crates/wonton-protocol/src/family.rs:50`）改成：私人 Bot 是归属人；共享 Bot 且 `speakers` 恰好一个
   人才带那一个；其余不带（和现在一样）。共享 Bot 多人同轮时不猜谁为主。
 - **`user` 和 `app.wonton/capabilities` 一起动**：`capabilities` 按被带上的那个人重算角色（现在两者一起递，
-  `upstream.rs:517-533`，只给 `user` 不给 `capabilities` 时插件会拿归属 Bot 的权限，共享 Bot 里说话人就算是管理员也拿不到
+  `upstream/call.rs:62-71`，只给 `user` 不给 `capabilities` 时插件会拿归属 Bot 的权限，共享 Bot 里说话人就算是管理员也拿不到
   `PluginAdmin`）。语义变更写进 ADR-0098 第 3 节，`family.rs:50` 的注释一起改。
 - 这三项都只是提示：确认口径、AI 级别、放行时段仍由核心按 `ai_cap`、`audience` 算，插件不能拿 `speakers` 当授权。
   插件用 `app.wonton/capabilities` 和核心的级别判断动手幅度。
@@ -439,7 +439,7 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 4. **（实验卡已做，2026-11-23）工具 `_meta` 能不能带到插件。** rmcp 不丢：插件工具的 `_meta` 经核心到 Agent 原样保留；
    核心自己写进 `tools/call` 的 `_meta`（`app.wonton/user`、`app.wonton/capabilities`）也到得了插件。但核心现在不把调用方自己塞的 `_meta`
    往下递（只用自己的身份键和 rmcp 的 `progressToken`），所以 `tools/list` 的 `app.wonton/card`、`app.wonton/files` 直接可用，
-   `tools/call` 的新键（`speakers` 等）必须由核心在 `upstream.rs::call_with_identity` 里写。不用换路。
+   `tools/call` 的新键（`speakers` 等）必须由核心在 `upstream/call.rs::call_with_identity` 里写。不用换路。
    测试：`gateway::mcp_tests::tool_meta_survives_the_bus_and_core_call_meta_reaches_the_plugin`。
 5. **房间成员查询的开销。** 每次读文件都查 `joined_members` 在几十人的房间里能不能接受；不行就加 30 秒内的短缓存，仍以实时为准。
 6. **命令在容器里的用户和属主。** 插件容器常以 `PUID`/`PGID` 跑，核心 exec 带哪个用户、写出的 0600 文件谁读得到。
