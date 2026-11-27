@@ -12,6 +12,14 @@ use wonton_protocol::media::{
 
 use super::store::{DEFAULT_PROVIDER_UPLOAD_LIMIT, Ledger, MediaStoreError, SCHEMA_V1, Store};
 
+mod migrations;
+mod open;
+mod queue;
+mod quota;
+mod scoping;
+mod sessions;
+mod tasks;
+
 const ALICE: &str = "@alice:one.example.test";
 const BOB: &str = "@bob:two.example.test";
 const PHONE: &str = "phone-a";
