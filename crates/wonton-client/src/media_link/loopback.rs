@@ -86,7 +86,7 @@ impl Loopback {
         let local = |e: std::io::Error| {
             failure(
                 MediaFailureCode::LocalIo,
-                format!("本机回环地址开不了：{e}"),
+                format!("cannot open the loopback listener: {e}"),
             )
         };
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
@@ -151,7 +151,7 @@ async fn accept(listener: TcpListener, shared: Arc<Shared>) {
                 continue;
             }
             Err(e) => {
-                tracing::info!(error = %e, "媒体回环地址不能用了，下次要地址时重开");
+                tracing::info!(error = %e, "media loopback listener failed; reopening on the next request");
                 return;
             }
         };
@@ -165,7 +165,7 @@ async fn accept(listener: TcpListener, shared: Arc<Shared>) {
             let connection = hyper::server::conn::http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), service);
             if let Err(e) = connection.await {
-                tracing::debug!(error = %e, "媒体回环的一条连接结束");
+                tracing::debug!(error = %e, "media loopback connection ended");
             }
         });
         while connections.try_join_next().is_some() {}
@@ -213,7 +213,7 @@ async fn respond(shared: &Shared, request: Request<Incoming>) -> Response<Body> 
     let api = match (shared.api)() {
         Ok(api) => api,
         Err(failure) => {
-            tracing::info!(code = ?failure.code, error = %failure.message, "媒体回环连不上家里的服务器");
+            tracing::info!(code = ?failure.code, error = %failure.message, "media loopback cannot reach the home server");
             return status(StatusCode::SERVICE_UNAVAILABLE);
         }
     };
@@ -233,7 +233,7 @@ async fn respond(shared: &Shared, request: Request<Incoming>) -> Response<Body> 
     let upstream = match forwarded.send().await {
         Ok(upstream) => upstream,
         Err(e) => {
-            tracing::info!(error = %e, "媒体回环转给核心时断了");
+            tracing::info!(error = %e, "media loopback forward to core broke off");
             return status(StatusCode::BAD_GATEWAY);
         }
     };

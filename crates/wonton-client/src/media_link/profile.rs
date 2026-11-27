@@ -50,7 +50,7 @@ impl Profiles {
         if direct_play.is_empty() || container.is_empty() {
             return Err(failure(
                 MediaFailureCode::UnsupportedByDevice,
-                "播放器没有报能直放的格式或容器",
+                "the player reported no direct-play formats or containers",
             ));
         }
         let profile = DeviceProfile {
@@ -65,7 +65,7 @@ impl Profiles {
         };
         let bytes = serde_json::to_vec(&profile).expect("a device profile always serializes");
         if let Err(error) = std::fs::write(&self.path, bytes) {
-            tracing::warn!(%error, "设备档没写到盘上，这次进程里照用");
+            tracing::warn!(%error, "device profile not saved to disk; using it for this process only");
         }
         *self
             .current
@@ -87,7 +87,7 @@ impl Profiles {
         request.profile = current.ok_or_else(|| {
             failure(
                 MediaFailureCode::UnsupportedByDevice,
-                "这台设备还没报播放器能直放什么",
+                "this device has not reported what its player can direct-play",
             )
         })?;
         Ok(())

@@ -165,7 +165,7 @@ impl MediaLink {
         match action {
             MediaAction::StartUpload { .. } | MediaAction::StartDownload { .. } => {
                 Err(CoreError::NotReady {
-                    reason: "上传、下载的字节由传输执行层负责，这一版的客户端核还没有它".into(),
+                    reason: "upload and download bytes belong to the transfer executor, which this client core does not have yet".into(),
                 })
             }
             // 新核心发的新动作，这一版跳过（AGENTS.md 的向前兼容）。
@@ -304,7 +304,7 @@ async fn follow_home(link: Weak<MediaLink>, mut home: watch::Receiver<HomeViewMo
                 return;
             };
             if let Err(failure) = link.sync().await {
-                tracing::warn!(code = ?failure.code, error = %failure.message, "媒体任务没能和服务器对齐");
+                tracing::warn!(code = ?failure.code, error = %failure.message, "media tasks failed to sync with the server");
             }
         }
         was_connected = connected;

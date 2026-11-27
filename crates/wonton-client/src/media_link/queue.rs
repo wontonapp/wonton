@@ -39,7 +39,9 @@ pub(super) async fn change(
         }
         seen = Some(current);
     }
-    Err(stale("队列接连被别处改，这次没改成"))
+    Err(stale(
+        "the queue kept changing elsewhere; this change was not applied",
+    ))
 }
 
 fn stale(message: &str) -> MediaFailure {
@@ -52,11 +54,27 @@ fn rebase(
     seen: Option<&Queue>,
     now: &Queue,
 ) -> Result<Option<QueueOp>, MediaFailure> {
-    let unknown = || stale("队列被别处先改了，这次按位置的改动对不上");
-    // 读到的那一版里第 `index` 项，在新的一版里排第几（`None` 是已经不在了）。
+    let unknown =
+        || stale("the queue changed elsewhere first; this positional change no longer fits");
+    // 读到的那一版里第 `index` 项，在新的一版里排第几（`None` 是已经不在了）。同一项在队列里出现几次时按
+    // 第几次出现对上；出现的次数变了就分不清是哪一个，外面的 `None` 当对不上。
     let moved = |index: usize| -> Option<Option<usize>> {
-        let id = &seen?.entries.get(index)?.id;
-        Some(now.entries.iter().position(|entry| &entry.id == id))
+        let seen = seen?;
+        let id = &seen.entries.get(index)?.id;
+        let places = |queue: &Queue| -> Vec<usize> {
+            (0..queue.entries.len())
+                .filter(|at| &queue.entries[*at].id == id)
+                .collect()
+        };
+        let (before, after) = (places(seen), places(now));
+        if after.is_empty() {
+            return Some(None);
+        }
+        if after.len() != before.len() {
+            return None;
+        }
+        let nth = before.iter().position(|at| *at == index)?;
+        Some(Some(after[nth]))
     };
     match op {
         QueueOp::Read
@@ -82,7 +100,7 @@ fn rebase(
             Some(index) => Ok(Some(QueueOp::Jump { index })),
             None => Err(failure(
                 MediaFailureCode::MediaGone,
-                "要跳去的那一项已经被别处移出队列",
+                "the item to jump to was removed from the queue elsewhere",
             )),
         },
     }
@@ -176,6 +194,29 @@ mod tests {
         })
         .await;
         (result, adopted.into_inner().unwrap())
+    }
+
+    #[tokio::test]
+    async fn the_same_item_queued_twice_is_told_apart_by_which_one_it_was() {
+        // 删第二个 a：别处在前面插了一项，删的还是第二个 a。
+        let before = queue(1, &["a", "b", "a"]);
+        let (api, core) = fake_core(vec![
+            (StatusCode::CONFLICT, queue(2, &["x", "a", "b", "a"])),
+            (StatusCode::OK, queue(3, &["x", "a", "b"])),
+        ])
+        .await;
+        run(&api, Some(&before), QueueOp::Remove { index: 2 })
+            .await
+            .0
+            .unwrap();
+        assert_eq!(
+            core.seen.lock().unwrap()[1].op,
+            QueueOp::Remove { index: 3 }
+        );
+        // 别处已经删掉了一个 a：剩下那个是不是要删的这个分不清，报出来，不猜。
+        let (api, _) = fake_core(vec![(StatusCode::CONFLICT, queue(2, &["b", "a"]))]).await;
+        let (result, _) = run(&api, Some(&before), QueueOp::Remove { index: 2 }).await;
+        assert_eq!(result.unwrap_err().code, MediaFailureCode::StaleRevision);
     }
 
     #[tokio::test]

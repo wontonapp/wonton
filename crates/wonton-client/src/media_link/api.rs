@@ -54,7 +54,7 @@ impl MediaApi {
         let not_connected = || {
             failure(
                 MediaFailureCode::TransportUnavailable,
-                "还没有连上家里的服务器",
+                "not connected to the home server yet",
             )
         };
         let base = home.core_url().ok_or_else(not_connected)?;
@@ -175,7 +175,7 @@ pub(crate) fn classify(status: u16, tunnel: Option<&str>, body: &[u8]) -> MediaF
         } else {
             MediaFailureCode::TransportUnavailable
         };
-        return failure(category, format!("隧道：{code}（HTTP {status}）"));
+        return failure(category, format!("tunnel: {code} (HTTP {status})"));
     }
     serde_json::from_slice::<MediaFailure>(body).unwrap_or_else(|_| {
         let code = match status {
@@ -186,7 +186,7 @@ pub(crate) fn classify(status: u16, tunnel: Option<&str>, body: &[u8]) -> MediaF
         };
         failure(
             code,
-            format!("核心回了 HTTP {status}，没有媒体接口的错误信封"),
+            format!("core answered HTTP {status} without a media failure envelope"),
         )
     })
 }
@@ -196,7 +196,7 @@ async fn read<T: DeserializeOwned>(response: Response) -> Result<T, MediaFailure
     serde_json::from_slice(&body).map_err(|e| {
         failure(
             MediaFailureCode::Protocol,
-            format!("核心的回应不是约定的形状：{e}"),
+            format!("core response is not the agreed shape: {e}"),
         )
     })
 }

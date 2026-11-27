@@ -84,7 +84,7 @@ async fn run<T: Send + 'static>(
     let switched = || {
         failure(
             MediaFailureCode::TransportUnavailable,
-            "已经切到另一台服务器",
+            "switched to another server",
         )
     };
     let handle = scope.handle().ok_or_else(|| MediaError::from(switched()))?;
