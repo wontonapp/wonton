@@ -165,6 +165,8 @@ fn status_of(code: &MediaFailureCode) -> StatusCode {
         C::Protocol => StatusCode::BAD_REQUEST,
         // 要用户选一家带 `source` 再来：请求缺东西，不是核心或上游坏了。
         C::SourceRequired => StatusCode::UNPROCESSABLE_ENTITY,
+        // 核心自己回队列冲突时体是当前队列，不走信封；这个码是客户端核重放不了时给壳的。
+        C::StaleRevision => StatusCode::CONFLICT,
         C::AuthenticationRequired
         | C::UpstreamError
         | C::LocalSourceUnavailable
