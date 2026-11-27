@@ -156,6 +156,7 @@
 - 不提交密钥。测试用的示例配置放 `.env.example`。
 - 公开仓库（wonton-docs、各插件仓库、wonton-store）的提交、PR 和截图里，不带真实地址、主机名和内部渠道名。
   示例地址用 `192.0.2.10`。
+- 开发机代号：npchy、194、1k、mini；文档里的 `/Users/…`、`/home/…` 是开发机家目录，可换成 `~/`（见 `apps/compose/README.md` 的走查一节）。
 
 ## 多 Agent 并行开发
 
