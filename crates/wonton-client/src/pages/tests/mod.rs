@@ -11,6 +11,7 @@ mod content;
 mod media_permission;
 mod my_apps;
 mod my_apps_list;
+mod native;
 mod page_rules;
 mod panel_attention;
 mod panel_pages;

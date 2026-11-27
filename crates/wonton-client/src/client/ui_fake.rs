@@ -7,7 +7,7 @@
 //! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个有人在通话、顶栏带 widget 入口的群聊
 //! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、一个带授权设备的应用（`ui_fake_plugin_detail.rs`）、
 //! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、一个整页打开本机网页的应用、
-//! 主面板里钉着的一页、商店入口、“等你确认”里一张带设备的安装卡片（`ui_fake_devices.rs`）、引导已经走完。
+//! 主面板里钉着的一页、一台点开是原生音乐界面的假曲库（`music.rs`）、商店入口、“等你确认”里一张带设备的安装卡片（`ui_fake_devices.rs`）、引导已经走完。
 //! 操作里只认开页、关页（`OpenPage`、`ClosePage`）、回答确认卡片、重试失败的安装（`ui_fake_failed_install.rs`），
 //! 以及时间线上界面测试约定的那几个（`ui_fake_timeline.rs`）：停下在跑的轮次（`ui_fake_agent_stop.rs`，停成了连在等
 //! 的卡片一起撤回），开关页照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
@@ -24,6 +24,7 @@ mod chat;
 mod dispatch;
 mod entry;
 mod home;
+mod music;
 mod onboarding;
 mod pages;
 mod plugins;
@@ -31,6 +32,7 @@ mod tabs;
 
 /// 假房间和假插件给 `client` 其他模块的入口：再导出保持原来的 `super::ui_fake::…` 路径不变。
 pub(super) use chat::{CALL_ROOM_ID, ROOM_ID, mention_candidates};
+pub(super) use music::music_link;
 pub(super) use plugins::fake_plugin;
 pub(super) use tabs::call_widget;
 
