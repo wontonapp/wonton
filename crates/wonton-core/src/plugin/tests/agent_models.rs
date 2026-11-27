@@ -199,6 +199,28 @@ async fn output_that_breaks_the_contract_is_refused_whole() {
     assert_eq!(clamped.interval, wonton_protocol::MIN_LOGIN_POLL_SECS);
 }
 
+/// 服务商目录有几 KB：标准输出只抹 key、不截短，整份交出去。
+#[tokio::test]
+async fn a_catalog_longer_than_the_error_detail_comes_through_whole() {
+    let bed = bed(MODELS).await;
+    let providers: Vec<_> = (0..47)
+        .map(|n| {
+            json!({
+                "id": format!("provider-{n}"), "name": format!("Provider {n}"),
+                "recommended": n < 3,
+                "auth": [{"type": "api_key", "key_url": format!("https://example.com/{n}/keys")}],
+                "connected": false
+            })
+        })
+        .collect();
+    let stdout = json!({"providers": providers, "current": null}).to_string();
+    assert!(stdout.len() > 4000);
+    bed.agent.reply(0, &stdout, "");
+    let catalog: ModelCatalog = bed.run("alice", ModelsOp::Catalog).await.unwrap();
+    assert_eq!(catalog.providers.len(), 47);
+    assert_eq!(catalog.providers[46].id, "provider-46");
+}
+
 #[tokio::test]
 async fn each_reason_a_bot_cannot_take_models_is_told_apart() {
     let bed = bed(MODELS).await;

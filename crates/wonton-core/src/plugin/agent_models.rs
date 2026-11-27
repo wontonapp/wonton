@@ -8,9 +8,9 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 use wonton_protocol::{
     AgentModelsFailure, BotKeeper, EXIT_INVALID_INPUT, EXIT_NOT_READY, EXIT_UNKNOWN_TARGET,
-    KeyCheck, MAX_MODELS_TEXT_CHARS, MODELS_TEST_TIMEOUT_SECS, MODELS_TIMEOUT_SECS, ModelCatalog,
-    ModelList, ModelLogin, ModelLoginState, ModelSelection, ModelTest, ModelsCommandInput,
-    ModelsInvalidInput, ModelsOp, ModelsOutputProblem,
+    KeyCheck, MAX_MODELS_OUTPUT_BYTES, MAX_MODELS_TEXT_CHARS, MODELS_TEST_TIMEOUT_SECS,
+    MODELS_TIMEOUT_SECS, ModelCatalog, ModelList, ModelLogin, ModelLoginState, ModelSelection,
+    ModelTest, ModelsCommandInput, ModelsInvalidInput, ModelsOp, ModelsOutputProblem,
 };
 
 use super::docker::EngineError;
@@ -139,13 +139,18 @@ fn upstream(langs: &Languages, detail: String) -> AgentModelsError {
     )
 }
 
-/// 抹掉 key 再截断：插件出错时可能把收到的输入原样打出来。
+/// 抹掉 key：插件出错时可能把收到的输入原样打出来。
 fn scrub(text: &str, secret: Option<&str>) -> String {
     let text = match secret {
         Some(secret) if !secret.is_empty() => text.replace(secret, REDACTED),
         _ => text.to_owned(),
     };
-    text.trim().chars().take(MAX_DETAIL_CHARS).collect()
+    text.trim().to_owned()
+}
+
+/// 标准错误抹掉 key 后截短，放进“详情”。标准输出是要解析的结果，不能截。
+fn detail(text: &str, secret: Option<&str>) -> String {
+    scrub(text, secret).chars().take(MAX_DETAIL_CHARS).collect()
 }
 
 fn engine_failure(langs: &Languages, error: EngineError) -> AgentModelsError {
@@ -292,8 +297,15 @@ impl PluginManager {
             exit_code = output.exit_code,
             "Agent 模型接入命令"
         );
+        // 引擎读到上限就不再收，到了上限的输出可能已经被截断。
+        if output.stdout.len() >= MAX_MODELS_OUTPUT_BYTES {
+            return Err(upstream(
+                langs,
+                format!("输出达到 {MAX_MODELS_OUTPUT_BYTES} 字节的上限"),
+            ));
+        }
         let stdout = scrub(&output.stdout, secret.as_deref());
-        let stderr = scrub(&output.stderr, secret.as_deref());
+        let stderr = detail(&output.stderr, secret.as_deref());
         match output.exit_code {
             0 => Ok(stdout),
             code if code == i64::from(EXIT_INVALID_INPUT) => {
