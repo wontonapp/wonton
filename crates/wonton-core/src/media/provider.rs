@@ -12,6 +12,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use wonton_protocol::manifest::LocalizedText;
 use wonton_protocol::media::provider::ProviderCapabilities;
 use wonton_protocol::media::{MediaFailure, MediaFailureCode, MediaKind, MediaOperation};
 
@@ -32,6 +33,8 @@ pub(crate) fn credential_name(person: &str) -> String {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Candidate {
     pub id: String,
+    /// 插件名（清单的 `title`）
+    pub title: LocalizedText,
     pub operations: Vec<MediaOperation>,
     pub kinds: Vec<MediaKind>,
     /// 主人在能力设置里给 `media_source` 定的默认
@@ -130,16 +133,13 @@ impl MediaProviders {
         kind: Option<&MediaKind>,
         source: Option<&str>,
     ) -> Result<String, MediaFailure> {
-        let fits = |c: &Candidate| {
-            c.operations.contains(operation) && kind.is_none_or(|k| c.kinds.contains(k))
-        };
         let candidates = self.directory.candidates();
         if let Some(source) = source {
             let named = candidates.iter().find(|c| c.id == source);
             // 先看授权：用不了这家的人不该从回答里知道它能做什么。
             return match named {
                 Some(_) if !allowed(source) => Err(denied(person, source)),
-                Some(c) if !fits(c) => Err(failure(
+                Some(c) if !fits(c, operation, kind) => Err(failure(
                     MediaFailureCode::PluginUnavailable,
                     format!("媒体源插件 {source} 不能{}", wanted(operation, kind)),
                 )),
@@ -150,7 +150,10 @@ impl MediaProviders {
                 )),
             };
         }
-        let fitting: Vec<&Candidate> = candidates.iter().filter(|c| fits(c)).collect();
+        let fitting: Vec<&Candidate> = candidates
+            .iter()
+            .filter(|c| fits(c, operation, kind))
+            .collect();
         let usable: Vec<&Candidate> = fitting.iter().copied().filter(|c| allowed(&c.id)).collect();
         if let Some(default) = usable.iter().find(|c| c.default) {
             return Ok(default.id.clone());
@@ -171,6 +174,21 @@ impl MediaProviders {
                 ),
             )),
         }
+    }
+
+    /// 没点名来源时 [`Self::route`] 从中挑的那几家：在跑、清单声明能做这件事、这个人用得了。只列候选，
+    /// 挑哪一家仍由 [`Self::route`] 定，客户端把用户挑的那家作为 `source` 带回来。
+    pub(crate) fn sources(
+        &self,
+        allowed: impl Fn(&str) -> bool,
+        operation: &MediaOperation,
+        kind: Option<&MediaKind>,
+    ) -> Vec<Candidate> {
+        self.directory
+            .candidates()
+            .into_iter()
+            .filter(|c| fits(c, operation, kind) && allowed(&c.id))
+            .collect()
     }
 
     /// 替 `person` 调已经记下的那个提供方（任务、会话建好时记的）。和点名来源一样核对清单和运行时能力：
@@ -319,6 +337,11 @@ impl MediaProviders {
         providers.sort();
         Ok(providers)
     }
+}
+
+/// 清单声明了这次的操作，种类对得上（`kind` 为空不看种类）。
+fn fits(candidate: &Candidate, operation: &MediaOperation, kind: Option<&MediaKind>) -> bool {
+    candidate.operations.contains(operation) && kind.is_none_or(|k| candidate.kinds.contains(k))
 }
 
 fn denied(person: &str, provider: &str) -> MediaFailure {

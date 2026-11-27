@@ -110,6 +110,7 @@ impl ProviderDirectory for PluginManager {
                 Some(Candidate {
                     default: default.as_deref() == Some(p.id.as_str()),
                     id: p.id.to_string(),
+                    title: p.listed.manifest.title.clone(),
                     operations: spec.operations.clone(),
                     kinds: spec.kinds.clone(),
                 })
