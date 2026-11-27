@@ -75,6 +75,10 @@ pub enum Action {
     Media {
         action: crate::media::MediaAction,
     },
+    /// 原生相册页（ADR-0113 第 9 节）。
+    Photos {
+        action: crate::media::library_view::PhotosAction,
+    },
 }
 
 #[cfg(test)]

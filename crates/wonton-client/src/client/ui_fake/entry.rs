@@ -98,6 +98,7 @@ impl ClientCore {
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),
             family: watch::Sender::new(current.family.borrow().clone()),
+            photos: watch::Sender::new(super::super::ui_fake_photos::fake_photos()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
             clients_domain: watch::Sender::new(fake_clients_domain()),
             // 假数据下设置页带着当前值：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在

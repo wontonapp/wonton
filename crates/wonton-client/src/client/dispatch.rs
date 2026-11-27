@@ -121,6 +121,10 @@ impl ClientCore {
                 }
                 // 外观和语言全在本机，假数据下也要照实落盘，否则设置页点了没反应。
                 Action::Settings { action } => self.settings_action(&self.scope(), action),
+                Action::Photos { action } => {
+                    self.dispatch_ui_fake_photos(action);
+                    Ok(())
+                }
                 _ => Ok(()),
             };
         }
@@ -157,6 +161,7 @@ impl ClientCore {
                 }),
             },
             Action::Media { action } => scope.media.dispatch(action),
+            Action::Photos { action } => scope.photos.dispatch(action),
         }
     }
 }

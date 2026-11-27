@@ -77,7 +77,7 @@ impl ClientCore {
 }
 
 /// 在作用域的运行时里执行，保留失败的类别。
-async fn run<T: Send + 'static>(
+pub(super) async fn run<T: Send + 'static>(
     scope: &Scope,
     task: impl Future<Output = Result<T, MediaFailure>> + Send + 'static,
 ) -> Result<T, MediaError> {

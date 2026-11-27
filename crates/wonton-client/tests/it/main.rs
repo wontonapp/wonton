@@ -22,6 +22,8 @@ mod page_color;
 mod pages;
 mod pairing;
 mod peers;
+mod photos;
+mod photos_support;
 mod plugins;
 mod port_mapping;
 mod servers;

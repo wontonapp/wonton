@@ -12,13 +12,13 @@ use crate::agent_chains::room_stop::{self, Attempts};
 use crate::session_store::SessionStore;
 
 /// 订阅的共用部分：等 watch 通道的下一个值，可以取消。
-struct Updates<T> {
+pub(crate) struct Updates<T> {
     receiver: Mutex<watch::Receiver<T>>,
     cancelled: watch::Sender<bool>,
 }
 
 impl<T> Updates<T> {
-    fn new(mut receiver: watch::Receiver<T>) -> Self {
+    pub(crate) fn new(mut receiver: watch::Receiver<T>) -> Self {
         // 让第一次 next() 立即拿到当前值。
         receiver.mark_changed();
         Self {
@@ -27,7 +27,7 @@ impl<T> Updates<T> {
         }
     }
 
-    async fn next<R>(&self, view: impl FnOnce(&T) -> R) -> Option<R> {
+    pub(crate) async fn next<R>(&self, view: impl FnOnce(&T) -> R) -> Option<R> {
         let mut cancelled = self.cancelled.subscribe();
         let mut receiver = self.receiver.lock().await;
         let changed = tokio::select! {
@@ -39,7 +39,7 @@ impl<T> Updates<T> {
         Some(view(&receiver.borrow_and_update()))
     }
 
-    fn cancel(&self) {
+    pub(crate) fn cancel(&self) {
         self.cancelled.send_replace(true);
     }
 }
