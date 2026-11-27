@@ -17,12 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -51,19 +46,13 @@ import androidx.compose.ui.unit.em
 import app.wonton.protocol.RichBlock
 import app.wonton.protocol.RichBlockKind
 import app.wonton.protocol.RichSpan
-import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonCopyButton
+import app.wonton.ui.design.WontonCopyLook
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Check
-import app.wonton.ui.icons.Copy
-import app.wonton.ui.icons.WontonIcon
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val CODE_SCALE = 0.9f
-
-/** 复制按钮变成已复制图标后，多少毫秒变回来。 */
-private const val COPIED_RESET_MS = 2_000L
 
 /**
  * 排好版的消息文字。块和片段由核心给出，这里只管画。链接和代码底色都跟着气泡里文字的颜色。
@@ -182,15 +171,6 @@ private fun CodeBlock(text: String, ink: Color) {
     val scope = rememberCoroutineScope()
     // 剪贴板条目的标签：别的 App 粘贴时可能显示。
     val clipLabel = stringResource(R.string.message_clip_label)
-    val copyLabel = stringResource(R.string.message_code_copy)
-    val copiedLabel = stringResource(R.string.message_code_copied)
-    var copied by remember { mutableStateOf(false) }
-    LaunchedEffect(copied) {
-        if (copied) {
-            delay(COPIED_RESET_MS)
-            copied = false
-        }
-    }
     val fill = Modifier.background(
         ink.copy(alpha = WontonTheme.ratio.codeFill),
         RoundedCornerShape(WontonTheme.radii.control),
@@ -214,14 +194,11 @@ private fun CodeBlock(text: String, ink: Color) {
                 softWrap = false,
             )
         }
-        WontonIconButton(
-            icon = if (copied) WontonIcon.Check else WontonIcon.Copy,
-            label = if (copied) copiedLabel else copyLabel,
+        WontonCopyButton(
+            copy = { scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, text))) } },
+            look = WontonCopyLook.ICON,
+            label = stringResource(R.string.message_code_copy),
             tint = ink,
-            onClick = {
-                scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, text))) }
-                copied = true
-            },
         )
     }
 }

@@ -1,5 +1,4 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import WontonClient
 
 /// Values live only in the core's expanded ViewModel; the shell never keeps a copy in state.
@@ -135,13 +134,7 @@ private struct OwnerSecretRow: View {
                                 .fill(Color(colors.surfaceSubtle))
                         )
                     // Like the recovery key, copying must not bypass the local-only clipboard protection.
-                    Button(String(localized: .ChatBackup1.chatBackupCopy)) {
-                        UIPasteboard.general.setItems(
-                            [[UTType.plainText.identifier: value]],
-                            options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(120)]
-                        )
-                    }
-                    .buttonStyle(WontonSmallButtonStyle())
+                    WontonCopyButton(text: value, clipboard: .localSecret)
                 }
             }
         }

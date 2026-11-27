@@ -146,7 +146,6 @@ private struct RichTable: View {
 private struct CodeBlock: View {
     let text: String
     let ink: Color
-    @State private var copied = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -155,21 +154,7 @@ private struct CodeBlock: View {
                 .padding(.leading, WontonTheme.spacing.s12)
                 // 短代码块只有一行时按按钮的高度撑开，文字在块里垂直居中。
                 .frame(minHeight: WontonTheme.size.target)
-            WontonIconButton(
-                icon: copied ? .check : .copy,
-                label: copied
-                    ? String(localized: .Message2.messageCodeCopied)
-                    : String(localized: .Message0.messageCodeCopy),
-                tint: ink
-            ) {
-                UIPasteboard.general.string = text
-                copied = true
-            }
-            .task(id: copied) {
-                guard copied else { return }
-                try? await Task.sleep(for: .seconds(2))
-                copied = false
-            }
+            WontonCopyButton(text: text, look: .icon(tint: ink), label: String(localized: .Message0.messageCodeCopy))
         }
         .background(
             ink.opacity(WontonTheme.ratio.codeFill),
