@@ -135,6 +135,16 @@ pub fn command_ack_path(command: Uuid) -> String {
     format!("{MEDIA_API_PREFIX}/commands/{command}/ack")
 }
 
+/// `PUT /offline`：这台设备的离线副本现在一共占多少，体是 [`OfflineUsage`]，回 [`QuotaView`](super::QuotaView)。
+pub fn offline_path() -> String {
+    format!("{MEDIA_API_PREFIX}/offline")
+}
+
+/// `GET /quota`：发请求的人的两本账，回 [`QuotaView`](super::QuotaView)。上传是各提供方之和，离线是各设备之和。
+pub fn quota_path() -> String {
+    format!("{MEDIA_API_PREFIX}/quota")
+}
+
 /// 任务上能做的动作。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskAction {
@@ -247,6 +257,15 @@ pub struct CommandAck {
     pub failure: Option<MediaFailure>,
 }
 
+/// `PUT /offline` 的请求体。离线占用这本账以设备为准：删了副本、系统清了缓存、重装了 App 之后，设备报一次
+/// 自己现在一共占多少字节，核心把这台设备的占用记成它；两次上报之间，下载写完时核心按这一项的大小往上加。
+/// 账按设备分开记：记在哪台由配对的设备身份定，一台上报只覆盖它自己那份，不能替别的设备报（同一人两台
+/// 手机互不覆盖）；配额看的是这个人所有设备之和。设备被移除、或这个人退出家庭时，它那份清零。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OfflineUsage {
+    pub bytes: u64,
+}
+
 /// `GET /items` 的响应，同提供方的 [`super::provider::ItemsPage`]。
 pub type ItemsPage = super::provider::ItemsPage;
 
@@ -293,6 +312,12 @@ mod tests {
             "/_wonton/api/media/items/al%201/artwork?kind=audio&source=app.example.music&type=backdrop&width=640"
         );
         assert_eq!(queue_path(), "/_wonton/api/media/queue");
+        assert_eq!(offline_path(), "/_wonton/api/media/offline");
+        assert_eq!(quota_path(), "/_wonton/api/media/quota");
+        assert_eq!(
+            serde_json::to_value(OfflineUsage { bytes: 5 }).unwrap(),
+            serde_json::json!({"bytes": 5})
+        );
         assert_eq!(
             command_ack_path(task),
             "/_wonton/api/media/commands/00000000-0000-0000-0000-000000000000/ack"

@@ -33,6 +33,9 @@ pub enum TaskServiceError {
     NotUpload { task: TaskId },
     #[error("任务 {task} 里没有 {item} 这一项")]
     ItemNotFound { task: TaskId, item: String },
+    /// 任务在 `Preparing` 被拒（配额放不下），已经落了 `Failed`，带着记到任务上的那个失败。
+    #[error("{}", .0.message)]
+    Refused(MediaFailure),
 }
 
 /// 任务的状态机，落库到 [`Store`]。

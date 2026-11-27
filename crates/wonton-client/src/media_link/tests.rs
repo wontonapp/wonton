@@ -247,10 +247,16 @@ fn failures_keep_the_cores_category_and_name_the_tunnel() {
         classify(502, Some("unreachable"), b"").code,
         MediaFailureCode::TransportUnavailable
     );
-    // 没有信封的按状态码分：权限、东西没了、那头出错，其余才算协议对不上。
+    // 没有信封的按 ADR-0113 第 9 节的表分，表外的 5xx 算那头出错，其余才算协议对不上。
     for (status, code) in [
-        (401, MediaFailureCode::PermissionDenied),
+        (400, MediaFailureCode::Protocol),
+        (401, MediaFailureCode::AuthenticationRequired),
+        (403, MediaFailureCode::PermissionDenied),
         (404, MediaFailureCode::MediaGone),
+        (429, MediaFailureCode::RateLimited),
+        (502, MediaFailureCode::UpstreamError),
+        (503, MediaFailureCode::PluginUnavailable),
+        (507, MediaFailureCode::ServerStorageFull),
         (500, MediaFailureCode::UpstreamError),
         (418, MediaFailureCode::Protocol),
     ] {

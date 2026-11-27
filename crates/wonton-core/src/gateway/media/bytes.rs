@@ -158,10 +158,18 @@ pub(super) async fn upload_start(
     if matches!(entry.state, ItemState::Done | ItemState::Skipped) {
         return offset(StatusCode::OK, entry.size);
     }
-    if let Err(e) = caller.media.tasks.begin(task.id) {
+    // 先选好提供方再开始：配额按那家记，进 `Preparing` 时要知道是哪家。选不出来的失败等任务开始后再记，
+    // 和传到一半出错一样走退避。
+    let route = upload_route(&gateway, &caller, &task).await;
+    let provider = route.as_ref().ok().map(|route| route.provider.as_str());
+    if let Err(e) = caller.media.tasks.begin(task.id, provider) {
         return reply(&service_failure(&e));
     }
-    match open_upload(&gateway, &caller, &task, &entry).await {
+    let opened = match route {
+        Ok(route) => open_upload(&caller, &route, &task, &entry).await,
+        Err(failure) => Err(failure),
+    };
+    match opened {
         Ok(at) => offset(StatusCode::OK, at),
         Err(failure) => fail_task(&caller, &task, failure),
     }
@@ -170,12 +178,11 @@ pub(super) async fn upload_start(
 /// 有号先查断点，没号或提供方不认就开新的；回当前偏移，并记到这一项上。已经收满（零字节的项、上次写完
 /// 还没来得及收尾）就顺手收尾。
 async fn open_upload(
-    gateway: &Gateway,
     caller: &Caller,
+    route: &ProviderRoute,
     task: &MediaTask,
     entry: &UploadItem,
 ) -> Reply<u64> {
-    let route = upload_route(gateway, caller, task).await?;
     let store = &caller.media.store;
     let binding = store
         .upload_binding(&task.person, task.id, &entry.item_id)
@@ -189,7 +196,7 @@ async fn open_upload(
     {
         advance(caller, task, &entry.item_id, at)?;
         if at >= entry.size {
-            finish(caller, &route, task, &entry.item_id, &binding.upload_id).await?;
+            finish(caller, route, task, &entry.item_id, &binding.upload_id).await?;
         }
         return Ok(at);
     }
@@ -214,7 +221,7 @@ async fn open_upload(
         .map_err(|e| service_failure(&e))?;
     advance(caller, task, &entry.item_id, created.upload_offset)?;
     if created.upload_offset >= entry.size {
-        finish(caller, &route, task, &entry.item_id, &created.upload_id).await?;
+        finish(caller, route, task, &entry.item_id, &created.upload_id).await?;
     }
     Ok(created.upload_offset)
 }
@@ -233,7 +240,7 @@ async fn finish(
     let recorded = if finished.duplicate {
         tasks.skip_item(task.id, item)
     } else {
-        tasks.finish_item(task.id, item)
+        tasks.finish_item(task.id, item, &route.provider)
     };
     recorded.map(|_| ()).map_err(|e| service_failure(&e))
 }
@@ -296,7 +303,7 @@ async fn write_upload(
     let outcome = match patched {
         // 提供方那边这个上传过期了：原地重开一个，回 409 带新偏移，设备照 409 的约定从那里续，任务不失败。
         Err(gone) if gone.code == MediaFailureCode::MediaGone => {
-            let reopened = open_upload(gateway, caller, task, &entry).await?;
+            let reopened = open_upload(caller, &route, task, &entry).await?;
             return Ok((StatusCode::CONFLICT, reopened));
         }
         other => other?,
@@ -386,7 +393,7 @@ pub(super) async fn content(
         caller
             .media
             .tasks
-            .begin(task.id)
+            .begin(task.id, Some(&route.provider))
             .map_err(|e| service_failure(&e))?;
         route
             .client

@@ -508,6 +508,8 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/items/{id}/artwork` | `GET` | 无（query: `kind`，可选 `source`、`type`、`width`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork`，`type`、`width` 原样带过去 |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
 | `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
+| `/offline` | `PUT` | `{bytes}`：这台设备的离线副本现在一共占多少 | `QuotaView`；这台设备那份记成 `bytes`，别的设备那份不动（规则见 `OfflineUsage`） |
+| `/quota` | `GET` | 无 | `QuotaView`：这个人的两本账，上传是各提供方之和、离线是各设备之和 |
 
 `{item}` 是 `UploadItem.item_id`；`(task,item) → upload_id` 的映射只在核心，客户端不记。
 

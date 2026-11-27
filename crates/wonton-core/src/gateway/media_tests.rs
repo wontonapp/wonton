@@ -21,7 +21,7 @@ use wonton_protocol::media::{
 
 use super::files_tests::paired_gateway;
 use super::tests::CORE;
-use super::{TunnelPeer, router};
+use super::{Gateway, TunnelPeer, router};
 use crate::media::Media;
 use crate::media::provider::Candidate;
 use crate::media::test_support::{FakeDirectory, Seen, Served, candidate, caps, serve};
@@ -241,7 +241,9 @@ async fn hls(Path(rest): Path<String>) -> &'static str {
 
 pub(super) struct Fixture {
     _dir: tempfile::TempDir,
-    peer: TunnelPeer,
+    pub(super) peer: TunnelPeer,
+    pub(super) gateway: Arc<Gateway>,
+    pub(super) media: Arc<Media>,
     app: Router,
     seen: Seen,
     pub(super) uploads: Shared,
@@ -281,16 +283,21 @@ pub(super) async fn fixture_with(extra: Vec<(Candidate, Router)>) -> Fixture {
         others.push((seen, served));
     }
     let (directory, _) = FakeDirectory::new(entries);
-    let media = Media::with_directory(
-        &dir.path().join("media"),
-        Arc::new(directory),
-        crate::http::HttpClient::new(),
-    )
-    .unwrap();
-    let app = router(Arc::new(paired.gateway.with_media(Some(Arc::new(media)))));
+    let media = Arc::new(
+        Media::with_directory(
+            &dir.path().join("media"),
+            Arc::new(directory),
+            crate::http::HttpClient::new(),
+        )
+        .unwrap(),
+    );
+    let gateway = Arc::new(paired.gateway.with_media(Some(media.clone())));
+    let app = router(gateway.clone());
     Fixture {
         _dir: dir,
         peer: paired.device,
+        gateway,
+        media,
         app,
         seen,
         uploads,
