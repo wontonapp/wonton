@@ -308,7 +308,10 @@ impl TunnelClient {
     }
 
     /// 换掉一条判死的连接：先拨新的并做一次往返，旧连接这时才交给 [`retire`]，让还在跑的流收完。
-    async fn dial_replacement(self, old: Option<Connection>) -> Result<Connection, TunnelError> {
+    pub(super) async fn dial_replacement(
+        self,
+        old: Option<Connection>,
+    ) -> Result<Connection, TunnelError> {
         // 收尾从那一个判断开始算，不跟着拨号走：路完全不通时建连要挂满 12 秒，旧连接上的流不该陪着等。
         // 新请求走新连接由换掉的 attempt 保证，不需要等新连接建好才关旧的。
         if let Some(old) = old {

@@ -8,7 +8,7 @@
 //! 用 `scripts/fake-ip-netns.sh` 在无特权网络命名空间里跑，没设 `WONTON_FAKE_IP_NETNS` 时直接跳过。
 //!
 //! **现在 CI 和开发机都跑不了**：CI 不设 `WONTON_FAKE_IP_NETNS`，两个用例直接 return（nextest 仍报 2 passed、0.00s，
-//! 是“跳过”不是“验过”）；开发机上 `unshare -U` 能过、`unshare -U -r` 被 apparmor_restrict_unprivileged_userns 拦
+//! 是“跳过”不是“验过”）；1k 上 `unshare -U -r` 被 apparmor_restrict_unprivileged_userns 拦
 //! （`write failed /proc/self/uid_map: Operation not permitted`）。要真跑：在允许 unshare 的机器上
 //! `WONTON_FAKE_IP_NETNS=1 bash scripts/fake-ip-netns.sh`，或按脚本说明给它 root。
 
@@ -21,6 +21,8 @@ use tokio::net::UdpSocket;
 use wonton_tunnel::{Allowlist, ProxyAccess, TunnelServer};
 
 use crate::support::{Phone, Timeouts, Upstream, endpoint_on};
+
+mod relay_sticky;
 
 const FAKE: Ipv4Addr = Ipv4Addr::new(198, 18, 0, 1);
 /// 经发布端口才能到的服务端：它自己的地址经 QNT 报给手机也没用，同容器里的核心。

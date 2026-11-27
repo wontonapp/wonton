@@ -7,6 +7,7 @@ mod attempt;
 mod check;
 mod path;
 mod ports;
+mod sticky;
 pub(crate) mod streams;
 mod suspend;
 
@@ -76,6 +77,8 @@ pub struct TunnelStats {
     pub failed_dials: u32,
     /// 最近一次失败的原因。连上之后还留着，方便查刚才的问题。
     pub last_failure: Option<TunnelError>,
+    /// 一直走中继、为了让直连再试而主动断开重拨的次数（[`TunnelClient::redial_if_stuck_on_relay`]）。
+    pub relay_redials: u32,
     /// 客户端开着的隧道流。
     pub streams: TunnelStreamStats,
 }
@@ -150,6 +153,7 @@ struct Inner {
     check_nudge: Notify,
     /// 建连时等多久：前几次（冷启动）用 `cold`，之后用 `warm`。
     dial: Mutex<DialTiming>,
+    sticky: Mutex<sticky::StickyRelay>,
 }
 
 /// 建连时限。默认宽窄都是 [`DIAL_DEADLINE`]，冷启动由调用方另设。
@@ -281,6 +285,7 @@ impl TunnelClient {
                 datagrams: Mutex::default(),
                 check_nudge: Notify::new(),
                 dial: Mutex::default(),
+                sticky: Mutex::default(),
             }),
         }
     }
@@ -370,6 +375,7 @@ impl TunnelClient {
     pub fn stats(&self) -> TunnelStats {
         let mut stats = lock(&self.inner.stats).clone();
         stats.streams = self.inner.streams.snapshot();
+        stats.relay_redials = lock(&self.inner.sticky).total_redials();
         if let Some(conn) = self.inner.live_connection() {
             let current = conn.stats();
             stats.sent_packets = current.sent_packets;
