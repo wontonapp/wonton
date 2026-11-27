@@ -79,10 +79,7 @@ pub(crate) fn assemble(
                 .as_deref()
                 .map_or_else(|| fallback.clone(), |user_id| name_of(user_id, &fallback));
             contacts.push(ChatContact {
-                side_chat_room_id: row
-                    .user_id
-                    .as_deref()
-                    .and_then(side_chat_room),
+                side_chat_room_id: row.user_id.as_deref().and_then(side_chat_room),
                 user_id: row.user_id.clone().unwrap_or_default(),
                 name,
                 bot: Some(row.bot.clone()),
