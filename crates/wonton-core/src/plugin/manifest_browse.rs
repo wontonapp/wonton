@@ -2,9 +2,18 @@
 //! 当前这个人的身份头，客户端不拿上游账号密码。所以它只能写在 `media_source` 上，插件还要有 `sso: proxy` 的网页。
 
 use wonton_protocol::manifest::Sso;
-use wonton_protocol::media::MEDIA_CAPABILITY;
+use wonton_protocol::media::{MEDIA_CAPABILITY, MediaBrowse};
 
 use super::manifest::{Manifest, ManifestError};
+
+/// 已装插件声明的浏览标准，带给客户端。
+pub(super) fn plugin_browse(manifest: &Manifest) -> Option<MediaBrowse> {
+    manifest
+        .provides
+        .as_ref()
+        .and_then(|p| p.capabilities.get(MEDIA_CAPABILITY))
+        .and_then(|service| service.browse.clone())
+}
 
 pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     let Some(provides) = &manifest.provides else {
