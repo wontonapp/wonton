@@ -11,6 +11,8 @@ use crate::entry_containers::EntryContainers;
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
 
+mod credentials;
+mod install_env;
 mod save_validation;
 mod suffix;
 
