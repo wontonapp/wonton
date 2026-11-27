@@ -191,14 +191,14 @@ pub use error::{CoreError, set_core_error_formatter};
 pub use family::FAMILY_ROOM_SYNC_PATH;
 pub use family::MEMBER_SYNC_PATH;
 pub use family::{
-    BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, FamilyFailure, FamilyProblem,
+    BotAccess, BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, FamilyFailure, FamilyProblem,
     FamilyViewModel, GATEWAY_REFUSAL_HEADER, GatewayRefusal, HOP_LIMIT_ERRCODE, JoinRequestRow,
     JoinRequestsViewModel, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH,
     MY_PRIVATE_BOT_PATH, Me, Member, MemberCode, MemberInvite, MemberInviteView, MemberList,
     MemberPairingCode, MemberRemoval, MemberRow, MemberStatus, MembersViewModel, MyAvatarProblem,
     NewSharedBot, OwnPrivateBotResponse, OwnPrivateBotResult, PrivateBotIdentity,
-    PrivateBotRoomProblem, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path,
-    member_removal_path,
+    PrivateBotRoomProblem, Role, SHARED_BOTS_PATH, SharedBot, SharedBotsState, SharedBotsView,
+    TOOL_CALL_USER_META, member_pairing_code_path, member_removal_path,
 };
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,

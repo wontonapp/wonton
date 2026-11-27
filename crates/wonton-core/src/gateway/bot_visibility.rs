@@ -129,7 +129,7 @@ pub(super) fn chat_availability(
             reason: BotChatUnavailable::GrantNotActive,
         },
         BotKeeper::User { .. } => BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::OtherPrivateBot,
+            reason: BotChatUnavailable::OwnerPrivate,
         },
         // 共享 Bot 但角色不许共享，或归属方式还不认识：确定不能用。
         _ => BotChatAvailability::Unavailable {

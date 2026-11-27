@@ -107,15 +107,37 @@ pub enum BotChatAvailability {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum BotChatUnavailable {
-    /// 别人的私人 Bot，没给这个人授权（从没授权、等主人同意、等对方接受都算）。
-    OtherPrivateBot,
-    /// 授权过，现在没有成立的联系人记录。
+    /// 别人的私人 Bot，没给这个人授权。旧核心还发 `other_private_bot`，反序列化接受。
+    #[serde(alias = "other_private_bot")]
+    OwnerPrivate,
+    /// 邀请过，还没成立：等主人同意或等对方接受。
+    ContactPending,
+    /// 授权过，现在没有成立的联系人记录。旧核心还会发；新核心的拒绝/查无此人发 [`Self::ContactDeclined`]，这个值留给旧端。
     GrantNotActive,
+    /// 对方拒绝过，或对方服务器上没这个人。
+    ContactDeclined,
+    /// 家庭共享 Bot，但这个人的角色听不了共享 Bot。
+    RoleLacksSharedBots,
+    /// 插件没开给这个人，插件页和联系人列表都拿不到它。
+    AppNotShared,
+    /// 插件装过、Bot 记录没建出来。
+    BotMissing,
     #[serde(other)]
     Other,
 }
 
-/// Bot 此刻在做什么，也是状态头像的状态（[`StateAvatars::states`] 的键）。客户端核心合成（规则见 ADR-0044），
+impl From<BotChatAvailability> for crate::BotAccess {
+    /// 只有“能不能聊”时补不出凭什么，能聊按联系人算；需要自己的、共享的区分时用 [`crate::SharedBot::access`]。
+    fn from(availability: BotChatAvailability) -> Self {
+        match availability {
+            BotChatAvailability::Available => Self::Contact,
+            BotChatAvailability::Unavailable { reason } => Self::Unusable { reason },
+            BotChatAvailability::Unknown => Self::Unknown,
+        }
+    }
+}
+
+/// Bot 此刻在做什么，也是状态头像的状态（[`StateAvatars::states`](crate::StateAvatars) 的键）。客户端核心合成（规则见 ADR-0044），
 /// 壳按它选状态头像。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
