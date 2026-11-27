@@ -12,7 +12,9 @@ name: gate
 # 省下的是 runner 名额和排队，重作业本身不变。
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+    # edited 也跑：改 base 时 GitHub 不保证再发 synchronize（#1208/#1233/#1244 推完零 run，关/开才有）。
+    # 代价是改标题/正文也会重跑一轮全量 gate；比 base 改了没有检查、PR 永远合不了好。
   # 手动补一轮：用工作流自带的 GITHUB_TOKEN 推的提交不触发新工作流，PR 上会一条检查都没有，
   # 这时手动跑 `gh workflow run gate.yml --ref <branch>`。
   workflow_dispatch:
