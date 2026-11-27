@@ -140,6 +140,11 @@ pub fn offline_path() -> String {
     format!("{MEDIA_API_PREFIX}/offline")
 }
 
+/// `GET /quota`：发请求的人的两本账，回 [`QuotaView`](super::QuotaView)。上传是各提供方之和，离线是各设备之和。
+pub fn quota_path() -> String {
+    format!("{MEDIA_API_PREFIX}/quota")
+}
+
 /// 任务上能做的动作。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskAction {
@@ -308,6 +313,7 @@ mod tests {
         );
         assert_eq!(queue_path(), "/_wonton/api/media/queue");
         assert_eq!(offline_path(), "/_wonton/api/media/offline");
+        assert_eq!(quota_path(), "/_wonton/api/media/quota");
         assert_eq!(
             serde_json::to_value(OfflineUsage { bytes: 5 }).unwrap(),
             serde_json::json!({"bytes": 5})
