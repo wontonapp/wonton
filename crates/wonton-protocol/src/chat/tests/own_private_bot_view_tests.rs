@@ -1,7 +1,6 @@
 use serde_json::json;
 
-use super::{OwnBotFailure, OwnBotProblem, OwnPrivateBotView};
-use crate::PrivateBotRoomProblem;
+use crate::{OwnBotFailure, OwnBotProblem, OwnPrivateBotView, PrivateBotRoomProblem};
 
 #[test]
 fn unknown_private_bot_view_facts_remain_uncertain() {
