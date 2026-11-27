@@ -138,15 +138,16 @@ val FontStyle.family: FontFamily?
     }
 
 /**
- * 没有重点色：强调一律用 `primary`，浅色是黑、深色是白（ADR-0130）。不写全的话，没写的那些角色
+ * 没有重点色（ADR-0130）。Material 把 `primary` 当字色用（TextButton、进度圈、光标），所以它取 `textPrimary`；
+ * 我们的 `primary` 是强调填充（深色下是深灰），给 FAB 这类用的 container。不写全的话，没写的那些角色
  * （比如各级 surfaceContainer）会落回 Material 默认的紫色系。
  */
 private fun materialColors(colors: ThemeColors) = lightColorScheme(
-    primary = colors.primary.toColor(),
-    onPrimary = colors.onPrimary.toColor(),
+    primary = colors.textPrimary.toColor(),
+    onPrimary = colors.canvas.toColor(),
     primaryContainer = colors.primary.toColor(),
     onPrimaryContainer = colors.onPrimary.toColor(),
-    inversePrimary = colors.onPrimary.toColor(),
+    inversePrimary = colors.canvas.toColor(),
     secondary = colors.textSecondary.toColor(),
     onSecondary = colors.canvas.toColor(),
     secondaryContainer = colors.primary.toColor(),

@@ -164,13 +164,13 @@ fun WontonSwitch(
     ) {
         Box(
             Modifier.size(WontonTheme.size.switchWidth, WontonTheme.size.switchHeight)
-                .background((if (checked) colors.primary else colors.separator).toColor(), CircleShape),
+                .background((if (checked) colors.textPrimary else colors.separator).toColor(), CircleShape),
             contentAlignment = Alignment.CenterStart,
         ) {
             Box(
                 Modifier.offset(x = offset)
                     .size(WontonTheme.size.switchKnob)
-                    .background((if (checked) colors.onPrimary else colors.textSecondary).toColor(), CircleShape),
+                    .background((if (checked) colors.canvas else colors.textSecondary).toColor(), CircleShape),
             )
         }
     }

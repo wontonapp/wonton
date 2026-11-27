@@ -148,7 +148,7 @@ struct WontonRow: View {
                     .multilineTextAlignment(.trailing)
             }
             if badge {
-                Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
+                Circle().fill(Color(colors.textPrimary)).frame(width: 12, height: 12)
                     .accessibilityLabel(String(localized: .Design.designUpdateBadge))
             }
             if let badgeText {
@@ -400,7 +400,7 @@ struct WontonPushedBar<Trailing: View>: View {
                     if let activity {
                         Text(activity)
                             .wontonText(WontonTheme.typography.caption)
-                            .foregroundStyle(Color(colors.primary))
+                            .foregroundStyle(Color(colors.textPrimary))
                             .lineLimit(1)
                             .accessibilityIdentifier("barActivity")
                     } else if showsStatus || showsStatusLine, line == nil, let subtitle = status.subtitle {

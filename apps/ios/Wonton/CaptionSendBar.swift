@@ -58,7 +58,7 @@ struct CaptionSendBar: View {
             .wontonText(WontonTheme.typography.caption)
             .fontWeight(.semibold)
             .monospacedDigit()
-            .foregroundStyle(Color(colors.canvas))
+            .foregroundStyle(Color(colors.onPrimary))
             .padding(.horizontal, WontonTheme.spacing.s4)
             .frame(minWidth: WontonTheme.size.iconSmall, minHeight: WontonTheme.size.iconSmall)
             .background(Capsule().fill(Color(colors.primary)))

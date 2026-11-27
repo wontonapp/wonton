@@ -24,7 +24,7 @@ struct StepOptionRow<Leading: View, Trailing: View>: View {
                                 .frame(width: WontonTheme.size.icon, height: WontonTheme.size.icon)
                         }
                     }
-                    .foregroundStyle(Color(isSelected && neutralSelection ? colors.primary :
+                    .foregroundStyle(Color(isSelected && neutralSelection ? colors.textPrimary :
                         isSelected ? colors.onPrimary : colors.textSecondary))
                     leading
                     VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
@@ -75,10 +75,10 @@ private struct SelectedMark: View {
         ZStack {
             // 跟 checkCircleFill 图标同比例：24 点里圆占 19.5，勾 9 点、线宽 1.5。
             Circle()
-                .fill(Color(neutral ? colors.primary : colors.onPrimary))
+                .fill(Color(neutral ? colors.textPrimary : colors.onPrimary))
                 .padding(2)
             Checkmark()
-                .stroke(Color(neutral ? colors.onPrimary : colors.primary),
+                .stroke(Color(neutral ? colors.canvas : colors.primary),
                         style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 .padding(7.5)
         }

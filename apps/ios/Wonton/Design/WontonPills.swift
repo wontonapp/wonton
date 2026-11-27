@@ -118,11 +118,11 @@ struct WontonToggleStyle: ToggleStyle {
 
     private func track(isOn: Bool) -> some View {
         Capsule()
-            .fill(Color(isOn ? colors.primary : colors.separator))
+            .fill(Color(isOn ? colors.textPrimary : colors.separator))
             .frame(width: WontonTheme.size.switchWidth, height: WontonTheme.size.switchHeight)
             .overlay(alignment: isOn ? .trailing : .leading) {
                 Circle()
-                    .fill(Color(isOn ? colors.onPrimary : colors.textSecondary))
+                    .fill(Color(isOn ? colors.canvas : colors.textSecondary))
                     .frame(width: WontonTheme.size.switchKnob, height: WontonTheme.size.switchKnob)
                     .padding(.horizontal, (WontonTheme.size.switchHeight - WontonTheme.size.switchKnob) / 2)
             }

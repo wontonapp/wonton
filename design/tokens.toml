@@ -172,9 +172,9 @@ replyMax = 88
 "--color-text-warning" = { color = "warning" }
 "--color-border-warning" = { color = "warning" }
 "--color-ring-warning" = { color = "warning" }
-# 插件规范承诺过这三个名字，留着；没有重点色以后都指向黑白的强调色（ADR-0130）。
+# 插件规范承诺过这三个名字，留着；没有重点色以后 fill 是强调填充，ink 是页面上的字色（ADR-0130）。
 "--wonton-accent-fill" = { color = "primary" }
-"--wonton-accent-ink" = { color = "primary" }
+"--wonton-accent-ink" = { color = "text_primary" }
 "--wonton-accent-ink-on-fill" = { color = "on_primary" }
 "--border-radius-xs" = { radius = "webXs" }
 "--border-radius-md" = { radius = "control" }

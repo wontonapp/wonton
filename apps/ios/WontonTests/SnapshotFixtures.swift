@@ -39,7 +39,7 @@ enum SnapshotFixtures {
             .environment(\.timeZone, TimeZone(identifier: "UTC")!)
             .environment(\.dynamicTypeSize, .large)
             .fontDesign(.default)
-            .tint(Color(colors.primary))
+            .tint(Color(colors.textPrimary))
     }
 
     static func pairing(core: ClientCore) -> some View {

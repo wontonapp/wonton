@@ -35,7 +35,7 @@ extension EnvironmentValues {
     }
 }
 
-/// 把外观交给下面的所有界面。没有重点色：强调一律用 `primary`，浅色是黑、深色是白（ADR-0130）。
+/// 把外观交给下面的所有界面。没有重点色（ADR-0130）：填充用 `primary`，页面上的强调字和图标、系统控件的 tint 用 `textPrimary`。
 struct WontonThemeRoot<Content: View>: View {
     let appearance: AppearanceViewModel
     @ViewBuilder let content: Content
@@ -46,7 +46,7 @@ struct WontonThemeRoot<Content: View>: View {
         let colors = colorScheme == .dark ? appearance.dark : appearance.light
         content
             .environment(\.wontonColors, colors)
-            .tint(Color(colors.primary))
+            .tint(Color(colors.textPrimary))
             // 放在根上，系统的字号和字体环境值整个 App 都读：包括 `wontonText`、没写令牌的文字和输入框。
             .dynamicTypeSize(appearance.textSize.dynamicTypeSize ?? systemTextSize)
             .fontDesign(appearance.font.design)

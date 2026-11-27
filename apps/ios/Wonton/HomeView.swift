@@ -187,7 +187,7 @@ struct HomeView: View {
         WontonIconButton(icon: .settings, label: TabText.settings, action: showSettings)
             .overlay(alignment: .topTrailing) {
                 if settings.hasServerUpgrade {
-                    Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
+                    Circle().fill(Color(colors.textPrimary)).frame(width: 12, height: 12)
                         .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
                         .padding(WontonTheme.spacing.s8)
                         .allowsHitTesting(false)
@@ -405,7 +405,7 @@ private struct LauncherIcon: View {
                 .background(Circle().fill(Color(colors.canvas)))
                 .accessibilityLabel(String(localized: .Launcher.launcherBadgeNeedsConfiguration))
         } else if plugin.upgrade != nil {
-            Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
+            Circle().fill(Color(colors.textPrimary)).frame(width: 12, height: 12)
                 .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
                 .accessibilityLabel(String(localized: .Sidebar.sidebarUpdatable))
         }

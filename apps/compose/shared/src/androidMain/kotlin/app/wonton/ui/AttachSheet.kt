@@ -213,7 +213,7 @@ private fun DeniedAlbum(onOpenSettings: () -> Unit) {
                     .heightIn(min = WontonTheme.size.target)
                     .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s8),
                 style = WontonTheme.typography.body,
-                color = WontonTheme.colors.primary.toColor(),
+                color = WontonTheme.colors.textPrimary.toColor(),
             )
         }
     }

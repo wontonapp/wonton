@@ -467,7 +467,7 @@ internal fun SidebarApps(
                 onClick = { onGo(SidebarDestination.AllApps) },
             ),
             style = WontonTheme.typography.supporting,
-            color = colors.primary.toColor(),
+            color = colors.textPrimary.toColor(),
         )
     }
     // “我的应用”由核心给：顺序和选择在账号数据里，行尾红点也是核心算的。

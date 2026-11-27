@@ -58,7 +58,7 @@ struct EntrySnapshot: Decodable, Sendable {
         let surface: RGB
         let textPrimary: RGB
         let textSecondary: RGB
-        /// 强调色：浅色是黑、深色是白（ADR-0130）。页面底色上的图标和角标的底。
+        /// 强调填充：浅色是黑、深色是深灰（ADR-0130）。角标的底；页面上的图标用 `textPrimary`。
         let primary: RGB
         let onPrimary: RGB
     }

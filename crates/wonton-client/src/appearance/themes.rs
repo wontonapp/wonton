@@ -1,4 +1,5 @@
-//! 浅色、深色两套颜色令牌（ADR-0130）。界面只有黑白灰和三种状态色，强调靠 `primary`：浅色是黑、深色是白。
+//! 浅色、深色两套颜色令牌（ADR-0130）。界面只有黑白灰和三种状态色，强调靠 `primary` 填充：浅色是黑底白字；
+//! 深色是比卡片浅一档的深灰底白字，层次靠阴影。`primary` 只当填充用，页面上的字和图标用 `text_primary`。
 
 use wonton_protocol::{Rgb, ThemeColors};
 
@@ -9,7 +10,7 @@ pub(super) const LIGHT: ThemeColors = theme(
 
 pub(super) const DARK: ThemeColors = theme(
     [0x0E0E0E, 0x191919, 0x262626, 0xF5F5F5, 0xABABAB, 0x333333],
-    [0xF5F5F5, 0x111111, 0x7CDCA0, 0xFFC379, 0xFFA69F],
+    [0x454545, 0xFFFFFF, 0x7CDCA0, 0xFFC379, 0xFFA69F],
 );
 
 const fn theme(page: [u32; 6], controls: [u32; 5]) -> ThemeColors {

@@ -317,7 +317,7 @@ private fun Badge(plugin: InstalledPlugin, modifier: Modifier) {
         )
         plugin.upgrade != null -> Box(
             modifier.size(12.dp)
-                .background(colors.primary.toColor(), CircleShape)
+                .background(colors.textPrimary.toColor(), CircleShape)
                 .border(2.dp, colors.canvas.toColor(), CircleShape)
                 .semantics { contentDescription = updateLabel },
         )

@@ -393,7 +393,7 @@ private extension ComposerView {
                 editBar(editing)
             } else if let reply = model.replies[draftKey] {
                 ReplyQuoteView(
-                    quote: reply, core: model.core, ink: Color(colors.textPrimary), emphasis: Color(colors.primary),
+                    quote: reply, core: model.core, ink: Color(colors.textPrimary), emphasis: Color(colors.textPrimary),
                     cancel: { model.cancelReply(in: composer.target) },
                     jump: { jumpToReply(reply.eventId) }
                 )
@@ -444,7 +444,7 @@ private struct ComposerMenuButton: View {
                         .transition(.opacity)
                 }
             }
-            .foregroundStyle(Color(colors.canvas))
+            .foregroundStyle(Color(colors.onPrimary))
             .padding(.horizontal, WontonTheme.spacing.s12)
             .frame(minWidth: WontonTheme.size.chatControl, minHeight: WontonTheme.size.chatControl)
             .chatGlass(in: Capsule(), tint: Color(colors.primary), interactive: true)

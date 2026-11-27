@@ -128,7 +128,7 @@ fun TimelineItemView(
     }
     val highlight = if (flash.value > 0f) {
         Modifier.background(
-            WontonTheme.colors.primary.toColor().copy(alpha = WontonTheme.ratio.jumpHighlight * flash.value),
+            WontonTheme.colors.textPrimary.toColor().copy(alpha = WontonTheme.ratio.jumpHighlight * flash.value),
             RoundedCornerShape(WontonTheme.radii.control),
         )
     } else {
@@ -175,7 +175,7 @@ fun TimelineItemView(
                 Text(
                     stringResource(R.string.timeline_new_messages_below),
                     style = WontonTheme.typography.caption,
-                    color = WontonTheme.colors.primary.toColor(),
+                    color = WontonTheme.colors.textPrimary.toColor(),
                 )
                 NoteEdge()
             }

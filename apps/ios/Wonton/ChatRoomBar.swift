@@ -54,7 +54,7 @@ struct ChatRoomBar<Trailing: View>: View {
             if let typing {
                 Text(typing)
                     .wontonText(WontonTheme.typography.barStatus)
-                    .foregroundStyle(Color(colors.primary))
+                    .foregroundStyle(Color(colors.textPrimary))
                     .lineLimit(1)
                     .accessibilityIdentifier("barActivity")
             } else if status.line == nil, let subtitle = status.subtitle {

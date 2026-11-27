@@ -17,7 +17,7 @@ struct ReplyQuoteView: View {
     let core: ClientCore
     /// 画在自己气泡里时用气泡的文字颜色。
     let ink: Color
-    /// 竖条和名字的颜色（ADR-0109 第 9 节）：强调色，画在自己气泡里时用气泡上的那一档。
+    /// 竖条和名字的颜色（ADR-0109 第 9 节）：页面上用字色，画在自己气泡里时用气泡上的那一档。
     let emphasis: Color
     /// 输入框上方的那一份带叉、撑满一行；消息里的不带，按内容收缩，垫一层淡淡的底色。
     var cancel: (() -> Void)?

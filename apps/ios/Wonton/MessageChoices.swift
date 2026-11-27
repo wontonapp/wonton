@@ -75,7 +75,7 @@ private struct ChoiceButton: View {
                 progress
             }
             // 没选的是半透明的入气泡色、`primary` 的字；选中的换成 `primary` 的实底（ADR-0109 第 9 节、ADR-0130）。
-            .foregroundStyle(Color(option.chosen ? colors.onPrimary : colors.primary))
+            .foregroundStyle(Color(option.chosen ? colors.onPrimary : colors.textPrimary))
             .padding(.horizontal, WontonTheme.spacing.s8)
             .frame(maxWidth: .infinity, minHeight: WontonTheme.size.choiceButton)
             .background(shape.fill(option.chosen ? Color(colors.primary) : palette.choiceFill).chatLift(palette))

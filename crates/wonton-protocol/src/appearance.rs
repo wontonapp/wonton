@@ -80,7 +80,8 @@ pub struct ThemeColors {
     pub text_primary: Rgb,
     pub text_secondary: Rgb,
     pub separator: Rgb,
-    /// 强调色：浅色是黑、深色是白。主按钮、选中、开关、角标、自己的气泡的底，以及页面上要强调的字和图标。
+    /// 强调填充：浅色是黑，深色是比卡片浅一档的深灰。主按钮、选中、开关、角标、自己的气泡的底；
+    /// 只当填充用，页面上要强调的字和图标用 `text_primary`。
     pub primary: Rgb,
     /// `primary` 底上的字和图标。
     pub on_primary: Rgb,

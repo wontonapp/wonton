@@ -9,7 +9,7 @@ struct ChatPalette {
 
     /// 背景的底：浅色用 `surfaceSubtle`，白气泡才浮得起来；深色用 `canvas`。
     var wallBase: Color { Color(isDark ? colors.canvas : colors.surfaceSubtle) }
-    var wallPattern: Color { Color(colors.primary).opacity(WontonTheme.ratio.wallPattern) }
+    var wallPattern: Color { Color(colors.textPrimary).opacity(WontonTheme.ratio.wallPattern) }
     /// 别人的气泡：浅色是白的，深色比背景亮一档。
     var incoming: Color { Color(isDark ? colors.surfaceSubtle : colors.surface) }
     /// 日期胶囊、说明行、选项按钮的半透明底，上面的字一律白色。
@@ -170,7 +170,7 @@ private struct OptionalIdentifier: ViewModifier {
 struct ChatGlassButton: View {
     let icon: WontonIcon
     let label: String
-    /// 主要动作（发送）给强调色，图标用页面底色。
+    /// 主要动作（发送）用强调填充，图标用 `onPrimary`。
     var prominent = false
     /// 可达性树的稳定标识；只给界面测试要按它找的按钮。
     var identifier: String?
@@ -180,7 +180,7 @@ struct ChatGlassButton: View {
     var body: some View {
         Button(action: action) {
             icon.view(size: WontonTheme.size.iconSmall)
-                .foregroundStyle(Color(prominent ? colors.canvas : colors.textPrimary))
+                .foregroundStyle(Color(prominent ? colors.onPrimary : colors.textPrimary))
                 .frame(width: WontonTheme.size.chatControl, height: WontonTheme.size.chatControl)
                 .chatGlass(in: Circle(), tint: prominent ? Color(colors.primary) : nil, interactive: true)
                 .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)

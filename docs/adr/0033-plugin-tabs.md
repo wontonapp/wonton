@@ -164,7 +164,7 @@ x-wonton:
 | `--color-border-primary` | `separator` |
 | `--color-*-danger`、`-success`、`-warning` | 状态色 |
 | `--font-sans`、`--border-radius-*` | 系统字体，`control`、`card` 等圆角 |
-| `--wonton-accent-fill`、`--wonton-accent-ink`、`--wonton-accent-ink-on-fill` | 强调色的底、页面上的强调字、底上的字。[ADR-0130](0130-black-and-white.md) 起没有重点色，名字不改，前两个是 `primary`，第三个是 `onPrimary` |
+| `--wonton-accent-fill`、`--wonton-accent-ink`、`--wonton-accent-ink-on-fill` | 强调色的底、页面上的强调字、底上的字。[ADR-0130](0130-black-and-white.md) 起没有重点色，名字不改，分别是 `primary`、`textPrimary`、`onPrimary` |
 | `--wonton-inset-top`、`--wonton-inset-bottom` | 栏占的高度，含安全区；全屏时是状态栏下沿（横屏为 0）和 Home 条，胶囊会自己藏起来，不算在内。`inset` 布局下是 0 |
 | `--wonton-inset-left`、`--wonton-inset-right` | 左右安全区，横屏全屏时躲刘海和圆角用。`inset` 布局下是 0 |
 

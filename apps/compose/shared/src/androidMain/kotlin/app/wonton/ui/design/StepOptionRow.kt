@@ -123,7 +123,7 @@ fun StepOptionRow(
                     // 装饰：选中状态由选项本身朗读。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.iconSmall),
-                    tint = (if (neutralSelection) colors.primary else colors.onPrimary).toColor(),
+                    tint = (if (neutralSelection) colors.textPrimary else colors.onPrimary).toColor(),
                 )
             }
         }

@@ -106,7 +106,7 @@ struct AttachSheet: View {
         }
     }
 
-    /// 一块玻璃胶囊，里面每项图标在上、短字在下，当前一项垫一层淡的强调色。
+    /// 一块玻璃胶囊，里面每项图标在上、短字在下，当前一项垫一层淡淡的字色。
     private var tabs: some View {
         HStack(spacing: 0) {
             tab(.imageFill, String(localized: .Composer.composerPhoto), isCurrent: true) {}
@@ -127,11 +127,11 @@ struct AttachSheet: View {
                 icon.view()
                 Text(title).wontonText(WontonTheme.typography.caption).fontWeight(.medium).lineLimit(1)
             }
-            .foregroundStyle(Color(isCurrent ? colors.primary : colors.textPrimary))
+            .foregroundStyle(Color(isCurrent ? colors.textPrimary : colors.textPrimary))
             .frame(width: WontonTheme.size.attachTab, height: WontonTheme.size.attachTab)
             .background {
                 if isCurrent {
-                    Capsule().fill(Color(colors.primary).opacity(WontonTheme.ratio.tabHighlight))
+                    Capsule().fill(Color(colors.textPrimary).opacity(WontonTheme.ratio.tabHighlight))
                 }
             }
             .contentShape(Capsule())
@@ -183,7 +183,7 @@ private struct PhotoCell: View {
                 Text(verbatim: "\(order)")
                     .wontonText(WontonTheme.typography.caption)
                     .fontWeight(.semibold)
-                    .foregroundStyle(Color(colors.canvas))
+                    .foregroundStyle(Color(colors.onPrimary))
             }
         }
         .frame(width: WontonTheme.size.icon, height: WontonTheme.size.icon)

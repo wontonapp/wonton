@@ -44,7 +44,7 @@ struct AgentRunChoices: View {
     private func label(_ choice: AgentRunChoice, canAnswer: Bool) -> some View {
         let ink = choice.chosen
             ? Color(colors.onPrimary)
-            : canAnswer ? Color(colors.primary) : Color(colors.textSecondary)
+            : canAnswer ? Color(colors.textPrimary) : Color(colors.textSecondary)
         return HStack(spacing: WontonTheme.spacing.s4) {
             Text(choice.label)
                 .wontonText(WontonTheme.typography.supporting)

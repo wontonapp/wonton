@@ -85,7 +85,7 @@ struct TimelineRow: View {
                 edge
                 Text(.Chat.timelineReadMarker)
                     .wontonText(WontonTheme.typography.caption)
-                    .foregroundStyle(Color(colors.primary))
+                    .foregroundStyle(Color(colors.textPrimary))
                 edge
             }
         case let .sideChat(card):
@@ -285,7 +285,7 @@ private struct MessageBubble: View {
                 if showsSender, !message.isOwn {
                     Text(message.senderName)
                         .wontonText(WontonTheme.typography.senderName)
-                        .foregroundStyle(Color(colors.primary))
+                        .foregroundStyle(Color(colors.textPrimary))
                         .lineLimit(1)
                 }
                 if let quote = message.reply {
@@ -294,7 +294,7 @@ private struct MessageBubble: View {
                     } label: {
                         ReplyQuoteView(
                             quote: quote, core: core, ink: textColor,
-                            emphasis: Color(message.isOwn ? colors.onPrimary : colors.primary),
+                            emphasis: Color(message.isOwn ? colors.onPrimary : colors.textPrimary),
                             isLoading: isJumping
                         )
                             .contentShape(Rectangle())

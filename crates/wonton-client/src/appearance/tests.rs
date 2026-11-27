@@ -21,8 +21,9 @@ fn contrast(one: Rgb, other: Rgb) -> f64 {
     (one.max(other) + 0.05) / (one.min(other) + 0.05)
 }
 
-/// 没有重点色以后，选中、角标、自己的气泡全靠 `primary` 和页面分开，所以它对每种页面底色都要像字一样清楚，
-/// 不能再靠描边补。
+/// 字和状态色压在任何页面底色上都要读得清；`primary` 只做填充（自己的气泡、选中、主按钮），
+/// 上面的 `on_primary` 要读得清，填充本身也要和页面底色分得开。深色的填充是深灰，分层主要靠阴影，
+/// 所以门槛比字低，但不能低到和卡片糊在一起。
 #[test]
 fn both_themes_stay_readable_without_an_accent() {
     let view = default_appearance();
@@ -37,13 +38,16 @@ fn both_themes_stay_readable_without_an_accent() {
             for (role, ink) in [
                 ("text_primary", theme.text_primary),
                 ("text_secondary", theme.text_secondary),
-                ("primary", theme.primary),
                 ("success", theme.success),
                 ("warning", theme.warning),
                 ("danger", theme.danger),
             ] {
                 assert!(contrast(ink, page) >= 4.5, "{name} {role} on {page:?}");
             }
+            assert!(
+                contrast(theme.primary, page) >= 1.5,
+                "{name} primary fill on {page:?}"
+            );
         }
         assert!(
             contrast(theme.on_primary, theme.primary) >= 4.5,

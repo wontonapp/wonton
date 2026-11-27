@@ -88,7 +88,7 @@ private struct AppLockScreen: View {
                 VStack(spacing: WontonTheme.spacing.s16) {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 44))
-                        .foregroundStyle(Color(colors.primary))
+                        .foregroundStyle(Color(colors.textPrimary))
                     Text(.Settings.appLockLockedTitle)
                         .wontonText(WontonTheme.typography.screenTitle)
                         .foregroundStyle(Color(colors.textPrimary))

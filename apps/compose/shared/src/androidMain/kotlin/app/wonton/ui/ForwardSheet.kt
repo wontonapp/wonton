@@ -124,7 +124,7 @@ private fun ForwardRow(
         )
         Box(
             Modifier.size(WontonTheme.size.iconTiny)
-                .background((if (picked) colors.primary else colors.surfaceSubtle).toColor(), CircleShape),
+                .background((if (picked) colors.textPrimary else colors.surfaceSubtle).toColor(), CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             if (picked) {
@@ -133,7 +133,7 @@ private fun ForwardRow(
                     // 装饰：整行的勾选状态在语义里。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.iconTiny),
-                    tint = colors.onPrimary.toColor(),
+                    tint = colors.canvas.toColor(),
                 )
             }
         }

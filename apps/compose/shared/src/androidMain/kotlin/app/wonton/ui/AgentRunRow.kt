@@ -75,7 +75,7 @@ fun AgentRunRowView(
             LinearProgressIndicator(
                 progress = { run.progress },
                 Modifier.fillMaxWidth(),
-                color = WontonTheme.colors.primary.toColor(),
+                color = WontonTheme.colors.textPrimary.toColor(),
             )
         }
         if (run.state !is AgentRunState.Other && run.choices.isNotEmpty()) {
@@ -174,7 +174,7 @@ private fun StatusLine(run: TimelineContent.AgentRun, onOpenCard: (String) -> Un
         }
         if (cardId != null) {
             // 装饰：整行可点，箭头只表示能过去。
-            Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = colors.primary.toColor())
+            Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = colors.textPrimary.toColor())
         }
     }
 }
@@ -221,7 +221,7 @@ private fun Mark(run: TimelineContent.AgentRun, colors: ThemeColors) {
             } else {
                 CircularProgressIndicator(
                     Modifier.size(WontonTheme.size.iconSmall).testTag("agentRunWorkingMark"),
-                    color = colors.primary.toColor(),
+                    color = colors.textPrimary.toColor(),
                 )
             }
         AgentRunState.Waiting ->
@@ -261,7 +261,7 @@ private fun statusText(run: TimelineContent.AgentRun): String = when (run.state)
 
 private fun statusInk(run: TimelineContent.AgentRun, colors: ThemeColors) = when (run.state) {
     AgentRunState.Working -> colors.textSecondary
-    AgentRunState.Waiting -> colors.primary
+    AgentRunState.Waiting -> colors.textPrimary
     AgentRunState.Done -> colors.textSecondary
     AgentRunState.Failed -> when {
         run.end is AgentRunEnd.Cancelled -> colors.textSecondary
@@ -279,7 +279,7 @@ private const val PAIR = 2
 @Composable
 private fun Asking(run: TimelineContent.AgentRun, onAnswerChoice: (String) -> Unit) {
     val colors = WontonTheme.colors
-    val ink = colors.primary.toColor()
+    val ink = colors.textPrimary.toColor()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,

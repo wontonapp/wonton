@@ -47,7 +47,7 @@ struct FloatingDatePill: View {
     }
 }
 
-/// 跳到原消息后整行背景闪一次强调色，按 `motion.jumpHighlight` 淡出（ADR-0109 第 4 节）。
+/// 跳到原消息后整行背景闪一次淡淡的字色，按 `motion.jumpHighlight` 淡出（ADR-0109 第 4 节）。
 struct JumpHighlight: View {
     /// 每跳到这一行一次换一个值；不是这一行时为空。
     let trigger: Int?
@@ -55,7 +55,7 @@ struct JumpHighlight: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        Color(colors.primary)
+        Color(colors.textPrimary)
             .opacity(isLit ? WontonTheme.ratio.jumpHighlight : 0)
             .task(id: trigger) {
                 guard trigger != nil else { return }
@@ -105,7 +105,7 @@ struct ScrollToBottomButton: View {
                         Text(count > Self.badgeMax ? "\(Self.badgeMax)+" : String(count))
                             .wontonText(WontonTheme.typography.messageMeta)
                             .fontWeight(.semibold)
-                            .foregroundStyle(Color(colors.canvas))
+                            .foregroundStyle(Color(colors.onPrimary))
                             .padding(.horizontal, WontonTheme.spacing.s4 + 2)
                             .frame(minWidth: WontonTheme.size.iconSmall, minHeight: WontonTheme.size.iconSmall)
                             .background(Color(colors.primary), in: Capsule())
@@ -142,7 +142,7 @@ struct SenderInitial: View {
         // 强调色的实底：压在聊天背景和玻璃上都分得清。
         Text(name.prefix(1).uppercased())
             .wontonText(WontonTheme.typography.senderName)
-            .foregroundStyle(Color(colors.canvas))
+            .foregroundStyle(Color(colors.onPrimary))
             .frame(width: size, height: size)
             .background(Circle().fill(Color(colors.primary)))
             .accessibilityHidden(true)

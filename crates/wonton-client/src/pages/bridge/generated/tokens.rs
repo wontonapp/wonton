@@ -22,7 +22,7 @@ pub(crate) const COLOR_VARIABLES: &[ColorVariable] = &[
     ("--color-border-warning", |c| c.warning),
     ("--color-ring-warning", |c| c.warning),
     ("--wonton-accent-fill", |c| c.primary),
-    ("--wonton-accent-ink", |c| c.primary),
+    ("--wonton-accent-ink", |c| c.text_primary),
     ("--wonton-accent-ink-on-fill", |c| c.on_primary),
 ];
 

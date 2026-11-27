@@ -48,7 +48,7 @@ iOS 26 的标准导航、菜单和系统面板由平台负责材质与反馈；�
 - 只有悬浮的底栏胶囊自己有底。底栏周围不按网页取色、填色。
 - 插件页带栏时，网页框在标题栏和底栏之间，不铺到底栏后面，见 ADR-0033 的“页面怎么显示”。
 
-Android 的 Material 3 组件取色来自令牌：`WontonTheme` 把令牌映射进 `MaterialTheme`，不用动态取色和默认紫。选中的指示条用 `primary`（ADR-0130），上面的字和图标换成 `onPrimary`。
+Android 的 Material 3 组件取色来自令牌：`WontonTheme` 把令牌映射进 `MaterialTheme`，不用动态取色和默认紫。选中的指示条用 `primary`（ADR-0130），上面的字和图标换成 `onPrimary`；Material 的 `primary` 角色是字色，对应 `textPrimary`。
 
 > 消息的时间和送达状态怎么显示，已被 [ADR-0109](0109-chat-like-telegram.md) 取代：时间和勾放进气泡右下角，照 Telegram。
 

@@ -128,7 +128,7 @@ private struct ChoiceRow: View {
                 Spacer(minLength: 0)
                 if isSelected {
                     WontonIcon.check.view(size: WontonTheme.size.iconSmall)
-                        .foregroundStyle(Color(colors.primary))
+                        .foregroundStyle(Color(colors.textPrimary))
                 }
             }
             .padding(.horizontal, WontonTheme.spacing.s16)
