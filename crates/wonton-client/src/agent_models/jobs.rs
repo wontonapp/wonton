@@ -188,9 +188,13 @@ impl AgentModelsLink {
         self.view.send_modify(|view| {
             if let Some(page) = opened(view, bot, provider) {
                 page.models = match result {
-                    Ok(list) => ModelListState::Ready {
-                        models: list.models,
-                    },
+                    Ok(mut list) => {
+                        // 插件推荐的排第一，壳预选它（ADR-0129 第 3 节）；其余照插件给的顺序。
+                        list.models.sort_by_key(|model| !model.recommended);
+                        ModelListState::Ready {
+                            models: list.models,
+                        }
+                    }
                     Err(problem) => ModelListState::Failed { problem },
                 };
             }
@@ -258,6 +262,7 @@ impl AgentModelsLink {
         select: SelectModel,
         result: Result<ModelSelection, AgentModelsProblem>,
     ) {
+        let mut test = false;
         let result = result.and_then(|selection| match &selection.current {
             Some(current) => current
                 .check()
@@ -291,8 +296,10 @@ impl AgentModelsLink {
                         page.busy = false;
                     }
                     if view.current != current {
+                        // 选好就测一次，顶上直接显示能不能用（ADR-0129 第 3 节）。
+                        test = current.is_some();
+                        view.test = test.then_some(ModelTestState::Running);
                         view.current = current;
-                        view.test = None;
                     }
                 }
                 Err(problem) => {
@@ -303,6 +310,9 @@ impl AgentModelsLink {
                 }
             }
         });
+        if test {
+            self.enqueue(bot.clone(), Op::Test);
+        }
     }
 
     fn test_done(&self, bot: &BotRef, result: Result<ModelTest, AgentModelsProblem>) {

@@ -58,8 +58,8 @@ fn catalog(connected: bool) -> Value {
 
 fn models() -> Canned {
     ok(json!({"models": [
-        {"id": "anthropic/claude-sonnet", "name": null, "recommended": true},
         {"id": "openai/gpt", "name": "GPT", "recommended": false},
+        {"id": "anthropic/claude-sonnet", "name": null, "recommended": true},
     ]}))
 }
 
@@ -169,6 +169,10 @@ async fn a_saved_key_connects_the_provider_and_lists_its_models() {
     let page = view.provider.unwrap();
     assert!(!page.busy);
     assert_eq!(page.key_check.unwrap().check, KeyCheckResult::Accepted);
+    let ModelListState::Ready { models } = page.models else {
+        unreachable!()
+    };
+    assert_eq!(models[0].id, "anthropic/claude-sonnet", "推荐的排第一");
     let body: Value = serde_json::from_str(&rig.core.seen(&Method::PUT, &path)[0].body).unwrap();
     assert_eq!(body, json!({"key": "sk-or-secret"}));
 }
@@ -229,7 +233,8 @@ async fn a_device_login_polls_until_approved() {
     connected["providers"][1]["connected"] = true.into();
     rig.core
         .answer_always(Method::GET, &agent_models_path(PLUGIN, BOT), ok(connected));
-    rig.core.answer(
+    // 轮询期间目录可能已被别的刷新取到“已接好”，模型会先取一次；批准后再取也要有。
+    rig.core.answer_always(
         Method::GET,
         &agent_model_list_path(PLUGIN, BOT, "nous"),
         models(),
@@ -365,7 +370,7 @@ async fn closing_the_provider_cancels_its_login() {
     }
 }
 
-/// 插件提示贵的模型先不存，确认后带上 `confirmed` 再存；换了模型就清掉上一次的测试。
+/// 插件提示贵的模型先不存，确认后带上 `confirmed` 再存；存好就自动测一次。
 #[tokio::test]
 async fn an_expensive_model_waits_for_confirmation() {
     let rig = opened(true).await;
@@ -384,16 +389,6 @@ async fn an_expensive_model_waits_for_confirmation() {
         view.provider
             .as_ref()
             .is_some_and(|page| matches!(page.models, ModelListState::Ready { .. }))
-    })
-    .await;
-    rig.core.answer(
-        Method::POST,
-        &agent_model_test_path(PLUGIN, BOT),
-        ok(json!({"result": "no_model"})),
-    );
-    act(&rig, AgentModelsAction::TestModel);
-    wait(&rig, |view| {
-        matches!(view.test, Some(ModelTestState::Done { .. }))
     })
     .await;
 
@@ -423,10 +418,21 @@ async fn an_expensive_model_waits_for_confirmation() {
         &current,
         ok(json!({"current": {"provider": "openrouter", "model": "openai/gpt"}})),
     );
+    rig.core.answer(
+        Method::POST,
+        &agent_model_test_path(PLUGIN, BOT),
+        ok(json!({"result": "ok", "latency_ms": 300})),
+    );
     act(&rig, AgentModelsAction::ConfirmModelSelection);
-    let view = wait(&rig, |view| view.current.is_some()).await;
+    let view = wait(&rig, |view| {
+        matches!(view.test, Some(ModelTestState::Done { .. }))
+    })
+    .await;
     assert_eq!(view.current.unwrap().model, "openai/gpt");
-    assert!(view.test.is_none());
+    let Some(ModelTestState::Done { result }) = view.test else {
+        unreachable!()
+    };
+    assert_eq!(result.result, ModelTestResult::Ok);
     let bodies: Vec<Value> = rig
         .core
         .seen(&Method::PUT, &current)
