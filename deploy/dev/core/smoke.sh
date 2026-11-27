@@ -238,7 +238,7 @@ phone_key="$WONTON_DEV_DATA/phonekeys/phone.key"
   -c "tunnel-client --key /k/phone.key id" >/dev/null
 start_phone() {
   docker rm -f "$phone" >/dev/null 2>&1 || true
-  docker run -d --name "$phone" --network "container:$core" -v "$phone_key:/tmp/phone.key" --entrypoint sh "$phone_image" -c \
+  run_container "$phone" --network "container:$core" -v "$phone_key:/tmp/phone.key" --entrypoint sh "$phone_image" -c \
     "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy --auth \
      --domain $WONTON_DEV_DOMAIN --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT \
      --listen 127.0.0.1:18008" >/dev/null
@@ -596,7 +596,7 @@ else
   # 宿主的防火墙要放行插件网段到这个端口（默认的 DOCKER-USER 链放行 docker 网桥到宿主的流量）。
   # KEEP=1 的上一轮会把转发留着（它不在 compose 项目里），先删掉同名的再起。
   docker rm -f "$model_relay" >/dev/null 2>&1 || true
-  docker run -d --rm --name "$model_relay" --network host "$socat_image" \
+  run_container "$model_relay" --rm --network host "$socat_image" \
     "TCP-LISTEN:$model_port,fork,reuseaddr" "TCP:127.0.0.1:3425" >/dev/null ||
     fail "起不了到宿主 magpie（127.0.0.1:3425）的转发"
   # 端口被占时 docker run -d 照样返回 0：看容器还在不在。

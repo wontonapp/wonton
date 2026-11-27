@@ -120,7 +120,7 @@ family_join() {
   mom_key="$WONTON_DEV_DATA/phonekeys/mom.key"
   if t "$core_url/_wonton/api/members" | grep -q '"username": *"mom"'; then
     docker rm -f "$mom_phone" >/dev/null 2>&1 || true
-    docker run -d --name "$mom_phone" --network "container:$core" -v "$mom_key:/tmp/phone.key" --entrypoint tunnel-client \
+    run_container "$mom_phone" --network "container:$core" -v "$mom_key:/tmp/phone.key" --entrypoint tunnel-client \
       "$phone_image" --key /tmp/phone.key proxy --auth --domain "$WONTON_DEV_DOMAIN" --server "$server_id" \
       --addr "127.0.0.1:$WONTON_DEV_TUNNEL_PORT" --listen 127.0.0.1:18009 >/dev/null
     for _ in $(seq 60); do
@@ -167,7 +167,7 @@ print(next(r["id"] for r in json.load(sys.stdin)["requests"] if r["username"] ==
   expect "主人同意" "$(t -o /dev/null -w '%{http_code}' -X POST "$core_url/_wonton/api/members/join-requests/$request/approve")" 204
   expect "妈妈的手机再交一次码，配上了" "$(mom_pair "$code" | json result)" paired
   docker rm -f "$mom_phone" >/dev/null 2>&1 || true
-  docker run -d --name "$mom_phone" --network "container:$core" -v "$mom_key:/tmp/phone.key" --entrypoint tunnel-client \
+  run_container "$mom_phone" --network "container:$core" -v "$mom_key:/tmp/phone.key" --entrypoint tunnel-client \
     "$phone_image" --key /tmp/phone.key proxy --auth --domain "$WONTON_DEV_DOMAIN" --server "$server_id" \
     --addr "127.0.0.1:$WONTON_DEV_TUNNEL_PORT" --listen 127.0.0.1:18009 >/dev/null
   for _ in $(seq 60); do
@@ -231,7 +231,7 @@ done
 if ! docker inspect "$model_relay" >/dev/null 2>&1; then
 model_port=13425
 model_host="$(docker network inspect "$hermes_network" --format '{{(index .IPAM.Config 0).Gateway}}')"
-docker run -d --rm --name "$model_relay" --network host "$socat_image" \
+run_container "$model_relay" --rm --network host "$socat_image" \
   "TCP-LISTEN:$model_port,fork,reuseaddr" "TCP:127.0.0.1:3425" >/dev/null ||
   fail "起不了到宿主 magpie（127.0.0.1:3425）的转发"
 fi

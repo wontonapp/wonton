@@ -62,12 +62,24 @@ step() {
 # shellcheck source=deploy/dev/core/smoke-curl.sh
 source "$(dirname "${BASH_SOURCE[0]}")/smoke-curl.sh"
 
-# 浏览器：同一个 Cookie 罐，跨请求保持会话。它共享核心容器的网络命名空间，核心重启后要重建。
+# 起容器：撞上同名容器还在销毁时等一会儿再来。daemon 慢的时候 rm 先回、销毁还在后台跑，
+# 紧接着的 docker run 会撞名；真错了就把 docker 的原话打出来。
+run_container() {
+  local _name=$1 _try _out
+  shift
+  for _try in $(seq 60); do
+    if _out="$(docker run -d --name "$_name" "$@" 2>&1)"; then printf '%s\n' "$_out"; return 0; fi
+    grep -q 'is already in use by container' <<<"$_out" || { printf '%s\n' "$_out" >&2; return 1; }
+    sleep 1
+  done
+  printf '%s\n' "$_out" >&2
+  return 1
+}
 # 直连探针忽略 Docker CLI 注入的代理；隧道探针则清空 NO_PROXY，避免 *.localhost 绕过显式的本地代理。
 start_browser() {
   docker rm -f "$browser" >/dev/null 2>&1 || true
   # 活 7200 秒：慢模型下一整套会跑一个多小时，1800 秒会在中途退出，后面的探针全部打到死容器上。
-  docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 7200 >/dev/null
+  run_container "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 7200 >/dev/null
 }
 b() { curl_in "$browser" --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
 # 经手机的本地代理访问，和 App 一样带会话凭据（$credential）。t 像 Android WebView：http 地址直接发绝对形式的
