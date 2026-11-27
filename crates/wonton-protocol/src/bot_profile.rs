@@ -695,6 +695,8 @@ mod tests {
     #[test]
     fn an_old_bot_view_without_the_cloud_fields_still_reads() {
         let bot = BotView {
+            shared: false,
+            danger: None,
             chat: Default::default(),
             availability: Default::default(),
             user_id: "@b:h".into(),
