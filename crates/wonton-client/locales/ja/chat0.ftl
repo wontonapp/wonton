@@ -58,8 +58,12 @@ chat-action-not-connected = 自宅サーバーにまだ接続していません
 # $error はルームID解析の元のエラーです。
 chat-invalid-room-id = ルームIDが正しくありません：{ $error }
 
-# $room は元のルームIDです。
-chat-room-not-subscribed = 先にルーム{ $room }のタイムラインを購読してください
+# $conversation はチャットの名前です。名前が取れないときは「このチャット」「このDM」「このグループ」になります。
+chat-room-not-subscribed = 先に{ $conversation }のタイムラインを購読してください
+
+chat-conversation-this = このチャット
+chat-conversation-direct = このDM
+chat-conversation-group = このグループ
 
 # デフォルトのエージェントを選ぶ前に問い合わせたときに表示します。
 chat-no-default-agent = デフォルトのエージェントがまだありません。設定で選んでください

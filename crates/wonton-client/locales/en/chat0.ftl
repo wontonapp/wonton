@@ -59,8 +59,12 @@ chat-action-not-connected = You're not connected to your home server yet.
 # $error is the room ID parser's original error.
 chat-invalid-room-id = The room ID isn't valid: { $error }
 
-# $room is the unchanged room ID.
-chat-room-not-subscribed = Subscribe to the room's timeline first: { $room }
+# $conversation is the chat's name; when it has none, "this conversation", "this direct chat" or "this group".
+chat-room-not-subscribed = Subscribe to the timeline for { $conversation } first
+
+chat-conversation-this = this conversation
+chat-conversation-direct = this direct chat
+chat-conversation-group = this group
 
 # Shown when asking the default agent before one is chosen.
 chat-no-default-agent = There's no Default Agent yet. Choose one in Settings.

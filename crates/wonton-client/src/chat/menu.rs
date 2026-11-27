@@ -328,7 +328,7 @@ impl ChatLink {
     ) -> Result<OwnedEventId, CoreError> {
         let open = lock(&self.open);
         if open.get(key).is_none() {
-            return Err(super::target::not_subscribed(key));
+            return Err(self.not_subscribed(key));
         }
         let event_id = open
             .matching(key)
@@ -351,7 +351,7 @@ impl ChatLink {
     ) -> Result<(OwnedEventId, String), CoreError> {
         let open = lock(&self.open);
         if open.get(key).is_none() {
-            return Err(super::target::not_subscribed(key));
+            return Err(self.not_subscribed(key));
         }
         let found = open
             .matching(key)

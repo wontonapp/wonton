@@ -53,7 +53,7 @@ impl ChatLink {
         let key = opening.key.clone();
         let _opening = self.opening.lock().await;
         if !lock(&self.open).contains_request(opening.id) {
-            return Err(target::not_subscribed(&key));
+            return Err(self.not_subscribed(&key));
         }
         let session = self.current()?;
         let room_id = key.room_id.clone();
@@ -74,7 +74,7 @@ impl ChatLink {
         let menus = Arc::new(Mutex::new(menu::Menus::default()));
         let mut open = lock(&self.open);
         if !open.contains_request(opening.id) {
-            return Err(target::not_subscribed(&key));
+            return Err(self.not_subscribed(&key));
         }
         // 进房间时重新核对一次支持声明：Bot 可能是刚连上才写的（ADR-0093 §1）。
         let support = self.side_chat_support.clone();
@@ -142,6 +142,12 @@ impl ChatLink {
             })
     }
 
+    /// 这条时间线没在订阅着。会话叫什么从界面上的房间列表和 Bot 名字取，取不到名字再退回会话类型。
+    pub(super) fn not_subscribed(&self, key: &TimelineKey) -> CoreError {
+        let view = self.view.borrow();
+        target::not_subscribed(&target::conversation_label(&view.rooms, &view.bots, key))
+    }
+
     pub(super) fn target(
         &self,
         room_id: &str,
@@ -178,7 +184,7 @@ impl ChatLink {
         lock(&self.open)
             .get(key)
             .and_then(|open| open.room.upgrade())
-            .ok_or_else(|| target::not_subscribed(key))
+            .ok_or_else(|| self.not_subscribed(key))
     }
 
     /// 测试用：像 SDK 丢掉活事件那样清掉一条已打开时间线的条目，事件缓存不动，等补检重建。清空对壳是无声的
