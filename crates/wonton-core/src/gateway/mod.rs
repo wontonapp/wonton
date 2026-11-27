@@ -455,6 +455,8 @@ mod mcp_takeover_tests;
 #[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]
+mod media_browse_tests;
+#[cfg(test)]
 mod media_flow_tests;
 #[cfg(test)]
 mod media_stream_tests;

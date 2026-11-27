@@ -37,10 +37,13 @@ use crate::plugin::media_source::failure;
 
 type Reply<T> = Result<T, MediaFailure>;
 
-/// 往提供方带的请求头；其余（Cookie、隧道身份、客户端自己的凭据）一律不带。
-const PASS_REQUEST: [HeaderName; 6] = [
+/// 往提供方带的请求头；其余（Cookie、隧道身份、客户端自己的凭据）一律不带。条件请求的两个头让客户端核的
+/// 缩略图、海报缓存能拿到 304。
+const PASS_REQUEST: [HeaderName; 8] = [
     header::RANGE,
     header::IF_RANGE,
+    header::IF_NONE_MATCH,
+    header::IF_MODIFIED_SINCE,
     header::CONTENT_RANGE,
     header::CONTENT_LENGTH,
     header::CONTENT_TYPE,

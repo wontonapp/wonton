@@ -375,7 +375,13 @@ impl MediaSourceClient {
         parts.headers.remove("keep-alive");
         let response = Response::from_parts(parts, body);
         let status = response.status();
-        if status.is_success() || status == StatusCode::CONFLICT {
+        // 304（条件请求命中）、416（范围越界）是 HTTP 自己的回答，原样回给播放器和图片加载器，不算失败。
+        if status.is_success()
+            || matches!(
+                status,
+                StatusCode::CONFLICT | StatusCode::NOT_MODIFIED | StatusCode::RANGE_NOT_SATISFIABLE
+            )
+        {
             return Ok(response);
         }
         let headers = response.headers().clone();
