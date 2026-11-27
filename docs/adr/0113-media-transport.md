@@ -1,6 +1,6 @@
 # ADR-0113 媒体与传输：长任务由核心持有，插件经媒体源能力提供内容
 
-- 状态：提议（2026-11-21），影音相册线起草，插件底座线复审后合并；2026-11-27 补充第 9 节（相册原生浏览、去重、实况照片）
+- 状态：提议（2026-11-21），影音相册线起草，插件底座线复审后合并；2026-11-27 补充第 9 节（相册原生浏览、去重、实况照片）、第 10 节（影视原生浏览）
 - 取代 [ADR-0014](0014-reserved-capabilities.md) 的“Subsonic 原生音乐页”一节（主人 2026-11-21 定回原生）；补充 [ADR-0005](0005-native-clients-thick-core.md)（跨设备长任务的事实源在服务器核）
 - 关联：[ADR-0005](0005-native-clients-thick-core.md)（厚核心薄壳）、[ADR-0015](0015-small-components-standard-interfaces.md)（小部件、标准接口）、
   [ADR-0016](0016-mcp-bus-and-confirmations.md)（MCP 总线与确认）、[ADR-0020](0020-file-service.md)（文件服务）、
@@ -357,13 +357,52 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 - **原生页内嵌 Immich 网页**：主人已定原生；网页的滚动位置、手势、离线缓存都不在我们手里，进程被杀就回到入口。
 - **核心缓存缩略图**：核心只中转不缓冲（第 1 节）；缓存放手机上壳的图片加载缓存，命中时连网都不用。
 
+### 10. 影视：原生浏览（2026-11-27 补充）
+
+影视的原生界面（海报墙、分类、详情、继续观看、剧集的季和集、播放前选音轨和字幕）手感对标 Infuse，Jellyfin 网页降为管理入口。
+浏览走 `media_source` 的新操作 `catalog`，理由同第 9 节：Jellyfin 不是开放标准，客户端核直讲它就是给一个插件开特例，
+还要把每人的 Jellyfin 令牌发到手机上；`GET /items` 没有片库、季集、继续观看和详情。相册的 `library` 是按月分桶和相册的形状，
+套不上剧集的层级，所以另起一个操作，两者互不依赖，一个提供方可以只声明其中一个。
+
+| 提供方路径 | 方法 | 回包（`wonton-protocol::media::catalog`） |
+| --- | --- | --- |
+| `/catalog/libraries` | `GET` | `Libraries`：这个人能看到的片库，带类型（`movies`/`shows`/`mixed`）和条数 |
+| `/catalog/shelves/{shelf}?library=` | `GET` | `EntryPage`：首页的一排，`resume`（看了一半的）、`next_up`（追的剧下一集）、`latest`（新加入的） |
+| `/catalog/entries?library=&parent=&entry_type=&genre=&q=&sort=&unplayed=&cursor=` | `GET` | `EntryPage`：海报墙、分类、搜索；`parent` 列剧、季或文件夹下面的 |
+| `/catalog/entries/{id}` | `GET` | `EntryDetail`：简介、类型、演职员、片源规格；剧带各季和播放键对应的那一集，季带各集，能放的带音轨和字幕 |
+| `/catalog/genres?library=` | `GET` | `Genres`：分类页的类型名 |
+| `/catalog/actions` | `POST` | 体 `CatalogAction`（标已看或未看、收藏），回 `CatalogActionResult` |
+
+- 海报、背景图、横幅、片名字标和演职员照片都走契约里已有的 `GET /items/{id}/artwork?type=&width=`。条目自报有哪几种图，
+  没有的壳不去取。`catalog` 的回包原样转发、里面没有图片地址，客户端核按条目和浏览的那一家自己拼核心的封面路由。
+- 服务器核对 `catalog` 只转发，做法同第 9 节：按设备归属的人填 `X-Wonton-User`、换上提供方签的能力凭据，不缓存、不改写回包；
+  客户端走 `/_wonton/api/media/catalog/…`，后半段就是上表的提供方路径。选提供方看 `catalog` 和 `video`：请求带 `source`（插件 id）
+  就用它，否则取主人定的默认，只有一家就取它，多家又没有默认回明确的失败，不替人挑。
+- 播放和下载不在 `catalog` 里：能直接放的条目（电影、单集、单个视频）由客户端核换成 `MediaItemRef`（`CatalogEntry::to_item`），
+  照第 4 节开播放会话、照第 3 节建下载任务；“继续播放”就是带条目的 `position_ms` 开会话。进度照旧由播放会话报给提供方，
+  “继续观看”和“下一集”那两排由提供方按它自己记的进度给，核心不另记一份。
+- 客户端核把回包翻成壳直接画的视图：图片地址（本机回环上的封面路由，带种类和宽度）、能不能放、从哪接着放、看到几成都算好；
+  壳只画网格、详情和转场，翻页把上一页的游标原样带回。图的字节经本机回环交给原生图片加载器，不经绑定层搬；海报缓存用加载器
+  自带的磁盘缓存（有上限、按最近使用淘汰），缓存键去掉回环的端口和令牌，App 重启后不用重取。
+- 写操作本人点的、可撤，不发确认卡片（ADR-0024）；剧和季标已看时提供方把下面各集一起标。提供方不认识的动作回 `protocol`，
+  部分成功逐条回 `failed`。
+- 每人独立：提供方按 `X-Wonton-User` 用这个人自己的上游账号，回包里的进度、已看、收藏、家长分级都是他自己的。上游账号首次用到时
+  由提供方建（Jellyfin 是一人一个用户）。
+
+没选的做法：
+
+- **客户端核直讲 Jellyfin 接口**：见上，给具体插件开特例，还要把每人的令牌发到手机上。
+- **加宽 `GET /items`**：`list` 是给 Agent 找片的扁平列表，再加片库、层级、首页几排和详情，Agent 那边也得跟着变；分开后各自稳定。
+- **和相册共用 `library`**：相册按拍摄月和相册组织，影视按片库、剧、季、集组织，硬并成一份两边都要带一堆用不上的字段。
+- **原生页内嵌 Jellyfin 网页**：滚动位置、手势、离线都不在我们手里，和原生播放器、画中画也接不顺。
+
 ## 媒体源契约
 
 提供方按能力 `media_source` 实现路径；使用方是核心，核心不认具体插件。凭据由提供方签给核心，每个请求带 `X-Wonton-User`（任务或会话的主人）。
 
 | 路径 | 动作 | 语义 |
 | --- | --- | --- |
-| `GET /_wonton/capabilities` | 探测 | 返回 `operations`（`upload`/`download`/`playback`/`list`/`library`）与 `kinds`（`photo`/`video`/`audio`）；核心据它决定哪些操作可用 |
+| `GET /_wonton/capabilities` | 探测 | 返回 `operations`（`upload`/`download`/`playback`/`list`/`library`/`catalog`）与 `kinds`（`photo`/`video`/`audio`）；核心据它决定哪些操作可用 |
 | `GET /items?kind=&q=&album=&artist=&series=&from=&to=&cursor=` | 列条目 | 分页列这个人能看到的条目，给 Agent 找内容；按 `title` 排，`cursor` 在同一次查询的参数下稳定；回 `items` 与下一页 `cursor` |
 | `POST /uploads` | 开始上传 | 体是 `UploadStart`（相对路径、大小、校验和、拍摄时间）；返回 `upload_id` 与已收字节数（为 0 或断点位置） |
 | `HEAD /uploads/{id}` | 查断点 | 返回 `Upload-Offset`；不存在时 404，核心从头开始 |
@@ -379,6 +418,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `GET /items/{id}/download` | 下离线 | 支持 `Range`/`If-Range`，回 206 与 `Content-Range` |
 | `GET /items/{id}/artwork?type=&width=` | 封面、海报、缩略图 | `type` 取 `primary`（不带时）、`backdrop`、`thumb`、`logo`，认不得的按 `primary`；`width` 是要的像素宽，提供方按它缩、不放大。回图片字节，带 `Content-Type`；没有就 404。原生页的浏览靠它和 `list`，手机连不到 `artwork_url` 里提供方的内部地址 |
 | `/library/…` | 相册浏览 | 声明了 `library` 操作的提供方实现，路径和回包见第 9 节的表 |
+| `/catalog/…` | 影视浏览 | 声明了 `catalog` 操作的提供方实现，路径和回包见第 10 节的表 |
 | `POST /revoke` | 收回 | 体只带 `name`；提供方只注销上游凭据、停掉上游会话（任务表在核心，核心自己取消任务、结束会话） |
 
 失败回 `MediaFailure` 信封（`code`、`message`、`retry_after?`），码即下面失败类别的名字。
@@ -451,6 +491,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 
 - `crates/wonton-protocol`：新 `media` 模块，含能力名、头、路径、`MediaViewModel`/`PlaybackViewModel`/`MediaAction`。字段级见 `notes/adr0113-interfaces.md`。
 - `crates/wonton-protocol`：`media::library`（相册浏览的线上形状）、`media::uploads`（上传开始、收尾、去重检查的线上形状），`MediaOperation` 加 `library`（第 9 节）。
+- `crates/wonton-protocol`：`media::catalog`（影视浏览的线上形状），`MediaOperation` 加 `catalog`（第 10 节）。
 - `crates/wonton-core`：能力表加 `media_source`，核心侧提供方客户端与两个契约测试假提供方；`/_wonton/api/media/{tasks,sessions,queue,streams,commands}`；MCP 工具与事件。
 - `crates/wonton-client`：`Action::Media`、`subscribe_media`/`subscribe_playback`、`player_state`、`_meta` 键；媒体页的 `#585` 会话改成 renderer。
 - `wonton-docs`：`plugin-spec.md` 补 `media_source` 契约与错误码，清单 `provides.media_source` 字段。

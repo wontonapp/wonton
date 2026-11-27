@@ -342,6 +342,7 @@ fn operation_label(operation: &MediaOperation) -> &str {
         MediaOperation::Playback => "播放",
         MediaOperation::List => "列条目",
         MediaOperation::Library => "浏览相册",
+        MediaOperation::Catalog => "浏览影视",
         MediaOperation::Other(raw) => raw,
     }
 }
