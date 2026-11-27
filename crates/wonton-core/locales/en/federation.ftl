@@ -4,3 +4,4 @@
 federation-update-invalid-name = The list of servers allowed to talk to yours was not updated: it contains an invalid server name. It will retry the next time a pairing or block changes, or when the server restarts.
 federation-update-write-failed = The list of servers allowed to talk to yours could not be saved on this server. It will retry the next time a pairing changes or the server restarts.
 federation-update-reload-failed = The list of servers allowed to talk to yours was saved, but the chat service has not picked it up yet. It will retry the next time a pairing changes or the server restarts.
+federation-window-closed = The relaxed certificate window has been closed: peers that have not upgraded yet stay marked as pending and will become strict once they upgrade.

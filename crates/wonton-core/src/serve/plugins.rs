@@ -337,6 +337,7 @@ pub(crate) fn spawn_federation_config(
     FederationConfig::spawn(
         matrix.cloned(),
         cfg.install_dir.clone(),
+        cfg.data_dir.clone(),
         notices.clone(),
         names,
         server_name,
