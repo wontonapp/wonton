@@ -113,6 +113,9 @@ impl ChatLink {
             Target::External => (String::new(), None),
         };
         self.retire_active(&mut active).await;
+        let Some(proxy) = self.proxy_after_forget(&target, &server_id, proxy) else {
+            return;
+        };
         *lock(&self.signing_proxy) = proxy.clone();
         tracing::info!(server = %server_id, proxy = proxy.is_some(), "Matrix sign-in starting");
         // 账号数据跟着服务器走：断线时先留着，换服务器才清。
@@ -195,6 +198,27 @@ impl ChatLink {
                 ChatFailure::TransportUnavailable,
                 l10n!(CATALOG, language(), "chat-sign-in-timeout"),
             )),
+        }
+    }
+
+    /// 清旧会话最多等两秒，隧道抖动时这期间代理可能又换了：用眼下的代理登录，不拿已经拆掉的旧地址去恢复。
+    /// 代理没了或换了服务器回 `None`，这次作罢：follow_home 看到这次变化会接着处理。
+    fn proxy_after_forget(
+        &self,
+        target: &Target,
+        server_id: &str,
+        proxy: Option<ProxySettings>,
+    ) -> Option<Option<ProxySettings>> {
+        match target {
+            Target::Home(_) => {
+                let home = self.home.view();
+                match home.proxy {
+                    Some(now) if home.server_id.as_deref() == Some(server_id) => Some(Some(now)),
+                    _ => None,
+                }
+            }
+            Target::HomeOffline => Some(self.home.view().proxy.or(proxy)),
+            Target::External => Some(proxy),
         }
     }
 
