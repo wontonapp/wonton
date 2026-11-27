@@ -19,8 +19,8 @@ use wonton_protocol::media::provider::{
     playback_queue_path, playback_stopped_path,
 };
 use wonton_protocol::media::uploads::{
-    UPLOAD_OFFSET_HEADER, UploadFinished, UploadStart, UploadStarted, upload_finish_path,
-    upload_path,
+    ExistingItem, PATH_UPLOADS_CHECK, UPLOAD_CHECK_MAX, UPLOAD_OFFSET_HEADER, UploadCheck,
+    UploadCheckResult, UploadFinished, UploadStart, UploadStarted, upload_finish_path, upload_path,
 };
 use wonton_protocol::media::{
     MediaFailure, MediaFailureCode, PATH_CAPABILITIES, PATH_PLAYBACK, PATH_UPLOADS, PlaybackPlan,
@@ -103,6 +103,25 @@ impl MediaSourceClient {
     ) -> Reply<UploadStarted> {
         self.json(Method::POST, PATH_UPLOADS, user, Some(start))
             .await
+    }
+
+    /// 这些校验和里哪些已在这个人的库里（ADR-0113 第 9 节的去重）。超过单次上限的分批问，回包合在一起。
+    pub(crate) async fn check_uploads(
+        &self,
+        user: &str,
+        checksums: &[String],
+    ) -> Reply<Vec<ExistingItem>> {
+        let mut existing = Vec::new();
+        for batch in checksums.chunks(UPLOAD_CHECK_MAX) {
+            let check = UploadCheck {
+                checksums: batch.to_vec(),
+            };
+            let result: UploadCheckResult = self
+                .json(Method::POST, PATH_UPLOADS_CHECK, user, Some(&check))
+                .await?;
+            existing.extend(result.existing);
+        }
+        Ok(existing)
     }
 
     /// 查断点；提供方不认这个上传号（404）时是 `None`，调用方重开一个。

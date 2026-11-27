@@ -126,7 +126,13 @@ async fn person_outside_the_plugin_scope_gets_no_credential() {
     assert!(book.issued.lock().unwrap().is_empty());
     assert!(seen.lock().unwrap().is_empty());
     let failure = providers
-        .route_to("bob", |_| false, "app.example.photos")
+        .route_to(
+            "bob",
+            |_| false,
+            "app.example.photos",
+            &MediaOperation::Upload,
+            None,
+        )
         .await
         .unwrap_err();
     assert_eq!(failure.code, MediaFailureCode::PermissionDenied);
@@ -230,6 +236,67 @@ async fn runtime_capabilities_win_over_the_manifest() {
         .await
         .unwrap_err();
     assert_eq!(failure.code, MediaFailureCode::PluginUnavailable);
+    // 记下的那家同样核对：会话建好后提供方不再报音乐，续播不照发过去。
+    let failure = providers
+        .route_to(
+            "alice",
+            anyone,
+            "app.example.music",
+            &MediaOperation::Playback,
+            Some(&MediaKind::Audio),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(failure.code, MediaFailureCode::PluginUnavailable);
+    // 清单就没写的操作也一样，不等第一个请求被提供方拒。
+    let failure = providers
+        .route_to(
+            "alice",
+            anyone,
+            "app.example.music",
+            &MediaOperation::Upload,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(failure.code, MediaFailureCode::PluginUnavailable);
+}
+
+#[tokio::test]
+async fn upload_check_asks_in_batches_and_merges_what_is_already_there() {
+    let router = caps(&["upload"], &["photo"]).route(
+        "/uploads/check",
+        post(
+            |axum::Json(check): axum::Json<serde_json::Value>| async move {
+                let existing: Vec<_> = check["checksums"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|sum| sum.as_str().unwrap().ends_with('0'))
+                    .map(|sum| json!({"checksum": sum, "item_id": format!("item-{sum}")}))
+                    .collect();
+                axum::Json(json!({"existing": existing}))
+            },
+        ),
+    );
+    let (endpoint, seen, _served) = serve(router).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (providers, _) = providers(&dir, vec![(photos(), endpoint)]);
+    let route = providers
+        .route("alice", anyone, &MediaOperation::Upload, None, None)
+        .await
+        .unwrap();
+    let sums: Vec<String> = (0..1005).map(|n| format!("sha1:{n:04}")).collect();
+    let existing = route.client.check_uploads("alice", &sums).await.unwrap();
+    assert_eq!(existing.len(), 101);
+    assert_eq!(existing.last().unwrap().checksum, "sha1:1000");
+    let checks = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(path, _, _)| path == "POST /uploads/check")
+        .count();
+    assert_eq!(checks, 2);
 }
 
 #[tokio::test]

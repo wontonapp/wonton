@@ -133,12 +133,13 @@ impl MediaProviders {
         let candidates = self.directory.candidates();
         if let Some(source) = source {
             let named = candidates.iter().find(|c| c.id == source);
+            // 先看授权：用不了这家的人不该从回答里知道它能做什么。
             return match named {
+                Some(_) if !allowed(source) => Err(denied(person, source)),
                 Some(c) if !fits(c) => Err(failure(
                     MediaFailureCode::PluginUnavailable,
                     format!("媒体源插件 {source} 不能{}", wanted(operation, kind)),
                 )),
-                Some(_) if !allowed(source) => Err(denied(person, source)),
                 Some(_) => Ok(source.to_owned()),
                 None => Err(failure(
                     MediaFailureCode::PluginUnavailable,
@@ -169,23 +170,18 @@ impl MediaProviders {
         }
     }
 
-    /// 替 `person` 调已经记下的那个提供方（任务、会话建好时记的）。
+    /// 替 `person` 调已经记下的那个提供方（任务、会话建好时记的）。和点名来源一样核对清单和运行时能力：
+    /// 记下之后插件升级去掉了这项能力，回 `plugin_unavailable`，不等提供方回 404 被当成条目没了，也不换别家。
     pub(crate) async fn route_to(
         &self,
         person: &str,
         allowed: impl Fn(&str) -> bool,
         provider: &str,
+        operation: &MediaOperation,
+        kind: Option<&MediaKind>,
     ) -> Result<ProviderRoute, MediaFailure> {
-        if !allowed(provider) {
-            return Err(denied(person, provider));
-        }
-        if !self.directory.candidates().iter().any(|c| c.id == provider) {
-            return Err(failure(
-                MediaFailureCode::PluginUnavailable,
-                format!("媒体源插件 {provider} 没在跑"),
-            ));
-        }
-        self.client(person, provider).await
+        self.route(person, allowed, operation, kind, Some(provider))
+            .await
     }
 
     /// 收回这个人在所有提供方上的凭据：先让提供方注销上游凭据，再执行它的 `credentials.revoke`，最后删掉
