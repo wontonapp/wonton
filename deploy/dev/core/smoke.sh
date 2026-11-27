@@ -3,7 +3,7 @@
 # 像浏览器一样经核心网关打开插件并自动登录 → 核心不预装模型网关，申请 models 的插件照样装得上，请求报网关不可用，
 # 装上后转发、停掉报 503 →
 # 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 收发 →
-# 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：还没选模型时提示去它网页的 Keys、Models 页，给它的
+# 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：还没选模型时提示去它网页的 Models 页，给它的
 # Bot 配一个指向宿主 magpie 的服务后和主人对话两轮 → 停链打断 Hermes 正在跑的一轮；批准的私聊经出箱发到家人手里；核心按说话人请求头认人 →
 # 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经 WONTON_SMOKE_MODEL 传入
 # （magpie 里一个能对话的模型），宿主 magpie 不在 3425 时用 WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>。
@@ -186,6 +186,13 @@ from_whoami() {
     -H "Host: $1:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT$2"
 }
 
+# 从冒烟一开始就记下 Hermes 网关容器的健康检查事件，量它变健康后多久私聊出现。分段跑（SMOKE_ONLY）
+# 跳过启动核心，事件也照记；事件早在上一段跑的时候发生过，由 hermes 一步退回容器的健康日志。
+hermes_events="$(mktemp)"
+docker events --filter "container=$hermes" --filter event=health_status --format '{{.TimeNano}} {{.Action}}' \
+  >"$hermes_events" 2>/dev/null &
+events_pid=$!
+
 if step preflight "预检"; then
 docker version --format '   Docker {{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}'
 for id in "${plugins[@]}"; do
@@ -201,11 +208,7 @@ if [[ -n "${SMOKE_ONLY:-}" ]]; then
 else trap cleanup EXIT; fi
 
 if step core "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"; then
-# 核心一启动就在后台装 Hermes：从现在起记下它的网关容器的健康状态变化，量它就绪后多久私聊出现。
-hermes_events="$(mktemp)"
-docker events --filter "container=$hermes" --filter event=health_status --format '{{.TimeNano}} {{.Action}}' \
-  >"$hermes_events" 2>/dev/null &
-events_pid=$!
+# 核心一启动就在后台装 Hermes（健康事件由上面的监听记下）。
 # 每次全新跑都换一个新核心，但身份提供方的卷不跟数据目录走：上一个栈留下的 @mom 会让家人那步的邀请撞重名，
 # 换掉它才和「新数据目录 = 新核心」一致。
 if [[ -z "${SMOKE_ONLY:-}" ]]; then
@@ -251,16 +254,7 @@ device_id="$(docker logs "$phone" 2>/dev/null | sed -n '1p')"
 [[ "$device_id" =~ ^[0-9a-f]{64}$ && -n "$credential" ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
 # SMOKE_ONLY 直接跑某一步时没走过 start_phone，凭据从探测手机上现读。
 credential="${credential:-$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p' | tail -1)}"
-# 同理，Hermes 的账号、私聊房间和主人的 Matrix 访问令牌在 hermes、matrix 两步里取，分段跑时要现查。
-if [[ -z "${access:-}" ]]; then
-  matrix_url="${matrix_url:-http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT}"
-  login="$(t -X POST "$core_url/_wonton/matrix/login-token")"
-  body="$(python3 -c 'import json, sys
-print(json.dumps({"type": sys.argv[1], "token": sys.argv[2], "initial_device_display_name": "wonton smoke"}))' \
-    "$(json login_type <<<"$login")" "$(json token <<<"$login")")"
-  access="$(t -X POST -H 'content-type: application/json' --data-binary "$body" \
-    "$matrix_url/_matrix/client/v3/login" | json access_token)"
-fi
+# Hermes 的账号和私聊房间在 hermes、matrix 两步里取，分段跑时要现查（access 见 matrix 步上面）。
 if step install "一条命令安装 Grafana 示例插件"; then
 started=$(date +%s)
 installed="$("$dev" install "$repo/plugins/examples/grafana" --yes 2>/dev/null)"
@@ -456,6 +450,17 @@ expect "经隧道的已配对设备能读 tunnel 接口（ADR-0032：App 连上�
   "$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/api/tunnel")" 200
 
 fi
+# 主人的 Matrix 访问令牌：要在 tunnel 一步把手机配对之后才拿得到（未配对的设备被隧道拒绝）。
+# 分段跑跳过 tunnel 时，凭据和配对状态都是上一段留在栈里的，这里照样现查。
+if [[ -z "${access:-}" ]]; then
+  matrix_url="${matrix_url:-http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT}"
+  login="$(t -X POST "$core_url/_wonton/matrix/login-token")"
+  body="$(python3 -c 'import json, sys
+print(json.dumps({"type": sys.argv[1], "token": sys.argv[2], "initial_device_display_name": "wonton smoke"}))' \
+    "$(json login_type <<<"$login")" "$(json token <<<"$login")")"
+  access="$(t -X POST -H 'content-type: application/json' --data-binary "$body" \
+    "$matrix_url/_matrix/client/v3/login" | json access_token)"
+fi
 if step matrix "已配对设备经隧道登录 Matrix（ADR-0009 的 App 接口）"; then
 matrix_url="http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 login="$(t -X POST "$core_url/_wonton/matrix/login-token")"
@@ -510,8 +515,12 @@ expect "主人和 Hermes 都已经在私聊里" \
 expect "私聊不加密" \
   "$(owner_api "/rooms/$hermes_room/state" | python3 -c 'import json, sys; print(any(e["type"] == "m.room.encryption" for e in json.load(sys.stdin)))')" False
 # 主人加入私聊的时间（Tuwunel 的事件时间）和网关容器第一次过健康检查的时间（Docker 事件）在同一台主机上。
+# 事件监听从冒烟一开始就在，全新跑时一定记得到。分段跑时这两件事早在上一次跑里发生过，事件文件是空的
+# （健康日志只留最近几条，容器起停也不等于 Bot 就绪），私聊是否存在上面已经查过，这里不查时效。
 ready_ns="$(awk '$2 == "health_status:" && $3 == "healthy" { print $1; exit }' "$hermes_events")"
-[[ -n "$ready_ns" ]] || fail "没有记到 Hermes 的网关容器过健康检查：$(cat "$hermes_events")"
+if [[ -z "$ready_ns" ]]; then
+ok "分段跑：本次没有 Hermes 的健康事件，私聊出现的时效不查"
+else
 joined_ms="$(owner_api "/rooms/$hermes_room/members" | python3 -c 'import json, sys
 print(next(e["origin_server_ts"] for e in json.load(sys.stdin)["chunk"]
            if e["state_key"] == sys.argv[1] and e["content"]["membership"] == "join"))' "@owner:$WONTON_DEV_DOMAIN")"
@@ -519,7 +528,8 @@ after_ms=$((joined_ms - ready_ns / 1000000))
 ((after_ms >= 0)) || fail "Hermes 就绪之前 $((-after_ms)) 毫秒，主人就进了私聊"
 ((after_ms < 30000)) || fail "Hermes 就绪 $((after_ms / 1000)) 秒后私聊才出现"
 ok "Hermes 就绪后 $(printf '%d.%03d' $((after_ms / 1000)) $((after_ms % 1000))) 秒，私聊出现（主人加入了它）"
-# Hermes v0.8.0 起不申请 models：模型走它自己的供应商接入（网页的 Keys、Models 页）。这里按主人的做法给它的
+fi
+# Hermes 自 v0.8.0（上游语义版本）起不申请 models：模型走它自己的供应商接入（网页的 Models 页）。这里按主人的做法给它的
 # Bot 配一个 OpenAI 兼容服务指向宿主的 magpie；凭据按 Bot 命名建在宿主 magpie 上，限定到这次的模型，
 # cleanup 按建 key 时记下的 id 删掉（失败退出也删），凭据不进日志、不写进仓库。不读取、不复制宿主 magpie 的
 # 配置和密钥。Hermes 容器能解析 host.docker.internal 就直接连（Docker Desktop、OrbStack 给所有容器这个名字）；
@@ -593,26 +603,39 @@ ok "从 Hermes 的容器经 $model_host:$model_port 能列出宿主 magpie 的�
 # shellcheck source=deploy/dev/core/smoke-hermes.sh
 source "$here/smoke-hermes.sh"
 said="$(mktemp)"
+# Hermes 默认说英文；按 v0.22.7 的原文，旧版、中文的说法（“模型设置”）也认。配过模型之后
+# （分段跑会这样）靠这个串判断有没有再提示。
+no_model_hint='还没有设置模型|模型设置|add an AI provider|No model is available yet|add a model provider'
+# 分段跑时上一次已经给 Hermes 配过模型，不再有“没有模型”的提示；这个结论只在全新跑时查。
+configured_before="$(docker exec "$hermes" sh -c 'curl -sS --max-time 30 http://127.0.0.1:9119/api/model/info' | json model)"
 talk_to_hermes "$said" "你好" || fail "Hermes 没有回答：$(cat "$said")"
 grep '^第' "$said" | sed 's/^/   · /'
-# Hermes 默认说英文；这里是它 v0.8.0 的原文，旧版和中文用“模型设置”，都认。
-grep -qE '还没有设置模型|模型设置|add an AI provider' "$said" || fail "没有模型时 Hermes 应提示去 Keys 页添加模型服务商：$(cat "$said")"
-ok "没有模型时，Hermes 提示主人去 Keys 页添加模型服务商"
+if [[ -n "$configured_before" ]]; then
+ok "分段跑：Hermes 已经配过模型，不再提示添加"
+else
+grep -qE "$no_model_hint" "$said" || fail "没有模型时 Hermes 应提示去 Models 页添加模型服务商：$(cat "$said")"
+ok "没有模型时，Hermes 提示主人去 Models 页添加模型服务商"
+fi
 # 给 Hermes 配 provider：走它自己网页背后的接口。接口要页面注入的会话令牌，从首页 HTML 里取。
 hermes_token="$(docker exec "$hermes" sh -c 'curl -fsS http://127.0.0.1:9119/' |
   sed -n 's/.*__HERMES_SESSION_TOKEN__="\([^"]*\)".*/\1/p')"
 [[ -n "$hermes_token" ]] || fail "Hermes 的页面没有给出会话令牌"
+# 分段跑时 Hermes 上还留着上一次的同名服务（核心代登录的插件网关也在用这个 id）：再 add 只会并进旧条目，
+# 地址和凭据还是旧的。先删掉再建；全新跑时没有它，404 也算过。
+docker exec "$hermes" sh -c "curl -sS --max-time 30 -X DELETE http://127.0.0.1:9119/api/providers/custom-endpoints/magpie \
+  -H 'X-Hermes-Session-Token: $hermes_token'" >/dev/null || fail "删不掉 Hermes 上旧的模型服务"
 endpoint="$(printf '{"name":"宿主 magpie","base_url":"%s","model":"%s","api_key":"%s","api_mode":"chat_completions","context_length":65536,"make_default":true}' \
   "$model_url" "$model" "$hermes_key" |
   docker exec -i "$hermes" sh -c "curl -sS --max-time 120 -X POST http://127.0.0.1:9119/api/providers/custom-endpoints \
     -H 'X-Hermes-Session-Token: $hermes_token' -H 'content-type: application/json' \
     -H 'Origin: http://127.0.0.1:9119' --data-binary @-")"
 expect "加了 provider，Hermes 拿它当当前模型" "$(json ok <<<"$endpoint") $(json current.model <<<"$endpoint")" "true $model"
-# Hermes 要求模型至少 64k 上下文；magpie 对没标上下文的上游回 32768。冒烟按上游实际的窗口把
-# model.context_length 设成 64k——运行时只读这一个，provider 条目上的那个只用于显示。
+# Hermes 要求模型至少 64k 上下文（v0.22.7 起，工具轮次动手前按 Ollama 式运行窗口拦；网关这种私有地址
+# 会被当成本地服务）。magpie 对没标上下文的上游回 32768，所以 context_length 和 ollama_num_ctx 都设成 64k：
+# 前者是显示的窗口，后者是真正发出去的 num_ctx，也是拦截的判据。
 docker exec "$hermes" sh -c "curl -sS --max-time 30 -X PUT http://127.0.0.1:9119/api/config \
   -H 'X-Hermes-Session-Token: $hermes_token' -H 'content-type: application/json' \
-  -H 'Origin: http://127.0.0.1:9119' -d '{\"config\":{\"model\":{\"context_length\":65536}}}'" >/dev/null ||
+  -H 'Origin: http://127.0.0.1:9119' -d '{\"config\":{\"model\":{\"context_length\":65536,\"ollama_num_ctx\":65536}}}'" >/dev/null ||
   fail "Hermes 的上下文设不进去"
 expect "Hermes 用放宽后的上下文" \
   "$(docker exec "$hermes" sh -c 'curl -sS --max-time 30 http://127.0.0.1:9119/api/model/info' | json effective_context_length)" 65536
@@ -629,7 +652,7 @@ for text in "你好，用一句话介绍你自己。" "我刚才让你做什么�
   talk_to_hermes "$said" "$text" || fail "和 Hermes 的对话失败：$(cat "$said")"
   grep '^第' "$said" | sed "s/^第 1 轮/第 $round 轮/; s/^/   · /"
   expect_model_reply "$said" "$round_start" "$round"
-  ! grep -qE '还没有设置模型|模型设置|add an AI provider' "$said" || fail "有模型了，Hermes 不该再提示去 Keys 页设置：$(cat "$said")"
+  ! grep -qE "$no_model_hint" "$said" || fail "有模型了，Hermes 不该再提示去 Models 页设置：$(cat "$said")"
 done
 expect_hermes_memory "$said"
 ok "经隧道和 Hermes 对话两轮"

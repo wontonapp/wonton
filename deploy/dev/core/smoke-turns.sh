@@ -206,6 +206,27 @@ print(next((c["state"] for c in json.load(sys.stdin)["contacts"] if c["user_id"]
   expect "Hermes 按新名单重建后过了健康检查" "$(docker inspect -f '{{.State.Health.Status}}' "$hermes")" healthy
 }
 
+# 分段跑只跑下面某几步时，前面几步铺好的东西没人补，先按需补齐：和 Hermes 的私聊查出来（已经查过就什么都不做）；
+# 给宿主 magpie 的转发容器上一轮结束时删了，Hermes 的 provider 还指着那个地址，缺了照原样再起一个。
+if [[ -n "${SMOKE_ONLY:-}" ]]; then
+seed_smoke_only
+# 上一次被中断的轮次没报结束，会话还挂在跑着的链上，再说一句话就会被核心拒（“已登记在别的链上”）：先都停掉。
+for chain in $(t "$core_url/_wonton/api/agent/chains" | python3 -c 'import json, sys
+for row in json.load(sys.stdin)["chains"]:
+    if row["status"] == "running":
+        print(row["chain"])'); do
+  t -X POST "$core_url/_wonton/api/agent/chains/$chain/stop" >/dev/null ||
+    fail "停不掉上一次留下的链 $chain"
+done
+if ! docker inspect "$model_relay" >/dev/null 2>&1; then
+model_port=13425
+model_host="$(docker network inspect "$hermes_network" --format '{{(index .IPAM.Config 0).Gateway}}')"
+docker run -d --rm --name "$model_relay" --network host "$socat_image" \
+  "TCP-LISTEN:$model_port,fork,reuseaddr" "TCP:127.0.0.1:3425" >/dev/null ||
+  fail "起不了到宿主 magpie（127.0.0.1:3425）的转发"
+fi
+fi
+
 if step stop "停链：主人在 App 里停掉 Hermes 正在跑的一轮，这一轮真的停下，链如实显示已停"; then
 said="$(mktemp)"
 done_file="/tmp/$(marker stop)"
