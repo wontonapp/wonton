@@ -53,6 +53,7 @@ pub struct MediaItemRef {
     pub index: Option<u32>,
     pub played: bool,
     pub starred: bool,
+    pub source: Option<String>, // 给出这一条的媒体源插件 id，核心填；见“选哪个提供方”
 }
 
 /// 设备能力档：少数说死要比整套更好维护（编解码、HDR、最大码率）。
@@ -101,7 +102,7 @@ impl TaskState {
 impl TryFrom<(TaskState, TaskState)> for TaskState { type Error = IllegalTransition; }
 
 // 合法转移（ADR 第 3 节状态图）：
-// Queued → Preparing | Cancelled（排队中也能直接取消）
+// Queued → Preparing | Paused | WaitingNetwork | WaitingPower | Cancelled（排队中也能暂停、等条件、直接取消）
 // Preparing → Running | Done | Partial | Failed | Cancelled
 // Running → Paused | WaitingNetwork | WaitingPower | Done | Partial | Failed | Cancelled
 // Paused | WaitingNetwork | WaitingPower → Queued | Running | Paused（换原因） | WaitingNetwork | WaitingPower | Failed | Cancelled
@@ -137,6 +138,8 @@ pub enum MediaFailureCode {
     UpstreamError,
     ServerStorageFull,
     SuspendedBySystem,
+    SourceRequired, // 见“选哪个提供方”
+    StaleRevision,  // 队列改动撞上别处先改，见第 4 节
     Other(String),
 }
 
@@ -230,6 +233,7 @@ pub struct TaskOptions {
     pub concurrency: u8, // 1–4，缺省 1
     /// 立即备份：忽略 wifi/充电条件一次
     pub force_now: bool,
+    pub source: Option<String>, // 上传传到哪一家；空着按“选哪个提供方”
 }
 
 // `Default` 手写（`concurrency: 1`）：derive 出来的 `concurrency` 是 0，越界；serde 缺省走 `one()`。
@@ -322,7 +326,7 @@ pub struct PlaybackSession {
 pub enum ControlOp { Play, Pause, Resume, SeekMs(u64), Next, Prev, Volume(u8), SetAudio(u16), SetSubtitle(Option<u16>), Other(String) }
 
 #[derive(Debug, Clone)]
-pub enum StopReason { User, Agent, TakenOver, Finished, Error, Other(String) }
+pub enum StopReason { User, Agent, TakenOver, Finished, Error, Removed, Other(String) }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", tag = "op", content = "value")]
@@ -498,7 +502,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/sessions/{id}/stream` | `GET` | 原始字节 | 字节流（206/200） |
 | `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
 | `/items` | `GET` | 无（query 同提供方的 `GET /items`，`kind` 必填） | `{items, cursor?}`，核心转给这个种类的提供方 |
-| `/items/{id}/artwork` | `GET` | 无（query: `kind`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork` |
+| `/items/{id}/artwork` | `GET` | 无（query: `kind`，可选 `source`、`type`、`width`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork`，`type`、`width` 原样带过去 |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
 | `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
 
@@ -512,11 +516,21 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 
 ### 选哪个提供方
 
-`media_source` 可以同时有几个提供方（相册、音乐、影视各一个），核心按这次的操作和条目种类选：
+`media_source` 可以同时有几个提供方（Immich、Navidrome、Jellyfin 可能并存，Immich 和 Jellyfin 都有视频），所有操作走同一条规则：
 
-- 在跑的提供方里，运行时自报（`GET /_wonton/capabilities`）的 `operations` 含这次的操作、`kinds` 含条目的种类；上传只看 `upload`，不看种类。
-- 合格的有几个时，取主人在能力设置里给 `media_source` 定的默认；默认不合格或没定，按能力设置里的提供方顺序取第一个。一个都没有回 `plugin_unavailable`。
+1. 请求带了来源就用它：条目的 `MediaItemRef.source`（起播、下载、取封面）、上传的 `TaskOptions.source`、列条目和相册浏览的
+   `?source=`。这一家不在跑、没声明这次的操作或种类回 `plugin_unavailable`，这个人用不了它回 `permission_denied`；不改去别家。
+2. 没带就在“合格的”里挑：在跑、清单声明的 `operations` 含这次的操作、`kinds` 含条目的种类（上传只看 `upload`）、这个人
+   用得了。这个人用不了的那家不算合格：别家合格就用别家，不因为它回 `source_required`；能做的都用不了才回
+   `permission_denied`。合格的里有主人在能力设置给 `media_source` 定的默认，用默认。
+3. 没定默认、合格的只有一家，用它。
+4. 合格的有几家又没定默认，回 `source_required`，App 请用户选一家再带 `source` 来；不静默取“第一个”。一家都没有回
+   `plugin_unavailable`。
+5. 选中的那家再按运行时自报（`GET /_wonton/capabilities`）核对，对不上回 `plugin_unavailable`，不换别家。
+
+- 核心转出去的条目（列条目、浏览、相册、会话里的条目和队列）都由核心填上 `source`，提供方自己填的不算数。
 - 上传项和播放会话一建好就记下提供方（上传项连同 `upload_id`），之后的续写、进度、停止都发给它；换提供方只影响新建的。
+- 清单的 `provides.media_source.browse`（如 `opensubsonic`）只说这一家的浏览走哪种协议，不参与选提供方。
 
 ### 核心对提供方的凭据
 

@@ -35,6 +35,8 @@ pub enum StopReason {
     TakenOver,
     Finished,
     Error,
+    /// 这个人退出了家庭，核心替他停的。
+    Removed,
     /// 新版本新加的原因，原值在里。
     Other(String),
 }
@@ -45,6 +47,7 @@ known_or_other!(StopReason {
     TakenOver => "taken_over",
     Finished => "finished",
     Error => "error",
+    Removed => "removed",
 });
 
 impl Serialize for ControlOp {

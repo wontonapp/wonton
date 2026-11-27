@@ -83,6 +83,7 @@ fn media_item(id: &str) -> MediaItemRef {
         index: Some(3),
         played: true,
         starred: false,
+        source: None,
     }
 }
 

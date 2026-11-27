@@ -11,6 +11,7 @@ use super::session::QueueMode;
 use super::view::StopReason;
 use super::{
     MediaItemRef, MediaKind, MediaOperation, PATH_ITEMS, PATH_PLAYBACK, Segment, Timestamp,
+    known_or_other,
 };
 
 pub const PATH_REVOKE: &str = "/revoke";
@@ -34,12 +35,7 @@ pub fn segment(id: &str) -> String {
 
 /// 种类写进查询串的值，同它的 JSON 取值。
 pub fn kind_param(kind: &MediaKind) -> &str {
-    match kind {
-        MediaKind::Photo => "photo",
-        MediaKind::Video => "video",
-        MediaKind::Audio => "audio",
-        MediaKind::Other(raw) => raw,
-    }
+    kind.wire()
 }
 
 /// `GET /items/{id}/download`
@@ -52,9 +48,64 @@ pub fn item_segments_path(item_id: &str) -> String {
     format!("{PATH_ITEMS}/{}/segments", segment(item_id))
 }
 
-/// `GET /items/{id}/artwork`：封面、海报、缩略图的字节。可选，没有就 404。
-pub fn item_artwork_path(item_id: &str) -> String {
-    format!("{PATH_ITEMS}/{}/artwork", segment(item_id))
+/// `GET /items/{id}/artwork?type=…&width=…`：封面、海报、缩略图的字节。可选，没有就 404。
+pub fn item_artwork_path(item_id: &str, query: &ArtworkQuery) -> String {
+    let path = format!("{PATH_ITEMS}/{}/artwork", segment(item_id));
+    match query.pairs() {
+        pairs if pairs.is_empty() => path,
+        pairs => format!("{path}?{pairs}"),
+    }
+}
+
+/// 一个条目的哪一张图。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ArtworkKind {
+    /// 封面、竖版海报（单集是剧照）
+    Primary,
+    /// 详情页背后的大图
+    Backdrop,
+    /// 横版缩略图（继续观看那一排用）
+    Thumb,
+    /// 透明底的片名字标
+    Logo,
+    /// 新版本新加的种类，原值在里；提供方不认就回主图。
+    Other(String),
+}
+
+known_or_other!(ArtworkKind {
+    Primary => "primary",
+    Backdrop => "backdrop",
+    Thumb => "thumb",
+    Logo => "logo",
+});
+
+impl ArtworkKind {
+    pub fn as_str(&self) -> &str {
+        self.wire()
+    }
+}
+
+/// 取图时要哪一张、多宽（像素）；都不带就是主图，尺寸由提供方定。核心接口和提供方契约同形，核心原样转。
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct ArtworkQuery {
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub artwork: Option<ArtworkKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+}
+
+impl ArtworkQuery {
+    /// 查询串里的这几对（不带 `?`）；都没有就是空串。
+    pub fn pairs(&self) -> String {
+        let mut pairs = Vec::new();
+        if let Some(artwork) = &self.artwork {
+            pairs.push(format!("type={}", segment(artwork.as_str())));
+        }
+        if let Some(width) = self.width {
+            pairs.push(format!("width={width}"));
+        }
+        pairs.join("&")
+    }
 }
 
 /// `POST /playback/{session}/progress`，`session` 是提供方发的上游会话号（`PlaybackPlan.session`）。
@@ -101,6 +152,9 @@ pub struct ItemsQuery {
     pub to: Option<Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cursor: Option<String>,
+    /// 只在核心接口上用：客户端指定哪一家媒体源，核心按它选提供方，转给提供方前去掉。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 impl ItemsQuery {
@@ -117,6 +171,7 @@ impl ItemsQuery {
             ("from", self.from.map(|at| at.to_string())),
             ("to", self.to.map(|at| at.to_string())),
             ("cursor", self.cursor.clone()),
+            ("source", self.source.clone()),
         ];
         for (name, value) in text {
             if let Some(value) = value {
@@ -188,7 +243,10 @@ mod tests {
     fn ids_are_escaped_as_one_segment() {
         assert_eq!(item_download_path("al/1"), "/items/al%2F1/download");
         assert_eq!(item_segments_path("x"), "/items/x/segments");
-        assert_eq!(item_artwork_path("x"), "/items/x/artwork");
+        assert_eq!(
+            item_artwork_path("x", &ArtworkQuery::default()),
+            "/items/x/artwork"
+        );
         assert_eq!(playback_progress_path("s?1"), "/playback/s%3F1/progress");
         assert_eq!(playback_queue_path("s"), "/playback/s/queue");
         assert_eq!(playback_stopped_path("s"), "/playback/s/stopped");
@@ -199,6 +257,23 @@ mod tests {
         assert_eq!(item_download_path(".."), "/items/%2E%2E/download");
         assert_eq!(playback_queue_path("."), "/playback/%2E/queue");
         assert_eq!(segment("a..b"), "a..b");
+    }
+
+    #[test]
+    fn artwork_query_reaches_the_provider_as_given() {
+        let backdrop = ArtworkQuery {
+            artwork: Some(ArtworkKind::Backdrop),
+            width: Some(1280),
+        };
+        assert_eq!(
+            item_artwork_path("m 1", &backdrop),
+            "/items/m%201/artwork?type=backdrop&width=1280"
+        );
+        let newer = ArtworkQuery {
+            artwork: Some(ArtworkKind::Other("disc".into())),
+            width: None,
+        };
+        assert_eq!(item_artwork_path("m", &newer), "/items/m/artwork?type=disc");
     }
 
     #[test]

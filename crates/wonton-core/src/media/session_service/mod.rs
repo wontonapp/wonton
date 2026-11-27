@@ -120,6 +120,7 @@ mod tests {
             index: None,
             played: false,
             starred: false,
+            source: None,
         }
     }
 
