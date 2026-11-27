@@ -82,8 +82,8 @@ pub use logging::init_logging;
 pub use media_link::{
     MediaSubscription, OfflineState, PlaybackSubscription, PlayerPhase, PlayerState, PlayerSupport,
     VideoActionFailure, VideoActionResult, VideoDetail, VideoEntry, VideoEntryKind, VideoHome,
-    VideoLibrary, VideoLibraryKind, VideoMediaInfo, VideoPerson, VideoRole, VideoShelf,
-    VideoShelfKind, VideoSort, VideoWall, VideoWallQuery,
+    VideoLibrary, VideoLibraryKind, VideoMediaInfo, VideoPerson, VideoPlayback, VideoRole,
+    VideoShelf, VideoShelfKind, VideoSort, VideoWall, VideoWallQuery,
 };
 pub use pages::ContentPageSubscription;
 pub use pages::bridge::{
