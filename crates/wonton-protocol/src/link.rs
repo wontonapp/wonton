@@ -68,6 +68,8 @@ impl AppLink {
                 ),
             },
             Self::Tab { tab } => match tab {
+                TabRef::Rooms => "rooms".to_owned(),
+                TabRef::Inbox => "inbox".to_owned(),
                 TabRef::Plugin {
                     plugin_id,
                     page: None,
@@ -137,6 +139,8 @@ impl AppLink {
             ["tab", "apps"] => Some(Self::Bar {
                 entry: crate::BarEntry::Apps,
             }),
+            ["rooms"] | ["tab", "rooms"] => tab(TabRef::Rooms),
+            ["inbox"] | ["tab", "inbox"] => tab(TabRef::Inbox),
             ["tab", "app", encoded] => {
                 let bytes = URL_SAFE_NO_PAD.decode(encoded).ok()?;
                 let app = serde_json::from_slice(&bytes).ok()?;
@@ -342,6 +346,8 @@ mod tests {
                     },
                 },
             },
+            AppLink::Tab { tab: TabRef::Rooms },
+            AppLink::Tab { tab: TabRef::Inbox },
             AppLink::Settings,
             AppLink::Tab {
                 tab: TabRef::Plugin {
@@ -419,6 +425,22 @@ mod tests {
             Some(AppLink::Bar {
                 entry: crate::BarEntry::Apps,
             })
+        );
+        assert_eq!(
+            AppLink::parse("wonton://rooms"),
+            Some(AppLink::Tab { tab: TabRef::Rooms })
+        );
+        assert_eq!(
+            AppLink::parse("wonton://inbox"),
+            Some(AppLink::Tab { tab: TabRef::Inbox })
+        );
+        assert_eq!(
+            AppLink::parse("wonton://tab/rooms"),
+            Some(AppLink::Tab { tab: TabRef::Rooms })
+        );
+        assert_eq!(
+            AppLink::parse("wonton://tab/inbox"),
+            Some(AppLink::Tab { tab: TabRef::Inbox })
         );
         assert_eq!(
             AppLink::Bar {

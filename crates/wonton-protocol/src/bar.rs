@@ -58,6 +58,12 @@ pub fn check_bar(entries: &[BarEntry]) -> Result<(), BarProblem> {
     if entries.len() > MAX_BAR_ITEMS as usize {
         return Err(BarProblem::Full);
     }
+    for (index, entry) in entries.iter().enumerate() {
+        if entries[..index].contains(entry) {
+            return Err(BarProblem::Duplicate);
+        }
+    }
+    Ok(())
 }
 
 /// 底栏一项的图标。内置两项是固定图标，“Agent”那一项的选中图标是云朵（ADR-0126）。

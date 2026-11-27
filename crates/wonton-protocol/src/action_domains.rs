@@ -488,6 +488,8 @@ pub enum PageAction {
     },
     /// 壳报告网页加载成功（如按返回回到成功的历史页），核心清掉这个页面的加载失败显示。
     TabLoadSucceeded { page: crate::PlacedTab },
+    /// 点底栏的一项（ADR-0126）：两个根页之间切换；应用项打开它的整页。
+    SelectBarItem { entry: crate::BarEntry },
     /// 主人看过了“已卸载，已从我的应用移除”的提示。
     DismissUninstalledTabs,
     /// 把我的应用里的一行加到底栏末尾。已在栏上、或满了 [`MAX_BAR_ITEMS`](crate::MAX_BAR_ITEMS) 时返回 `InvalidInput`
