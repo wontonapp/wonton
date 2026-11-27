@@ -117,7 +117,7 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
             setUnavailable(.core(String(describing: error)))
             return
         }
-        // UI 用例要验“还没问过权限”的状态，得自己决定什么时候问（NotificationSettingsUITests）。
+        // UI 冒烟和走查自己决定什么时候问：启动就弹的权限框会吃掉第一个点按。
         #if DEBUG
         if ProcessInfo.processInfo.environment["WONTON_DEV_SKIP_PUSH_AUTH"] != nil { return }
         #endif

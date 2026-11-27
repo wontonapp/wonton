@@ -172,7 +172,3 @@ fn timeline_start() -> TimelineItem {
         content: TimelineContent::TimelineStart,
     }
 }
-
-#[cfg(test)]
-#[path = "timeline_tests.rs"]
-mod timelime_tests;

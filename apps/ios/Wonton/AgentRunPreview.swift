@@ -2,7 +2,7 @@
 import SwiftUI
 import WontonClient
 
-/// 夜跑界面测试的夹具屏（ADR-0082）：不走主界面，直接摆 Agent 状态行。启动参数带
+/// 走查截图用的夹具屏（ADR-0082）：不走主界面，直接摆 Agent 状态行。启动参数带
 /// `wonton-agent-run-preview` 时生效（同 `QualityPreviews` 的做法）。
 /// 时间线要登录后的房间才有（核心假数据只够首屏），这里核对行本身的显示和“点开卡片”的接线；
 /// 一轮从 working 到 done 用按钮推进，waiting 行点了记下开卡片这件事；

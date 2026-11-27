@@ -419,23 +419,17 @@ async fn the_family_card_is_written_in_her_language() {
     home.plugins.note_person_languages("owner", Some("zh-Hans"));
     let owners = stop_the_pair(&home).await;
     let alices = alices_card(&home).await;
+    // 只认文字系统，不钉措辞：日语有假名，中文没有。
+    let kana = |text: &str| text.chars().any(|c| ('\u{3040}'..='\u{30ff}').contains(&c));
+    assert!(kana(&alices.title), "alice 的卡片是日语：{}", alices.title);
     assert!(
-        alices.title.contains("やり取りしたため"),
-        "alice 的卡片是日语：{}",
-        alices.title
-    );
-    assert!(
-        alices.choices.iter().any(|choice| choice.label == "続ける"),
+        alices.choices.iter().all(|choice| kana(&choice.label)),
         "alice 的按钮是日语：{:?}",
         alices.choices
     );
+    assert!(!kana(&owners.title), "主人的卡片还是中文：{}", owners.title);
     assert!(
-        owners.title.contains("来回说了"),
-        "主人的卡片还是中文：{}",
-        owners.title
-    );
-    assert!(
-        owners.choices.iter().any(|choice| choice.label == "继续"),
+        owners.choices.iter().all(|choice| !kana(&choice.label)),
         "主人的按钮还是中文：{:?}",
         owners.choices
     );

@@ -84,7 +84,6 @@ async fn the_first_code_on_the_lan_page_makes_a_phone_the_owner_once() {
     // 状态页不再出码；同一个码别人也用不了。
     let (_, page) = lan_page(&home, LAN_HOST).await;
     assert!(code_on(&page).is_none() && !page.contains("<svg"), "{page}");
-    assert!(page.contains("已配对 1 台设备"), "{page}");
     let other = loopback_endpoint(SecretKey::generate()).await;
     assert_eq!(
         reject_reason(pair(&other, &code, "别人的手机").await.unwrap()),

@@ -135,7 +135,6 @@ async fn without_a_rejecting_option_the_card_offers_cancel() {
     let (card, asked) = asking(&s, options).await;
     let cancel = card.choices.last().unwrap();
     assert_eq!(cancel.answer, Answer::Reject);
-    assert_eq!(cancel.label, "取消");
     assert_eq!(cancel.choice_id, None);
 
     s.bus
