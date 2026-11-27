@@ -312,7 +312,7 @@ Linux + Docker、两台 API 36 Android 模拟器（同一台宿主）、Element 
 
 ### iOS WKWebView 的回环候选（2026-11-25）
 
-mini（Apple silicon、macOS 27.0、Xcode 27.1）、iOS 26.5 模拟器、iPhone 17 Pro。最小的 Swift 宿主 App
+开发机（Apple silicon、macOS 27.0、Xcode 27.1）、iOS 26.5 模拟器、iPhone 17 Pro。最小的 Swift 宿主 App
 （`deploy/dev/experiments/ios-loopback-ice`）用 WKWebView 打开 `http://127.0.0.1:8000` 上的页面，页面 UA 报
 `AppleWebKit/605.1.15`；页面用 livekit-client 2.23.0 连同一台机器上的 LiveKit v1.13.11（`ws://127.0.0.1:7880`）。
 服务器按 App 映射的样子只报回环地址：`rtc.node_ip` 改写候选、`rtc.interfaces` 只留一张网卡。`127.0.0.1` 那一组跑了两遍，

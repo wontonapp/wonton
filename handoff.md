@@ -36,7 +36,7 @@
 
 ## 正在跑的
 
-- 没有在跑的了；`green1` 已结束（34 条 0 失败）。截图在 minidir `/Users/jiale/wonton-dev/chat-ios-831/.walk/shots-1122-203512/`（深色在 `dark/`）。记得 `xcrun simctl shutdown chat-ios-831`。
+- 没有在跑的了；`green1` 已结束（34 条 0 失败）。截图在开发机的 `~/wonton-dev/chat-ios-831/.walk/shots-1122-203512/`（深色在 `dark/`）。记得 `xcrun simctl shutdown chat-ios-831`。
 
 ## 剩下步骤
 
@@ -45,18 +45,18 @@
 3. 等 #837 + 转发附言的核心 PR 合进 main 后再做单次派发（`comment`），否则保留 `SendText`+`ForwardMessage` 两个动作。
 4. #831 合并后：`chat-ios-859` rebase 到含 #831 的 main，解冲突（`ComposerView` 附件面板 `limit:` 留 `composer.photoRoom`、用 #831 的 `send:`；`SideChatCover` 取 main 的；测试 `attachDone` → `attachSend`；ADR 把“旁聊开不出面板”那句删掉、十张限制并进 #831 的句子），跑它自己的全套 + 截图，`--force-with-lease` 推、`gh pr ready 859`。
 5. `chat-ios-813` 先跑红（把 `ReplyQuoteView` 那一行临时改回 1 行不必要，现状就是红的），贴红行，再把 `lineLimit` 改成 2 跑绿、浅深截图、推、PR 写 `Closes #813`。
-6. 两个都推完 CI 绿后写 `~/wonton-dev/tasks/chat-ios-chain-1121.done`（路径按需修正），`.partial` 继续追加；模拟器 shutdown、删 mini 下 `chat-ios-831` 副本。
+6. 两个都推完 CI 绿后写 `~/wonton-dev/tasks/chat-ios-chain-1121.done`（路径按需修正），`.partial` 继续追加；模拟器 shutdown、删开发机上的 `chat-ios-831` 副本。
 
 ## 坑
 
-- **mini 名额**：重活名额、根盘 10 GB 门槛、模拟器上限 3（内存告警时会只开 1 个）。排队是常态，单次 30 秒的用例经常排半小时以上；`~` 下的 xcresult 攒到 1 GB 要先删自己的。
-- **同步**：`.walk/sync-mini.sh` 是整棵换树（tar + 换目录），**不能在 mini 正在编/跑时跑**；新文件要先 `git add` 才会被 `git ls-files` 带上（`WalkDebug.swift` 就这样漏过一次，构建报 `cannot find 'walkLog'`）。
+- **开发机名额**：重活名额、根盘 10 GB 门槛、模拟器上限 3（内存告警时会只开 1 个）。排队是常态，单次 30 秒的用例经常排半小时以上；`~` 下的 xcresult 攒到 1 GB 要先删自己的。
+- **同步**：`.walk/sync-mini.sh` 是整棵换树（tar + 换目录），**不能在开发机正在编/跑时跑**；新文件要先 `git add` 才会被 `git ls-files` 带上（`WalkDebug.swift` 就这样漏过一次，构建报 `cannot find 'walkLog'`）。
 - 走查日志用 `walkLog`（os_log）+ `.walk/logstart.sh` 在模拟器上 `log stream`；**eprintln! 进不了统一日志**。
 - `dragDown` 是往旧的翻，`dragUp` 才是往新的翻。
 - `Logger.notice` 收 `OSLogMessage`，**不能用 `+` 拼**；先拼成 String 再 `"\(s, privacy: .public)"`。
 - 浮空/多元素：盖层开着时主对话还在无障碍树里，`app.textViews["Message"]`、`barActivity` 都要 `firstMatch`（已用 `input`/`visibleBounds` 包起来）。
 - `ForwardRoomSheet` 的发送要 `pending` + `onDismiss` 才发；room id 用字符串比较，别改成 target 化。
-- 卡目录已改成 `/home/npchy/wonton-dev/new-wt`（host-guard 只认卡上的目录和 cwd，两个 worktree 都要用）。
+- 卡目录已改成 `~/wonton-dev/new-wt`（host-guard 只认卡上的目录和 cwd，两个 worktree 都要用）。
 - 卡名 `chat-ios-831`；PR 都开着草稿状态，别自己合。
 
 交接完毕

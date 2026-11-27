@@ -83,7 +83,7 @@ export SHARE_SMOKE_INSTANCE="ss$RANDOM"
 slot="${prefix##*.}"
 export SHARE_SMOKE_IDENTITY_PREFIX="11.213.$slot"
 # 别的栈的插件网络可能已经占了按名额算的这一段（它们不按名额分）：起栈前对现网子网查一遍重叠，
-# 撞了就报错说明用 WONTON_SHARE_SMOKE_PLUGIN_POOL 换一段（11-13 65 号：194 上 wonton-app-hermes-*
+# 撞了就报错说明用 WONTON_SHARE_SMOKE_PLUGIN_POOL 换一段（11-13 65 号：验证机上 wonton-app-hermes-*
 # 的 /26 散布在整个 10.213/16，按名额算的默认段撞上就是 compose 起网的 Pool overlaps）。
 export SHARE_SMOKE_PLUGIN_POOL="${WONTON_SHARE_SMOKE_PLUGIN_POOL:-10.213.$slot.0/24}"
 pool_busy() { # $1=CIDR；本机现有 Docker 网络的子网和它有重叠就返回 0（打到 stdout 的是撞上的子网）
