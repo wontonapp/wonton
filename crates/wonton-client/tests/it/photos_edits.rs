@@ -7,7 +7,7 @@ use axum::http::Method;
 use wonton_protocol::media::MediaFailureCode;
 use wonton_protocol::media::choices::SHARE_TARGETS_PATH;
 use wonton_protocol::media::library::AlbumOwner;
-use wonton_protocol::media::library_view::{PhotoEdit, PhotoEditKind, PhotosAction};
+use wonton_protocol::media::library_view::{PhotoAlbumRow, PhotoEdit, PhotoEditKind, PhotosAction};
 
 use crate::photos::{ALBUMS, november, november_open, open, photos, send};
 use crate::photos_support::{album, envelope};
@@ -100,7 +100,7 @@ async fn a_new_album_from_a_mixed_selection_lists_what_failed() {
             edit: PhotoEdit::CreateAlbum {
                 title: "海边".into(),
                 ids: vec!["a".into(), "b".into()],
-                share_with: vec!["mom".into()],
+                share_with: vec!["@mom:example.com".into()],
             },
         },
     )
@@ -126,7 +126,7 @@ async fn a_new_album_from_a_mixed_selection_lists_what_failed() {
     assert_eq!(row.title, "海边");
     assert_eq!(row.count, 1);
     assert!(row.shared);
-    assert_eq!(row.members, ["mom"]);
+    assert_eq!(member_ids(row), ["@mom:example.com"]);
 }
 
 #[tokio::test]
@@ -157,7 +157,7 @@ async fn sharing_or_removing_from_the_open_album_refetches_it() {
         PhotosAction::Edit {
             edit: PhotoEdit::ShareAlbum {
                 album: "al1".into(),
-                people: vec!["mom".into()],
+                people: vec!["@mom:example.com".into()],
             },
         },
     )
@@ -170,7 +170,7 @@ async fn sharing_or_removing_from_the_open_album_refetches_it() {
     .await;
     let row = view.album.unwrap().album.unwrap();
     assert!(row.shared);
-    assert_eq!(row.members, ["mom"]);
+    assert_eq!(member_ids(&row), ["@mom:example.com"]);
     until_seen(&rig, ALBUMS, list).await;
     until_seen(&rig, &one, page).await;
 
@@ -197,4 +197,11 @@ async fn sharing_or_removing_from_the_open_album_refetches_it() {
         .map(|tile| tile.id)
         .collect();
     assert_eq!(tiles, ["b"]);
+}
+
+fn member_ids(row: &PhotoAlbumRow) -> Vec<&str> {
+    row.members
+        .iter()
+        .map(|user| user.user_id.as_str())
+        .collect()
 }

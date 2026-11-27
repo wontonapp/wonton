@@ -10,6 +10,7 @@
 
 mod api;
 mod loads;
+mod names;
 mod share;
 mod sources;
 mod subscription;
@@ -33,6 +34,7 @@ use crate::scope::reuse;
 
 pub use subscription::PhotosSubscription;
 
+pub(crate) use names::name_people;
 /// 假数据入口照真核心的规则改视图：选中、写操作的结果、找格子和相册。
 #[cfg(feature = "ui-fake")]
 pub(crate) use view::{apply_edit, find_album, find_tile, select};
@@ -199,14 +201,20 @@ impl PhotosLink {
             && (ticket.section == Section::Edit
                 || state.tickets.get(&ticket.section) == Some(&ticket.seq));
         if current {
-            self.view.send_modify(|view| f(&mut state, view));
+            self.view.send_modify(|view| {
+                f(&mut state, view);
+                name_people(view);
+            });
         }
         current
     }
 
     fn modify(&self, f: impl FnOnce(&mut PhotosViewModel)) {
         let _state = self.lock();
-        self.view.send_modify(f);
+        self.view.send_modify(|view| {
+            f(view);
+            name_people(view);
+        });
     }
 
     /// 关掉一块：在路上的请求作废，回来也不写。

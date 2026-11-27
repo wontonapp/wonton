@@ -10,12 +10,17 @@ use wonton_protocol::media::library_view::{
 use wonton_protocol::media::{MediaFailure, MediaFailureCode, MediaKind};
 
 use super::{BASE_MS, DAY_MS, FakeMode, GRANDMA, NOTHING, PLACE, tile};
-use crate::photos::{apply_edit, find_album, find_tile, select};
+use crate::photos::{apply_edit, find_album, find_tile, name_people, select};
 
 /// 一个月先给的条数，剩下的翻页再给。
 const FIRST_PAGE: u32 = 48;
 
 pub(super) fn apply(view: &mut PhotosViewModel, action: PhotosAction, mode: FakeMode) {
+    change(view, action, mode);
+    name_people(view);
+}
+
+fn change(view: &mut PhotosViewModel, action: PhotosAction, mode: FakeMode) {
     match action {
         PhotosAction::Open { source, .. } => {
             // “要先选相册插件”的开场：带上插件再来才有库。
@@ -224,13 +229,13 @@ fn wire_album(row: PhotoAlbumRow) -> Album {
         owner: match row.owner {
             PhotoAlbumOwner::Me => AlbumOwner::Me,
             PhotoAlbumOwner::Household => AlbumOwner::Household,
-            PhotoAlbumOwner::Person { username } => AlbumOwner::Person(username),
+            PhotoAlbumOwner::Person { user } => AlbumOwner::Person(user.user_id),
             PhotoAlbumOwner::Unknown => AlbumOwner::Unknown,
             PhotoAlbumOwner::Other { raw } => AlbumOwner::Other(raw),
         },
         shared: row.shared,
         cover: row.cover,
-        members: row.members,
+        members: row.members.into_iter().map(|user| user.user_id).collect(),
         updated_at: row.updated_at,
     }
 }

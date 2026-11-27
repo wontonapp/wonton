@@ -164,7 +164,7 @@ async fn albums_are_split_by_owner_and_open_page_by_page() {
         .photos
         .album(album("al2", "家", AlbumOwner::Household), &["a"]);
     rig.core.photos.album(
-        album("al3", "院子", AlbumOwner::Person("mom".into())),
+        album("al3", "院子", AlbumOwner::Person("@mom:example.com".into())),
         &["b"],
     );
     rig.core

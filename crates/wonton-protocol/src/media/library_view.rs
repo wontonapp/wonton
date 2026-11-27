@@ -93,8 +93,8 @@ pub struct PhotoTile {
     /// 实况/动态照片，动态部分按 [`PhotoRendition::Live`] 取
     pub live: bool,
     pub favorite: bool,
-    /// 别人的条目写主人的本机用户名，壳据此标来源
-    pub owner: Option<String>,
+    /// 别人的条目写是谁的，壳据此标来源；本人的为空
+    pub owner: Option<PhotoUser>,
     /// ThumbHash 的 base64，缩略图到之前的占位
     pub thumbhash: Option<String>,
 }
@@ -134,8 +134,8 @@ pub struct PhotoAlbumRow {
     pub shared: bool,
     /// 封面那一条的 id，按 [`PhotoRendition::Thumbnail`] 取
     pub cover: Option<String>,
-    /// 共享给的本机用户名，不含库主
-    pub members: Vec<String>,
+    /// 共享给的人，不含库主
+    pub members: Vec<PhotoUser>,
     pub updated_at: Option<Timestamp>,
 }
 
@@ -147,7 +147,7 @@ pub enum PhotoAlbumOwner {
     Me,
     Household,
     Person {
-        username: String,
+        user: PhotoUser,
     },
     /// 别人的，但库主不是这台服务器上的哪位家人；没有名字可写
     Unknown,
@@ -155,6 +155,30 @@ pub enum PhotoAlbumOwner {
     Other {
         raw: String,
     },
+}
+
+/// 条目的主人、相册的成员：本机的人（不是提供方认出的人物）。
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PhotoUser {
+    /// Matrix ID
+    pub user_id: String,
+    /// 共享名单里有这个人就是他的显示名，没有就是 Matrix ID 的本地部分（`@mom:example.com` 的 `mom`）
+    pub name: String,
+}
+
+impl PhotoUser {
+    /// 还不知道显示名：先用 Matrix ID 的本地部分。
+    pub fn unnamed(user_id: &str) -> Self {
+        let local = user_id
+            .strip_prefix('@')
+            .and_then(|rest| rest.split_once(':'))
+            .map_or(user_id, |(local, _)| local);
+        Self {
+            user_id: user_id.to_owned(),
+            name: local.to_owned(),
+        }
+    }
 }
 
 /// 打开着的相册：列表里有这一行就先带上，回包到了换成回包里的。
@@ -586,7 +610,7 @@ impl From<&PhotoAsset> for PhotoTile {
             duration_ms: asset.duration_ms,
             live: asset.live,
             favorite: asset.favorite,
-            owner: asset.owner.clone(),
+            owner: asset.owner.as_deref().map(PhotoUser::unnamed),
             thumbhash: asset.thumbhash.clone(),
         }
     }
@@ -597,8 +621,8 @@ impl From<&AlbumOwner> for PhotoAlbumOwner {
         match owner {
             AlbumOwner::Me => Self::Me,
             AlbumOwner::Household => Self::Household,
-            AlbumOwner::Person(username) => Self::Person {
-                username: username.clone(),
+            AlbumOwner::Person(user_id) => Self::Person {
+                user: PhotoUser::unnamed(user_id),
             },
             AlbumOwner::Unknown => Self::Unknown,
             AlbumOwner::Other(raw) => Self::Other { raw: raw.clone() },
@@ -615,7 +639,11 @@ impl From<&Album> for PhotoAlbumRow {
             owner: (&album.owner).into(),
             shared: album.shared,
             cover: album.cover.clone(),
-            members: album.members.clone(),
+            members: album
+                .members
+                .iter()
+                .map(|id| PhotoUser::unnamed(id))
+                .collect(),
             updated_at: album.updated_at,
         }
     }
@@ -689,6 +717,24 @@ mod tests {
             people: vec!["mom".into()],
         };
         assert!(share.ids().is_empty());
+    }
+
+    #[test]
+    fn people_on_albums_start_with_the_matrix_id_local_part() {
+        let owner: AlbumOwner = serde_json::from_str("\"person:@mom:example.com\"").unwrap();
+        assert_eq!(
+            PhotoAlbumOwner::from(&owner),
+            PhotoAlbumOwner::Person {
+                user: PhotoUser {
+                    user_id: "@mom:example.com".into(),
+                    name: "mom".into(),
+                }
+            }
+        );
+        assert_eq!(
+            PhotoUser::unnamed("not-a-matrix-id").name,
+            "not-a-matrix-id"
+        );
     }
 
     #[test]

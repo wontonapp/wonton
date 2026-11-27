@@ -64,6 +64,9 @@ pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
     if let Some(page) = super::music::page(tab) {
         return Some(page);
     }
+    if let Some(page) = super::photos::page(tab) {
+        return Some(page);
+    }
     if *tab == call_widget().tab {
         return Some(TabPage {
             title: "Call".into(),

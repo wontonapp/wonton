@@ -7,10 +7,13 @@ use axum::http::Method;
 use wonton_protocol::MEMBERS_PATH;
 use wonton_protocol::media::MediaFailureCode;
 use wonton_protocol::media::choices::SHARE_TARGETS_PATH;
-use wonton_protocol::media::library_view::{PhotoSourceState, PhotosAction, PhotosViewModel};
+use wonton_protocol::media::library::AlbumOwner;
+use wonton_protocol::media::library_view::{
+    PhotoAlbumOwner, PhotoSourceState, PhotoUser, PhotosAction, PhotosViewModel,
+};
 
-use crate::photos::{november, open, photos, send};
-use crate::photos_support::{PHOTOS_SOURCE, envelope, source, target};
+use crate::photos::{november, november_open, open, photos, send};
+use crate::photos_support::{PHOTOS_SOURCE, album, asset, envelope, source, target};
 use crate::plugins::rig::{Canned, Rig};
 
 const LIBRARY: &str = "/_wonton/api/media/library";
@@ -170,4 +173,67 @@ async fn a_member_who_cannot_manage_members_still_gets_the_share_list() {
         MediaFailureCode::TransportUnavailable
     );
     assert!(view.share_targets.people.is_empty());
+}
+
+fn album_people(view: &PhotosViewModel) -> (Option<PhotoUser>, Vec<PhotoUser>, Option<PhotoUser>) {
+    let row = &view.albums.shared_with_me[0];
+    let owner = match &row.owner {
+        PhotoAlbumOwner::Person { user } => Some(user.clone()),
+        _ => None,
+    };
+    let tile = view
+        .timeline
+        .months
+        .first()
+        .and_then(|month| month.days.first())
+        .and_then(|day| day.tiles.first())
+        .and_then(|tile| tile.owner.clone());
+    (owner, row.members.clone(), tile)
+}
+
+fn user(user_id: &str, name: &str) -> PhotoUser {
+    PhotoUser {
+        user_id: user_id.into(),
+        name: name.into(),
+    }
+}
+
+#[tokio::test]
+async fn owners_and_members_are_named_from_the_share_list_or_by_their_id() {
+    let rig = Rig::new().await;
+    rig.core.photos.share_targets(vec![target("mom")]);
+    let mut from_dad = asset("a", 1_795_147_200_000);
+    from_dad.owner = Some("@dad:example.com".into());
+    rig.core.photos.month("2026-11", vec![from_dad]);
+    let mut garden = album("al1", "院子", AlbumOwner::Person("@mom:example.com".into()));
+    garden.members = vec!["@dad:example.com".into()];
+    rig.core.photos.album(garden, &[]);
+    november_open(&rig).await;
+    let view = photos(&rig, "名单和相册都到了", |view| {
+        !view.share_targets.people.is_empty() && !view.albums.shared_with_me.is_empty()
+    })
+    .await;
+    // 名单上的妈妈用她的显示名；不在名单上的爸爸用 Matrix ID 的本地部分，不留空。
+    let mom = user("@mom:example.com", "MOM");
+    let dad = user("@dad:example.com", "dad");
+    assert_eq!(
+        album_people(&view),
+        (Some(mom), vec![dad.clone()], Some(dad))
+    );
+
+    // 名单取不成：显示名不再可信，退回本地部分。
+    rig.core.answer(
+        Method::GET,
+        SHARE_TARGETS_PATH,
+        Canned(
+            503,
+            envelope(MediaFailureCode::TransportUnavailable, "down"),
+        ),
+    );
+    send(&rig, PhotosAction::Refresh).unwrap();
+    let view = photos(&rig, "名单没取成", |view| {
+        view.share_targets.problem.is_some() && !view.albums.shared_with_me.is_empty()
+    })
+    .await;
+    assert_eq!(album_people(&view).0, Some(user("@mom:example.com", "mom")));
 }

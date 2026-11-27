@@ -17,16 +17,19 @@ use std::sync::atomic::Ordering;
 use wonton_protocol::media::library_view::{
     PhotoAlbumOwner, PhotoAlbumRow, PhotoAlbums, PhotoDay, PhotoEditKind, PhotoMonth, PhotoPeople,
     PhotoPerson, PhotoRendition, PhotoShareTarget, PhotoShareTargets, PhotoSource,
-    PhotoSourceState, PhotoSources, PhotoTile, PhotoTimeline, PhotosAction, PhotosViewModel,
+    PhotoSourceState, PhotoSources, PhotoTile, PhotoTimeline, PhotoUser, PhotosAction,
+    PhotosViewModel,
 };
 use wonton_protocol::media::{MediaError, MediaFailure, MediaFailureCode, MediaKind};
 
 use super::ClientCore;
-use crate::photos::find_tile;
+use crate::photos::{find_tile, name_people};
 
 /// 2026-11-20T04:00Z。
 const BASE_MS: u64 = 1_795_147_200_000;
 const DAY_MS: u64 = 24 * 60 * 60 * 1000;
+/// 共享名单里的妈妈；条目和相册上只写 Matrix ID，名字由名单标上。
+const MOM: &str = "@mom:example.com";
 
 /// 缩略图到之前的占位（ThumbHash）：只换了平均色的几张，格子不至于一个色；第一张是协议测试里的那张。
 const THUMBHASHES: [&str; 7] = [
@@ -172,7 +175,7 @@ fn album(id: &str, title: &str, count: u32, owner: PhotoAlbumOwner, shared: bool
         shared,
         cover: Some(format!("fake-{id}-cover")),
         members: if shared {
-            vec!["mom".to_owned()]
+            vec![PhotoUser::unnamed(MOM)]
         } else {
             Vec::new()
         },
@@ -188,7 +191,7 @@ fn november() -> PhotoMonth {
     let mut favorite = photo("fake-favorite", 1);
     favorite.favorite = true;
     let mut from_mom = photo("fake-from-mom", 1);
-    from_mom.owner = Some("mom".to_owned());
+    from_mom.owner = Some(PhotoUser::unnamed(MOM));
     from_mom.aspect = Some(3.0 / 4.0);
     let mut tall = photo("fake-tall", 2);
     tall.aspect = Some(9.0 / 16.0);
@@ -317,7 +320,7 @@ fn library() -> PhotosViewModel {
                 "院子",
                 8,
                 PhotoAlbumOwner::Person {
-                    username: "mom".to_owned(),
+                    user: PhotoUser::unnamed(MOM),
                 },
                 true,
             )],
@@ -369,6 +372,12 @@ fn failed(code: MediaFailureCode, message: &str) -> PhotosViewModel {
 }
 
 pub(super) fn opening(mode: FakeMode) -> PhotosViewModel {
+    let mut view = scene(mode);
+    name_people(&mut view);
+    view
+}
+
+fn scene(mode: FakeMode) -> PhotosViewModel {
     match mode {
         FakeMode::Library => library(),
         FakeMode::ChooseSource => PhotosViewModel {
@@ -407,9 +416,9 @@ pub(super) fn opening(mode: FakeMode) -> PhotosViewModel {
         FakeMode::ShareDenied => PhotosViewModel {
             share_targets: PhotoShareTargets {
                 problem: Some(MediaFailure {
-                    code: MediaFailureCode::TransportUnavailable,
-                    message: "share-targets: the tunnel dropped before the core answered"
-                        .to_owned(),
+                    // 没加入（或已被移出）的人照样会被 `/share-targets` 拒掉。
+                    code: MediaFailureCode::PermissionDenied,
+                    message: "403: this person has not joined the server".to_owned(),
                     retry_after_secs: None,
                 }),
                 ..PhotoShareTargets::default()
