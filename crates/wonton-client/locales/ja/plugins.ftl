@@ -19,6 +19,9 @@ files-api-tunnel-unavailable = トンネルを利用できません（{ $code }�
 # $status は元のHTTPステータスコードです。
 files-api-status = 自宅サーバーからHTTP { $status }が返されました
 
+# 詳細欄の1行。$status は元の HTTP ステータス、$said はアップロードサービスがそのまま返したエラー（英語）。
+files-api-status-said = 自宅サーバーからHTTP { $status }が返されました：{ $said }
+
 # 元のファイルが選択時と変わっていたときに表示されます。
 files-upload-source-changed = 元のファイルが変更されています。選び直してください。
 

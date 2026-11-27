@@ -262,6 +262,19 @@ async fn create_upload(
         .and_then(|location| location.to_str().ok())
         .and_then(|location| location.rsplit('/').next())
         .and_then(|id| id.parse::<FileId>().ok());
+    // tusd 等钩子超时也回 500（见 `Files::upload_being_created`）。要在作废之前看：作废排在钩子后面，钩子做完的一小会儿里也还认
+    // （见 `creating` 的 `DONE_GRACE`），写完得比 tusd 的期限早一点点也一样判得出是核心自己慢。
+    let slow = response.status() == StatusCode::INTERNAL_SERVER_ERROR
+        && caller.files.upload_being_created(&id);
+    if slow {
+        tracing::warn!(file = %id, "tusd 等不及核心建上传（pre-create 钩子超时），回忙");
+        // 不等作废：它排在卡住的钩子后面。客户端拿不到这个编号，先回答；放下 `unclaimed` 时在后台作废。
+        drop(unclaimed);
+        return Err(Failure::new(
+            FileFailure::ServiceUnavailable,
+            l10n::text(langs, "files-upload-hook-slow", &[]),
+        ));
+    }
     // 创建时就带了字节，写的时候磁盘满了。按还差多少算，不是声明的长度：写了大半以后网络断了引起的 500 不是磁盘的事。
     let full = if response.status() == StatusCode::INTERNAL_SERVER_ERROR {
         caller.files.upload_out_of_space(&id, langs).await

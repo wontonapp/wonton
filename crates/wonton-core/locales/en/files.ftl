@@ -86,6 +86,7 @@ files-tusd-required = The upload API needs Tus-Resumable: 1.0.0
 files-tusd-timeout = tusd isn't responding; try again later
 files-tusd-gone = tusd no longer has this upload's data; upload it again
 files-upload-disconnected = The request that created this upload has disconnected
+files-upload-hook-slow = Your home server is too busy to start this upload; try again later
 files-upload-length-required = The upload must declare its length at creation (Upload-Length)
 files-upload-filename-required = The upload must carry filename in Upload-Metadata
 files-upload-finished = This upload is already complete; to delete the file use DELETE /_wonton/files/{ $id }

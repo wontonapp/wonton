@@ -6,6 +6,7 @@
 //! tusd 的 pre-finish 钩子有 15 秒的硬超时，放不下跨卷复制，所以放文件走 post-finish；它不等钩子就回客户端，
 //! 网关要在最后一个 PATCH 的响应之前等 [`Files::finish_upload`]，204 才等于文件可用（实测见 ADR-0020 的“验证结果”）。
 
+mod creating;
 #[cfg(test)]
 mod private_tests;
 mod room;
@@ -153,6 +154,7 @@ pub(super) struct Uploads {
     abandoning: Mutex<HashSet<FileId>>,
     /// 客户端拿到编号之前就走了的上传和当时的时间。tusd 的 pre-create 钩子可能还在路上，它写下待完成记录的话要白占 24 小时。
     withdrawn: Mutex<HashMap<FileId, u64>>,
+    creating: creating::Creating,
     /// 测试用：拿着写锁时，清理在标为作废之后卡住，就像存储不回答。
     #[cfg(test)]
     abandon_stalled: tokio::sync::RwLock<()>,
@@ -171,6 +173,7 @@ impl Uploads {
             finishing: Mutex::default(),
             abandoning: Mutex::default(),
             withdrawn: Mutex::default(),
+            creating: creating::Creating::default(),
             #[cfg(test)]
             abandon_stalled: tokio::sync::RwLock::default(),
         })
@@ -296,12 +299,46 @@ impl Uploads {
 
 impl Files {
     /// 创建上传（tusd 的 pre-create）：查磁盘、发编号。没传完的编号查不到，所以这时不写编号记录。
+    ///
+    /// 放到单独的任务里做：tusd 等钩子有期限（`-hooks-http-timeout`，默认 15 秒），核心写待完成记录慢过它时会把钩子连接关掉，
+    /// 这一层 async fn 的 future 跟着被丢掉。放进任务以后，登记（[`Self::upload_being_created`]）和这个上传的队活到真的做完，
+    /// 刚做完的一小会儿里也还认：网关判得出是核心自己慢、而不是把 tusd 的裸 500 转给客户端；作废也排得在写记录后面，不会写完记录没人认。
     pub async fn create_upload(
         self: &Arc<Self>,
         upload: NewUpload<'_>,
         langs: &Languages,
     ) -> Result<FileId, Failure> {
+        let files = self.clone();
+        let langs = langs.clone();
+        let (id, name, mime_type, size, device) = (
+            upload.id.clone(),
+            upload.name.map(str::to_owned),
+            upload.mime_type.map(str::to_owned),
+            upload.size,
+            upload.device.to_owned(),
+        );
+        tokio::spawn(async move {
+            let upload = NewUpload {
+                id: &id,
+                name: name.as_deref(),
+                mime_type: mime_type.as_deref(),
+                size,
+                device: &device,
+            };
+            files.create_upload_in_turn(upload, &langs).await
+        })
+        .await
+        .map_err(|e| Failure::internal(format!("建上传的任务中止：{e}")))?
+    }
+
+    /// 建上传本身：登记还在做，排上这个上传的队，查完磁盘、写待完成记录。
+    async fn create_upload_in_turn(
+        self: &Arc<Self>,
+        upload: NewUpload<'_>,
+        langs: &Languages,
+    ) -> Result<FileId, Failure> {
         let invalid = |why: &str| Failure::new(FileFailure::InvalidInput, why);
+        let _creating = self.uploads.creating.enter(upload.id);
         // 排队：查“客户端走了没有”和写记录不能夹在 [`Self::upload_unclaimed`] 中间。
         let _turn = self.uploads.turn(upload.id).await;
         if self.uploads.take_withdrawn(upload.id) {
