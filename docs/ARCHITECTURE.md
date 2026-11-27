@@ -26,7 +26,7 @@ flowchart LR
 
   subgraph Home["家里的枢纽（Linux + Docker 或内置 Linux 虚拟机）"]
     Core["wonton-core\n插件管理 · 网关与配对 · 推送代理\nMCP 总线 · 密钥与存储授权 · 调度器"]
-    WebSession["PWA 的每用户服务器端客户端核心\nWSS：Action 进 · ViewModel 出"]
+    WebSession["PWA 的网页核心\n每用户一个容器 · 不挂 Docker socket"]
     Tuwunel["Tuwunel\nMatrix homeserver"]
     Agent["Hermes\n唯一默认内核 · 主 Agent · 多个 profile"]
     Magpie["magpie（可选插件）\n通用模型网关"]
@@ -52,8 +52,8 @@ flowchart LR
   ClientCore <-->|"iroh 隧道"| Core
   Core <-->|"iroh 隧道 · 设备密钥"| DeviceAgent
   React -->|"PWA：WSS（经中继）"| WebRelay
-  WebRelay <-->|"出站 TLS + HMAC"| Core
-  Core -->|"本地套接字"| WebSession
+  WebRelay <-->|"出站双向 TLS（网页连接器）"| Core
+  Core -->|"WSS 字节（每用户内部网络）"| WebSession
   Core --> Tuwunel
   Agent <--> Tuwunel
   Agent --> Providers
@@ -79,6 +79,7 @@ flowchart LR
 | `tuwunel` | 核心组件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
 | `hydra` | 核心组件 | OIDC 提供方，插件的单点登录（ADR-0009）。 |
 | `mailpit` | 核心组件 | 收插件应用发的信（SMTP），接入申请了 `notify` 的插件网络，只收发给家里人的内部邮箱；核心取走后转进聊天（ADR-0056）。 |
+| 网页核心与网页连接器 | 核心组件（有网页配对才有） | 每个用户一个网页核心容器（`wonton-client-host`），加一个出站连网页中继的连接器，都由核心经 Docker API 管、都不挂 Docker socket；浏览器的帧只在网页核心容器里解析（ADR-0124）。 |
 | 第三方 App 入口 | 核心组件（有要服务的名字和证书才有） | 入口容器、局域网转发、连接器和 lego，由核心管理（ADR-0021）。名字来自装机设置或 App 里配的自己的域名，“不要名字”的装法也能只靠后者；证书签出来才建入口，续期按天跑、条款没勾不联系 CA。连接器是 TCP 转发、frpc 或 cloudflared，主人在设置里选，公网访问有总开关（ADR-0090）；lego 用主人的 DNS 服务商（ADR-0089）。 |
 | `hermes` | 默认插件（可卸载） | 唯一默认 Agent，走原生 Matrix；各家人的私人 Bot、共享 Bot 保留独立身份与数据边界。核心按普通默认插件机制装一次，卸掉不重装；安装和运行不以 Magpie 为前置（ADR-0108）。 |
 | `magpie` | 可选普通插件 | 通用模型网关；核心和默认装机不依赖它，不再承担 Agent 的模型入口。通用网关合同及其使用方的凭据与授权边界保留（ADR-0008、ADR-0108）。 |

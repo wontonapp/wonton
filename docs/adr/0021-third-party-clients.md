@@ -1,6 +1,6 @@
 # ADR-0021 第三方原生 App 连回家：公网子域名、公共证书和专用密码
 
-- 状态：已接受（2026-11-03）。`auth: app` 的 `setup_done` 和错误 `setup_pending` 由 [ADR-0022](0022-owner-identity.md) 补充；云端部分挪到 M2（主人 2026-11-04 定，见“范围”）；“Bot 装不了高权限插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代；家名同时用作 Matrix 的服务器名、中继多转联邦，见 [ADR-0051](0051-friends-and-plugin-sharing.md)；自己的域名在 App 里配、预设 deSEC，插件的规范对外地址见 [ADR-0089](0089-https-own-domain.md)；公网入口扩成通用的公网访问，路由器转发和 Cloudflare Tunnel 提到 M1，总开关和访客链接见 [ADR-0090](0090-public-access.md)；网页中继是应用层例外（终结 TLS、看明文），见 ADR-0124
+- 状态：已接受（2026-11-03）。`auth: app` 的 `setup_done` 和错误 `setup_pending` 由 [ADR-0022](0022-owner-identity.md) 补充；云端部分挪到 M2（主人 2026-11-04 定，见“范围”）；“Bot 装不了高权限插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代；家名同时用作 Matrix 的服务器名、中继多转联邦，见 [ADR-0051](0051-friends-and-plugin-sharing.md)；自己的域名在 App 里配、预设 deSEC，插件的规范对外地址见 [ADR-0089](0089-https-own-domain.md)；公网入口扩成通用的公网访问，路由器转发和 Cloudflare Tunnel 提到 M1，总开关和访客链接见 [ADR-0090](0090-public-access.md)；网页中继是应用层例外（终结 TLS、看明文），见 [ADR-0124](0124-client-react-pwa-electron.md)
 
 ## 背景
 
