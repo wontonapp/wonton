@@ -30,10 +30,8 @@ struct VideoHero: View {
 
     @ViewBuilder private var title: some View {
         if let logo = entry.logo {
-            VideoArtwork(url: logo) { titleText }
-                .scaledToFit()
+            VideoArtwork(url: logo, fit: true) { titleText }
                 .frame(maxWidth: 240, maxHeight: 80, alignment: .bottomLeading)
-                .background(Color.clear)
         } else {
             titleText
         }

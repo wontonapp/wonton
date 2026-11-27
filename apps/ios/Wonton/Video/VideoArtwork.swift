@@ -87,35 +87,42 @@ private struct CachedFile {
     let size: Int
 }
 
-/// 一张图：没有地址或取不到时是占位色块，上面可以放片名。
+/// 一张图：没有地址或取不到时是占位色块，上面可以放片名。图铺满给它的框、裁掉多出的部分；
+/// 台标这类要整张露出来的传 `fit`，没有底色。
 struct VideoArtwork<Placeholder: View>: View {
     let url: String?
+    var fit = false
     @ViewBuilder var placeholder: Placeholder
     @State private var image: UIImage?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        ZStack {
-            Color(colors.surfaceSubtle)
-            if let image {
-                Image(uiImage: image).resizable().scaledToFill().transition(.opacity)
-            } else {
-                placeholder
+        // 底下是可伸缩的色块，图放在 overlay 里：图的原始尺寸不能把框撑大。
+        (fit ? Color.clear : Color(colors.surfaceSubtle))
+            .overlay {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: fit ? .fit : .fill)
+                        .transition(.opacity)
+                } else {
+                    placeholder
+                }
             }
-        }
-        .task(id: url) {
-            guard let url, let address = URL(string: url) else {
-                image = nil
-                return
+            .clipped()
+            .task(id: url) {
+                guard let url, let address = URL(string: url) else {
+                    image = nil
+                    return
+                }
+                let loaded = await VideoImages.shared.image(address)
+                withAnimation(.easeOut(duration: 0.2)) { image = loaded }
             }
-            let loaded = await VideoImages.shared.image(address)
-            withAnimation(.easeOut(duration: 0.2)) { image = loaded }
-        }
     }
 }
 
 extension VideoArtwork where Placeholder == EmptyView {
     init(url: String?) {
-        self.init(url: url) { EmptyView() }
+        self.init(url: url, fit: false) { EmptyView() }
     }
 }

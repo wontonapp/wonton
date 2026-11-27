@@ -18,7 +18,6 @@ struct VideoDetailView: View {
     var body: some View {
         content
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.hidden, for: .navigationBar)
             .task { await refresh() }
             .task(id: season?.id) { await loadEpisodes() }
             .task(id: isDownloading) { await watchDownload() }
