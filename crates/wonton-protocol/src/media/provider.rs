@@ -135,6 +135,7 @@ pub struct ProviderCapabilities {
 
 /// `GET /items` 的查询参数；都可省。`from`/`to` 是 Unix 毫秒（拍摄或加入时间）。
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ItemsQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<MediaKind>,
@@ -191,6 +192,7 @@ impl ItemsQuery {
 
 /// `GET /items` 的响应：这一页的条目和下一页的游标，没有下一页就不带。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ItemsPage {
     pub items: Vec<MediaItemRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
