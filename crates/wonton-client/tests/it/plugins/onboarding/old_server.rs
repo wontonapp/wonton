@@ -8,7 +8,7 @@ use wonton_client::{
 };
 
 use super::super::rig::{Canned, Rig, core_error};
-use super::{PROFILE, act, at, configure_gateway, model_settings, onboarding};
+use super::{PROFILE, act, at, choose_model, onboarding, pass_assistant};
 
 const UPGRADE: &str = "/_wonton/api/core/upgrade";
 
@@ -34,7 +34,6 @@ fn not_found() -> Canned {
 async fn rig_with(version_canned: Option<Canned>) -> Rig {
     let rig = Rig::new().await;
     rig.core.set_onboarding(onboarding("profile"));
-    rig.core.set_model_settings(model_settings(false));
     if let Some(version) = version_canned {
         rig.core.answer_always(Method::GET, UPGRADE, version);
     }
@@ -49,10 +48,10 @@ async fn an_old_server_hides_the_profile_step_and_reports_server_too_old() {
     let rig = rig_with(Some(version("0.1.0-beta.4"))).await;
     // 资料回 404 时服务器报的版本比接口要的旧：整步不显示，不报问题，步数里也不占一号。
     let view = rig
-        .wait_onboarding(|view| !view.loading && view.step == Some(OnboardingStep::Model))
+        .wait_onboarding(|view| !view.loading && view.step == Some(OnboardingStep::Assistant))
         .await;
     assert!(view.problem.is_none(), "{view:?}");
-    assert_eq!(view.nav.map(|nav| (nav.position, nav.total)), Some((1, 3)));
+    assert_eq!(view.nav.map(|nav| (nav.position, nav.total)), Some((1, 4)));
 
     // 直接调用的接口也归这一类，带上要的版本。
     let Err(error) = rig.app.me().await else {
@@ -75,9 +74,7 @@ async fn a_current_server_keeps_the_404_category() {
     let rig = rig_with(Some(version("0.1.0-beta.6"))).await;
     // 服务器不比接口旧：404 还是“没有这个”，资料这一步照常显示。
     let view = rig
-        .wait_onboarding(|view| {
-            !view.loading && view.model.settings.is_some() && view.step.is_some()
-        })
+        .wait_onboarding(|view| !view.loading && view.model.bot.is_some() && view.step.is_some())
         .await;
     assert_eq!(view.step, Some(OnboardingStep::Profile));
     assert_eq!(
@@ -95,9 +92,7 @@ async fn a_server_without_a_version_is_not_judged_old() {
     // 状态接口也不回版本（开发构建、更旧的服务器）：取不到就不判旧。
     let rig = rig_with(None).await;
     let view = rig
-        .wait_onboarding(|view| {
-            !view.loading && view.model.settings.is_some() && view.step.is_some()
-        })
+        .wait_onboarding(|view| !view.loading && view.model.bot.is_some() && view.step.is_some())
         .await;
     assert_eq!(view.step, Some(OnboardingStep::Profile));
     assert_eq!(
@@ -106,10 +101,10 @@ async fn a_server_without_a_version_is_not_judged_old() {
     );
 }
 
-/// 资料那步被藏起来了：从模型一路走到最后一页。
+/// 资料那步被藏起来了：从你的助手一路走到最后一页。
 async fn walk_to_review_without_profile(rig: &Rig) -> OnboardingViewModel {
-    at(rig, OnboardingStep::Model).await;
-    configure_gateway(rig).await;
+    pass_assistant(rig).await;
+    choose_model(rig).await;
     act(
         rig,
         Action::Onboarding {
@@ -137,7 +132,7 @@ async fn walk_to_review_without_profile(rig: &Rig) -> OnboardingViewModel {
 #[tokio::test]
 async fn finishing_on_an_old_server_skips_the_hidden_profile() {
     let rig = rig_with(Some(version("0.1.0-beta.4"))).await;
-    rig.wait_onboarding(|view| !view.loading && view.step == Some(OnboardingStep::Model))
+    rig.wait_onboarding(|view| !view.loading && view.step == Some(OnboardingStep::Assistant))
         .await;
     // 资料这一步看不到了：往上走时不占一步，点完成时也不去存它。
     walk_to_review_without_profile(&rig).await;

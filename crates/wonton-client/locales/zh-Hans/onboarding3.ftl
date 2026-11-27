@@ -1,7 +1,7 @@
 
 onboarding-steps-committing = 正在提交
 
-onboarding-model-not-model-step = 还没到接模型这一步
+onboarding-steps-not-assistant-step = 不在你的助手这一步
 
 
 
