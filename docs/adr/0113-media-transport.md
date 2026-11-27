@@ -81,7 +81,7 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 - `operations` 取值 `upload`（开始/查偏移/写分片/收尾/放弃）、`download`（带 `Range` 的取字节）、`playback`（要播放计划、报进度、报停止）、`list`（分页列条目，给 Agent 找内容）；`kinds` 取值 `photo`/`video`/`audio`。一个提供方可以只声明几样。
 - 清单要 `interface: "http"`、`hosted: "plugin"`、`credentials: required` 和 `credentials` 的 `issue`/`revoke`，缺一个都是清单非法（`capabilities.rs:14-31`）。
 - **和已有 `jellyfin` 能力并存，不合并。** `jellyfin` 是给 Seerr 这类“在 Jellyfin 里建请求/读库”的插件用的窄能力（`capabilities.rs:85-91`），`media_source` 是给播放与传输用的宽契约。同一个 Jellyfin 插件可以两样都提供，凭据各发各的；Seerr 不迁。写进规范：两者互不替代。
-- **读路径的例外（音乐）。** OpenSubsonic 是开放标准，艺人、专辑、歌单、流派、搜索、歌词、收藏、评分、历史这类只读浏览由客户端核直讲，不经 `list`（`list` 只给 Agent 找内容用，字段少、翻不出原生页）。客户端核因此链一个 MIT/Apache 的 `opensusonic` 库，这是往核心里放第三方协议库，ADR-0015 第 4 条要求写明：只放这一个、只放 OpenSubsonic，音源是标准接口不随插件变；出声的流、scrobble、断点、队列仍走 `media_source`。
+- **读路径的例外（音乐）。** OpenSubsonic 是开放标准，艺人、专辑、歌单、流派、搜索、歌词、收藏、评分、历史这类只读浏览由客户端核直讲，不经 `list`（`list` 只给 Agent 找内容用，字段少、翻不出原生页）。客户端核经插件网页的代理去讲（`crates/wonton-client/src/music/`），身份由网关按设备的人注入 `Remote-User`，客户端不存上游口令（Navidrome 0.64.2 实测：白名单来源带这个头时 `/rest` 不要 `u`/`p`，头里的人不存在回 40，带头打开一次 `/app/` 就建号）。请求层自己写、只盖用到的端点，没用 `opensubsonic` 库：它每个请求都强制带 `u`/`t` 或 `apiKey`，没有只靠代理头认人的模式。ADR-0015 第 4 条要求写明：只讲 OpenSubsonic 这一个标准，音源是标准接口、不随插件变；出声的流、scrobble、断点、队列仍走 `media_source`。
 - 适配器里没有业务逻辑：Immich 的 `POST /assets` 加 `bulk-upload-check` 翻成 `upload`；Subsonic/OpenSubsonic 的 `stream`/`scrobble`/`savePlayQueue` 翻成 `playback` 与队列快照；Jellyfin 的 `PlaybackInfo`/`Sessions/Playing*`/`MediaSegments` 翻成 `playback` 与章节。适配器只做字段映射、错误码归一、上游凭据注入（第 6 节），不做重试、不做队列、不存状态。
 - 上游凭据由适配器自己从插件数据卷取，核心只给“这是谁”（`X-Wonton-User` 头）。核心不存上游密码，只存“哪个人对应提供方的哪把能力凭据”。
 
