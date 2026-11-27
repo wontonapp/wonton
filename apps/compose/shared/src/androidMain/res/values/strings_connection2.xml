@@ -4,6 +4,7 @@
     <string name="connection_waiting_network">Waiting for the network…</string>
     <!-- Connection notice: the tunnel dropped and the home server doesn't answer. -->
     <string name="connection_server_offline">Your home server seems to be offline</string>
+    <string name="connection_relay_rejected">The relay rejected this phone’s token</string>
     <!-- Value of the update row while a new version is available. -->
     <string name="connection_new_version">New version</string>
     <!-- Supporting line under the re-pair row: entering only opens the pairing page; the connection changes on pairing. May wrap. -->

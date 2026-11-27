@@ -695,12 +695,18 @@ fn preserve_samples(
 }
 
 /// 手机连不连得上中继：连得上说明手机能上网，这时家里没有回应，多半是家里的问题。没配中继时无从判断。
+/// 中继拒绝令牌单独成类：这不是等一等就会好的失败，界面要说清；有中继连着时仍算连得上。
 fn relay_check(endpoint: &Endpoint) -> ConnectionCheck {
     let relays = endpoint.home_relay_status().get();
     if relays.is_empty() {
         ConnectionCheck::Unknown
     } else if relays.iter().any(iroh::endpoint::RelayStatus::is_connected) {
         ConnectionCheck::Ok
+    } else if relays
+        .iter()
+        .any(|relay| relay.auth_denied_reason().is_some())
+    {
+        ConnectionCheck::Rejected
     } else {
         ConnectionCheck::Failing
     }

@@ -4,8 +4,8 @@ fn url(text: &str) -> RelayUrl {
     text.parse().unwrap()
 }
 
-fn relay(text: &str, tier: u8) -> Relay {
-    Relay {
+fn relay(text: &str, tier: u8) -> RelayView {
+    RelayView {
         url: url(text),
         token: None,
         quic_port: None,
@@ -158,16 +158,16 @@ fn every_entry_point_yields_the_same_relay_for_both_spellings() {
 #[test]
 fn the_map_only_holds_the_requested_tiers() {
     let table = RelayTable::parse("https://a.example;n0").unwrap();
-    let map = relay_map(table.relays(), 1);
+    let map = relay_map(&table.views(), 1);
     assert_eq!(map.len(), 1);
     assert!(map.contains(&url("https://a.example/")));
-    let map = relay_map(table.relays(), 2);
+    let map = relay_map(&table.views(), 2);
     assert_eq!(map.len(), 1 + RelayTable::builtin_n0().tier(0).len());
     // 令牌进了 iroh 的配置，不在地址里。
     let config = map.get(&url("https://a.example/")).unwrap();
     assert_eq!(config.auth_token.as_deref(), None);
     let table = RelayTable::parse("https://tok@a.example").unwrap();
-    let map = relay_map(table.relays(), 1);
+    let map = relay_map(&table.views(), 1);
     let config = map.get(&url("https://a.example/")).unwrap();
     assert_eq!(config.auth_token.as_deref(), Some("tok"));
 }

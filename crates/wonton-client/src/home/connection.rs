@@ -238,6 +238,11 @@ impl Tracker {
                 } else if down_for < GRACE {
                     // 换网时建连立即失败很常见，冷启动的网络也没就绪：2 秒内一律不闪“连不上”。
                     None
+                } else if self.relay == ConnectionCheck::Rejected {
+                    // 令牌不对不会自己好，不等建连失败或 30 秒，过了宽限就说。
+                    Some(ConnectionNotice::RelayRejected {
+                        retrying: self.retrying(now),
+                    })
                 } else if self
                     .connecting_since
                     .is_some_and(|since| now - since < LONG_OUTAGE)
@@ -260,10 +265,12 @@ impl Tracker {
     /// 手机连得上中继，多半是家里的问题；连不上中继，分不清哪一边的问题。
     fn offline_notice(&self, now: Instant) -> Option<ConnectionNotice> {
         let retrying = self.retrying(now);
-        if self.relay == ConnectionCheck::Ok {
-            Some(ConnectionNotice::ServerOffline { retrying })
-        } else {
-            Some(ConnectionNotice::Unreachable { retrying })
+        match self.relay {
+            ConnectionCheck::Ok => Some(ConnectionNotice::ServerOffline { retrying }),
+            ConnectionCheck::Rejected => Some(ConnectionNotice::RelayRejected { retrying }),
+            ConnectionCheck::Failing | ConnectionCheck::Unknown => {
+                Some(ConnectionNotice::Unreachable { retrying })
+            }
         }
     }
 
@@ -356,6 +363,59 @@ mod tests {
         assert_eq!(
             after(&mut tracker, start, 30, 0),
             Some(ConnectionNotice::Unreachable { retrying: false })
+        );
+    }
+
+    /// 中继拒绝令牌：不用等建连失败，过了宽限就说；重试期间按钮照常转圈。
+    #[test]
+    fn a_rejected_relay_is_named_after_the_grace_and_replaces_unreachable() {
+        let start = Instant::now();
+        let mut tracker = Tracker::default();
+        tracker.observe(&DOWN, ConnectionCheck::Rejected, 0, start);
+        assert_eq!(after(&mut tracker, start, 1, 0), None);
+        assert_eq!(
+            after(&mut tracker, start, 3, 0),
+            Some(ConnectionNotice::RelayRejected { retrying: false })
+        );
+
+        // 建连已经失败过、30 秒也过了，仍然是这一种说法，不会被“连不上”盖掉。
+        assert_eq!(
+            after(&mut tracker, start, 31, 1),
+            Some(ConnectionNotice::RelayRejected { retrying: false })
+        );
+        tracker.retry_started(start + Duration::from_secs(31));
+        assert_eq!(
+            tracker.notice(&DOWN, start + Duration::from_secs(31)),
+            Some(ConnectionNotice::RelayRejected { retrying: true })
+        );
+    }
+
+    /// 中继连上了、令牌也对了：回到普通说法。
+    #[test]
+    fn a_recovered_relay_clears_the_rejection() {
+        let start = Instant::now();
+        let mut tracker = Tracker::default();
+        tracker.observe(&DOWN, ConnectionCheck::Rejected, 1, start);
+        assert_eq!(
+            after(&mut tracker, start, 3, 1),
+            Some(ConnectionNotice::RelayRejected { retrying: false })
+        );
+        // 中继掉线有 10 秒宽限，这里直接喂够久的恢复。
+        tracker.observe(
+            &DOWN,
+            ConnectionCheck::Ok,
+            1,
+            start + Duration::from_secs(4),
+        );
+        tracker.observe(
+            &DOWN,
+            ConnectionCheck::Ok,
+            1,
+            start + Duration::from_secs(20),
+        );
+        assert_eq!(
+            after(&mut tracker, start, 21, 1),
+            Some(ConnectionNotice::ServerOffline { retrying: false })
         );
     }
 

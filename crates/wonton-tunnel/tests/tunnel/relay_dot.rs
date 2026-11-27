@@ -28,7 +28,7 @@ use wonton_tunnel::pair::{
     PAIR_ALPN, PairHandler, PairProtocol, PairResponse, PairingCode, PairingSecret, RejectReason,
     SECRET_LEN, pair,
 };
-use wonton_tunnel::relays::{Relay, relay_map};
+use wonton_tunnel::relays::{RelayView, relay_map};
 
 use crate::support::{WAIT, init_tracing};
 
@@ -153,7 +153,7 @@ async fn spawn_relay(
 /// 只连给定中继的 endpoint：不做 IP 直连（中继是唯一路径），只信测试的 CA，域名走测试的 DNS。
 async fn relay_only_endpoint(
     key: SecretKey,
-    relays: Vec<Relay>,
+    relays: Vec<RelayView>,
     ca: CertificateDer<'static>,
     dns: &DnsResolver,
 ) -> Endpoint {
@@ -194,7 +194,7 @@ async fn a_code_with_a_dotted_relay_url_pairs_over_a_ca_verified_relay() {
     });
     let server_endpoint = relay_only_endpoint(
         SecretKey::generate(),
-        vec![Relay {
+        vec![RelayView {
             url: server_url.parse().unwrap(),
             token: None,
             quic_port: None,

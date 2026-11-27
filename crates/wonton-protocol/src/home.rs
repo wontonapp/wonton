@@ -194,6 +194,8 @@ pub enum ConnectionNotice {
     Updating,
     /// 断开很久了，手机能上网，家里的服务器没有回应。`retrying` 表示主人点的“重试”正在进行。
     ServerOffline { retrying: bool },
+    /// 中继拒绝了这台手机的令牌（错、缺或已轮换）：连不上中继，家里的服务器也就到不了。
+    RelayRejected { retrying: bool },
     /// 断开很久了，手机也连不上中继，分不清是哪一边的问题。
     Unreachable { retrying: bool },
     /// 服务器不再接受这台设备，要重新配对。
@@ -225,7 +227,10 @@ pub enum ConnectionQuality {
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionCheck {
     Ok,
+    /// 连不上。
     Failing,
+    /// 中继拒绝了这台手机的令牌。别的连接失败（网络、中继宕机）分不出原因，只有这一种能确定。
+    Rejected,
     /// 还不知道，或者这种配置下无从判断。
     #[default]
     Unknown,

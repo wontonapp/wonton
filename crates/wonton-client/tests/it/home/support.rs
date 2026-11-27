@@ -313,12 +313,28 @@ async fn wait_for_candidate(dir: &std::path::Path, addr: SocketAddr, leading: bo
     }
 }
 
+pub(super) async fn wait_until_ticket_contains(dir: &std::path::Path, wanted: &str) {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    let has_it = || {
+        std::fs::read_to_string(dir.join("servers/1/home-ticket.json"))
+            .is_ok_and(|text| text.contains(wanted))
+    };
+    while !has_it() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "连接信息里一直没有 {wanted}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
 /// 连接信息里的直连候选；文件还没写、或者不是 JSON 时是 `None`。
 fn direct_candidates(dir: &std::path::Path) -> Option<Vec<serde_json::Value>> {
     let bytes = std::fs::read(dir.join("servers/1/home-ticket.json")).ok()?;
     let ticket: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     ticket["server"]["direct_addrs"].as_array().cloned()
 }
+
 /// 上游：每个请求回 200，正文是请求路径；`/_wonton/api/tunnel` 有 `tunnel_info` 时回它，`fail_tunnel` 还没用完时回 503；
 /// `/_wonton/api/relays` 回 `relay_reply` 并记下 PUT 的请求体。
 async fn path_echo(

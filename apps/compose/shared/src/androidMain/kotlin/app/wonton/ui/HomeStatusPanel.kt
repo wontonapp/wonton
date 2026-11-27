@@ -83,7 +83,8 @@ private fun connectionText(home: HomeViewModel): String =
     }
 
 private fun needsTheOwner(home: HomeViewModel): Boolean =
-    home.notice is ConnectionNotice.DeviceRejected || home.notice is ConnectionNotice.VersionMismatch
+    home.notice is ConnectionNotice.DeviceRejected || home.notice is ConnectionNotice.VersionMismatch ||
+        home.notice is ConnectionNotice.RelayRejected
 
 private fun storageText(context: Context, plugins: PluginsViewModel): String =
     plugins.storage?.let {

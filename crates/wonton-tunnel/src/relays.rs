@@ -47,6 +47,44 @@ const POLL_INTERVAL: Duration = Duration::from_secs(1);
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Relay {
     pub url: RelayUrl,
+    pub token: Option<RelayToken>,
+    pub quic_port: Option<u16>,
+    pub tier: u8,
+}
+
+impl Relay {
+    /// iroh 认识的中继配置。自建中继按 ADR-0048 的部署约定开 QUIC 地址发现（UDP 7842），和 iroh
+    /// 对 n0 中继的默认一样。
+    fn relay_config(&self) -> RelayConfig {
+        let mut config = RelayConfig::from(self.url.clone());
+        if let Some(token) = &self.token {
+            config = config.with_auth_token(token.expose());
+        }
+        config
+    }
+
+    /// 校验规则和 [`RelayView::validate`] 相同；内部配置解析出来的项也要过。
+    pub fn validate(&self) -> Result<(), String> {
+        self.view().validate()
+    }
+
+    /// 报给 App 的写法：令牌单独放，地址里永远不带。
+    pub fn view(&self) -> RelayView {
+        RelayView {
+            url: self.url.clone(),
+            token: self.token.clone(),
+            quic_port: self.quic_port,
+            tier: self.tier,
+        }
+    }
+}
+
+/// 报给 App 的一台中继（ADR-0048）：配对码和 `/_wonton/api/tunnel` 用这个写法。令牌只放在
+/// `token` 里、不进地址，所以地址可以原样写进日志和界面；两个下发通道都只给已认证的设备，
+/// 插件网页拿不到。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayView {
+    pub url: RelayUrl,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<RelayToken>,
     /// QUIC 地址发现的 UDP 端口；空着用 iroh 的默认端口（[`iroh::defaults::DEFAULT_RELAY_QUIC_PORT`]）。
@@ -57,7 +95,7 @@ pub struct Relay {
     pub tier: u8,
 }
 
-impl Relay {
+impl RelayView {
     /// 从连接信息或配对码读回来的表项要过这一关：地址里不许藏令牌（令牌单独放），令牌不能是空的，
     /// 而且得是 https，令牌不走明文。
     pub fn validate(&self) -> Result<(), String> {
@@ -106,6 +144,17 @@ impl fmt::Debug for Relay {
     }
 }
 
+impl From<RelayView> for Relay {
+    fn from(view: RelayView) -> Self {
+        Self {
+            url: view.url,
+            token: view.token,
+            quic_port: view.quic_port,
+            tier: view.tier,
+        }
+    }
+}
+
 /// 中继的准入令牌。`Debug` 不打印原文，打进日志不会泄露。
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -147,8 +196,7 @@ impl RelayTable {
         }
     }
 
-    /// 从连接信息或配对码里带来的表项组表。表项要先用 [`Relay::validate`] 校验过；地址规范成
-    /// [`canonical_url`] 的一种写法。
+    /// 从配置解析出来的表项组表；地址规范成 [`canonical_url`] 的一种写法。
     pub fn from_relays(relays: Vec<Relay>) -> Self {
         let mut relays: Vec<_> = relays.into_iter().map(canonical_relay).collect();
         relays.sort_by_key(|relay| relay.tier);
@@ -156,6 +204,11 @@ impl RelayTable {
             relays,
             remove: Vec::new(),
         }
+    }
+
+    /// 从连接信息或配对码里带来的表项组表。表项要先用 [`RelayView::validate`] 校验过。
+    pub fn from_views(relays: Vec<RelayView>) -> Self {
+        Self::from_relays(relays.into_iter().map(Relay::from).collect())
     }
 
     /// 记录要删掉的地址。合并时先删，再放自己的项。
@@ -214,6 +267,11 @@ impl RelayTable {
     /// 全部的表项，档位在前。
     pub fn relays(&self) -> &[Relay] {
         &self.relays
+    }
+
+    /// 报给 App 的写法（配对码和 `/_wonton/api/tunnel`），档位在前。
+    pub fn views(&self) -> Vec<RelayView> {
+        self.relays.iter().map(Relay::view).collect()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -310,8 +368,8 @@ impl RelayTable {
     }
 }
 
-/// 从中继表项建 iroh 的 [`RelayMap`]：只放前 `tiers` 档。
-pub fn relay_map(relays: &[Relay], tiers: usize) -> RelayMap {
+/// 从报给 App 的表项建 iroh 的 [`RelayMap`]：只放前 `tiers` 档。
+pub fn relay_map(relays: &[RelayView], tiers: usize) -> RelayMap {
     relays
         .iter()
         .filter(|relay| (relay.tier as usize) < tiers)
@@ -357,6 +415,14 @@ pub fn canonical_url(url: RelayUrl) -> RelayUrl {
         .set_host(Some(&host))
         .expect("removing the DNS root dot preserves a valid host");
     RelayUrl::from(inner)
+}
+
+/// [`RelayView`] 的地址规范成一种写法（[`canonical_url`]）。
+pub fn canonical_view(view: RelayView) -> RelayView {
+    RelayView {
+        url: canonical_url(view.url),
+        ..view
+    }
 }
 
 /// [`Relay`] 的地址规范成一种写法（[`canonical_url`]）。

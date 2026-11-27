@@ -491,6 +491,36 @@
           }
         }
       }
+    },
+    "connection.notice.relayRejected": {
+      "comment": "Status when the relay rejected this phone's admission token.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The relay rejected this phone’s token"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中继拒绝了这台手机的令牌"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中繼伺服器拒絕了這支手機的令牌"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "中継サーバーがこのスマートフォンのトークンを拒否しました"
+          }
+        }
+      }
     }
   }
 }

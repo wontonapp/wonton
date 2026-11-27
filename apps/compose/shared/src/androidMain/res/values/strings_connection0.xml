@@ -18,6 +18,7 @@
     <string name="connection_ok">OK</string>
     <!-- Value of the phone's mobile network check: it doesn't work. No arguments. -->
     <string name="connection_failing">Unreachable</string>
+    <string name="connection_rejected">Rejected</string>
     <!-- Value of a number the core couldn\'t measure: a dash, never 0. -->
     <string name="connection_value_none">—</string>
     <!-- Label of the last handshake time in the connection details. -->
