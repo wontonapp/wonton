@@ -1,6 +1,5 @@
 package app.wonton.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -51,7 +50,6 @@ internal fun ConfirmationsScreen(core: ClientCore, cardId: String, onBack: () ->
     }
     val view by updates.collectAsState(remember(core) { core.confirmations() })
     var rejection by remember { mutableStateOf<Problem?>(null) }
-    BackHandler(onBack = onBack)
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.confirmations_title), onBack) }) {
         val cards = (view.pending + view.finished).sortedBy { it.card.id != cardId }
         when {

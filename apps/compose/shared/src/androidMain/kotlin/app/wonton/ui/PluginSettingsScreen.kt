@@ -1,6 +1,5 @@
 package app.wonton.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +65,6 @@ private class SaveResult(
  */
 @Composable
 fun PluginSettingsScreen(plugins: PluginsState, target: PluginSettingsTarget, onClose: () -> Unit) {
-    BackHandler(onBack = onClose)
     val id = target.id
     var attempt by remember(id) { mutableIntStateOf(0) }
     val loaded by produceState<Result<PluginSettingsView>?>(null, id, attempt) {

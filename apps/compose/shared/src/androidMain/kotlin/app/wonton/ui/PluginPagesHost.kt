@@ -4,7 +4,7 @@ package app.wonton.ui
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -19,10 +19,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -55,9 +57,12 @@ private const val PAGE_KEEP_ALIVE = 4
 @Composable
 internal fun PluginPagesHost(
     pages: PagesState, home: HomeViewModel, appearance: AppearanceViewModel,
-    active: TabRef?, onDetails: (String) -> Unit, onDraft: (String) -> Unit, bannerTop: Dp,
+    active: TabRef?, onDetails: (String) -> Unit, onDraft: (String) -> Unit, bannerTop: Dp, back: RootBack,
 ) {
     val stack = pages.viewModel.stack.filter { it.tab != TabRef.Chat && it.tab != TabRef.Apps }
+    // 返回手势拖动时：下面那页是网页就露出来（[PagePlace.peek]），上面那页是网页就跟手变形。
+    val peek = (back.preview.under as? RootPage.Web)?.tab?.takeIf { it != active }
+    val leaving = (back.preview.leaving as? RootPage.Web)?.tab
     val closed = remember { ClosedPages() }
     val kept = remember(stack) { closed.update(stack) }
     val openTabs = stack.mapTo(HashSet()) { it.tab }
@@ -66,6 +71,7 @@ internal fun PluginPagesHost(
             PluginPageContainer(
                 open, pages, home, appearance, parked = open.tab !in openTabs,
                 active = open.tab == active, onDetails, onDraft, bannerTop,
+                PagePlace(back, peek = open.tab == peek, leaving = open.tab == leaving),
             )
         }
     }
@@ -93,6 +99,7 @@ private class ClosedPages {
 private fun PluginPageContainer(
     open: OpenPage, pages: PagesState, home: HomeViewModel, appearance: AppearanceViewModel,
     parked: Boolean, active: Boolean, onDetails: (String) -> Unit, onDraft: (String) -> Unit, bannerTop: Dp,
+    place: PagePlace,
 ) {
     val tab = open.tab
     val sourcePage = open.page
@@ -112,14 +119,58 @@ private fun PluginPageContainer(
     }
     val openLink = externalLinkOpener { state.problem = it }
     PageEffects(state, page, connection.connected, active, parked, appearance, environment)
-    BackHandler(active) { state.back() }
+    WebPageBack(state, active, place.back)
     val takeover = pageTakeover(tab, pages, active)
     val disclosure = @Composable {
         BotPageDisclosure(page, active, awaitingLogin, pages, onContinue = { loginAcknowledged = true })
     }
-    PageLayers(state, page, pages, connection, appearance, viewport, active, parked, takeover, bannerTop,
-        onDetails, onDraft, openLink, browserAttempted, admitted = access.allowed && !awaitingLogin,
-        disclosure = disclosure)
+    Box(place.modifier(active)) {
+        // 垫在下面预览的那页照样画出网页和状态层，只是不接返回、不算当前页。
+        PageLayers(state, page, pages, connection, appearance, viewport, active || place.peek, parked, takeover,
+            bannerTop, onDetails, onDraft, openLink, browserAttempted, admitted = access.allowed && !awaitingLogin,
+            disclosure = disclosure)
+    }
+}
+
+/** 这页在最外层返回手势里的位置：[peek] 垫在下面露出来，[leaving] 是正被拖走的那页。 */
+internal class PagePlace(val back: RootBack, val peek: Boolean, val leaving: Boolean) {
+    @Composable
+    fun modifier(active: Boolean): Modifier {
+        val z = when {
+            active -> 1f
+            peek -> PEEK_Z
+            else -> 0f
+        }
+        val base = Modifier.zIndex(z).fillMaxSize()
+        return if (leaving) base.backLeaving(back.preview).background(WontonTheme.colors.canvas.toColor()) else base
+    }
+}
+
+/**
+ * 网页之间的上下：当前页 1，预览时垫在下面的那页在它和其余保活的页（0）之间，压暗（[ROOT_DIM_Z]）夹在垫着的页和当前页之间；
+ * 原生页在上时整块在所有网页之上（[NATIVE_Z]）。
+ */
+private const val PEEK_Z = 0.5f
+internal const val ROOT_DIM_Z = 0.75f
+internal const val NATIVE_Z = 2f
+
+/**
+ * 网页的系统返回：全屏视频先退出，网页历史里会换页的一步照常后退（这两种不预览，进度照收不画），
+ * 剩下关页的一步拖动时预览露出下面那页（[previewBack]），松手判定返回后才发 ClosePage。
+ */
+@Composable
+private fun WebPageBack(state: WebPageState, active: Boolean, back: RootBack) {
+    val current by rememberUpdatedState(back)
+    PredictiveBackHandler(enabled = active) { events ->
+        val root = current
+        val under = root.under
+        if (under == null || !state.controller.backClosesPage()) {
+            events.collect { }
+            state.back()
+        } else {
+            previewBack(root.preview, events, RootPage.Web(state.tab), under, root.currentTop) { state.back() }
+        }
+    }
 }
 
 /** 页面顶上浮的一条短状态:连接提示由壳给,升级中由这里说。 */

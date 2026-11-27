@@ -1,7 +1,6 @@
 package app.wonton.ui
 
 import android.icu.text.ListFormatter
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -80,59 +79,34 @@ fun PluginPages(
     storeConfirmations: Boolean = false,
     list: @Composable () -> Unit,
 ) {
-    val confirmation = navigation.confirmation
-    val detail = navigation.detail
     // 核心取好预览、要主人拿主意的一键操作：预览已经取好。确认后核心自己把这条撤走（排着队的放下一条进来），
     // 只有主人自己关才要告诉核心撤走；认的是还在的那条，确认后落进来的下一条不受影响。
-    val storeConfirmation = plugins.viewModel.confirmation
-    val changingVersion = navigation.changingVersion
-    val settings = navigation.settings
-    val contacts = navigation.contacts
-    when {
-        storeConfirmations && storeConfirmation != null -> {
-            val drop = {
-                if (plugins.viewModel.confirmation?.preview?.id == storeConfirmation.preview.id) {
-                    plugins.send(Action.Plugins(PluginAction.DismissStoreConfirmation))
-                }
-            }
-            BackHandler(onBack = drop)
-            InstallConfirmScreen(
+    val storeConfirmation = plugins.viewModel.confirmation?.takeIf { storeConfirmations }
+    BackLayers(navigation.pluginPages(storeConfirmation), PluginPage::key, onBack = { page ->
+        if (page is PluginPage.StoreConfirm) plugins.dropStoreConfirmation(page.confirmation)
+        else navigation.close(page)
+    }) { page ->
+        when (page) {
+            is PluginPage.StoreConfirm -> InstallConfirmScreen(
                 plugins,
-                PluginConfirmation.Store(storeConfirmation),
-                onClose = drop,
+                PluginConfirmation.Store(page.confirmation),
+                onClose = { plugins.dropStoreConfirmation(page.confirmation) },
                 onCheckInstalled = navigation.checkInstalled,
             )
-        }
-        contacts != null -> {
-            BackHandler { navigation.contacts = null }
-            BotContactsPage(plugins.core, contacts, onBack = { navigation.contacts = null })
-        }
-        settings != null -> {
-            BackHandler { navigation.settings = null }
-            PluginSettingsScreen(plugins, settings, onClose = { navigation.settings = null })
-        }
-        confirmation != null -> {
-            BackHandler { navigation.confirmation = null }
-            InstallConfirmScreen(
+            is PluginPage.Contacts -> BotContactsPage(plugins.core, page.bot, onBack = { navigation.contacts = null })
+            is PluginPage.Settings ->
+                PluginSettingsScreen(plugins, page.target, onClose = { navigation.settings = null })
+            is PluginPage.Confirm -> InstallConfirmScreen(
                 plugins,
-                confirmation,
+                page.confirmation,
                 onClose = { navigation.confirmation = null },
                 onCheckInstalled = navigation.checkInstalled,
             )
+            PluginPage.AddingSource -> AddSourceScreen(plugins, navigation)
+            is PluginPage.ChangingVersion -> ChangeVersionScreen(plugins, navigation, page.id)
+            is PluginPage.Detail -> PluginDetailScreen(plugins, navigation, page.route)
+            PluginPage.Base -> list()
         }
-        navigation.addingSource -> {
-            BackHandler { navigation.addingSource = false }
-            AddSourceScreen(plugins, navigation)
-        }
-        changingVersion != null -> {
-            BackHandler { navigation.changingVersion = null }
-            ChangeVersionScreen(plugins, navigation, changingVersion)
-        }
-        detail != null -> {
-            BackHandler { navigation.detail = null }
-            PluginDetailScreen(plugins, navigation, detail)
-        }
-        else -> list()
     }
     navigation.uninstalling?.let { target ->
         UninstallDialog(target, plugins, onDismiss = { navigation.uninstalling = null })

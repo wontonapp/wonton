@@ -11,4 +11,8 @@ enum class SettingsSubpage {
         PRIVACY, LICENSES -> ABOUT
         else -> MAIN
     }
+
+    /** 这一页和它上面各级，从这一页排到首页。 */
+    fun chain(): List<SettingsSubpage> =
+        generateSequence(this) { page -> page.parent().takeIf { page != MAIN } }.toList()
 }

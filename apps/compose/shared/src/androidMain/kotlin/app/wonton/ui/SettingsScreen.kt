@@ -57,48 +57,50 @@ fun SettingsPage(
     val appLock by remember(core) { core.appLockUpdates() }.collectAsState(remember(core) { core.appLock() })
     // 好友项只在列表取到过以后出现；进设置先取一次。
     LaunchedEffect(core) { core.send(Action.Friends(FriendsAction.RefreshFriends)) }
-    val back = { onSubpage(subpage.parent()) }
     val version = appVersion()
     val licenses = rememberLicenses(core)
     var openedLicense by remember { mutableStateOf<LicenseGroup?>(null) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
-    BackHandler(enabled = subpage != SettingsSubpage.MAIN) {
-        // 在许可全文里先回列表，返回键先回关于页（parent()）。
-        if (openedLicense != null) openedLicense = null else back()
-    }
-    when (subpage) {
-        SettingsSubpage.MY_APPS -> MyAppsSettingsScreen(back, open, checkInstalled)
-        SettingsSubpage.BACKUP -> ChatBackupScreen(
-            chat.encryption,
-            onAction = { action -> rejection = core.send(action) },
-            onContinueHandoff = onContinueHandoff,
-            onClose = back,
-        )
-        SettingsSubpage.PROFILE -> OwnerProfilePage(plugins, back)
-        SettingsSubpage.APPEARANCE -> WontonScreen(bar = {
-            WontonPushedBar(stringResource(R.string.settings_appearance), back)
-        }) {
-            AppearanceScreen(core, appearance)
+    BackLayers(subpage.chain(), SettingsSubpage::name, onBack = { onSubpage(it.parent()) }) { page ->
+        val back = { onSubpage(page.parent()) }
+        when (page) {
+            SettingsSubpage.MY_APPS -> MyAppsSettingsScreen(back, open, checkInstalled)
+            SettingsSubpage.BACKUP -> ChatBackupScreen(
+                chat.encryption,
+                onAction = { action -> rejection = core.send(action) },
+                onContinueHandoff = onContinueHandoff,
+                onClose = back,
+            )
+            SettingsSubpage.PROFILE -> OwnerProfilePage(plugins, back)
+            SettingsSubpage.APPEARANCE -> WontonScreen(bar = {
+                WontonPushedBar(stringResource(R.string.settings_appearance), back)
+            }) {
+                AppearanceScreen(core, appearance)
+            }
+            SettingsSubpage.NOTIFICATIONS -> NotificationSettingsScreen(core, settings, back)
+            SettingsSubpage.APP_LOCK -> AppLockSettingsScreen(core, appLock, back)
+            SettingsSubpage.ABOUT -> AboutPage(
+                version, licenses, onBack = back,
+                onOpenPrivacy = { onSubpage(SettingsSubpage.PRIVACY) },
+                onOpenLicenses = { openedLicense = null; onSubpage(SettingsSubpage.LICENSES) },
+            )
+            SettingsSubpage.PRIVACY -> PrivacyPage(core, back)
+            SettingsSubpage.LICENSES -> when (val license = openedLicense) {
+                null -> LicensesPage(licenses, onOpen = { openedLicense = it }, back)
+                else -> {
+                    // 在许可全文里返回先回列表。
+                    BackHandler { openedLicense = null }
+                    LicenseTextPage(license, back = { openedLicense = null })
+                }
+            }
+            SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
+            SettingsSubpage.FRIENDS -> FriendsPage(core, back)
+            SettingsSubpage.MAIN -> WontonScreen(bar = {
+                val title = stringResource(R.string.tab_settings)
+                if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
+            }) { SettingsScreen(settings, version, onSubpage) }
+            else -> ServerSettingsPage(plugins, home, chat, page, onSubpage)
         }
-        SettingsSubpage.NOTIFICATIONS -> NotificationSettingsScreen(core, settings, back)
-        SettingsSubpage.APP_LOCK -> AppLockSettingsScreen(core, appLock, back)
-        SettingsSubpage.ABOUT -> AboutPage(
-            version, licenses, onBack = back,
-            onOpenPrivacy = { onSubpage(SettingsSubpage.PRIVACY) },
-            onOpenLicenses = { openedLicense = null; onSubpage(SettingsSubpage.LICENSES) },
-        )
-        SettingsSubpage.PRIVACY -> PrivacyPage(core, back)
-        SettingsSubpage.LICENSES -> when (val license = openedLicense) {
-            null -> LicensesPage(licenses, onOpen = { openedLicense = it }, back)
-            else -> LicenseTextPage(license, back = { openedLicense = null })
-        }
-        SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
-        SettingsSubpage.FRIENDS -> FriendsPage(core, back)
-        SettingsSubpage.MAIN -> WontonScreen(bar = {
-            val title = stringResource(R.string.tab_settings)
-            if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
-        }) { SettingsScreen(settings, version, onSubpage) }
-        else -> ServerSettingsPage(plugins, home, chat, subpage, onSubpage)
     }
     chat.problem?.let { ProblemDialog(it.problem) { core.send(Action.Chat(ChatAction.DismissChatProblem)) } }
     rejection?.let { ProblemDialog(it) { rejection = null } }

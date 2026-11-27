@@ -8,6 +8,10 @@ internal fun PluginWebViewController.backOrClose(onClosePage: () -> Unit) {
     if (back() == PluginBackTarget.ClosePage) onClosePage()
 }
 
+/** 这一下返回会不会关掉页面（不退全屏视频、不走网页历史）；只看不动，返回手势起手时用来决定要不要预览。 */
+internal fun PluginWebViewController.backClosesPage(): Boolean =
+    pluginBackTarget(customView != null, history.step(view)) == PluginBackTarget.ClosePage
+
 /** 日志里的地址：只到路径。查询串里可能有 OAuth 授权码，片段是登录跳转的一部分。 */
 internal fun logUrl(url: String): String = url.substringBefore('?').substringBefore('#')
 

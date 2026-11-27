@@ -1,7 +1,6 @@
 package app.wonton.ui
 
 import android.net.Uri
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
@@ -55,7 +54,6 @@ import kotlinx.coroutines.launch
 /** 你的资料（ADR-0030）：名字和邮箱存在家里的服务器上，要身份的应用从那里取。规则在家里的服务器上，不合规则的原因原样显示。 */
 @Composable
 fun OwnerProfilePage(plugins: PluginsState, onClose: () -> Unit) {
-    BackHandler(onBack = onClose)
     var attempt by remember { mutableIntStateOf(0) }
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }

@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import androidx.activity.compose.BackHandler
 import app.wonton.client.PluginInstallAction
 import app.wonton.client.deviceChoices
 import app.wonton.client.previewInstallAction
@@ -78,10 +79,12 @@ fun InstallConfirmScreen(
     }
     if (fillingProfile) {
         // 填完回到这里，预览重新算，缺的资料有了就能装。
-        OwnerProfilePage(plugins) {
+        val back: () -> Unit = {
             fillingProfile = false
             attempt++
         }
+        BackHandler(onBack = back)
+        OwnerProfilePage(plugins, back)
         return
     }
     submittedId?.let { id ->
