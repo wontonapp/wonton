@@ -3,4 +3,5 @@
 
 mod membership;
 mod pairing;
+mod profile;
 mod support;
