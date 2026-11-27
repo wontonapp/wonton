@@ -115,11 +115,9 @@ impl Home {
                 crate::entry_access::EntryAccess::open(h.data_dir.join("core/entry-access.json"))
                     .unwrap(),
             );
-            if enabled {
-                access
-                    .save(wonton_protocol::PublicAccess { enabled: true })
-                    .unwrap();
-            }
+            access
+                .save(wonton_protocol::PublicAccess { enabled })
+                .unwrap();
             gateway.entry = Some(Arc::new(crate::entry_access::EntryAdmin::new(
                 access,
                 None,
