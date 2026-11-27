@@ -133,11 +133,8 @@ private struct InviteCode: View {
                             .fill(Color(colors.surfaceSubtle))
                     )
             }
-            Button(String(localized: .ChatBackup1.chatBackupCopy)) {
-                // 配对文本要贴到新设备上，得能经通用剪贴板跨设备；恢复密钥那种 localOnly 的贴板这里不能用。
-                UIPasteboard.general.string = code
-            }
-            .buttonStyle(WontonSmallButtonStyle())
+            // 配对文本要贴到新设备上，得能经通用剪贴板跨设备；恢复密钥那种只留本机的贴板这里不能用。
+            WontonCopyButton(text: code)
         }
     }
 }
