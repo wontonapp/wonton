@@ -64,9 +64,11 @@ fn two_installs_on_one_host_federate_through_the_core_proxy() {
         let stack_b = Stack::prepare(dir_b.path());
         let a = Core::start(&pairings, &relays, &stack_a.peer_tls_dir).await;
         let b = Core::start(&pairings, &relays, &stack_b.peer_tls_dir).await;
+        let (a_tls, b_tls) = (stack_a.peer_tls_dir.clone(), stack_b.peer_tls_dir.clone());
         let (stack_a, stack_b) = std::thread::scope(|scope| {
-            let started_a = scope.spawn(|| stack_a.launch(a.proxy_port));
-            let started_b = scope.spawn(|| stack_b.launch(b.proxy_port));
+            let (a_tls, b_tls) = (a_tls.clone(), b_tls.clone());
+            let started_a = scope.spawn(|| stack_a.launch(a.proxy_port, &b_tls));
+            let started_b = scope.spawn(|| stack_b.launch(b.proxy_port, &a_tls));
             (started_a.join().unwrap(), started_b.join().unwrap())
         });
         pairings.lock().unwrap().extend([
@@ -206,12 +208,14 @@ struct Stack {
     registration_secret: String,
     federation_port: u16,
     proxy: String,
-    /// 这台安装自己的证书材料，挂进容器当 Tuwunel 的 trust.pem 来源；核心出站也用它当 CA。
+    /// 这台安装自己的证书材料，核心出站用它当 CA。
     peer_tls_dir: std::path::PathBuf,
+    /// 挂进容器的材料：自己的 peer.pem/key + 双方 CA 拼成的 trust.pem（A 的核心要给 B 的 Tuwunel
+    /// 出示 A CA 签的证书，B 得同时信 A、B 两个 CA）。
+    bundle: std::path::PathBuf,
 }
 
 impl Stack {
-    /// `wonton-core init` 写出安装目录，把配置里的代理地址换成测试进程里转发组件的地址。
     /// `wonton-core init` 先写出安装目录和本机证书材料；代理地址要等转发组件监听端口出来再写，
     /// 所以起容器拆到 [`Self::launch`]。
     fn prepare(dir: &Path) -> Self {
@@ -237,11 +241,20 @@ impl Stack {
             proxy: String::new(),
             federation_port: 0,
             peer_tls_dir: crate::peer_tls::dir(&secrets),
+            bundle: dir.join("entry-peer-tls"),
         }
     }
 
     /// 核心的转发组件已经在监听：把代理地址写进配置、起 Tuwunel，等它报出监听端口。
-    fn launch(mut self, proxy_port: u16) -> Self {
+    fn launch(mut self, proxy_port: u16, other_trust: &Path) -> Self {
+        // 自己的叶照旧；信任包拼上对方 CA（自己的 trust.pem 本来就有系统根和本机 CA）。
+        std::fs::create_dir_all(&self.bundle).unwrap();
+        for name in ["peer.pem", "peer.key"] {
+            std::fs::copy(self.peer_tls_dir.join(name), self.bundle.join(name)).unwrap();
+        }
+        let mut trust = std::fs::read(self.peer_tls_dir.join("trust.pem")).unwrap();
+        trust.extend(std::fs::read(other_trust.join("trust.pem")).unwrap());
+        std::fs::write(self.bundle.join("trust.pem"), trust).unwrap();
         let proxy_host = if HOST_NETWORK {
             "127.0.0.1"
         } else {
@@ -339,11 +352,18 @@ impl Stack {
         }
         let install_dir = self.dir.to_string_lossy();
         for volume in strings(&tuwunel["volumes"]) {
+            if volume.starts_with("${WONTON_INSTALL_DIR}/secrets/peer-tls:") {
+                continue;
+            }
             if volume.starts_with("${WONTON_INSTALL_DIR}/") {
                 let mount = volume.replace("${WONTON_INSTALL_DIR}", &install_dir);
                 args.extend(["--volume".to_owned(), mount]);
             }
         }
+        args.extend([
+            "--volume".to_owned(),
+            format!("{}:/etc/wonton-peer-tls:ro", self.bundle.display()),
+        ]);
         // 慢启动时失败日志里要看得出卡在哪一步；只在失败时被 CI 打出来。
         args.extend(["--env".to_owned(), "RUST_LOG=tuwunel=debug".to_owned()]);
         args.push(image());
