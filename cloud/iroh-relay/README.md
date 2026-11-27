@@ -207,10 +207,16 @@ cloud/iroh-relay/test/healthcheck-test.sh
 改 `release.env` 的版本和 sha256（和仓库 `Cargo.lock` 里的 iroh 版本一起），在开发机跑
 `test/relay-e2e.sh` 过，再在目标机重跑 `install.sh`。二进制是 rename 替换，失败回滚就改回 `release.env` 重跑。
 
+装了健康自检 timer 的，升级时把新的 `release.env` 一并装到 `/opt/wonton-iroh-relay/release.env`
+（`install -m 0644 release.env /opt/wonton-iroh-relay/release.env`），否则 timer 会一直报版本漂移。
+
 ## 回滚和卸载
 
 - 回滚：`install.sh` 重装旧版本；配置和令牌没被覆盖，不用回滚。
 - 卸载：`bash uninstall.sh`（保留配置和令牌）；`bash uninstall.sh --purge` 连用户、数据、证书一起删。
+- 装了健康自检 timer 的，跑 `uninstall.sh` 前先 `systemctl disable --now wonton-iroh-relay-healthcheck.timer`，
+  再删 `/etc/systemd/system/wonton-iroh-relay-healthcheck.{service,timer}` 并 `systemctl daemon-reload`。
+  `uninstall.sh` 不处理这两个单元（它删 `/opt/wonton-iroh-relay` 后，留着的 timer 会每 5 分钟失败一次）。
 - 目标机上的 nginx 只删 `/etc/nginx/sites-{available,enabled}/relay.808cbd.com` 这一个 vhost，主人其他站不动。
 
 ## 排错
