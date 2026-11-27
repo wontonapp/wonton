@@ -362,11 +362,11 @@ Tuwunel 分不清对方离线、没配对、拒绝我们，由核心按转发组
 核心层实测（进程内两个 endpoint / 两个核心，提交 `624d314`）：
 - 服务器配对协议（`wonton/peer/0`，`crates/wonton-tunnel/tests/tunnel/peer_pair.rs`）：扫码、等同意、同意后两边绑定
   服务器名和 endpoint ID；拒绝、码过期、码被改、扫自己、已配对再扫、结果只认扫过的 endpoint ID、移除配对的通知到对方。
-- 核心流程（`crates/wonton-core/src/peers/peers_tests.rs`、`crates/wonton-core/src/gateway/peers_api_tests.rs`）：
+- 核心流程（`crates/wonton-core/src/peers/peers_tests/`、`crates/wonton-core/src/gateway/peers_api_tests.rs`）：
   出码、扫码、卡片同意后 `GET /_wonton/api/peers` 两边都是已配对；拒绝和卡片过期把两边的记录清掉；核心重启丢未回答的
   请求、保留已配对；一个服务器名只解析到配对时绑定的 endpoint ID；非主人设备的请求一律 401，错误类别和
   `X-Wonton-Error` 一致。
-- 删除与同意的先后（`crates/wonton-core/src/peers/peers_tests.rs` 及 `peers_tests/`，2026-11-07，测试提交 `71daea6`）：
+- 删除与同意的先后（`crates/wonton-core/src/peers/peers_tests/`，2026-11-07，测试提交 `71daea6`）：
   - 对方删了配对：通知到达时记录留着、相位改成内部的 `Phase::RemovedByPeer`（就是落盘的状态，重启后还在），
     视图给 `RemovedByPeer`，联邦名单和查找撤掉；只有 `RemovePeer` 真删记录，对方已经没有记录时收到通知也不报错。
   - 本机离线、上线后联邦握手被对方拒绝：和收到通知同一个结果，不靠通知送到。
