@@ -155,11 +155,9 @@ fn detail(text: &str, secret: Option<&str>) -> String {
 
 fn engine_failure(langs: &Languages, error: EngineError) -> AgentModelsError {
     match error {
-        // 容器不在（404）或者没在跑（409）：Bot 还没起来。
-        EngineError::NotFound(detail)
-        | EngineError::Rejected {
-            message: detail, ..
-        } => failure(
+        // 容器不在：Bot 还没起来。没在跑的容器在找命令时已经按插件状态报了未就绪；Docker 别的拒绝（500、流出错）
+        // 分不出是不是没在跑，算上游出错，原话进详情。
+        EngineError::NotFound(detail) => failure(
             langs,
             AgentModelsFailure::NotReady,
             "agent-models-not-ready",
@@ -255,7 +253,7 @@ impl PluginManager {
     ) -> Result<T, AgentModelsError> {
         let stdout = self.exec_agent_models(target, op, langs).await?;
         let value: T = serde_json::from_str(stdout.trim())
-            .map_err(|error| upstream(langs, format!("输出不是这个操作的结果：{error}")))?;
+            .map_err(|error| upstream(langs, format!("output is not a result of this op: {error}")))?;
         value
             .checked()
             .map_err(|problem| upstream(langs, problem.0))
@@ -297,11 +295,11 @@ impl PluginManager {
             exit_code = output.exit_code,
             "Agent 模型接入命令"
         );
-        // 引擎读到上限就不再收，到了上限的输出可能已经被截断。
-        if output.stdout.len() >= MAX_MODELS_OUTPUT_BYTES {
+        // 引擎比上限多收 1 字节：超过上限的一定被截断过，整份不要；正好到上限的照常解析。
+        if output.stdout.len() > MAX_MODELS_OUTPUT_BYTES {
             return Err(upstream(
                 langs,
-                format!("输出达到 {MAX_MODELS_OUTPUT_BYTES} 字节的上限"),
+                format!("output is over the {MAX_MODELS_OUTPUT_BYTES} byte limit"),
             ));
         }
         let stdout = scrub(&output.stdout, secret.as_deref());
@@ -320,7 +318,7 @@ impl PluginManager {
                     }
                     _ => Err(upstream(
                         langs,
-                        format!("退出码 {code}，输出不合格：{stderr}"),
+                        format!("exit code {code}, output is not a valid answer: {stderr}"),
                     )),
                 }
             }
@@ -336,7 +334,7 @@ impl PluginManager {
                 "agent-models-not-ready",
                 (!stderr.is_empty()).then_some(stderr),
             )),
-            code => Err(upstream(langs, format!("退出码 {code}：{stderr}"))),
+            code => Err(upstream(langs, format!("exit code {code}: {stderr}"))),
         }
     }
 }

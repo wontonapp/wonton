@@ -40,14 +40,17 @@ fn validate_models(manifest: &Manifest, models: &AgentModels) -> Result<(), Mani
             "agent.models requires kind: agent".to_owned(),
         ));
     }
+    // 服务名原样拿去找容器：前后带空格的名字装得上，运行时却永远找不到。
     if models.service.trim().is_empty()
+        || models.service.trim() != models.service
         || models
             .command
             .first()
             .is_none_or(|program| program.trim().is_empty())
     {
         return Err(ManifestError::Invalid(
-            "agent.models needs a service and a non-empty command".to_owned(),
+            "agent.models needs a service name without spaces around it and a non-empty command"
+                .to_owned(),
         ));
     }
     if manifest.bots.is_some()
