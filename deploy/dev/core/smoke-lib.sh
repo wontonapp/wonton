@@ -3,8 +3,8 @@
 # 函数里用到的 $browser、$core、$credential 等变量由 smoke.sh 定，调用时才取值。
 # 步骤名的顺序就是 smoke.sh 里的执行顺序；SMOKE_UNTIL、SMOKE_ONLY 的用法见 smoke.sh 开头。
 
-smoke_steps=(preflight core install isolation unauth sso models tunnel matrix echo hermes mcp files model-page revoke whoami
-  restart uninstall)
+smoke_steps=(preflight core install isolation unauth sso models tunnel matrix echo hermes mcp stop outbox speaker files
+  model-page revoke whoami restart uninstall)
 
 ok() { printf '   ✓ %s\n' "$*"; }
 fail() {
@@ -62,12 +62,54 @@ step() {
 # shellcheck source=deploy/dev/core/smoke-curl.sh
 source "$(dirname "${BASH_SOURCE[0]}")/smoke-curl.sh"
 
-# 浏览器：同一个 Cookie 罐，跨请求保持会话。它共享核心容器的网络命名空间，核心重启后要重建。
+# 起容器：撞上同名容器还在销毁、或者 daemon 慢到这一下没回来，都等一会儿再来。
+# 真错了就把 docker 的原话打出来。
+run_container() {
+  local _name=$1 _try _rc _out
+  shift
+  for _try in $(seq 60); do
+    _rc=0
+    _out="$(timeout 120 docker run -d --name "$_name" "$@" 2>&1)" || _rc=$?
+    if [[ $_rc == 0 ]]; then
+      printf '%s\n' "$_out"
+      return 0
+    fi
+    if [[ $_rc == 124 ]]; then
+      # 客户端超时了，容器可能还是建成了：等它现身，省得下一次撞自己的名。
+      for _ in $(seq 30); do
+        _rc=0
+        _out="$(timeout 15 docker inspect -f '{{.Id}}' "$_name" 2>/dev/null)" || _rc=$?
+        if [[ $_rc == 0 ]]; then
+          timeout 60 docker start "$_name" >/dev/null 2>&1 || true
+          printf '%s\n' "$_out"
+          return 0
+        fi
+        [[ $_rc == 124 ]] && continue 2
+        sleep 2
+      done
+      continue
+    fi
+    grep -q 'is already in use by container' <<<"$_out" || {
+      printf '%s\n' "$_out" >&2
+      return 1
+    }
+    # 占着名字的那个删不掉时先挪开：改名字只动元数据，不用等它停。
+    # 挪开的进程还活着，会继续占着本地代理的固定端口（18008 等），杀掉才算把位置让出来。
+    # 上一轮挪开的多半还没删掉，先再删一次，免得它占着 .stale 这个名。
+    timeout 30 docker rm -f "$_name.stale" >/dev/null 2>&1 || true
+    if timeout 30 docker rename "$_name" "$_name.stale" >/dev/null 2>&1; then
+      timeout 20 docker kill "$_name.stale" >/dev/null 2>&1 || true
+    fi
+    sleep 1
+  done
+  printf '%s\n' "$_out" >&2
+  return 1
+}
 # 直连探针忽略 Docker CLI 注入的代理；隧道探针则清空 NO_PROXY，避免 *.localhost 绕过显式的本地代理。
 start_browser() {
   docker rm -f "$browser" >/dev/null 2>&1 || true
   # 活 7200 秒：慢模型下一整套会跑一个多小时，1800 秒会在中途退出，后面的探针全部打到死容器上。
-  docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 7200 >/dev/null
+  run_container "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 7200 >/dev/null
 }
 b() { curl_in "$browser" --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
 # 经手机的本地代理访问，和 App 一样带会话凭据（$credential）。t 像 Android WebView：http 地址直接发绝对形式的

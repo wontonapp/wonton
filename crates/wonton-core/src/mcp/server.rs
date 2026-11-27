@@ -13,7 +13,7 @@ use rmcp::service::{NotificationContext, RequestContext, RoleServer, Subscriptio
 use super::Bus;
 use crate::plugin::PluginId;
 use crate::plugin::manifest::LocalizedText;
-use wonton_protocol::{BotKeeper, ConfirmationOrigin, ORIGIN_META_KEY};
+use wonton_protocol::{AgentChainStatus, BotKeeper, ConfirmationOrigin, ORIGIN_META_KEY};
 
 /// 调用总线的插件：网关按来源地址认出它（同模型网关），放进请求扩展。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,6 +192,9 @@ struct ForeignSession<'a> {
 }
 
 /// `wonton-session` 只在账本确认归属后采用；会话与链必须来自同一条登记。
+/// 链停了、会话也不在跑时照样把链交出去（记一条审计）：停链只撤得走当时挂着的卡片，
+/// 之后到工具调用再开卡片时，靠这条链在绑卡那刻认出“已经停了”并当场撤回；从这里断开的话，
+/// 卡片会一直等人答，主人批了还会真发出去。
 pub(super) fn chain_session(
     bus: &Bus,
     caller: &Caller,
@@ -208,6 +211,20 @@ pub(super) fn chain_session(
         bot: bot.bot.clone(),
     });
     if own.as_ref() == Some(&info.bot) {
+        let stopped = chains
+            .ledger()
+            .row(&info.chain)
+            .is_some_and(|row| row.status == AgentChainStatus::Stopped && !info.live);
+        if !stopped {
+            return Some((info.chain, session.to_owned()));
+        }
+        bus.audit.record(&ForeignSession {
+            caller: caller.id.as_str(),
+            event: "stopped_session",
+            session,
+            bot: &info.bot.bot,
+            chain: &info.chain,
+        });
         return Some((info.chain, session.to_owned()));
     }
     bus.audit.record(&ForeignSession {
@@ -282,6 +299,16 @@ impl ServerHandler for Handler {
         if let Some((chain, session)) = chain_session(&self.bus, &caller, headers) {
             caller.chain = Some(chain);
             caller.session = Some(session);
+        }
+        if caller.chain.is_none() && caller.bot.is_some() {
+            tracing::debug!(
+                tool = %request.name,
+                header = headers
+                    .and_then(|headers| headers.get(wonton_protocol::SESSION_HEADER))
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("-"),
+                "会话没带链"
+            );
         }
         caller.sender = turn_sender(&self.bus, &caller, headers);
         caller.ai_level = Some(self.bus.ai_cap(&caller));

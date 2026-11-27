@@ -143,13 +143,15 @@ export WONTON_DEV_DATA
 # 宿主网络中继的套接字目录：`sun_path` 只有 108 字节，检出目录再深也不能用它，放在短的运行目录里，按实例分开。
 # ssh 进来的会话可能带着别人的 XDG_RUNTIME_DIR（不经 systemd 登录时 /run/user/<自己> 也不存在），选第一个自己能写的。
 if [[ -z ${WONTON_DEV_RELAY:-} ]]; then
-  # 写权限要在整条路径上试（/run/user/<自己> 归自己，底下的 wonton-dev 可能是别人建的）。
+  # 写权限要在整条路径上试（/run/user/<自己> 归自己，底下的 wonton-dev 可能是别人建的，甚至属于 root）：
+  # 在要用的目录里建一个临时目录再删掉，建得出、也删得掉才算能写（下栈时整条实例目录是 rm -rf 掉的）。
   for relay_base in "${XDG_RUNTIME_DIR:-}" "/run/user/$(id -u)" "${TMPDIR:-/tmp}"; do
     [[ -n $relay_base ]] || continue
-    if mkdir -p "$relay_base/wonton-dev/$WONTON_DEV_INSTANCE" 2>/dev/null; then
-      WONTON_DEV_RELAY="$relay_base/wonton-dev/$WONTON_DEV_INSTANCE"
-      break
-    fi
+    mkdir -p "$relay_base/wonton-dev/$WONTON_DEV_INSTANCE" 2>/dev/null || continue
+    probe="$(mktemp -d "$relay_base/wonton-dev/$WONTON_DEV_INSTANCE/.probe.XXXXXX" 2>/dev/null)" || continue
+    rmdir -- "$probe" 2>/dev/null || continue
+    WONTON_DEV_RELAY="$relay_base/wonton-dev/$WONTON_DEV_INSTANCE"
+    break
   done
   WONTON_DEV_RELAY=${WONTON_DEV_RELAY:-${TMPDIR:-/tmp}/wonton-dev/$WONTON_DEV_INSTANCE}
 fi

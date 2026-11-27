@@ -4,21 +4,24 @@
 //! echo-bot probe --homeserver <地址> [--proxy <代理>] --login-token <JWT> --room <房间> --bot <Bot 的用户 ID>
 //!                [--text <文字>]… [--reply echo|any] [--match <文字>] [--wait <秒>] [--settle <秒>]
 //!                [--thread <话题根事件 ID|auto>] [--thread-delay <秒>] [--print-event-id <任意值>] [--mention <用户 ID>]
-//!                [--redacted <秒>] [--token-only <任意值>]
+//!                [--redacted <秒>] [--token-only <任意值>] [--store <目录>] [--device-id <设备 ID>]
 //! ```
 //!
-//! 用核心签的登录令牌登录一台临时设备（密钥只在内存里），按顺序发每条 `--text`，每发一条等 Bot 回一条：
-//! `--reply echo`（默认）要求回 `回声：<原文>`，`--reply any` 只要回了文字就行（如 Hermes 这种模型驱动的 Bot）。
-//! 回复的加密状态要和房间一致（加密房间里的必须加密，不加密房间里的必须是明文）。`--settle` 时收到回复后接着收，
-//! 直到 Bot 这么多秒不再说话：Bot 先说一句再去调要等主人确认的工具时，这样才收得到它最后的回答。结束时退出登录，
-//! 设备一起删掉。
+//! 用核心签的登录令牌登录一台临时设备（密钥只在内存里；给了 `--store` 就存下来，同一台设备接着用），
+//! 按顺序发每条 `--text`，每发一条等 Bot 回一条：`--reply echo`（默认）要求回 `回声：<原文>`，`--reply any`
+//! 只要回了文字就行（如 Hermes 这种模型驱动的 Bot）。回复的加密状态要和房间一致（加密房间里的必须加密，
+//! 不加密房间里的必须是明文）。`--settle` 时收到回复后接着收，直到 Bot 这么多秒不再说话：Bot 先说一句再去
+//! 调要等主人确认的工具时，这样才收得到它最后的回答。结束时退出登录，设备一起删掉；给了 `--store` 时不退出，
+//! 设备留着给下次用。
 
 use std::{
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
 
 use anyhow::{Context, bail};
+use matrix_sdk::authentication::matrix::MatrixSession;
 use matrix_sdk::config::SyncSettings;
 use matrix_sdk::deserialized_responses::EncryptionInfo;
 use matrix_sdk::room::Room;
@@ -33,7 +36,7 @@ use matrix_sdk::ruma::events::room::message::{
 };
 use matrix_sdk::ruma::serde::JsonObject;
 use matrix_sdk::ruma::{OwnedEventId, OwnedRoomId, OwnedUserId};
-use matrix_sdk::{Client, RoomState};
+use matrix_sdk::{AuthSession, Client, RoomState};
 use tokio::sync::mpsc;
 
 use crate::PREFIX;
@@ -42,7 +45,7 @@ use crate::PREFIX;
 const WAIT: Duration = Duration::from_secs(60);
 
 /// 认得的参数。
-const FLAGS: [&str; 16] = [
+const FLAGS: [&str; 18] = [
     "homeserver",
     "proxy",
     "login-token",
@@ -59,6 +62,8 @@ const FLAGS: [&str; 16] = [
     "mention",
     "redacted",
     "token-only",
+    "device-id",
+    "store",
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -94,6 +99,11 @@ struct Options {
     redacted: Option<Duration>,
     /// 只登录并打印访问令牌，不进房间。
     token_only: bool,
+    /// 复用这个设备 ID 登录：同一步里重试沿用同一台设备，对方已经认得的设备不用重新发现。
+    device_id: Option<String>,
+    /// 把加密库和登录状态都存在这个目录里：同一台设备跨次可用，不再每次新建（对方的设备表里一直是它）。
+    /// 给了就不退出登录，设备留着。
+    store: Option<String>,
 }
 
 impl Options {
@@ -168,6 +178,8 @@ impl Options {
                 .transpose()?
                 .map(Duration::from_secs),
             token_only: one("token-only").is_some(),
+            device_id: one("device-id"),
+            store: one("store"),
         })
     }
 }
@@ -178,15 +190,32 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     if let Some(proxy) = &options.proxy {
         builder = builder.proxy(proxy);
     }
+    let saved = options
+        .store
+        .as_ref()
+        .map(|dir| Path::new(dir).join("session.json"));
+    if let Some(dir) = &options.store {
+        std::fs::create_dir_all(dir).with_context(|| format!("建探针的存储目录 {dir}"))?;
+        builder = builder.sqlite_store(dir, None);
+    }
     let client = builder.build().await.context("建 Matrix 客户端")?;
-    let data = JsonObject::from_iter([("token".to_owned(), options.token.clone().into())]);
-    client
-        .matrix_auth()
-        .login_custom("org.matrix.login.jwt", data)
-        .context("登录请求不对")?
-        .initial_device_display_name("Wonton 冒烟")
-        .await
-        .context("用登录令牌登录")?;
+    match saved.as_ref().filter(|path| path.is_file()) {
+        Some(path) => {
+            // 同一台设备接着用：加密库和登录状态都在，对方的设备表里一直是它，不用重新发现密钥。
+            let session: MatrixSession = serde_json::from_str(&std::fs::read_to_string(path)?)
+                .context("读不回来存下的登录状态")?;
+            client
+                .restore_session(session)
+                .await
+                .context("恢复存下的登录状态")?;
+            // 服务器会把不用的设备和令牌清掉：存下的登录状态还在，但它已经不认了。这时用同一台设备重新登录。
+            if client.whoami().await.is_err() {
+                eprintln!("存下的设备服务器不认了，用同一台重新登录");
+                login(&client, &options, saved.as_ref()).await?;
+            }
+        }
+        None => login(&client, &options, saved.as_ref()).await?,
+    }
     if options.token_only {
         // 不注销：调用方要拿这个令牌接着调接口。
         let token = client.access_token().context("登录后没有访问令牌")?;
@@ -196,7 +225,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     // 设备刚建好时服务器偶尔还回 404 说它不存在，等它落盘再开始收发（实测 404 出现在登录后几毫秒）。
     tokio::time::sleep(Duration::from_secs(2)).await;
     let result = converse(&client, &options).await;
-    if let Err(e) = client.matrix_auth().logout().await {
+    if options.store.is_none()
+        && let Err(e) = client.matrix_auth().logout().await
+    {
         tracing::warn!(error = %e, "冒烟设备退出登录失败");
     }
     result
@@ -204,6 +235,25 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
 /// Bot 发来的文字（`m.text` 或 `m.notice`）：正文和是不是加密消息。
 type Message = (String, bool);
+
+/// 用登录令牌登录；给了 `--device-id` 就固定成那台。存了存储目录时把登录状态写进去，下次接着用同一台。
+async fn login(client: &Client, options: &Options, saved: Option<&PathBuf>) -> anyhow::Result<()> {
+    let data = JsonObject::from_iter([("token".to_owned(), options.token.clone().into())]);
+    let mut request = client
+        .matrix_auth()
+        .login_custom("org.matrix.login.jwt", data)
+        .context("登录请求不对")?
+        .initial_device_display_name("Wonton 冒烟");
+    if let Some(device_id) = &options.device_id {
+        request = request.device_id(device_id);
+    }
+    request.await.context("用登录令牌登录")?;
+    if let (Some(path), Some(AuthSession::Matrix(session))) = (saved, client.session()) {
+        std::fs::write(path, serde_json::to_vec(&session)?)
+            .with_context(|| format!("存下登录状态 {}", path.display()))?;
+    }
+    Ok(())
+}
 
 /// 按顺序发每条消息，每发一条等 Bot 回一条。
 async fn converse(client: &Client, options: &Options) -> anyhow::Result<()> {

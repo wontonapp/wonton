@@ -198,6 +198,8 @@ mod save_tests;
 #[cfg(test)]
 mod send_message_tests;
 #[cfg(test)]
+mod session_chain_tests;
+#[cfg(test)]
 mod takeover_tests;
 #[cfg(test)]
 mod test_setup;

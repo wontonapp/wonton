@@ -493,3 +493,57 @@ async fn a_card_bound_after_the_stop_is_withdrawn() {
         Err(super::AnswerError::AlreadyAnswered)
     ));
 }
+
+/// 停链之后到的那次调用：头里的会话照样要交出已经停了的链，卡片绑上就撤回。
+/// 从 `chain_session` 这儿断开会退化成“卡片照常等、主人批了还真发”（无活轮次、`Unbound`）。
+#[tokio::test]
+async fn a_stopped_session_still_names_its_chain() {
+    let send = send_setup().await;
+    send.s.members.invite(member("mom", "妈妈")).unwrap();
+    let caller = chain_caller(&send, "sess-owner", "@owner:wonton.localhost");
+    let chain = caller.chain.clone().unwrap();
+    send.s.bus.stop_chain(&chain).await.unwrap();
+
+    let mut stopped = caller.clone();
+    stopped.chain = None;
+    stopped.session = None;
+    let (found, session) = session_header_chain(&send, &stopped, "sess-owner");
+    assert_eq!(found, chain, "停了的会话照样认得到链");
+    stopped.chain = Some(found);
+    stopped.session = Some(session);
+
+    let draft = super::Draft {
+        title: "发给妈妈".into(),
+        lines: vec![super::cards::line("停了再说")],
+        choices: vec![wonton_protocol::CardChoice {
+            answer: Answer::Approve,
+            label: "批准".into(),
+            choice_id: None,
+        }],
+        scope: None,
+        plugin_id: Some(ID.into()),
+        secret_inputs: Vec::new(),
+        settings: None,
+        category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
+    };
+    let (card, _answered) = send
+        .s
+        .bus
+        .confirmations()
+        .open_as(&stopped.id, draft, super::Audience::default())
+        .unwrap();
+    assert_eq!(
+        super::chain_card::bind_card(&send.s.bus, &stopped, None, &card.id, "发消息卡片").outcome,
+        super::chain_card::Bound::Withdrawn,
+        "停链后到的调用开出的卡片要当场撤回"
+    );
+    assert!(matches!(
+        send.s
+            .bus
+            .confirmations()
+            .answer(&card.id, Answer::Approve, None),
+        Err(super::AnswerError::AlreadyAnswered)
+    ));
+}
