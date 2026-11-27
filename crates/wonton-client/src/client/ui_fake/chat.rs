@@ -7,7 +7,7 @@ use wonton_protocol::{
     BotActivity, BotChatAvailability, BotRef, BotView, BotWebView, ChatAccount, ChatLayout,
     ChatLayoutChoice, ChatSync, ChatViewModel, DeviceVerification, EncryptionStatus,
     MessageSummary, PluginState, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
-    RoomPlugin, RoomPreview, RoomRow,
+    RoomPlugin, RoomPreview, RoomRow, SecretString,
 };
 
 use super::tabs::fake_bot_page;
@@ -102,7 +102,10 @@ pub(super) fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     chat.encryption = EncryptionStatus {
         verification: DeviceVerification::Unverified,
         recovery: RecoveryStatus::Incomplete,
-        recovery_key: None,
+        // 界面测试要一把刚生成、还没抄下的恢复密钥（复制按钮的反馈和剪贴板）时给 `WONTON_UI_FAKE_RECOVERY_KEY`。
+        recovery_key: std::env::var("WONTON_UI_FAKE_RECOVERY_KEY")
+            .ok()
+            .map(SecretString::new),
         backup_reminder: None,
         can_verify_with_other_device: false,
         can_reset: false,
