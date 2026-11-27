@@ -5,7 +5,7 @@
 crates/wonton-protocol/src/manifest/id.rs | #56 纯迁移：保留既有清单解析与校验错误，不导出到 App | 2027-05-14
 crates/wonton-protocol/src/manifest/secret.rs | #56 纯迁移：保留既有 serde 密钥解析错误，不导出到 App | 2027-05-14
 crates/wonton-client/src/chat/timeline/silent_clear.rs | 从 timeline.rs 原样搬出的开发期 expect 说明，不是界面文字 | 2027-05-25
-crates/wonton-protocol/src/media/task/mod.rs | #56 先例：protocol crate 没有字符串目录；状态机非法转移的 Display 只给开发者看，不进 App | 2027-05-14
+crates/wonton-protocol/src/media/task/state.rs | #56 先例：protocol crate 没有字符串目录；状态机非法转移的 Display 只给开发者看，不进 App | 2027-05-14
 crates/wonton-protocol/src/media/session.rs | #56 先例：protocol crate 没有字符串目录；serde 报错和 panic 提示只给开发者看 | 2027-05-14
 crates/wonton-protocol/src/media/view.rs | 同 media 先例：protocol crate 没有字符串目录；serde 报错只给开发者看 | 2027-05-25
 crates/wonton-protocol/src/inbox_request.rs | 同 media 先例：protocol crate 没有字符串目录；MCP 工具入参的 serde 报错只给开发者看 | 2027-05-14
