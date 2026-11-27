@@ -26,7 +26,9 @@ pub fn task_path(task: TaskId) -> String {
     format!("{MEDIA_API_PREFIX}/tasks/{task}")
 }
 
-/// `POST /tasks/{id}/{pause|resume|cancel|retry}`
+/// `POST /tasks/{id}/{pause|resume|cancel|retry}`，都回 [`MediaTask`]。`pause`、`resume`、`cancel` 回改完的这个
+/// 任务；`retry` 只收终态任务，回重试出来的那条（新任务号，`retry_of` 指回这个），原任务不变。一个任务只
+/// 重试出一条：再发 `retry` 回同一条，不再开。
 pub fn task_action_path(task: TaskId, action: TaskAction) -> String {
     format!("{}/{}", task_path(task), action.as_str())
 }
