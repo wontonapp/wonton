@@ -198,15 +198,16 @@ fn server_change_drops_plugin_pages_but_keeps_public_pages() {
 }
 
 #[test]
-fn writing_the_layout_leaves_a_bar_from_another_device_alone() {
-    // 底栏是别的设备（实现了底栏的 App）存的：这台写我的应用和面板时不能把它冲回默认。
+fn writing_the_layout_overwrites_the_bar_and_leaves_unknown_keys_alone() {
+    // 底栏由这个核心管：本机写自己的栏；别的设备存的、还不认识的键原样留着。
     let stored = serde_json::json!({
         "my_apps": [],
-        "bar": [{"type": "apps"}],
+        "bar": [{"type": "agent"}, {"type": "apps"}],
         "future": 1,
     });
     let mut raw = stored.as_object().unwrap().clone();
-    let file = default_file(Some("server".to_owned()));
+    let mut file = default_file(Some("server".to_owned()));
+    file.bar = vec![BarEntry::Apps];
     super::super::layout::overwrite_layout(&mut raw, &file.layout());
     assert_eq!(raw["bar"], serde_json::json!([{"type": "apps"}]));
     assert_eq!(raw["future"], serde_json::json!(1));

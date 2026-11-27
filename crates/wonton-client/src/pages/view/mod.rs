@@ -74,26 +74,46 @@ fn bar_view(state: &PagesState, plugins: &PluginsViewModel, chat: &ChatViewModel
                 BarEntry::Agent => (l10n!(CATALOG, language(), "tabs-bar-agent"), BarIcon::Agent),
                 BarEntry::Apps => (l10n!(CATALOG, language(), "tabs-bar-apps"), BarIcon::Apps),
                 BarEntry::App { app } => {
-                    let stored = state.config.my_apps.iter().find(|row| &row.app == app)?;
+                    let stored = state.config.my_apps.iter().find(|row| &row.app == app);
                     let (title, icon) = match app {
-                        MyAppRef::Plugin { plugin_id } => {
-                            let plugin = plugin(plugin_id)?;
-                            (
-                                stored.title.clone().unwrap_or_else(|| plugin.title.clone()),
+                        MyAppRef::Plugin { plugin_id } => match plugin(plugin_id) {
+                            Some(plugin) => (
+                                stored
+                                    .and_then(|row| row.title.clone())
+                                    .unwrap_or_else(|| plugin.title.clone()),
                                 plugin.icon.clone(),
-                            )
-                        }
+                            ),
+                            // 插件列表还没读到：用我的应用里存的标题和图标，别让栏少项。
+                            None if installed.is_none() => (
+                                stored
+                                    .and_then(|row| row.title.clone())
+                                    .unwrap_or_else(|| plugin_id.clone()),
+                                stored.and_then(|row| row.page.as_ref()).and_then(
+                                    |page| match &page.icon {
+                                        TabIcon::Plugin { icon } => icon.clone(),
+                                        TabIcon::Monochrome { .. } => None,
+                                    },
+                                ),
+                            ),
+                            None => return None,
+                        },
                         MyAppRef::Page { tab } => {
                             if let Some(plugin_id) = super::tab_plugin_id(tab) {
-                                plugin(plugin_id)?;
+                                if installed.is_some() {
+                                    plugin(plugin_id)?;
+                                } else if stored.is_none() {
+                                    return None;
+                                }
                             }
-                            let page = stored.page.as_ref()?;
+                            let page = stored?.page.as_ref()?;
                             let icon = match &page.icon {
                                 TabIcon::Plugin { icon } => icon.clone(),
                                 TabIcon::Monochrome { .. } => None,
                             };
                             (
-                                stored.title.clone().unwrap_or_else(|| page.title.clone()),
+                                stored
+                                    .and_then(|row| row.title.clone())
+                                    .unwrap_or_else(|| page.title.clone()),
                                 icon,
                             )
                         }

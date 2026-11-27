@@ -204,11 +204,7 @@ fn pages_open_and_close_like_the_real_stack() {
         })
         .is_err()
     );
-    for id in [
-        "app.example.photos",
-        "app.example.notes",
-        "app.example.calendar",
-    ] {
+    for id in ["app.example.photos", "app.example.papers", CORNER_APP] {
         core.dispatch(Action::Pages {
             action: PageAction::AddBarItem {
                 app: MyAppRef::Page {

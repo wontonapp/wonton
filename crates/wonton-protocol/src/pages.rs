@@ -94,7 +94,7 @@ pub enum TabRef {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PagesViewModel {
-    /// 当前选中的底栏项：两个根页之一，或者用户加进底栏的一个应用（点开它的整页）。
+    /// 当前选中的根页（`Agent` 或 `Apps`）。点应用项只把它的整页压栈，不改这里；两个根页删出栏也选得动。
     pub tab: BarEntry,
     /// 底栏的成员和展示；只在两个根页上画，压着页面时壳不画。
     pub bar: BarViewModel,
@@ -346,6 +346,16 @@ mod tests {
         }
     }
 
+    /// 老 `layout.json` 和账号数据里的 `{"type":"chat"}` 是现在的 Rooms。
+    #[test]
+    fn the_old_chat_page_reads_as_rooms() {
+        let old: TabRef = serde_json::from_value(serde_json::json!({"type": "chat"})).unwrap();
+        assert_eq!(old, TabRef::Rooms);
+        assert_eq!(
+            serde_json::to_value(TabRef::Rooms).unwrap(),
+            serde_json::json!({"type": "rooms"})
+        );
+    }
     #[test]
     fn the_view_model_round_trips_through_json() {
         let image = |path: &str| PluginImage { path: path.into() };

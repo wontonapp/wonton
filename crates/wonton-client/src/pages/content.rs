@@ -109,6 +109,7 @@ impl PagesLink {
                 state.content.remove(tab);
             }
         }
+        clear_gone_prompt(&mut state);
         let view = make_view(
             &state,
             &plugins,

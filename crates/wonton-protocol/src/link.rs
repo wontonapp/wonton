@@ -131,7 +131,6 @@ impl AppLink {
     pub fn parse(url: &str) -> Option<Self> {
         let path = url.strip_prefix(SCHEME)?;
         let parts: Vec<&str> = path.split('/').collect();
-        let tab = |tab| Some(Self::Tab { tab });
         match parts.as_slice() {
             ["tab", "agent"] | ["tab", "chat"] => Some(Self::Bar {
                 entry: crate::BarEntry::Agent,
@@ -139,89 +138,15 @@ impl AppLink {
             ["tab", "apps"] => Some(Self::Bar {
                 entry: crate::BarEntry::Apps,
             }),
-            ["rooms"] | ["tab", "rooms"] => tab(TabRef::Rooms),
-            ["inbox"] | ["tab", "inbox"] => tab(TabRef::Inbox),
             ["tab", "app", encoded] => {
                 let bytes = URL_SAFE_NO_PAD.decode(encoded).ok()?;
-                let app = serde_json::from_slice(&bytes).ok()?;
-                Some(Self::Bar {
+                let app: crate::MyAppRef = serde_json::from_slice(&bytes).ok()?;
+                app_ids_are_valid(&app).then_some(Self::Bar {
                     entry: crate::BarEntry::App { app },
                 })
             }
-            ["tab", "plugin", plugin_id] if is_id(plugin_id) => tab(TabRef::Plugin {
-                plugin_id: (*plugin_id).to_owned(),
-                page: None,
-            }),
-            ["tab", "plugin", plugin_id, page] if is_id(plugin_id) && is_id(page) => {
-                tab(TabRef::Plugin {
-                    plugin_id: (*plugin_id).to_owned(),
-                    page: Some((*page).to_owned()),
-                })
-            }
-            ["tab", "ui", plugin_id, encoded] if is_id(plugin_id) => {
-                let uri = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
-                tab(TabRef::UiResource {
-                    plugin_id: (*plugin_id).to_owned(),
-                    resource_uri: uri,
-                })
-            }
-            ["tab", "plugin-path", plugin_id, encoded] if is_id(plugin_id) => {
-                let Ok(path) = URL_SAFE_NO_PAD.decode(encoded) else {
-                    return None;
-                };
-                let Ok(path) = String::from_utf8(path) else {
-                    return None;
-                };
-                tab(TabRef::PluginPath {
-                    plugin_id: (*plugin_id).to_owned(),
-                    path,
-                })
-            }
-            ["tab", "bot", plugin_id, bot] if is_id(plugin_id) && is_id(bot) => tab(TabRef::Bot {
-                bot: crate::BotRef {
-                    plugin_id: (*plugin_id).to_owned(),
-                    bot: (*bot).to_owned(),
-                },
-                path: None,
-            }),
-            ["tab", "bot", plugin_id, bot, encoded] if is_id(plugin_id) && is_id(bot) => {
-                let path = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
-                tab(TabRef::Bot {
-                    bot: crate::BotRef {
-                        plugin_id: (*plugin_id).to_owned(),
-                        bot: (*bot).to_owned(),
-                    },
-                    path: Some(path),
-                })
-            }
-            ["tab", "url", encoded] => {
-                let Ok(url) = URL_SAFE_NO_PAD.decode(encoded) else {
-                    return None;
-                };
-                let Ok(url) = String::from_utf8(url) else {
-                    return None;
-                };
-                tab(TabRef::Url { url })
-            }
-            ["tab", "shared", owner, plugin_id] if is_id(plugin_id) => {
-                let bytes = URL_SAFE_NO_PAD.decode(owner).ok()?;
-                let owner_user_id = String::from_utf8(bytes).ok()?;
-                let (local, server) = owner_user_id.strip_prefix('@')?.split_once(':')?;
-                if local.is_empty()
-                    || server.is_empty()
-                    || owner_user_id.chars().any(char::is_control)
-                {
-                    return None;
-                }
-                tab(TabRef::SharedApp {
-                    owner_user_id,
-                    plugin_id: (*plugin_id).to_owned(),
-                })
-            }
-            ["tab", "widget", plugin_id, encoded] if is_id(plugin_id) => tab(TabRef::Widget {
-                plugin_id: (*plugin_id).to_owned(),
-                room_id: decode_room_id(encoded)?,
-            }),
+            ["rooms"] | ["tab", "rooms"] => Some(Self::Tab { tab: TabRef::Rooms }),
+            ["inbox"] | ["tab", "inbox"] => Some(Self::Tab { tab: TabRef::Inbox }),
             ["new-chat"] => Some(Self::NewChat),
             ["agent-chat"] => Some(Self::AgentChat),
             ["settings"] => Some(Self::Settings),
@@ -232,8 +157,87 @@ impl AppLink {
             ["room", encoded] => Some(Self::Room {
                 room_id: decode_room_id(encoded)?,
             }),
-            _ => None,
+            _ => parse_tab_segment(&parts).map(|tab| Self::Tab { tab }),
         }
+    }
+}
+
+/// `tab/` 下的页面段。认不出是 `None`。
+fn parse_tab_segment(parts: &[&str]) -> Option<TabRef> {
+    match parts {
+        ["tab", "plugin", plugin_id] if is_id(plugin_id) => Some(TabRef::Plugin {
+            plugin_id: (*plugin_id).to_owned(),
+            page: None,
+        }),
+        ["tab", "plugin", plugin_id, page] if is_id(plugin_id) && is_id(page) => {
+            Some(TabRef::Plugin {
+                plugin_id: (*plugin_id).to_owned(),
+                page: Some((*page).to_owned()),
+            })
+        }
+        ["tab", "ui", plugin_id, encoded] if is_id(plugin_id) => {
+            let uri = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
+            Some(TabRef::UiResource {
+                plugin_id: (*plugin_id).to_owned(),
+                resource_uri: uri,
+            })
+        }
+        ["tab", "plugin-path", plugin_id, encoded] if is_id(plugin_id) => {
+            let path = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
+            Some(TabRef::PluginPath {
+                plugin_id: (*plugin_id).to_owned(),
+                path,
+            })
+        }
+        ["tab", "bot", plugin_id, bot] if is_id(plugin_id) && is_id(bot) => Some(TabRef::Bot {
+            bot: crate::BotRef {
+                plugin_id: (*plugin_id).to_owned(),
+                bot: (*bot).to_owned(),
+            },
+            path: None,
+        }),
+        ["tab", "bot", plugin_id, bot, encoded] if is_id(plugin_id) && is_id(bot) => {
+            let path = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
+            Some(TabRef::Bot {
+                bot: crate::BotRef {
+                    plugin_id: (*plugin_id).to_owned(),
+                    bot: (*bot).to_owned(),
+                },
+                path: Some(path),
+            })
+        }
+        ["tab", "url", encoded] => {
+            let url = String::from_utf8(URL_SAFE_NO_PAD.decode(encoded).ok()?).ok()?;
+            Some(TabRef::Url { url })
+        }
+        ["tab", "shared", owner, plugin_id] if is_id(plugin_id) => {
+            let owner_user_id = String::from_utf8(URL_SAFE_NO_PAD.decode(owner).ok()?).ok()?;
+            let (local, server) = owner_user_id.strip_prefix('@')?.split_once(':')?;
+            if local.is_empty() || server.is_empty() || owner_user_id.chars().any(char::is_control)
+            {
+                return None;
+            }
+            Some(TabRef::SharedApp {
+                owner_user_id,
+                plugin_id: (*plugin_id).to_owned(),
+            })
+        }
+        ["tab", "widget", plugin_id, encoded] if is_id(plugin_id) => Some(TabRef::Widget {
+            plugin_id: (*plugin_id).to_owned(),
+            room_id: decode_room_id(encoded)?,
+        }),
+        _ => None,
+    }
+}
+
+/// 应用项里的插件 ID 和页面 ID 也必须是清单短名。
+fn app_ids_are_valid(app: &crate::MyAppRef) -> bool {
+    match app {
+        crate::MyAppRef::Plugin { plugin_id } => is_id(plugin_id),
+        crate::MyAppRef::Page {
+            tab: TabRef::Plugin { plugin_id, page },
+        } => is_id(plugin_id) && page.as_deref().is_none_or(is_id),
+        crate::MyAppRef::Page { .. } => true,
     }
 }
 

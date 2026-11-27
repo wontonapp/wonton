@@ -154,3 +154,117 @@ async fn the_last_bar_item_cannot_be_removed() {
         action: PageAction::RemoveBarItem { entry: last },
     }));
 }
+
+fn url_app(id: u32) -> MyAppRef {
+    MyAppRef::Page {
+        tab: TabRef::Url {
+            url: format!("https://example.com/{id}"),
+        },
+    }
+}
+
+async fn add_my_app(rig: &Rig, app: MyAppRef) {
+    rig.app
+        .dispatch(Action::Pages {
+            action: PageAction::AddMyApp {
+                app,
+                title: None,
+                index: None,
+            },
+        })
+        .unwrap();
+}
+
+#[tokio::test]
+async fn adding_to_the_bar_checks_duplicates_the_limit_and_moves() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    for id in 0..4 {
+        add_my_app(&rig, url_app(id)).await;
+        rig.app
+            .dispatch(Action::Pages {
+                action: PageAction::AddBarItem { app: url_app(id) },
+            })
+            .unwrap();
+    }
+    assert_eq!(rig.app.pages().bar.items.len(), 6);
+    assert!(
+        rig.app
+            .dispatch(Action::Pages {
+                action: PageAction::AddBarItem { app: url_app(0) },
+            })
+            .is_err()
+    );
+    add_my_app(&rig, url_app(4)).await;
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: PageAction::AddBarItem { app: url_app(4) },
+    }));
+    assert!(rig.app.pages().bar.full);
+
+    // 加成功了才清 full。
+    rig.app
+        .dispatch(Action::Pages {
+            action: PageAction::RemoveBarItem {
+                entry: BarEntry::Apps,
+            },
+        })
+        .unwrap();
+    assert!(!rig.app.pages().bar.full);
+    rig.app
+        .dispatch(Action::Pages {
+            action: PageAction::AddBarItem { app: url_app(4) },
+        })
+        .unwrap();
+    assert!(!rig.app.pages().bar.full);
+
+    rig.app
+        .dispatch(Action::Pages {
+            action: PageAction::MoveBarItem { from: 0, to: 5 },
+        })
+        .unwrap();
+    assert_eq!(rig.app.pages().bar.items[5].entry, BarEntry::Agent);
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: PageAction::MoveBarItem { from: 0, to: 6 },
+    }));
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: PageAction::RemoveBarItem {
+            entry: BarEntry::App { app: url_app(99) },
+        },
+    }));
+}
+
+#[tokio::test]
+async fn removed_roots_are_still_selectable() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    add_my_app(&rig, url_app(0)).await;
+    rig.app
+        .dispatch(Action::Pages {
+            action: PageAction::AddBarItem { app: url_app(0) },
+        })
+        .unwrap();
+    for entry in [BarEntry::Agent, BarEntry::Apps] {
+        rig.app
+            .dispatch(Action::Pages {
+                action: PageAction::RemoveBarItem { entry },
+            })
+            .unwrap();
+    }
+    assert_eq!(
+        rig.app
+            .pages()
+            .bar
+            .items
+            .iter()
+            .map(|item| item.entry.clone())
+            .collect::<Vec<_>>(),
+        [BarEntry::App { app: url_app(0) }]
+    );
+    // 侧边栏、通知和新聊天都直接选根页，不管它在不在栏上。
+    rig.app.dispatch(select(BarEntry::Apps)).unwrap();
+    assert_eq!(rig.app.pages().tab, BarEntry::Apps);
+    rig.app.dispatch(select(BarEntry::Agent)).unwrap();
+    assert_eq!(rig.app.pages().tab, BarEntry::Agent);
+    // 应用项不在栏上时不能选。
+    assert_invalid(rig.app.dispatch(select(BarEntry::App { app: url_app(1) })));
+}

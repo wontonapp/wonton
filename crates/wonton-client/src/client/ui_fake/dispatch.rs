@@ -69,13 +69,17 @@ impl ClientCore {
                 Ok(())
             }
             PageAction::SelectBarItem { entry } => {
+                let mut refused = false;
                 views.pages.send_modify(|pages| match &entry {
                     BarEntry::Agent | BarEntry::Apps => {
                         pages.tab = entry.clone();
                         pages.stack.clear();
                     }
                     BarEntry::App { app } => {
-                        pages.tab = entry.clone();
+                        if !pages.bar.items.iter().any(|item| item.entry == entry) {
+                            refused = true;
+                            return;
+                        }
                         let tab = match app {
                             wonton_protocol::MyAppRef::Page { tab } => tab.clone(),
                             wonton_protocol::MyAppRef::Plugin { plugin_id } => TabRef::Plugin {
@@ -89,13 +93,23 @@ impl ClientCore {
                         }
                     }
                 });
-                Ok(())
+                if refused {
+                    Err(CoreError::InvalidInput {
+                        reason: "fake bar item is not pinned".into(),
+                    })
+                } else {
+                    Ok(())
+                }
             }
             PageAction::AddBarItem { app } => {
                 let mut added = true;
                 views.pages.send_modify(|pages| {
+                    let known = match &app {
+                        wonton_protocol::MyAppRef::Page { tab } => fake_open(tab.clone()).is_some(),
+                        wonton_protocol::MyAppRef::Plugin { .. } => true,
+                    };
                     let entry = BarEntry::App { app };
-                    if pages.bar.items.iter().any(|item| item.entry == entry) {
+                    if !known || pages.bar.items.iter().any(|item| item.entry == entry) {
                         added = false;
                         return;
                     }
@@ -121,28 +135,44 @@ impl ClientCore {
                 }
             }
             PageAction::RemoveBarItem { entry } => {
-                if views.pages.borrow().bar.items.len() <= 1 {
-                    return Err(CoreError::InvalidInput {
-                        reason: "fake bar is empty".into(),
-                    });
-                }
+                let mut refused = false;
                 views.pages.send_modify(|pages| {
-                    pages.bar.items.retain(|item| item.entry != entry);
-                    pages.bar.full = false;
+                    if !pages.bar.items.iter().any(|item| item.entry == entry) {
+                        refused = true;
+                    } else if pages.bar.items.len() <= 1 {
+                        refused = true;
+                    } else {
+                        pages.bar.items.retain(|item| item.entry != entry);
+                        pages.bar.full = false;
+                    }
                 });
-                Ok(())
+                if refused {
+                    Err(CoreError::InvalidInput {
+                        reason: "fake bar refused".into(),
+                    })
+                } else {
+                    Ok(())
+                }
             }
             PageAction::MoveBarItem { from, to } => {
+                let mut refused = false;
                 views.pages.send_modify(|pages| {
                     let len = pages.bar.items.len();
                     let (from, to) = (from as usize, to as usize);
                     if from >= len || to >= len {
+                        refused = true;
                         return;
                     }
                     let item = pages.bar.items.remove(from);
                     pages.bar.items.insert(to, item);
                 });
-                Ok(())
+                if refused {
+                    Err(CoreError::InvalidInput {
+                        reason: "fake bar index out of range".into(),
+                    })
+                } else {
+                    Ok(())
+                }
             }
             _ => Ok(()),
         }

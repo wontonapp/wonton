@@ -209,9 +209,7 @@ pub(super) fn remove_uninstalled(
         .config
         .bar
         .retain(|entry| !bar_plugin_id(entry).is_some_and(gone));
-    if state.config.bar.is_empty() {
-        state.config.bar = default_bar();
-    }
+    // 插件卸了只拿掉那一项；用户删掉的根页不复活，栏可以暂时是空的。
     state.settle_tab();
     state.stack.retain(|item| {
         let missing = tab_plugin_id(&item.tab).is_some_and(gone);
@@ -279,9 +277,7 @@ pub(super) fn clear_plugin_config(state: &mut PagesState) {
         .config
         .bar
         .retain(|entry| bar_plugin_id(entry).is_none());
-    if state.config.bar.is_empty() {
-        state.config.bar = default_bar();
-    }
+    // 换服务器只拿掉绑在插件上的项；用户删掉的根页不复活。
     state.settle_tab();
     state.config.panel.clear();
     state.stack.clear();

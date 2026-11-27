@@ -27,21 +27,21 @@ impl PagesLink {
     }
 
     /// 点底栏的一项：两个根页切过去并弹回根；应用项打开它的整页（不带底栏）。
+    ///
+    /// 两个根页即使被删出栏也能选（侧边栏、通知、新聊天都走这里）；应用项要在栏上。
     pub(super) fn select_bar_item(&self, entry: BarEntry) -> Result<(), CoreError> {
-        self.runtime_change(|state, plugins| {
-            if !state.config.bar.contains(&entry) {
-                return Err(invalid(&l10n!(CATALOG, language(), "tabs-bar-not-in-bar")));
+        self.runtime_change(|state, plugins| match &entry {
+            BarEntry::Agent | BarEntry::Apps => {
+                state.tab = entry;
+                state.stack.clear();
+                Ok(())
             }
-            match &entry {
-                BarEntry::Agent | BarEntry::Apps => {
-                    state.tab = entry;
-                    state.stack.clear();
-                    Ok(())
+            BarEntry::App { app } => {
+                if !state.config.bar.contains(&entry) {
+                    return Err(invalid(&l10n!(CATALOG, language(), "tabs-bar-not-in-bar")));
                 }
-                BarEntry::App { app } => {
-                    let tab = openable_tab(app, plugins)?;
-                    open_page_locked(state, plugins, tab)
-                }
+                let tab = openable_tab(app, plugins)?;
+                open_page_locked(state, plugins, tab)
             }
         })
     }
@@ -49,6 +49,13 @@ impl PagesLink {
     /// 把一行加到底栏末尾。满了或重复都如实拒，并记下“满了”给壳。
     pub(super) fn add_bar_item(&self, app: MyAppRef) -> Result<(), CoreError> {
         self.config_change(|state, _plugins| {
+            if state.config.position(&app).is_none() {
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bar-page-missing"
+                )));
+            }
             let entry = BarEntry::App { app };
             if state.config.bar.contains(&entry) {
                 return Err(invalid(&l10n!(
