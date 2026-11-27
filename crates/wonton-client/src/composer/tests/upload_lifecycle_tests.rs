@@ -69,3 +69,49 @@ async fn a_handover_cut_short_continues_where_it_stopped() {
     assert_eq!(groups[1].skip, 1, "交出去的那条不再交一次");
     assert_eq!(groups[0].group_id, groups[1].group_id, "还是同一组");
 }
+
+/// 字节都交给服务器（tusd 回 204）以后不再报比例：状态是“已保存，等待送达”，直到服务器收下事件。
+/// 中继限速时这一段能挂几分钟，停在 100% 会让人以为还在传。
+#[tokio::test(flavor = "multi_thread")]
+async fn a_delivered_file_waits_without_a_percentage_until_the_message_lands() {
+    let s = setup();
+    let (release, gate) = oneshot::channel();
+    *s.fake.send_gate.lock().unwrap() = Some(gate);
+    s.link
+        .add_file(ROOM, file_source("report.pdf"), "report.pdf".into(), None)
+        .unwrap();
+    s.link.send(ROOM, "看看这个", None, &[]).unwrap();
+    until("文件在传", || {
+        s.fake.transfers.borrow().active.len() == 1
+    })
+    .await;
+    until("在传时有比例", || {
+        matches!(
+            view(&s).outgoing.first().map(|outgoing| &outgoing.state),
+            Some(SendState::Sending { progress: Some(_) })
+        )
+    })
+    .await;
+
+    // 204 只说明字节收完了：文件就绪、授权也做了，事件还卡在发送队列里。
+    s.fake
+        .finish_file("t-report.pdf", &FileId::from_bytes([7; 16]));
+    until("传完换成等待送达", || {
+        view(&s).outgoing.first().map(|outgoing| &outgoing.state)
+            == Some(&SendState::Sending { progress: None })
+    })
+    .await;
+    until("授权完、交给发送队列", || {
+        s.fake.log.lock().unwrap().len() == 2
+    })
+    .await;
+    {
+        let log = s.fake.log.lock().unwrap();
+        assert!(log[0].starts_with("grant "), "{log:?}");
+        assert_eq!(log[1], "send");
+    }
+
+    release.send(()).unwrap();
+    until("落地后清掉", || view(&s).outgoing.is_empty()).await;
+    assert_eq!(s.fake.groups(), 1);
+}
