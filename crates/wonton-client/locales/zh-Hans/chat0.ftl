@@ -35,6 +35,7 @@ chat-confirmation-response-unreadable = 核心的回应读不懂（{ $error }）
 chat-confirmation-core-status = 核心回了 { $status }
 
 chat-confirmations-list-failed = 取不到确认列表：{ $message }
+chat-inbox-list-failed = 取不到收件箱：{ $message }
 
 # $reason 是 Matrix ID 解析器的原始错误。
 chat-contacts-invalid-user-id = 用户 ID 不合法：{ $reason }

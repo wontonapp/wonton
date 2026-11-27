@@ -768,7 +768,7 @@ pub struct InboxListItem {
 
 /// `GET /_wonton/api/inbox` 的响应。`items` 已经按“阻塞且最快到期 → 阻塞 → 非阻塞问题 →
 /// 有动作的页面 → 通知 → 已处理”排好。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct InboxList {
     pub items: Vec<InboxListItem>,
@@ -815,16 +815,36 @@ pub struct InboxPageView {
     pub csp: String,
 }
 
-/// 收件箱主 ViewModel。
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// 收件箱主 ViewModel（客户端核心给壳）。
+///
+/// 核心的列表只给确认条目的摘要；回答确认还要卡片本身（选项、密钥输入、设备、放行时段），那份在确认卡片列表
+/// （ADR-0016）里。客户端核心把两份按卡片 ID 合进 [`Self::entries`]，壳照它画，不自己配对。
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct InboxViewModel {
+    /// 核心给的列表（顺序、版本）。`counts.needing` 已加上 [`Self::contact_requests`] 的条数：联系人请求
+    /// 不在核心的收件箱里，但同样等主人回答，铃铛要算上它们。
     pub list: InboxList,
+    /// 页面上画的条目，顺序同 `list.items`。
+    pub entries: Vec<InboxEntry>,
+    /// 等主人同意的联系人请求（ADR-0051），和确认卡片坐同一班列表。
+    pub contact_requests: Vec<crate::PendingContactRequest>,
     /// 还没取到过列表。
     pub loading: bool,
-    /// 最近一次没成的原因（连不上、没权限）。
+    /// 最近一次没取成的原因，按类别（连不上、没权限、核心出错）；上次取到的列表留着。
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub problem: Option<String>,
+    pub problem: Option<crate::ChatProblem>,
+}
+
+/// 收件箱页上的一条。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InboxEntry {
+    pub item: InboxListItem,
+    /// `confirm` 条目对应的确认卡片，能直接回答（经 [`ChatAction::AnswerConfirmation`](crate::ChatAction::AnswerConfirmation)）。
+    /// 为空：不是确认条目，或这张卡片还没出现在这台设备取到的卡片列表里，壳只画摘要。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card: Option<crate::ConfirmationView>,
 }
 
 impl InboxPayload {

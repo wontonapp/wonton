@@ -1,21 +1,21 @@
 import SwiftUI
 import WontonClient
 
-struct ConfirmationsPage: View {
-    let model: ConfirmationsModel
+struct InboxPage: View {
+    let model: InboxModel
     let chat: ChatModel
     let plugins: PluginsModel
     @State private var approvingRemote: PendingContactRequest?
 
     var body: some View {
-        ConfirmationsListView(
+        InboxListView(
             view: model.viewModel, bots: chat.viewModel.bots, plugins: plugins,
             answer: { card, choice, secrets, settings, devices in
                 chat.send(.chat(action: .answerConfirmation(id: card.card.id, answer: choice.answer,
                     choiceId: choice.choiceId, secrets: secrets, settings: settings, devices: devices)))
             },
             stopWindow: { chat.send(.chat(action: .stopConfirmationWindow(id: $0.card.id))) },
-            retry: { chat.send(.chat(action: .retryConfirmations)) },
+            retry: { chat.send(.chat(action: .retryInbox)) },
             approveContact: { request in
                 if request.contact.remote == nil {
                     model.act(on: request, approve: true, chat: chat)

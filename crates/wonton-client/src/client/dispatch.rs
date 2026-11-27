@@ -258,7 +258,7 @@ impl ClientCore {
             | ChatAction::CheckReady
             | ChatAction::AnswerConfirmation { .. }
             | ChatAction::StopConfirmationWindow { .. }
-            | ChatAction::RetryConfirmations
+            | ChatAction::RetryInbox
             | ChatAction::SetChatLayout { .. }) => scope.chat.dispatch(action),
         }
     }

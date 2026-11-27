@@ -86,7 +86,7 @@ struct ContentWindow: View {
             guard let roomId else {
                 guard try await nav.navigationReady() else { return }
                 try await nav.open(.tab(tab: .chat))
-                nav.chat.openConfirmations()
+                nav.chat.openInbox()
                 return
             }
             try await nav.open(.room(roomId: roomId))

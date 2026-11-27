@@ -142,6 +142,8 @@ struct SidebarContainer<Main: View, Panel: View>: View {
 struct SidebarPanel: View {
     let home: HomeModel
     let plugins: PluginsModel
+    /// 收件箱铃铛同一行（ADR-0119 第 9 节）；只放应用列表的那一份不显示它。
+    var inbox: InboxModel?
     let current: TabRef
     let navigate: (SidebarDestination) -> Void
     var appsOnly = false
@@ -169,6 +171,16 @@ struct SidebarPanel: View {
                         SidebarRow(title: TabText.chat, selected: current == .chat) {
                             (current == .chat ? WontonIcon.chatFill : WontonIcon.chat).view()
                         } action: { openDestination(.chat) }
+                        if let inbox {
+                            SidebarRow(
+                                title: String(localized: .Confirmations.confirmationsInboxTitle),
+                                badge: Int(inbox.needing ?? 0),
+                                badgeLabel: String(inbox.needing ?? 0),
+                                selected: false
+                            ) {
+                                WontonIcon.notify.view()
+                            } action: { openDestination(.inbox) }
+                        }
                         SidebarRow(
                             title: String(localized: .Store.storeTitle),
                             badge: Int(sidebar.updates),
@@ -342,6 +354,7 @@ enum SidebarDestination {
     case allApps
     case settings
     case newChat
+    case inbox
     case app(SidebarApp)
     /// 打开这一页并让它重新加载。
     case reload(TabRef)
@@ -359,6 +372,8 @@ private struct SidebarRow<Icon: View>: View {
     let title: String
     var subtitle: String?
     var badge = 0
+    /// 数字角标的读屏文字；不给时是“有 N 个更新”（商店那一行）。
+    var badgeLabel: String?
     var dotOnly = false
     let selected: Bool
     var badgeMark: SidebarBadgeMark?
@@ -408,7 +423,7 @@ private struct SidebarRow<Icon: View>: View {
                             .padding(.horizontal, 7)
                             .frame(minWidth: 22, minHeight: 22)
                             .background(Color(colors.danger), in: Capsule())
-                            .accessibilityLabel(String(localized: .Launcher.launcherUpdatesAvailable(count: badge)))
+                            .accessibilityLabel(badgeLabel ?? String(localized: .Launcher.launcherUpdatesAvailable(count: badge)))
                     }
                 }
             }

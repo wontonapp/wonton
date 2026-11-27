@@ -32,6 +32,7 @@ mod edit_actions;
 mod follow_home;
 mod forward;
 mod handoff;
+pub(crate) mod inbox;
 mod installs;
 mod jump;
 mod layout;

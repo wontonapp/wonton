@@ -1,6 +1,6 @@
 import XCTest
 
-/// 安装卡片上选设备（ADR-0036），不要后端（`WONTON_UI_FAKE` 的假数据：`ui_fake_devices.rs` 里“等你确认”的那张卡片）：
+/// 安装卡片上选设备（ADR-0036），不要后端（`WONTON_UI_FAKE` 的假数据：`ui_fake_devices.rs` 里收件箱的那张卡片）：
 /// 串口没选时不能同意；系统盘有标记、硬盘默认不勾；同意以后发回去的是选中的串口和勾上的盘。
 /// 假核心把收到的设备 ID 写进卡片的结果，这里照着看。
 ///
@@ -19,7 +19,7 @@ final class DeviceGrantUITests: XCTestCase {
 
     func testChosenDevicesGoBackWithTheAnswer() {
         launch()
-        tap(button("confirmations-entry"), "“等你确认”的入口")
+        tap(button("inbox-bell"), "收件箱铃铛")
         tap(button("confirmation-row-ui-fake-devices"), "带设备的安装卡片")
 
         XCTAssertTrue(waitHittable(option(Self.serial)), "卡片上没有可选的串口\n\(app.debugDescription)")
@@ -51,7 +51,7 @@ final class DeviceGrantUITests: XCTestCase {
 
     func testNvmeSelectionShowsHighestRisk() {
         launch()
-        tap(button("confirmations-entry"), "确认入口")
+        tap(button("inbox-bell"), "收件箱铃铛")
         tap(button("confirmation-row-ui-fake-devices"), "设备卡片")
         let warning = app.staticTexts["deviceHighestRisk"]
         XCTAssertFalse(warning.exists)

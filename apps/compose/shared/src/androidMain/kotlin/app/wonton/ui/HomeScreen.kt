@@ -8,7 +8,6 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.CoreUpgradeViewModel
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
-import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.PairingStatus
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRootBar
@@ -23,8 +22,6 @@ fun HomeRoute(
     navigation: PluginNavigation,
     page: HomePage,
     onPage: (HomePage) -> Unit,
-    pendingCards: List<PendingConfirmation>,
-    onOpenCardRoom: (String?) -> Unit,
     onConnection: () -> Unit,
     settingsUpgrade: Boolean,
     onSettings: (() -> Unit)? = null,
@@ -49,8 +46,6 @@ fun HomeRoute(
                     viewModel,
                     plugins,
                     navigation,
-                    pendingCards,
-                    onOpenCardRoom,
                     onShowStore = { onPage(HomePage.STORE) },
                     onConnection = onConnection,
                     settingsUpgrade = settingsUpgrade,

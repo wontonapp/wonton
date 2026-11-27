@@ -40,7 +40,7 @@ final class NotificationService: UNNotificationServiceExtension {
             content.body = String(localized: .pushNewMessage)
             return content
         }
-        // App 锁着就不露发送者、房间名和卡片标题：正文本来只有“有新消息”“等你确认”，标题换成 App 名。
+        // App 锁着就不露发送者、房间名和卡片标题：正文本来只有“有新消息”和确认卡片的类别文案，标题换成 App 名。
         if PushLock.lockedNow() {
             content.title = String(localized: .pushFallbackTitle)
         } else {
@@ -64,9 +64,11 @@ final class NotificationService: UNNotificationServiceExtension {
             ]) { current, _ in current }
         case .confirmation(let direct):
             content.threadIdentifier = direct.confirmation.origin?.roomId ?? direct.confirmation.id
-            // 没有来源会话的卡片 room_id 为空，点开后壳落到会话列表的“等你确认”入口。
+            // 没有来源会话的卡片 room_id 为空，点开后壳落到收件箱。卡片 ID 给 App 撤通知用：卡片结束了
+            // （别的设备答了、过期、撤回），App 取到收件箱时按它把这条撤掉（`InboxModel`，键名两边一致）。
             content.userInfo = content.userInfo.merging([
-                "server": direct.server, "room_id": direct.confirmation.origin?.roomId ?? ""
+                "server": direct.server, "room_id": direct.confirmation.origin?.roomId ?? "",
+                "confirmation_id": direct.confirmation.id
             ]) { current, _ in current }
         }
         return content

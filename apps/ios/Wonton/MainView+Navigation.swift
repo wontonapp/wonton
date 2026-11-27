@@ -56,7 +56,7 @@ extension MainView {
         onboardingGateway = nil
         pages.open(.chat)
         chat.resetNavigation()
-        if let roomId { chat.path = [.room(roomId)] } else { chat.openConfirmations() }
+        if let roomId { chat.path = [.room(roomId)] } else { chat.openInbox() }
     }
 
     func finishOnboarding(_ bot: String?) {

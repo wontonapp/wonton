@@ -10,9 +10,9 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use wonton_protocol::{
     AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
-    FamilyViewModel, FriendsViewModel, HomeViewModel, MyAvatarProblem, OnboardingViewModel,
-    PagesViewModel, PeersViewModel, PluginsViewModel, ServersViewModel, SettingsViewModel,
-    TransfersViewModel,
+    FamilyViewModel, FriendsViewModel, HomeViewModel, InboxViewModel, MyAvatarProblem,
+    OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel, ServersViewModel,
+    SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
@@ -72,6 +72,7 @@ pub(crate) struct Views {
     pub(crate) home: watch::Sender<HomeViewModel>,
     pub(crate) chat: watch::Sender<ChatViewModel>,
     pub(crate) confirmations: watch::Sender<ConfirmationsViewModel>,
+    pub(crate) inbox: watch::Sender<InboxViewModel>,
     pub(crate) plugins: watch::Sender<PluginsViewModel>,
     pub(crate) agent_chains: watch::Sender<AgentChainsViewModel>,
     /// 聊天里停止控件的请求进展，和链列表合起来算 `RoomAgentStop`。
@@ -92,6 +93,7 @@ impl Views {
             home: scope.home.sender(),
             chat: scope.chat.sender(),
             confirmations: scope.chat.confirmations_sender(),
+            inbox: scope.chat.inbox_sender(),
             plugins: scope.plugins.sender(),
             agent_chains: scope.agent_chains.sender(),
             agent_stops: scope.agent_chains.stops_sender(),
@@ -328,6 +330,7 @@ impl Scope {
         let channels = crate::chat::ChatChannels {
             view: views.map(|v| v.chat.clone()),
             confirmations: views.map(|v| v.confirmations.clone()),
+            inbox: views.map(|v| v.inbox.clone()),
             method: push_method.subscribe(),
             app_lock: app_lock.clone(),
             lock_screen: lock_screen.subscribe(),

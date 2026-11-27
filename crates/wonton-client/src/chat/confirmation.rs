@@ -1,4 +1,4 @@
-//! 确认卡片（ADR-0016）：核心记着卡片，经“等你确认”列表（`GET /_wonton/api/confirmations`）和推送交给 App；
+//! 确认卡片（ADR-0016）：核心记着卡片，经卡片列表（`GET /_wonton/api/confirmations`）和推送交给 App，收件箱（ADR-0119）里的 `confirm` 条目按 ID 配上它；
 //! 这里合成每张卡片现在该怎么显示，把主人的回答和“停止放行时段”发回去。
 //!
 //! 卡片的正文以核心的列表和单张接口为准，时间线里不再有卡片。这台设备还知道两件核心可能没来得及告诉它的事：
@@ -196,7 +196,7 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 /// 走本地代理的客户端，核心凭隧道身份认出这台已配对设备。
-fn tunnel_client(
+pub(super) fn tunnel_client(
     proxy: &ProxySettings,
     timeout: Duration,
 ) -> Result<reqwest::Client, reqwest::Error> {
@@ -560,8 +560,9 @@ impl ChatLink {
                 devices,
             } => self.answer_confirmation(id, answer, choice_id, secrets, settings, devices),
             ChatAction::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
-            ChatAction::RetryConfirmations => {
+            ChatAction::RetryInbox => {
                 self.retry_confirmations.notify_one();
+                self.retry_inbox.notify_one();
                 Ok(())
             }
             _ => unreachable!("dispatch only routes confirmation actions here"),

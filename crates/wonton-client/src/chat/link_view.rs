@@ -12,7 +12,7 @@ use tokio::sync::{mpsc, watch};
 use wonton_l10n::l10n;
 use wonton_protocol::{
     ChatAccount, ChatAction, ChatFailure, ChatSync, ChatViewModel, ConfirmationsViewModel,
-    CoreError, EncryptionStatus, MediaHandle, PushStatus, TimelineScroll,
+    CoreError, EncryptionStatus, InboxViewModel, MediaHandle, PushStatus, TimelineScroll,
 };
 
 use super::avatar_files;
@@ -76,6 +76,7 @@ impl ChatLink {
         let ChatChannels {
             view,
             confirmations,
+            inbox,
             method,
             app_lock,
             lock_screen,
@@ -117,6 +118,14 @@ impl ChatLink {
             ),
             room_cards: watch::Sender::new(Arc::new(Vec::new())),
             retry_confirmations: Arc::new(tokio::sync::Notify::new()),
+            inbox: reuse(
+                inbox,
+                InboxViewModel {
+                    loading: true,
+                    ..Default::default()
+                },
+            ),
+            retry_inbox: Arc::new(tokio::sync::Notify::new()),
             card_success,
             resetting_recovery: AtomicBool::default(),
             ask_seq: AtomicU64::default(),
@@ -152,6 +161,10 @@ impl ChatLink {
             runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
         }
         runtime.spawn(pending::follow_cards(
+            Arc::downgrade(&chat),
+            home.subscribe(),
+        ));
+        runtime.spawn(super::inbox::follow_inbox(
             Arc::downgrade(&chat),
             home.subscribe(),
         ));
@@ -230,7 +243,7 @@ impl ChatLink {
             | ChatAction::CancelDeviceVerification { .. }) => self.verification_action(action),
             action @ (ChatAction::AnswerConfirmation { .. }
             | ChatAction::StopConfirmationWindow { .. }
-            | ChatAction::RetryConfirmations) => self.confirmation_action(action),
+            | ChatAction::RetryInbox) => self.confirmation_action(action),
             ChatAction::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
             ChatAction::AskAgent { .. } | ChatAction::SkipKeyHandoff => {
                 Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))

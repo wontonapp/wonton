@@ -1,13 +1,11 @@
 import SwiftUI
 import WontonClient
 
-/// 主屏图标下面的状态：连接、等确认的卡片、存储。不知道的如实显示不确定。
+/// 主屏图标下面的状态：连接、存储。不知道的如实显示不确定。等你回答的事在收件箱（铃铛），这里不重复。
 struct HomeStatusPanel: View {
     let home: HomeViewModel
     let plugins: PluginsViewModel
-    let cards: [PendingConfirmation]
     let showConnection: () -> Void
-    let openCardRoom: (String?) -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -19,20 +17,6 @@ struct HomeStatusPanel: View {
                 )
             }
             .buttonStyle(.plain)
-            WontonSeparator()
-            if let first = cards.first {
-                Button { openCardRoom(first.roomId) } label: {
-                    WontonRow(
-                        title: String(localized: .HomeStatus.homeStatusPending),
-                        value: String(localized: .HomeStatus.homeStatusPendingCount(count: cards.count)),
-                        showsForward: true
-                    )
-                }
-                .buttonStyle(.plain)
-            } else {
-                WontonRow(title: String(localized: .HomeStatus.homeStatusPending),
-                    value: String(localized: .HomeStatus.homeStatusNone))
-            }
             WontonSeparator()
             WontonRow(title: String(localized: .HomeStatus.homeStatusStorage), value: storage)
             if let problem = plugins.storageProblem {

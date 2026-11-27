@@ -15,6 +15,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -29,7 +30,7 @@ import org.junit.rules.TestRule
 import org.junit.runner.RunWith
 
 /**
- * 安装卡片上选设备（ADR-0036），只用 Debug 的假核心（`ui_fake_devices.rs` 里“等你确认”的那张卡片）：串口没选时不能同意；
+ * 安装卡片上选设备（ADR-0036），只用 Debug 的假核心（`ui_fake_devices.rs` 里收件箱的那张卡片）：串口没选时不能同意；
  * 系统盘有标记、硬盘默认不勾；同意以后发回去的是选中的串口和勾上的盘。假核心把收到的设备 ID 写进卡片的结果，这里照着看。
  */
 @RunWith(AndroidJUnit4::class)
@@ -47,7 +48,7 @@ class DeviceGrantTest {
 
     @Test
     fun testChosenDevicesGoBackWithTheAnswer() {
-        compose.onNodeWithText(compose.activity.getString(R.string.confirmations_title)).performClick()
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.inbox_title)).performClick()
         compose.onNodeWithText(CARD_TITLE).performClick()
         compose.waitUntil(WAIT_MS) {
             compose.onAllNodes(hasTestTag("device-$SERIAL")).fetchSemanticsNodes().isNotEmpty()

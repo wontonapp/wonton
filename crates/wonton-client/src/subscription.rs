@@ -2,9 +2,9 @@ use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
     AgentChainsViewModel, AppLockViewModel, AppearanceViewModel, BotContactsViewModel,
     ChatViewModel, ComposerViewModel, ConfirmationsViewModel, FamilyViewModel, FriendsViewModel,
-    HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel,
-    RoomAgentStop, ServersViewModel, SessionListViewModel, SettingsViewModel, TimelineTarget,
-    TransfersViewModel, WidgetSnapshot,
+    HomeViewModel, InboxViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel,
+    PluginsViewModel, RoomAgentStop, ServersViewModel, SessionListViewModel, SettingsViewModel,
+    TimelineTarget, TransfersViewModel, WidgetSnapshot,
 };
 
 use crate::agent_chains::room_stop::{self, Attempts};
@@ -186,7 +186,34 @@ impl UnreadSubscription {
     }
 }
 
-/// “等你确认”列表的订阅（ADR-0016），用法同 [`SessionListSubscription`]。
+/// 收件箱的订阅（ADR-0119），用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct InboxSubscription {
+    updates: Updates<InboxViewModel>,
+}
+
+impl InboxSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<InboxViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl InboxSubscription {
+    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<InboxViewModel> {
+        self.updates.next(InboxViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
+/// 确认卡片列表的订阅（ADR-0016），用法同 [`SessionListSubscription`]。
 #[derive(uniffi::Object)]
 pub struct ConfirmationsSubscription {
     updates: Updates<ConfirmationsViewModel>,

@@ -41,7 +41,7 @@ import app.wonton.ui.icons.WontonIcon
 private const val EXPANDED_ROTATION = 90f
 
 /**
- * 确认卡片行（ADR-0016）：会话输入栏上方和“等你确认”列表共用。收起是一行——发起者头像、标题、
+ * 确认卡片行（ADR-0016）：会话输入栏上方和收件箱共用。收起是一行——发起者头像、标题、
  * 到期时间或结果；点开是完整卡片，能直接回答。
  */
 @Composable

@@ -4,7 +4,7 @@ import Foundation
 /// 推送解开后的两种明文：
 /// - 房间消息（ADR-0003 的“接口：推送”，字段同核心的 `DevicePayload`，核心有契约测试锁住字段名）；
 /// - 确认卡片直推（ADR-0016）：不是房间消息，没有房间事件，卡片标题在 `title` 里，点开的房间在
-///   `origin` 里（核心自己发起的没有，壳落到“等你确认”的入口）。
+///   `origin` 里（核心自己发起的没有，壳落到收件箱）。
 enum WontonPushPayload {
     struct Message: Decodable {
         let server: String
@@ -27,7 +27,7 @@ struct Confirmation: Decodable {
 struct ConfirmationCard: Decodable {
     let id: String
     let title: String
-    /// 卡片发起的会话；核心自己发起的卡片没有，点开去“等你确认”的入口。
+    /// 卡片发起的会话；核心自己发起的卡片没有，点开去收件箱。
     let origin: ConfirmationOrigin?
 }
 

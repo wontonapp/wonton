@@ -49,7 +49,6 @@ import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppsAction
 import app.wonton.protocol.HomeViewModel
-import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.PluginState
@@ -82,8 +81,6 @@ fun LauncherScreen(
     home: HomeViewModel,
     plugins: PluginsState,
     navigation: PluginNavigation,
-    pendingCards: List<PendingConfirmation>,
-    onOpenCardRoom: (String?) -> Unit,
     onShowStore: () -> Unit,
     onConnection: () -> Unit,
     settingsUpgrade: Boolean,
@@ -143,7 +140,7 @@ fun LauncherScreen(
                         SharedAppsSection(plugins.viewModel.sharedApps, plugins)
                     }
                     if (installed != null) item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
-                        HomeStatusPanel(home, plugins.viewModel, pendingCards, onConnection, onOpenCardRoom)
+                        HomeStatusPanel(home, plugins.viewModel, onConnection)
                     }
                 }
             }

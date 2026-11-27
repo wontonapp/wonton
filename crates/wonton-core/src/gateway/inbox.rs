@@ -151,34 +151,44 @@ async fn list(
     } else {
         viewer.clone()
     };
-    let now = crate::inbox::now_ms();
-    let mut revision = inbox.revision();
-    if let Some(after) = query.after {
+    // 列表的版本是收件箱自己的版本加确认表的版本（确认卡片投影进来，见下面）：等的时候两边任何一边变了
+    // 都要醒，比较也要用同一个和，不然确认卡片变了要白等到超时才返回。
+    let revision = || {
+        inbox.revision().saturating_add(
+            gateway
+                .mcp
+                .as_ref()
+                .map(|e| e.bus.confirmations().revision())
+                .unwrap_or_default(),
+        )
+    };
+    if let Some(after) = query.after
+        && after >= revision()
+    {
         let mut cards = gateway
             .mcp
             .as_ref()
             .map(|e| e.bus.confirmations().subscribe());
         let mut own = inbox.subscribe();
-        if after >= revision {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(INBOX_WAIT_SECS);
-            loop {
-                let changed = tokio::select! {
-                    _ = own.changed() => true,
-                    _ = async {
-                        match cards.as_mut() {
-                            Some(cards) => { let _ = cards.changed().await; }
-                            None => std::future::pending::<()>().await,
-                        }
-                    } => true,
-                    _ = tokio::time::sleep_until(deadline) => false,
-                };
-                revision = inbox.revision();
-                if !changed || revision > after {
-                    break;
-                }
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(INBOX_WAIT_SECS);
+        while revision() <= after {
+            let changed = tokio::select! {
+                _ = own.changed() => true,
+                _ = async {
+                    match cards.as_mut() {
+                        Some(cards) => { let _ = cards.changed().await; }
+                        None => std::future::pending::<()>().await,
+                    }
+                } => true,
+                _ = tokio::time::sleep_until(deadline) => false,
+            };
+            if !changed {
+                break;
             }
         }
     }
+    let now = crate::inbox::now_ms();
+    let revision = revision();
     let mut list = inbox.list(&viewer, now);
     if let Some(endpoint) = &gateway.mcp {
         let confirmations = endpoint.bus.confirmations();
@@ -199,13 +209,7 @@ async fn list(
         }
     }
     crate::inbox::sort_list(&mut list.items);
-    list.revision = revision.saturating_add(
-        gateway
-            .mcp
-            .as_ref()
-            .map(|e| e.bus.confirmations().revision())
-            .unwrap_or_default(),
-    );
+    list.revision = revision;
     Json(list).into_response()
 }
 

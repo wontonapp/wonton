@@ -53,8 +53,13 @@ impl ChatLink {
 }
 
 impl ChatLink {
-    /// 「等你确认」列表的发送端，同上。
+    /// 确认卡片列表的发送端，同上。
     pub(crate) fn confirmations_sender(&self) -> watch::Sender<ConfirmationsViewModel> {
         self.confirmations.clone()
+    }
+
+    /// 收件箱的发送端，同上。
+    pub(crate) fn inbox_sender(&self) -> watch::Sender<wonton_protocol::InboxViewModel> {
+        self.inbox.clone()
     }
 }

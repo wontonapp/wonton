@@ -48,7 +48,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
 
     /** 点通知进房间；通知来自旁聊时 [sideChatRoot] 是它的根，进那个旁聊（ADR-0093 §4）。 */
     fun openRoom(roomId: String, sideChatRoot: String? = null) {
-        chat.showingConfirmations = false
+        chat.showingInbox = false
         settingsOverlay = false
         plugins.detail = null
         pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
@@ -64,7 +64,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
     fun openCardTarget(roomId: String?) {
         if (roomId != null) openRoom(roomId) else {
             resetNavigation()
-            chat.openConfirmations()
+            chat.openInbox()
         }
     }
 
@@ -162,6 +162,10 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
             SidebarDestination.AllApps -> openApps(HomePage.LAUNCHER)
             SidebarDestination.Settings -> settings()
             SidebarDestination.NewChat -> selectChatList(startingChat = true)
+            SidebarDestination.Inbox -> {
+                selectChatList(startingChat = false)
+                chat.openInbox()
+            }
             is SidebarDestination.Plugin -> plugins.open(destination.entry)
             is SidebarDestination.Details -> detail(destination.pluginId)
         }
