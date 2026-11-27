@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use wonton_protocol::{BotRef, MemberStatus, PermissionItem};
 
 use super::{Gateway, TunnelPeer, api, permissions};
+use crate::media::LeaveError;
 use crate::members::MemberRecord;
 use crate::plugin::{InstallError, PluginId};
 use crate::private_home;
@@ -162,6 +163,13 @@ impl Gateway {
                 .remove_member_bot(bot, &member.username, removal.keep_bot_data)
                 .await?;
         }
+        // 媒体收干净了再停账号：收不回就停在这一步，主人重试时接着做。
+        if let Some(media) = &self.media {
+            media
+                .leave(&member.user_id)
+                .await
+                .map_err(|error| media_leave_error(&member.user_id, &error))?;
+        }
         let matrix = self.matrix.as_ref().ok_or_else(|| {
             InstallError::MatrixUnavailable("Matrix is not configured".to_owned())
         })?;
@@ -182,6 +190,17 @@ impl Gateway {
 
 fn storage(error: impl std::fmt::Display) -> InstallError {
     InstallError::Storage(error.to_string())
+}
+
+/// 媒体库出错是核心自己的存储问题；提供方收不回凭据是那个插件的问题（没在跑或上游出错）。
+fn media_leave_error(user: &str, error: &LeaveError) -> InstallError {
+    let message = format!("收不回 {user} 的媒体：{error}");
+    match error {
+        LeaveError::Provider(_) => InstallError::UpstreamUnavailable(message),
+        LeaveError::Store(_) | LeaveError::Task(_) | LeaveError::Session(_) => {
+            InstallError::Storage(message)
+        }
+    }
 }
 
 pub(super) async fn synchronize_locked(gateway: &Gateway, headers: &HeaderMap) -> Option<Response> {
