@@ -138,8 +138,7 @@ pub use chat::{
     BackupReminder, BotInstallRow, BotInstallState, ChatAccount, ChatContact, ChatFailure,
     ChatProblem, ChatSync, ChatViewModel, DeviceVerification, EncryptionStatus, ImageThumbnail,
     ImageUpload, MessageSummary, OwnBotFailure, OwnBotProblem, OwnPrivateBotView,
-    PendingConfirmation, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview,
-    RoomRow,
+    PendingConfirmation, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
 };
 pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
