@@ -132,6 +132,7 @@ PARTS: Dict[str, int] = {
     "message": 3,
     "onboarding": 6,
     "peers": 4,
+    "photo": 6,
     "plugin": 4,
     "problem": 4,
     "tab": 3,

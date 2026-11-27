@@ -453,6 +453,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 - `crates/wonton-protocol`：`media::library`（相册浏览的线上形状）、`media::uploads`（上传开始、收尾、去重检查的线上形状），`MediaOperation` 加 `library`（第 9 节）。
 - `crates/wonton-core`：能力表加 `media_source`，核心侧提供方客户端与两个契约测试假提供方；`/_wonton/api/media/{tasks,sessions,queue,streams,commands}`；MCP 工具与事件。
 - `crates/wonton-client`：`Action::Media`、`subscribe_media`/`subscribe_playback`、`player_state`、`_meta` 键；媒体页的 `#585` 会话改成 renderer。
+  原生相册页（第 9 节）：`Action::Photos`、`photos`/`subscribe_photos`、`photo_url`/`photo_person_url`（媒体回环上的地址），视图和动作在 `wonton-protocol` 的 `media::library_view`。
 - `wonton-docs`：`plugin-spec.md` 补 `media_source` 契约与错误码，清单 `provides.media_source` 字段。
 - 壳：`apps/ios`、`apps/compose` 的原生声画与后台能力（`URLSession` 后台、`Media3 ExoPlayer`、`AVPlayer`）。
 - 全部只加不改，没有破坏性的接口改动。#585 的 `PageMediaOwner` 单弱引用改成由客户端核收口是壳内实现，不动协议，归实现卡。

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
+    <string name="photo_gif_unreadable">このGIFを読み込めません</string>
+</resources>

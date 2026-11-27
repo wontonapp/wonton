@@ -1,0 +1,66 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "photo.unreadable": {
+      "comment": "Title of the photo problem: the picked photo can't be read or decoded.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't read this photo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读不出这张照片"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讀不出這張照片"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この写真を読み込めません"
+          }
+        }
+      }
+    },
+    "photo.caption": {
+      "comment": "Placeholder of the caption field at the bottom of the attachment sheet once photos are selected; the caption is sent together with the photos.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a caption…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加说明…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新增說明…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キャプションを追加…"
+          }
+        }
+      }
+    }
+  }
+}

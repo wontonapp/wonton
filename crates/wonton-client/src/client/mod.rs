@@ -52,6 +52,7 @@ mod music;
 mod my_avatar;
 mod page_color;
 mod pages;
+mod photos;
 mod plugin_detail;
 mod plugins;
 mod profile;
@@ -76,6 +77,8 @@ mod ui_fake_devices;
 mod ui_fake_failed_install;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_family;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_photos;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_plugin_detail;
 #[cfg(feature = "ui-fake")]

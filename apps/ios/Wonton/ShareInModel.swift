@@ -76,7 +76,7 @@ final class ShareInModel {
         } catch let failure as PhotoUpload.Failure {
             problem = Problem(
                 title: String(localized: failure.text),
-                nextStep: String(localized: .Photo.photoTryAnother)
+                nextStep: String(localized: .Photo1.photoTryAnother)
             )
         } catch {
             problem = error.problem

@@ -81,6 +81,7 @@ pub struct CoreState {
     canned_delayed: Mutex<HashMap<(Method, String), DelayedCanned>>,
     seen: Mutex<Vec<Seen>>,
     pub family: Arc<crate::family_support::FamilyFake>,
+    pub photos: Arc<crate::photos_support::PhotosFake>,
     bot_activity: bot_activity::Activity,
 }
 
@@ -320,6 +321,15 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
     if let Some(response) =
         crate::family_support::respond(&core.family, &parts.method, parts.uri.path(), &body)
     {
+        return response;
+    }
+    if let Some(response) = crate::photos_support::respond(
+        &core.photos,
+        &parts.method,
+        &parts.uri,
+        &parts.headers,
+        &body,
+    ) {
         return response;
     }
     if let Some(response) = onboarding_routes(&core, &parts.method, parts.uri.path(), &body).await {

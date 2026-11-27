@@ -8,6 +8,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use tokio::sync::watch;
+use wonton_protocol::media::library_view::PhotosViewModel;
 use wonton_protocol::{
     AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ClientsDomainViewModel,
     ConfirmationsViewModel, CoreError, FamilyViewModel, FriendsViewModel, HomeViewModel,
@@ -31,6 +32,7 @@ use crate::music_library::{LiveLibraries, MusicLink};
 use crate::onboarding::OnboardingLink;
 use crate::pages::PagesLink;
 use crate::peers::PeersLink;
+use crate::photos::PhotosLink;
 use crate::plugins::PluginsLink;
 use crate::push::{PushLink, PushPreviews};
 use crate::push_method::PushMethodLink;
@@ -57,6 +59,7 @@ pub(crate) struct Scope {
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) friends: Arc<FriendsLink>,
     pub(crate) family: Arc<FamilyLink>,
+    pub(crate) photos: Arc<PhotosLink>,
     pub(crate) bot_contacts: Arc<BotContactsLink>,
     pub(crate) clients_domain: Arc<ClientsDomainLink>,
     pub(crate) settings: SettingsLink,
@@ -90,6 +93,7 @@ pub(crate) struct Views {
     pub(crate) peers: watch::Sender<PeersViewModel>,
     pub(crate) friends: watch::Sender<FriendsViewModel>,
     pub(crate) family: watch::Sender<FamilyViewModel>,
+    pub(crate) photos: watch::Sender<PhotosViewModel>,
     pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
     pub(crate) clients_domain: watch::Sender<ClientsDomainViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
@@ -111,6 +115,7 @@ impl Views {
             peers: scope.peers.sender(),
             friends: scope.friends.sender(),
             family: scope.family.sender(),
+            photos: scope.photos.sender(),
             bot_contacts: scope.bot_contacts.sender(),
             clients_domain: scope.clients_domain.sender(),
             settings: scope.settings.sender(),
@@ -397,6 +402,12 @@ impl Scope {
             dir,
             views.map(|v| v.media.clone()),
         );
+        let photos = PhotosLink::new(
+            handle.clone(),
+            home.clone(),
+            media.clone(),
+            views.map(|v| v.photos.clone()),
+        );
         let bot_contacts = BotContactsLink::new(
             handle.clone(),
             home.clone(),
@@ -420,6 +431,7 @@ impl Scope {
             friends: people.1,
             family: people.2,
             clients_domain: people.3,
+            photos,
             bot_contacts,
             settings: people.4,
             shared_apps,

@@ -95,7 +95,7 @@ struct AttachSheet: View {
             tabs.transition(.opacity)
         } else {
             CaptionSendBar(
-                placeholder: String(localized: .Photo.photoCaption), text: $caption, count: selected.count,
+                placeholder: String(localized: .Photo0.photoCaption), text: $caption, count: selected.count,
                 cancel: { selected = [] },
                 // 选了照片就能发；只打了附言没选照片时这一条不出现，写了照片或字任一个就能发。
                 canSend: !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !selected.isEmpty,

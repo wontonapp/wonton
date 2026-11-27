@@ -73,8 +73,8 @@ final class ComposerModel {
         for item in items {
             guard let data = try? await item.loadTransferable(type: Data.self) else {
                 reject(Problem(
-                    title: String(localized: .Photo.photoUnreadable),
-                    nextStep: String(localized: .Photo.photoTryAnother)
+                    title: String(localized: .Photo0.photoUnreadable),
+                    nextStep: String(localized: .Photo1.photoTryAnother)
                 ))
                 continue
             }
@@ -89,7 +89,7 @@ final class ComposerModel {
                 try PhotoUpload.make(data: data, type: type)
             }.value
         } catch let failure as PhotoUpload.Failure {
-            reject(Problem(title: String(localized: failure.text), nextStep: String(localized: .Photo.photoTryAnother)))
+            reject(Problem(title: String(localized: failure.text), nextStep: String(localized: .Photo1.photoTryAnother)))
             return nil
         } catch {
             reject(error.problem)
@@ -150,8 +150,8 @@ final class ComposerModel {
         for item in items {
             guard let data = try? await item.loadTransferable(type: Data.self) else {
                 reject(Problem(
-                    title: String(localized: .Photo.photoUnreadable),
-                    nextStep: String(localized: .Photo.photoTryAnother)
+                    title: String(localized: .Photo0.photoUnreadable),
+                    nextStep: String(localized: .Photo1.photoTryAnother)
                 ))
                 continue
             }
