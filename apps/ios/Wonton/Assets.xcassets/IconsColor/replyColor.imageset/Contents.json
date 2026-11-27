@@ -1,0 +1,28 @@
+{
+  "images": [
+    {
+      "filename": "replyColor.svg",
+      "idiom": "universal",
+      "language-direction": "left-to-right"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "replyColorDark.svg",
+      "idiom": "universal",
+      "language-direction": "left-to-right"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  },
+  "properties": {
+    "preserves-vector-representation": true,
+    "template-rendering-intent": "original"
+  }
+}

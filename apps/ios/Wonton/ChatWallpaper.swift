@@ -170,7 +170,7 @@ private struct OptionalIdentifier: ViewModifier {
 struct ChatGlassButton: View {
     let icon: WontonIcon
     let label: String
-    /// 主要动作（发送）用强调填充，图标用 `onPrimary`。
+    /// 主要动作（发送）用强调填充。
     var prominent = false
     /// 可达性树的稳定标识；只给界面测试要按它找的按钮。
     var identifier: String?
