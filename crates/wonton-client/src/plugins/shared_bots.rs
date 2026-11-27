@@ -47,31 +47,46 @@ fn shared_bots_segments() -> [&'static str; 1] {
 #[cfg(test)]
 mod tests {
     use axum::http::StatusCode;
-    use axum::routing::get;
+    use axum::routing::{get, post};
     use axum::{Json, Router};
     use serde_json::{Value, json};
+    use tokio::task::JoinHandle;
 
     use super::*;
     use crate::plugins::api::ServerVersion;
 
     #[tokio::test]
-    async fn a_404_or_405_is_an_old_core_not_a_failure() {
-        for status in [StatusCode::NOT_FOUND, StatusCode::METHOD_NOT_ALLOWED] {
-            let router = Router::new().route(
-                SHARED_BOTS_PATH,
-                get(move || async move { (status, Json(json!({"error": "nope"}))) }),
-            );
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let _server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-            let api = CoreApi {
-                base: format!("http://{address}").parse().unwrap(),
-                client: reqwest::Client::new(),
-                languages: String::new(),
-                version: ServerVersion::default(),
-            };
-            assert!(fetch_shared_bots(&api).await.unwrap().is_none());
-        }
+    async fn a_404_from_an_unknown_route_is_not_a_failure() {
+        let router = Router::new().route(
+            SHARED_BOTS_PATH,
+            get(|| async { (StatusCode::NOT_FOUND, Json(json!({"error": "nope"}))) }),
+        );
+        let (api, _server) = serve(router).await;
+        assert!(fetch_shared_bots(&api).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn a_405_from_a_get_on_a_post_only_route_is_an_old_core_not_a_failure() {
+        // 旧核心的真实形状：同一路径只注册了 POST；GET 回 axum 的 405。
+        let router = Router::new().route(
+            SHARED_BOTS_PATH,
+            post(|| async { StatusCode::CREATED }),
+        );
+        let (api, _server) = serve(router).await;
+        assert!(fetch_shared_bots(&api).await.unwrap().is_none());
+    }
+
+    async fn serve(router: Router) -> (CoreApi, JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let api = CoreApi {
+            base: format!("http://{address}").parse().unwrap(),
+            client: reqwest::Client::new(),
+            languages: String::new(),
+            version: ServerVersion::default(),
+        };
+        (api, task)
     }
 
     #[tokio::test]
