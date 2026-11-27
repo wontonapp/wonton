@@ -231,6 +231,7 @@ impl ClientCore {
                         },
                         tab: Some(tab.clone()),
                         title,
+                        subtitle: None,
                         open: wonton_protocol::SidebarOpen::Page { tab },
                         icon: None,
                         badge: wonton_protocol::SidebarBadge::default(),
