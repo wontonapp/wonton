@@ -197,7 +197,7 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
 
     /// 根页上、标过能关的盖子：返回要关掉的那个盖子。
     private func dismissing(_ navigation: UINavigationController) -> UIViewController? {
-        guard let dismiss, !dismiss.isDragging, navigation.viewControllers.count == 1,
+        guard let dismiss, !dismiss.isSliding, navigation.viewControllers.count == 1,
               navigation.transitionCoordinator == nil else { return nil }
         return EdgeDismiss.cover(of: navigation)
     }
@@ -259,7 +259,7 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
         if isInteractive {
             isInteractive = false
             if finishing { transition.finish() } else { transition.cancel() }
-        } else if dismiss?.isDragging == true {
+        } else if dismiss?.isSliding == true {
             dismiss?.end(finishing: finishing)
         }
     }
