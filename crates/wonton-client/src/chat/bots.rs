@@ -656,6 +656,7 @@ impl Bots {
             true
         });
         drop(local);
+        self.publish_contacts();
         self.update_activity();
         self.refresh_all();
         self.changed.notify_one();
