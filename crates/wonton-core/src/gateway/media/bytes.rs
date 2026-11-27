@@ -1,12 +1,13 @@
-//! 三条字节路由（ADR-0113 第 2 节“字节路径”）和条目浏览：核心流式转给提供方，不落盘也不解码。
+//! 上传、下载的字节路由（ADR-0113 第 2 节“字节路径”）和条目浏览：核心流式转给提供方，不落盘也不解码。
 //!
 //! - `POST /tasks/{id}/uploads/{item}`：无体。还没有上传号就用任务里的这一项补体向提供方开一个、记下号；
 //!   有号先 `HEAD` 查断点，提供方不认（404）就重开。回当前 `upload_offset`。
 //! - `PATCH /tasks/{id}/uploads/{item}`：按记下的号续写，体和 `Content-Range` 原样过；偏移对不上回 409 带
 //!   当前偏移；收满就让提供方收尾，这一项记完成。
 //! - `GET /tasks/{id}/items/{item}/content`：下载任务的字节，`Range`/`If-Range` 原样过。
-//! - `GET /sessions/{id}/stream`：计划里的流。提供方给的地址只取路径和查询串，按它的服务地址去取。
-//! - `GET /sessions/{id}/items/{item}/stream`：队列里另一项的流，无缝播放和预取用。
+//!
+//! 播放的流在 [`super::streams`]。列出的条目由核心填 `source`；有封面的，`artwork_url` 换成核心的封面路由
+//! （手机连不到提供方）。
 
 use std::sync::Arc;
 
@@ -17,21 +18,20 @@ use axum::response::{IntoResponse, Json, Response};
 use hyper::header::{self, HeaderMap, HeaderName};
 use hyper::{Method, StatusCode};
 use serde::Deserialize;
+use wonton_protocol::media::api;
 use wonton_protocol::media::provider::{
-    ArtworkQuery, ItemsQuery, item_artwork_path, item_download_path,
+    ArtworkKind, ArtworkQuery, ItemsQuery, item_artwork_path, item_download_path,
 };
 use wonton_protocol::media::uploads::{UPLOAD_OFFSET_HEADER, UploadOffset, UploadStart};
 use wonton_protocol::media::{
-    ItemState, MediaFailure, MediaFailureCode, MediaItemRef, MediaKind, MediaOperation, MediaTask,
-    PlaybackRequest, PlaybackSession, ProviderStream, TaskKind, TaskTarget, UploadItem,
+    ItemState, MediaFailure, MediaFailureCode, MediaKind, MediaOperation, MediaTask, TaskKind,
+    TaskTarget, UploadItem,
 };
 
-use super::sessions::{item_route, own_session, session_route};
 use super::tasks::{own_task, parse_task};
 use super::{Caller, MediaQuery, reply, service_failure};
 use crate::gateway::Gateway;
 use crate::media::provider::ProviderRoute;
-use crate::media::session_service::unix_now_ms;
 use crate::media::store::UploadBinding;
 use crate::plugin::media_source::failure;
 
@@ -47,7 +47,7 @@ const PASS_REQUEST: [HeaderName; 6] = [
     header::ACCEPT,
 ];
 
-fn pass(headers: &HeaderMap) -> HeaderMap {
+pub(super) fn pass(headers: &HeaderMap) -> HeaderMap {
     let mut out = HeaderMap::new();
     for name in PASS_REQUEST {
         if let Some(value) = headers.get(&name) {
@@ -423,138 +423,16 @@ async fn download_route(
         .await
 }
 
-pub(super) async fn stream(
-    State(gateway): State<Arc<Gateway>>,
-    Extension(caller): Extension<Caller>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    let fetched = async {
-        let session = own_session(&caller, &id)?;
-        let plan = session
-            .plan
-            .as_ref()
-            .ok_or_else(|| failure(MediaFailureCode::MediaGone, "这条会话现在没有计划"))?;
-        let path = provider_path(&plan.stream)?;
-        let route = session_route(&gateway, &caller, &session).await?;
-        route
-            .client
-            .forward(
-                &session.person,
-                Method::GET,
-                &path,
-                pass(&headers),
-                Body::empty(),
-            )
-            .await
-    };
-    match fetched.await {
-        Ok(response) => response,
-        Err(failure) => reply(&failure),
-    }
-}
-
-/// 队列里另一项的流（无缝播放、预取）：这一项必须在这个人的队列里，按会话起播时的设备档、向这一项
-/// 自己的来源要它的计划，取计划里的流。不改会话，也不进播放记录。
-pub(super) async fn queued_stream(
-    State(gateway): State<Arc<Gateway>>,
-    Extension(caller): Extension<Caller>,
-    Path((id, item)): Path<(String, String)>,
-    headers: HeaderMap,
-) -> Response {
-    let fetched = async {
-        let session = own_session(&caller, &id)?;
-        let entry = queued_entry(&caller, &session, &item)?;
-        let route = item_route(&gateway, &caller, &session.person, &entry).await?;
-        let path = match caller.media.queued.get(session.id, &item, unix_now_ms()) {
-            Some(path) => path,
-            None => queued_plan(&caller, &route, &session, entry).await?,
-        };
-        route
-            .client
-            .forward(
-                &session.person,
-                Method::GET,
-                &path,
-                pass(&headers),
-                Body::empty(),
-            )
-            .await
-    };
-    match fetched.await {
-        Ok(response) => response,
-        Err(failure) => reply(&failure),
-    }
-}
-
-fn queued_entry(caller: &Caller, session: &PlaybackSession, item: &str) -> Reply<MediaItemRef> {
-    let queue = caller
-        .media
-        .sessions
-        .queue(&session.person)
-        .map_err(|e| service_failure(&e))?;
-    queue
-        .entries
-        .into_iter()
-        .find(|entry| entry.id == item)
-        .ok_or_else(|| failure(MediaFailureCode::MediaGone, format!("队列里没有 {item}")))
-}
-
-async fn queued_plan(
-    caller: &Caller,
-    route: &ProviderRoute,
-    session: &PlaybackSession,
-    entry: MediaItemRef,
-) -> Reply<String> {
-    let item = entry.id.clone();
-    let profile = caller
-        .media
-        .store
-        .session_profile(session.id)
-        .map_err(|e| service_failure(&e))?
-        .ok_or_else(|| failure(MediaFailureCode::MediaGone, "这条会话没记设备档"))?;
-    let request = PlaybackRequest {
-        position_ms: 0,
-        audio: None,
-        subtitle: None,
-        item: entry,
-        device: session.device.clone(),
-        person: session.person.clone(),
-        profile,
-    };
-    let plan = route.client.playback(&session.person, &request).await?;
-    let path = provider_path(&plan.stream)?;
-    caller
-        .media
-        .queued
-        .put(session.id, &item, path.clone(), plan.expires_at);
-    Ok(path)
-}
-
-/// 提供方给的流地址只取路径和查询串：核心只连这个提供方的服务，不跟着地址去别处。
-fn provider_path(stream: &ProviderStream) -> Reply<String> {
-    let raw = match stream {
-        ProviderStream::Direct(url)
-        | ProviderStream::Transcoded(url)
-        | ProviderStream::Other(url) => url,
-    };
-    let uri: hyper::Uri = raw.parse().map_err(|e| {
-        failure(
-            MediaFailureCode::Protocol,
-            format!("计划里的流地址不合法：{e}"),
-        )
-    })?;
-    uri.path_and_query()
-        .map(|pq| pq.as_str().to_owned())
-        .filter(|pq| pq.starts_with('/'))
-        .ok_or_else(|| failure(MediaFailureCode::Protocol, "计划里的流地址没有路径"))
-}
-
+/// 取封面的查询串：`kind`、`source` 用来选提供方，`type`、`width` 原样转给它。
 #[derive(Deserialize)]
-pub(super) struct KindQuery {
+pub(super) struct ArtworkRequest {
     kind: MediaKind,
     #[serde(default)]
     source: Option<String>,
+    #[serde(rename = "type", default)]
+    artwork: Option<ArtworkKind>,
+    #[serde(default)]
+    width: Option<u32>,
 }
 
 /// 按种类列条目，转给这个种类的提供方。
@@ -584,9 +462,13 @@ pub(super) async fn items(
             ..query.clone()
         };
         let mut page = route.client.items(&caller.person, &upstream).await?;
-        // 来源由核心填，提供方自己填的不算数。
+        // 来源由核心填，提供方自己填的不算数。提供方的封面地址手机连不到，也不跟着它走：有图就换成
+        // 核心的封面路由，核心再按契约的 `GET /items/{id}/artwork` 去取。
         for item in &mut page.items {
             item.source = Some(route.provider.clone());
+            if item.artwork_url.is_some() {
+                item.artwork_url = Some(api::item_artwork_path(item, &ArtworkQuery::default()));
+            }
         }
         Ok(page)
     };
@@ -601,7 +483,7 @@ pub(super) async fn artwork(
     State(gateway): State<Arc<Gateway>>,
     Extension(caller): Extension<Caller>,
     Path(item): Path<String>,
-    MediaQuery(KindQuery { kind, source }): MediaQuery<KindQuery>,
+    MediaQuery(request): MediaQuery<ArtworkRequest>,
     headers: HeaderMap,
 ) -> Response {
     let fetched = async {
@@ -612,16 +494,20 @@ pub(super) async fn artwork(
                 &caller.person,
                 caller.allowed(&gateway),
                 &MediaOperation::List,
-                Some(&kind),
-                source.as_deref(),
+                Some(&request.kind),
+                request.source.as_deref(),
             )
             .await?;
+        let size = ArtworkQuery {
+            artwork: request.artwork,
+            width: request.width,
+        };
         route
             .client
             .forward(
                 &caller.person,
                 Method::GET,
-                &item_artwork_path(&item, &ArtworkQuery::default()),
+                &item_artwork_path(&item, &size),
                 pass(&headers),
                 Body::empty(),
             )

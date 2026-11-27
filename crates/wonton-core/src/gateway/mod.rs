@@ -457,6 +457,8 @@ mod mcp_tests;
 #[cfg(test)]
 mod media_flow_tests;
 #[cfg(test)]
+mod media_stream_tests;
+#[cfg(test)]
 mod media_tests;
 #[cfg(test)]
 mod models_tests;

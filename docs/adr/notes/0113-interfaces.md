@@ -499,8 +499,9 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/tasks/{id}/uploads/{item}` | `POST` | 无体；核心从任务的 `UploadItem` 补体转发 `POST /uploads` | `{upload_offset}` |
 | `/tasks/{id}/uploads/{item}` | `PATCH` | 从偏移起的字节，带 `Content-Range`；核心按 `(task,item)` 查 `upload_id` 转发 | `{upload_offset}`；偏移不符 409 带当前偏移 |
 | `/tasks/{id}/items/{item}/content` | `GET` | 原始字节，`Range` 原样 | 字节流（206/200） |
-| `/sessions/{id}/stream` | `GET` | 原始字节 | 字节流（206/200） |
+| `/sessions/{id}/stream/{文件名}` | `GET` | 原始字节；客户端照计划里的 `stream` 来取 | 字节流（206/200） |
 | `/sessions/{id}/items/{item}/stream` | `GET` | 原始字节；`item` 必须在这个人的队列里 | 字节流（206/200）；不在队列里回 `media_gone`。核心按会话的设备档、向这一项自己的来源要它的计划，计划记到过期，不改会话 |
+| 上面两条后接 `/{rest}` | `GET` | 原始字节；`rest` 是播放器按上一份列表解析出的相对地址（HLS 的子列表、分片） | 字节流。核心把 `rest` 逐段接到流地址的目录后面，查询串用这次请求的；`.`、`..`、空段回 `protocol` |
 | `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
 | `/items` | `GET` | 无（query 同提供方的 `GET /items`，`kind` 必填） | `{items, cursor?}`，核心转给这个种类的提供方 |
 | `/items/{id}/artwork` | `GET` | 无（query: `kind`，可选 `source`、`type`、`width`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork`，`type`、`width` 原样带过去 |
@@ -513,7 +514,9 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 
 请求体与响应体的字段在 `wonton-protocol` 的 `media/api.rs`（核心接口）和 `media/provider.rs`（提供方契约），这里不重复。
 
-播放计划里的流地址：提供方给的 `stream` 只取路径和查询串，核心按这个提供方的 `media_source` 服务地址去取（主机名不认），请求带同样的凭据与 `X-Wonton-User`；给客户端的计划里 `stream` 换成 `/sessions/{id}/stream`，`origin_stream` 不下发。
+播放计划里的流地址：提供方给的 `stream` 只取路径和查询串，核心按这个提供方的 `media_source` 服务地址去取（主机名不认），请求带同样的凭据与 `X-Wonton-User`；给客户端的计划里 `stream` 换成 `/sessions/{id}/stream/{文件名}`（提供方流地址的最后一段），查询串和 `origin_stream` 不下发（可能带提供方的令牌），取流本身时核心用计划里的。HLS 这类流的子列表、分片写相对地址，播放器按这个地址解析成 `/sessions/{id}/stream/…` 再来取，核心不改写播放列表；只给 `/sessions/{id}/stream` 的话相对地址会落到 `/sessions/{id}/` 下面。
+
+条目的封面：提供方给的 `artwork_url` 只表示有没有图。核心转出去的条目里，有图的换成核心的 `/items/{id}/artwork?kind=…&source=…`（`api::item_artwork_path`），客户端要哪一张、多宽再接 `&type=…&width=…`；核心取图走契约的 `GET /items/{id}/artwork`，不跟提供方给的地址走。
 
 ### 选哪个提供方
 
