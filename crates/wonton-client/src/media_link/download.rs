@@ -34,6 +34,11 @@ use wonton_protocol::media::{
 use super::api::{MediaApi, checked, failure, unreachable};
 use crate::l10n::text;
 
+#[path = "download_state.rs"]
+mod state;
+use state::Known;
+pub use state::OfflineState;
+
 const DIR: &str = "media-downloads";
 /// 写完的文件放在下载目录的这个子目录里：和记录（`<任务>.json`）、半截（`<任务>.part`）分开，
 /// 提供方给什么扩展名都撞不上它们。
@@ -57,25 +62,17 @@ pub(crate) struct Record {
     pub(crate) file: Option<String>,
 }
 
-/// 一条条目在这台设备上的离线副本。
-#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
-pub enum OfflineState {
-    /// 下了一部分；`total` 不知道时为空。
-    Downloading { done: u64, total: Option<u64> },
-    /// 写完了，`path` 是本机文件的绝对路径，播放器直接放。
-    Ready { path: String },
-}
-
 /// 这一次取字节的结果：收全了，或者半截接不上、要从 0 再来。
 enum Fetched {
     Done(PathBuf),
     Restart,
 }
 
-/// 这台设备上的下载：目录和在跑的任务。
+/// 这台设备上的下载：目录、在跑的任务和各任务最近知道的状态。
 pub(crate) struct Downloads {
     dir: PathBuf,
     running: Mutex<HashMap<TaskId, AbortHandle>>,
+    known: Mutex<Known>,
 }
 
 /// 该由这台设备接着下的状态。暂停、等网络、等电源由核心改回 `Queued` 后再下。
@@ -91,6 +88,7 @@ impl Downloads {
         Arc::new(Self {
             dir: scope_dir.join(DIR),
             running: Mutex::new(HashMap::new()),
+            known: Mutex::new(Known::default()),
         })
     }
 
@@ -131,6 +129,7 @@ impl Downloads {
             if task.kind != TaskKind::Download || task.device != device {
                 continue;
             }
+            self.known().states.insert(task.id, task.state.clone());
             if runnable(&task.state) {
                 self.start(runtime, api.clone(), task.id, item.clone());
             } else {
@@ -147,6 +146,7 @@ impl Downloads {
         if running.get(&task).is_some_and(|h| !h.is_finished()) {
             return;
         }
+        self.known().failures.remove(&task);
         let downloads = self.clone();
         let handle = runtime.spawn(async move {
             if let Err(failure) = downloads.run(&api, task, item).await {
@@ -202,8 +202,18 @@ impl Downloads {
                     .await?;
             }
             Err(failure) => {
-                if let Err(report) = api.post_empty(&task_failure_path(task), failure).await {
-                    tracing::warn!(%task, error = %report.message, "download failed and the failure could not be reported to the core");
+                self.known().failures.insert(task, failure.clone());
+                // 核心回改过的任务：可重试的类别它排进等待、到点再叫这台设备，其余的直接失败。
+                match api
+                    .post::<MediaTask>(&task_failure_path(task), failure)
+                    .await
+                {
+                    Ok(reported) => {
+                        self.known().states.insert(task, reported.state);
+                    }
+                    Err(report) => {
+                        tracing::warn!(%task, error = %report.message, "download failed and the failure could not be reported to the core");
+                    }
                 }
             }
         }
@@ -234,7 +244,8 @@ impl Downloads {
             record.etag = None;
             record.total = None;
         }
-        std::fs::create_dir_all(&self.dir).map_err(|e| local(&e))?;
+        // 要字节前先落记录：一个字节都没取到就失败的，也找得到它、显示得出原因。
+        self.write_record(&record)?;
         let part = self.part(task);
         let have = std::fs::metadata(&part).map_or(0, |m| m.len());
         let resume = match (&record.etag, may_resume && have > 0) {
@@ -308,31 +319,6 @@ impl Downloads {
         record.total = None;
         self.write_record(record)?;
         Ok(Fetched::Restart)
-    }
-
-    /// 这一条在这台设备上的离线副本；没下过为空。下过几次时取写完的那份。
-    pub(crate) fn offline(&self, item_id: &str) -> Option<OfflineState> {
-        let mut downloading = None;
-        for record in self.records() {
-            if record.item.id != item_id {
-                continue;
-            }
-            if let Some(file) = &record.file {
-                let path = self.dir.join(file);
-                if path.exists() {
-                    return Some(OfflineState::Ready {
-                        path: path.to_string_lossy().into_owned(),
-                    });
-                }
-                continue;
-            }
-            let done = std::fs::metadata(self.part(record.task)).map_or(0, |m| m.len());
-            downloading = Some(OfflineState::Downloading {
-                done,
-                total: record.total,
-            });
-        }
-        downloading
     }
 
     pub(crate) fn records(&self) -> Vec<Record> {

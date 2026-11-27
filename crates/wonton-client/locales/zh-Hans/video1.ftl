@@ -6,3 +6,6 @@ video-download-interrupted = 下载中断：{ $reason }
 
 # Detail when the app passes back a malformed playback session ID. $value is what it passed.
 video-session-unreadable = 播放会话号认不出来：{ $value }
+
+# Detail when retrying an offline download that the server hasn't marked as failed.
+video-download-not-failed = 这一条没有失败的下载可以重试。

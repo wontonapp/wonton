@@ -460,7 +460,7 @@ pub(super) fn detail(id: &str) -> VideoDetail {
     }
 }
 
-/// 两部片子在“这台手机上”：一部下到一半，一部下完（路径是假的，点播放会放不了）。
+/// 三部片子在“这台手机上”：一部下到一半，一部下完（路径是假的，点播放会放不了），一部空间不够没下成。
 pub(super) fn offline(id: &str) -> Option<OfflineState> {
     match id {
         "m2" => Some(OfflineState::Downloading {
@@ -469,6 +469,13 @@ pub(super) fn offline(id: &str) -> Option<OfflineState> {
         }),
         "m4" => Some(OfflineState::Ready {
             path: "/ui-fake/m4.mkv".into(),
+        }),
+        "m5" => Some(OfflineState::Failed {
+            failure: MediaFailure {
+                code: MediaFailureCode::LocalStorageFull,
+                message: "No space left on device (os error 28)".into(),
+                retry_after_secs: None,
+            },
         }),
         _ => None,
     }
