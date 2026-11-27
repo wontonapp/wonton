@@ -34,7 +34,7 @@ pub(crate) use schema::SCHEMA_V1;
 
 const DB_FILE: &str = "media.sqlite3";
 
-/// 每人向提供方上传的总量上限。ADR-0113 第 3 节没定值，先按 100 GiB 收；M16 接策略时用它兜底。
+/// 每人在每个提供方上的上传上限。ADR-0113 第 3 节没定值，按 100 GiB 收。
 pub const DEFAULT_PROVIDER_UPLOAD_LIMIT: u64 = 100 * 1024 * 1024 * 1024;
 
 /// 迁移前没有提供方的上传账行落在这个空串提供方上（`schema.rs` 的 `MIGRATE_V2`）；
@@ -135,6 +135,22 @@ impl Ledger {
         match self {
             Self::ProviderUpload => Some(DEFAULT_PROVIDER_UPLOAD_LIMIT),
             Self::DeviceOffline => None,
+        }
+    }
+
+    /// 已用 `used` 再记 `bytes` 之后的用量；超上限回 [`MediaStoreError::QuotaExceeded`]。
+    fn after(self, used: u64, limit: Option<u64>, bytes: u64) -> Result<u64, MediaStoreError> {
+        let total = used
+            .checked_add(bytes)
+            .ok_or(MediaStoreError::QuotaOverflow { used, want: bytes })?;
+        match limit {
+            Some(limit) if total > limit => Err(MediaStoreError::QuotaExceeded {
+                ledger: self.as_str(),
+                used,
+                limit,
+                want: bytes,
+            }),
+            _ => Ok(total),
         }
     }
 }
@@ -332,20 +348,48 @@ impl Store {
         let (used, limit) = self
             .ledger_usage(&tx, person, ledger, provider, device)?
             .unwrap_or((0, ledger.default_limit()));
-        let want_total = used
-            .checked_add(bytes)
-            .ok_or(MediaStoreError::QuotaOverflow { used, want: bytes })?;
-        if let Some(limit) = limit
-            && want_total > limit
-        {
-            return Err(MediaStoreError::QuotaExceeded {
-                ledger: ledger.as_str(),
-                used,
-                limit,
-                want: bytes,
-            });
-        }
+        let want_total = ledger.after(used, limit, bytes)?;
         self.record_usage(&tx, person, ledger, provider, device, want_total, limit)?;
+        let view = self.read_quota(&tx, person)?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(view)
+    }
+
+    /// 这一格还放不放得下 `bytes`，只看不记；放不下回 [`MediaStoreError::QuotaExceeded`]。
+    pub fn check_quota(
+        &self,
+        person: &str,
+        ledger: Ledger,
+        provider: Option<&str>,
+        device: Option<&str>,
+        bytes: u64,
+    ) -> Result<(), MediaStoreError> {
+        let (provider, device) = ledger.keys(provider, device)?;
+        let conn = self.conn()?;
+        let (used, limit) = self
+            .ledger_usage(&conn, person, ledger, provider, device)?
+            .unwrap_or((0, ledger.default_limit()));
+        ledger.after(used, limit, bytes).map(|_| ())
+    }
+
+    /// 记一笔已经落地的用量（上传入库了、下载写完了），不看上限：放不放得下在任务进 `Preparing` 时查过，
+    /// 字节已经在那边了，账要如实记，超了就让下一个任务被拒。
+    pub fn charge_quota(
+        &self,
+        person: &str,
+        ledger: Ledger,
+        provider: Option<&str>,
+        device: Option<&str>,
+        bytes: u64,
+    ) -> Result<QuotaView, MediaStoreError> {
+        let (provider, device) = ledger.keys(provider, device)?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        let (used, limit) = self
+            .ledger_usage(&tx, person, ledger, provider, device)?
+            .unwrap_or((0, ledger.default_limit()));
+        let total = used.saturating_add(bytes);
+        self.record_usage(&tx, person, ledger, provider, device, total, limit)?;
         let view = self.read_quota(&tx, person)?;
         tx.commit().map_err(|source| self.db_error(source))?;
         Ok(view)

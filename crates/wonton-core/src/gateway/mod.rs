@@ -459,6 +459,8 @@ mod media_browse_tests;
 #[cfg(test)]
 mod media_flow_tests;
 #[cfg(test)]
+mod media_quota_tests;
+#[cfg(test)]
 mod media_stream_tests;
 #[cfg(test)]
 mod media_tests;
