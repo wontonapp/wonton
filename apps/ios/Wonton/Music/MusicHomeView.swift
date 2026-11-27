@@ -66,7 +66,7 @@ private struct MusicCategories: View {
             ForEach(entries, id: \.0) { title, icon, page in
                 Button { music?.open(page) } label: {
                     HStack(spacing: WontonTheme.spacing.s16) {
-                        icon.view(size: WontonTheme.size.icon).foregroundStyle(Color(colors.primary))
+                        icon.view(size: WontonTheme.size.icon).foregroundStyle(Color(colors.textPrimary))
                         Text(title)
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))

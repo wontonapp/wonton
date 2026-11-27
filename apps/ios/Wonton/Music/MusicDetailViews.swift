@@ -25,7 +25,7 @@ private struct MusicHeader: View {
                     Button { openSubtitle?() } label: {
                         Text(subtitle)
                             .wontonText(WontonTheme.typography.itemTitle)
-                            .foregroundStyle(openSubtitle == nil ? Color(colors.textSecondary) : Color(colors.primary))
+                            .foregroundStyle(openSubtitle == nil ? Color(colors.textSecondary) : Color(colors.textPrimary))
                     }
                     .buttonStyle(.plain)
                     .disabled(openSubtitle == nil)
