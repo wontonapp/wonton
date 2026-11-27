@@ -89,6 +89,7 @@ pub(crate) mod manifest_widget;
 pub mod matrix_rtc;
 pub mod matrix_rtc_ca;
 mod mcp_server;
+pub(crate) mod media_source;
 mod member_bots;
 pub(crate) mod model_health;
 pub mod models;
@@ -109,9 +110,6 @@ pub mod package_archive;
 pub mod package_files;
 pub mod pdf;
 mod private_homes;
-// 媒体接口（ADR-0113 M46）接上之前没有调用点，测试也只用到一部分。
-#[allow(dead_code)]
-pub(crate) mod media_source;
 // 第 3 步的 MCP 工具接上之前没有非测试调用点。
 mod permissions_switch;
 #[cfg_attr(not(test), allow(dead_code))]

@@ -412,7 +412,7 @@ impl SessionService {
 - 起播、控制、位置、停止都按 `sessions.version` 比较落库，落不上重读；库里`(person) WHERE stop_reason IS NULL`的唯一索引兜住并发起播，后到的接管先到的。只把唯一约束的失败认作“已有活动会话”，主键撞等其他约束错原样报 `Database`；迁移 v4 建索引前会把同一个人多余的活动会话置成 `taken_over` 终态、只留最新一条。
 - `progress` 同一会话两次落库至少隔 5 秒（`wall_clock` 与服务的钟同源，都是 Unix 毫秒），`pause`/`seek`/`stop` 立即落并把节流基准推到现在；已停的会话上报回 `false` 不落。被别处改掉时重读一次再判，仍落不上也回 `false`，不报 `ConcurrentChange`。
 - `stop` 幂等：再停只把位置往后推，位置变小保留旧值；原因与终态保留第一次的。`Finished` 落 `Done`、`Error` 落 `Failed{upstream_error}`、其余落 `Cancelled`。
-- `Next`/`Prev` 按该人的队列移动 `cursor` 并换 `session.item`、位置归零、清掉旧计划（由核心重取）；到头不回绕，`repeat_all` 往后回第一首，队列为空不动。`SetAudio`/`SetSubtitle` 只改计划里的 `selected`，重取计划归 M11。`Volume` 当前没有字段，只接受不改。
+- `Next`/`Prev` 按该人的队列移动 `cursor` 并换 `session.item`、位置归零：核心先算出换到哪一项、向它的来源要到计划，再把会话、队列指针、计划和会话记的提供方一起比较写，中间有别的改动就重读重来；要不到计划就什么都不写，会话还在原来那一项、按旧计划放；到头不回绕，`repeat_all` 往后回第一首，队列为空不动。`SetAudio`/`SetSubtitle` 只改计划里的 `selected`，重取计划归 M11。`Volume` 当前没有字段，只接受不改。
 
 ## 能力表 `media_source`（只加不改）
 
@@ -483,7 +483,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/tasks/{id}/resume` | `POST` | 无 | `MediaTask` |
 | `/tasks/{id}/cancel` | `POST` | 无 | `MediaTask` |
 | `/tasks/{id}/retry` | `POST` | 无（终态才允许，设 `retry_of`） | `MediaTask` |
-| `/tasks/{id}/progress` | `POST` | `{done, total?}`（下载由设备报；上传由核心按偏移算） | `204` |
+| `/tasks/{id}/progress` | `POST` | `{done, total?}`（下载由设备报；上传由核心按偏移算） | `MediaTask` |
 | `/tasks/{id}/complete` | `POST` | 无（下载写完、改好名） | `MediaTask` |
 | `/tasks/{id}/failure` | `POST` | `MediaFailure`（设备那边的失败，退避由核心按类别定） | `MediaTask` |
 | `/tasks/{id}/items/{item}/failure` | `POST` | `MediaFailure`（上传的一项在设备那边失败，其余照常） | `MediaTask` |
@@ -500,6 +500,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/tasks/{id}/uploads/{item}` | `PATCH` | 从偏移起的字节，带 `Content-Range`；核心按 `(task,item)` 查 `upload_id` 转发 | `{upload_offset}`；偏移不符 409 带当前偏移 |
 | `/tasks/{id}/items/{item}/content` | `GET` | 原始字节，`Range` 原样 | 字节流（206/200） |
 | `/sessions/{id}/stream` | `GET` | 原始字节 | 字节流（206/200） |
+| `/sessions/{id}/items/{item}/stream` | `GET` | 原始字节；`item` 必须在这个人的队列里 | 字节流（206/200）；不在队列里回 `media_gone`。核心按会话的设备档、向这一项自己的来源要它的计划，计划记到过期，不改会话 |
 | `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
 | `/items` | `GET` | 无（query 同提供方的 `GET /items`，`kind` 必填） | `{items, cursor?}`，核心转给这个种类的提供方 |
 | `/items/{id}/artwork` | `GET` | 无（query: `kind`，可选 `source`、`type`、`width`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork`，`type`、`width` 原样带过去 |
@@ -529,7 +530,10 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 5. 选中的那家再按运行时自报（`GET /_wonton/capabilities`）核对，对不上回 `plugin_unavailable`，不换别家。
 
 - 核心转出去的条目（列条目、浏览、相册、会话里的条目和队列）都由核心填上 `source`，提供方自己填的不算数。
-- 上传项和播放会话一建好就记下提供方（上传项连同 `upload_id`），之后的续写、进度、停止都发给它；换提供方只影响新建的。
+- 上传项和播放会话一建好就记下提供方（上传项连同 `upload_id`），之后的续写、进度、停止都发给它；换提供方只影响新建的。上传点了名，建任务时就按上面的规则核一遍；重试的任务沿用原任务记下的那家。
+- 记下的那家每次调用前按这次的操作和种类再核对一遍（同第 5 条），插件升级去掉了能力回 `plugin_unavailable`。
+- 会话换曲（`Next`/`Prev`）和取队列里另一项的流，按那一项的来源选：队列是相册、音乐、影视共用的一条。换了家，会话就记到新的那家，和新计划一起写，不会计划是一家、提供方是另一家。
+- 队列改成了推给正在播的那家（`PUT /playback/{session}/queue`），只带来源是它或没写来源的条目；没有在播的会话不推，推不过去只记日志。
 - 清单的 `provides.media_source.browse`（如 `opensubsonic`）只说这一家的浏览走哪种协议，不参与选提供方。
 
 ### 核心对提供方的凭据

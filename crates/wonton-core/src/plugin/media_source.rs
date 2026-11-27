@@ -7,10 +7,10 @@
 
 use std::time::Duration;
 
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
 use http_body_util::{BodyExt, Limited};
 use hyper::header::{self, HeaderMap, HeaderValue};
-use hyper::{Method, Request, StatusCode};
+use hyper::{Method, Request, Response, StatusCode};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use wonton_protocol::media::provider::{
@@ -20,7 +20,8 @@ use wonton_protocol::media::provider::{
 };
 use wonton_protocol::media::uploads::{
     ExistingItem, PATH_UPLOADS_CHECK, UPLOAD_CHECK_MAX, UPLOAD_OFFSET_HEADER, UploadCheck,
-    UploadCheckResult, UploadFinished, UploadStart, UploadStarted, upload_finish_path, upload_path,
+    UploadCheckResult, UploadFinished, UploadOffset, UploadStart, UploadStarted,
+    upload_finish_path, upload_path,
 };
 use wonton_protocol::media::{
     MediaFailure, MediaFailureCode, PATH_CAPABILITIES, PATH_PLAYBACK, PATH_UPLOADS, PlaybackPlan,
@@ -33,10 +34,21 @@ use crate::http::HttpClient;
 /// 一次调用等多久。上游（Jellyfin 取播放计划要探片源）偶尔慢，比个人数据宽一些。
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// 字节转发等响应头多久，和文件代理同一个数（`gateway::proxy` 的 `RESPONSE_HEADER_DEADLINE`）：冷启动的
+/// 转码、慢盘收尾都可能超过 JSON 调用的 20 秒。从请求体写完才起算，大分片本身不受它限。
+const BYTES_HEADER_DEADLINE: Duration = Duration::from_secs(120);
+
 /// 响应体上限，和 [`HttpClient`] 解析上游 JSON 的上限一致。条目一页、播放计划都远小于它。
 const MAX_BODY_BYTES: usize = 1 << 20;
 
 pub(crate) type Reply<T> = Result<T, MediaFailure>;
+
+/// 续写的结果：偏移对上了（200）还是对不上（409），以及提供方此刻的偏移。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PatchOutcome {
+    pub conflict: bool,
+    pub offset: u64,
+}
 
 /// 一次往返的原样结果。
 struct Raw {
@@ -78,14 +90,6 @@ impl MediaSourceClient {
         })
     }
 
-    pub(crate) fn endpoint(&self) -> &Endpoint {
-        &self.endpoint
-    }
-
-    pub(crate) fn key(&self) -> &str {
-        &self.key
-    }
-
     pub(crate) async fn capabilities(&self, user: &str) -> Reply<ProviderCapabilities> {
         self.json(Method::GET, PATH_CAPABILITIES, user, None::<&()>)
             .await
@@ -106,6 +110,7 @@ impl MediaSourceClient {
     }
 
     /// 这些校验和里哪些已在这个人的库里（ADR-0113 第 9 节的去重）。超过单次上限的分批问，回包合在一起。
+    #[allow(dead_code)] // 建备份任务前问去重（M18 的执行层）接上之前没有调用点。
     pub(crate) async fn check_uploads(
         &self,
         user: &str,
@@ -158,6 +163,8 @@ impl MediaSourceClient {
         .await
     }
 
+    // 取消任务时放弃上传、队列推给提供方、片段路由这三处接上之前没有调用点。
+    #[allow(dead_code)]
     /// 放弃一个上传；提供方说已经没有了（404）也算放弃成了。
     pub(crate) async fn abort_upload(&self, user: &str, upload_id: &str) -> Reply<()> {
         let raw = self
@@ -193,6 +200,8 @@ impl MediaSourceClient {
         .await
     }
 
+    // 取消任务时放弃上传、队列推给提供方、片段路由这三处接上之前没有调用点。
+    #[allow(dead_code)]
     pub(crate) async fn save_queue(
         &self,
         user: &str,
@@ -213,6 +222,8 @@ impl MediaSourceClient {
             .await
     }
 
+    // 取消任务时放弃上传、队列推给提供方、片段路由这三处接上之前没有调用点。
+    #[allow(dead_code)]
     /// 章节、片头片尾；提供方没有（404）就是空的。
     pub(crate) async fn segments(&self, user: &str, item: &str) -> Reply<Vec<Segment>> {
         let raw = self
@@ -224,12 +235,158 @@ impl MediaSourceClient {
         decode::<SegmentsPage>(&raw).map(|page| page.segments)
     }
 
+    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
+    #[cfg_attr(not(test), allow(dead_code))]
     /// 让提供方注销这把凭据对应的上游凭据、停掉上游会话。
     pub(crate) async fn revoke(&self, user: &str, name: &str) -> Reply<()> {
         let request = RevokeRequest {
             name: name.to_owned(),
         };
         self.empty(Method::POST, PATH_REVOKE, user, &request).await
+    }
+
+    /// 续写一项：请求体流式转过去，带 `Content-Range` 和从哪儿续的 `Upload-Offset`（tus 的写法，提供方按它
+    /// 判断对不对得上）。提供方回 200 或 409，体里都是当前偏移。
+    pub(crate) async fn patch_upload(
+        &self,
+        user: &str,
+        upload_id: &str,
+        at: u64,
+        mut headers: HeaderMap,
+        body: Body,
+    ) -> Reply<PatchOutcome> {
+        headers.insert(UPLOAD_OFFSET_HEADER, HeaderValue::from(at));
+        let response = self
+            .forward(user, Method::PATCH, &upload_path(upload_id), headers, body)
+            .await;
+        let response = response?;
+        let status = response.status();
+        let bytes = Limited::new(response.into_body(), MAX_BODY_BYTES)
+            .collect()
+            .await
+            .map_err(|e| {
+                failure(
+                    MediaFailureCode::PluginUnavailable,
+                    format!("媒体源的响应没读完：{e}"),
+                )
+            })?
+            .to_bytes();
+        let offset: UploadOffset = serde_json::from_slice(&bytes).map_err(|e| {
+            failure(
+                MediaFailureCode::Protocol,
+                format!("续写的响应不是当前偏移：{e}：{}", snippet(&bytes)),
+            )
+        })?;
+        Ok(PatchOutcome {
+            conflict: status == StatusCode::CONFLICT,
+            offset: offset.upload_offset,
+        })
+    }
+
+    /// 字节原样转：`path` 带查询串，`headers` 是要带过去的那几个（`Range`、`If-Range`、`Content-Range`……），
+    /// 凭据和 `X-Wonton-User` 由这里加。2xx 与 409 原样回（体是流），其余读成失败信封。
+    pub(crate) async fn forward(
+        &self,
+        user: &str,
+        method: Method,
+        path: &str,
+        mut headers: HeaderMap,
+        body: Body,
+    ) -> Reply<Response<Body>> {
+        let url = self.endpoint.url(path);
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", self.key)).map_err(|e| {
+                failure(MediaFailureCode::Protocol, format!("凭据写不进请求头：{e}"))
+            })?,
+        );
+        headers.insert(
+            WONTON_USER_HEADER,
+            HeaderValue::from_str(user).map_err(|e| {
+                failure(MediaFailureCode::Protocol, format!("用户写不进请求头：{e}"))
+            })?,
+        );
+        let response = match &self.unix {
+            None => {
+                let mut request = Request::builder()
+                    .method(method)
+                    .uri(&url)
+                    .body(body)
+                    .map_err(|e| {
+                        failure(MediaFailureCode::Protocol, format!("请求写不出来：{e}"))
+                    })?;
+                *request.headers_mut() = headers;
+                let response = self
+                    .http
+                    .send_forwarded(request, Some(BYTES_HEADER_DEADLINE))
+                    .await
+                    .map_err(|e| {
+                        failure(
+                            MediaFailureCode::PluginUnavailable,
+                            format!("连不上媒体源：{e}"),
+                        )
+                    })?;
+                response.map(Body::new)
+            }
+            Some(client) => {
+                // 有体的（续写）在 reqwest 这边分不开“体还在写”和“等响应头”，只给取字节的设期限。
+                let bodyless = matches!(method, Method::GET | Method::HEAD);
+                let sent = client
+                    .request(method, &url)
+                    .headers(headers)
+                    .body(reqwest::Body::wrap_stream(body.into_data_stream()))
+                    .send();
+                let sent = if bodyless {
+                    tokio::time::timeout(BYTES_HEADER_DEADLINE, sent)
+                        .await
+                        .map_err(|_| {
+                            failure(
+                                MediaFailureCode::PluginUnavailable,
+                                format!("媒体源 {} 秒没回响应头", BYTES_HEADER_DEADLINE.as_secs()),
+                            )
+                        })?
+                } else {
+                    sent.await
+                };
+                let response = sent.map_err(|e| {
+                    failure(
+                        MediaFailureCode::PluginUnavailable,
+                        format!("unix 套接字请求失败：{}", crate::http::error_chain(&e)),
+                    )
+                })?;
+                let mut built = Response::builder().status(response.status());
+                if let Some(target) = built.headers_mut() {
+                    *target = response.headers().clone();
+                }
+                built
+                    .body(Body::from_stream(response.bytes_stream()))
+                    .map_err(|e| {
+                        failure(MediaFailureCode::Protocol, format!("响应拼不起来：{e}"))
+                    })?
+            }
+        };
+        let (mut parts, body) = response.into_parts();
+        for name in [
+            header::CONNECTION,
+            header::TRANSFER_ENCODING,
+            header::TRAILER,
+            header::UPGRADE,
+        ] {
+            parts.headers.remove(name);
+        }
+        parts.headers.remove("keep-alive");
+        let response = Response::from_parts(parts, body);
+        let status = response.status();
+        if status.is_success() || status == StatusCode::CONFLICT {
+            return Ok(response);
+        }
+        let headers = response.headers().clone();
+        let body = Limited::new(response.into_body(), MAX_BODY_BYTES)
+            .collect()
+            .await
+            .map(|collected| collected.to_bytes())
+            .unwrap_or_default();
+        Err(failure_from(status, &headers, &body))
     }
 
     async fn json<T: DeserializeOwned>(
@@ -292,7 +449,7 @@ impl MediaSourceClient {
             builder = builder.header(header::CONTENT_TYPE, "application/json");
         }
         let request = builder
-            .body(axum::body::Body::from(body.unwrap_or_default()))
+            .body(Body::from(body.unwrap_or_default()))
             .map_err(|e| failure(MediaFailureCode::Protocol, format!("请求写不出来：{e}")))?;
         let exchange = async {
             let response = self.http.send(request).await.map_err(|e| {
@@ -418,17 +575,18 @@ pub(crate) fn failure(code: MediaFailureCode, message: impl Into<String>) -> Med
 /// 提供方回的失败：读得成信封就照它，读不成按状态码归类、带上一小段原文。限速的等多久，信封没写就看
 /// `Retry-After`。
 fn problem(raw: &Raw) -> MediaFailure {
-    let mut failure = serde_json::from_slice::<MediaFailure>(&raw.body).unwrap_or_else(|_| {
+    failure_from(raw.status, &raw.headers, &raw.body)
+}
+
+pub(crate) fn failure_from(status: StatusCode, headers: &HeaderMap, body: &[u8]) -> MediaFailure {
+    let mut failure = serde_json::from_slice::<MediaFailure>(body).unwrap_or_else(|_| {
         failure(
-            code_for_status(raw.status),
-            format!("HTTP {}：{}", raw.status, snippet(&raw.body)),
+            code_for_status(status),
+            format!("HTTP {status}：{}", snippet(body)),
         )
     });
     if failure.code == MediaFailureCode::RateLimited && failure.retry_after_secs.is_none() {
-        failure.retry_after_secs = raw
-            .headers
-            .get(header::RETRY_AFTER)
-            .and_then(retry_after_secs);
+        failure.retry_after_secs = headers.get(header::RETRY_AFTER).and_then(retry_after_secs);
     }
     failure
 }

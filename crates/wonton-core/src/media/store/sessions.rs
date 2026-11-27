@@ -5,7 +5,7 @@
 
 use rusqlite::{Connection, OptionalExtension, params};
 use wonton_protocol::media::{
-    MediaItemRef, PlaybackPlan, PlaybackSession, PlaybackSessionId, StopReason,
+    MediaItemRef, PlaybackPlan, PlaybackSession, PlaybackSessionId, Queue, StopReason,
 };
 
 use super::MediaStoreError;
@@ -116,6 +116,81 @@ impl Store {
         expected_version: u64,
     ) -> Result<bool, MediaStoreError> {
         let conn = self.conn()?;
+        self.session_cas(&conn, session, expected_version)
+    }
+
+    /// 换曲：会话和队列指针一起写，两边都还是读到的那一版才写，否则都不写。分开写的话，中间插进来的
+    /// 队列改动会被这次整条写回盖掉。
+    pub fn save_session_and_queue_cas(
+        &self,
+        session: &PlaybackSession,
+        expected_version: u64,
+        queue: &Queue,
+        expected_revision: u64,
+    ) -> Result<bool, MediaStoreError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        if !self.queue_cas(&tx, &session.person, queue, expected_revision)?
+            || !self.session_cas(&tx, session, expected_version)?
+        {
+            return Ok(false);
+        }
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(true)
+    }
+
+    /// 换了提供方的新计划：会话和它记的提供方一起写，计划和提供方不会各是各家的。
+    pub fn save_session_cas_on(
+        &self,
+        session: &PlaybackSession,
+        expected_version: u64,
+        provider: &str,
+    ) -> Result<bool, MediaStoreError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        if !self.session_cas(&tx, session, expected_version)? {
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE sessions SET provider = ? WHERE id = ?",
+            params![provider, session.id.to_string()],
+        )
+        .map_err(|source| self.db_error(source))?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(true)
+    }
+
+    /// 换曲落定：会话（带新计划）、队列指针、会话记的提供方一起写，两边都还是读到的那一版才写，否则都不写。
+    pub fn save_step_cas(
+        &self,
+        session: &PlaybackSession,
+        expected_version: u64,
+        queue: &Queue,
+        expected_revision: u64,
+        provider: &str,
+    ) -> Result<bool, MediaStoreError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        if !self.queue_cas(&tx, &session.person, queue, expected_revision)?
+            || !self.session_cas(&tx, session, expected_version)?
+        {
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE sessions SET provider = ? WHERE id = ?",
+            params![provider, session.id.to_string()],
+        )
+        .map_err(|source| self.db_error(source))?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(true)
+    }
+
+    fn session_cas(
+        &self,
+        conn: &Connection,
+        session: &PlaybackSession,
+        expected_version: u64,
+    ) -> Result<bool, MediaStoreError> {
         let changed = conn
             .execute(
                 "UPDATE sessions SET device = ?, item = ?, state = ?, state_tag = ?, position_ms = ?,

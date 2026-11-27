@@ -48,6 +48,8 @@ pub(crate) trait ProviderDirectory: Send + Sync {
     fn endpoint<'a>(&'a self, provider: &'a str) -> Pending<'a, Endpoint>;
     /// 执行提供方的 `credentials.issue`，凭据值从标准输入给。
     fn issue<'a>(&'a self, provider: &'a str, name: &'a str, key: &'a str) -> Pending<'a, ()>;
+    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
+    #[cfg_attr(not(test), allow(dead_code))]
     fn revoke<'a>(&'a self, provider: &'a str, name: &'a str) -> Pending<'a, ()>;
 }
 
@@ -184,6 +186,8 @@ impl MediaProviders {
             .await
     }
 
+    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
+    #[cfg_attr(not(test), allow(dead_code))]
     /// 收回这个人在所有提供方上的凭据：先让提供方注销上游凭据，再执行它的 `credentials.revoke`，最后删掉
     /// 核心存的这把。哪一家失败就停在哪一家、保留它的凭据，返回失败；已收回的不再出现。
     pub(crate) async fn revoke_person(&self, person: &str) -> Result<(), MediaFailure> {
@@ -283,12 +287,16 @@ impl MediaProviders {
         write_json(&self.key_file(provider), keys).map_err(|e| key_store_failure(&e))
     }
 
+    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
+    #[cfg_attr(not(test), allow(dead_code))]
     fn forget_key(&self, provider: &str, person: &str) -> Result<(), MediaFailure> {
         let mut keys = self.keys(provider)?;
         keys.remove(person);
         self.save_keys(provider, &keys)
     }
 
+    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
+    #[cfg_attr(not(test), allow(dead_code))]
     fn providers_with_key(&self, person: &str) -> Result<Vec<String>, MediaFailure> {
         let entries = match std::fs::read_dir(&self.keys_dir) {
             Ok(entries) => entries,

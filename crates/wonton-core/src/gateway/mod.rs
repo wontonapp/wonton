@@ -80,6 +80,7 @@ pub mod matrix_rtc_alias;
 mod mcp;
 mod mcp_apps;
 mod me;
+mod media;
 mod model_settings;
 mod models;
 pub(crate) mod notify;
@@ -242,6 +243,8 @@ pub struct Gateway {
     pub(crate) notify_limiter: notify_limit::Limiter,
     /// 文件服务；没启用时文件接口如实报不可用。
     pub files: Option<Arc<crate::files::Files>>,
+    /// 媒体服务（ADR-0113）；没接时媒体接口如实报不可用。
+    pub media: Option<Arc<crate::media::Media>>,
     /// 审计日志（`core/audit.jsonl`，见 [`crate::mcp::audit`]）：总线和文件服务共用一份，
     /// 主人查看插件密钥的取值审计也从这里写。
     pub(crate) audit: Option<Arc<crate::mcp::audit::Audit>>,
@@ -451,6 +454,10 @@ mod matrix_sync_restart_tests;
 mod mcp_takeover_tests;
 #[cfg(test)]
 mod mcp_tests;
+#[cfg(test)]
+mod media_flow_tests;
+#[cfg(test)]
+mod media_tests;
 #[cfg(test)]
 mod models_tests;
 #[cfg(test)]

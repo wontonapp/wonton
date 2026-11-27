@@ -754,7 +754,7 @@ fn a_version_1_database_is_migrated_and_still_reads_and_writes() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! 播放会话服务（ADR-0113 第 4 节）：一人一条活动会话，位置按秒节流。
 //!
-//! 只包服务端事实源：起播、接管、控制、位置、停止。HTTP、事件和提供方调用在外面；旧设备收到
+//! 只包服务端事实源：起播、接管、控制、位置、停止，和每人一条的队列。HTTP、事件和提供方调用在外面；旧设备收到
 //! 被接管的事件由调用方拿 [`SessionService::start`] 的第二个返回值去发。
 //!
 //! 所有写都带读到的版本比较落库，落不上就重读；两人同时起播只有一个能成为活动会话（库里另有一条
@@ -18,11 +18,16 @@ use wonton_protocol::media::{IllegalTransition, PlaybackSessionId};
 use super::store::{MediaStoreError, Store};
 
 mod control;
+mod plan;
 mod position;
+mod queue;
 mod start;
 mod state;
 mod stop;
 mod takeover;
+
+pub use control::Step;
+pub use queue::QueueChanged;
 
 /// 真实的毫秒级 Unix 时钟，节流基准用它。
 pub fn unix_now_ms() -> u64 {
@@ -41,6 +46,8 @@ pub enum SessionServiceError {
     ConcurrentChange { session: PlaybackSessionId },
     #[error("这一版核心不认识控制动作 {0}")]
     UnsupportedControl(String),
+    #[error("队列只有 {len} 项，没有第 {index} 项")]
+    QueueIndex { index: usize, len: usize },
 }
 
 /// 播放会话的状态机，落库到 [`Store`]。

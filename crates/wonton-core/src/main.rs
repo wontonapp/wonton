@@ -340,6 +340,11 @@ async fn serve() -> anyhow::Result<()> {
     let files = serve::open_files(&cfg, host, http.clone(), audit.clone(), images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
+    let media = Arc::new(wonton_core::media::Media::open(
+        &cfg.core_state_dir().join("media"),
+        manager.clone(),
+        http.clone(),
+    )?);
     // 入口容器先对账：把上一版 compose 容器认领掉、按设置把入口建好，主人打开的公网入口和联邦 TLS 前端
     // 才在服务。失败按类别记日志、照常启动（不挡核心），带退避的重试在入口的运行循环里；入站联邦的
     // 上游地址按连接现解析，入口容器不在时那条流连不上、核心照常服务。
@@ -403,6 +408,7 @@ async fn serve() -> anyhow::Result<()> {
         bus,
         notices.clone(),
         files,
+        media,
         audit,
         upgrades,
         peers.clone(),
@@ -458,6 +464,7 @@ fn open_gateway(
     bus: Arc<mcp::Bus>,
     notices: Option<Arc<NoticeRoom>>,
     files: Arc<Files>,
+    media: Arc<wonton_core::media::Media>,
     audit: Arc<Audit>,
     upgrades: Arc<Upgrades>,
     peers: Option<Arc<peers::Peers>>,
@@ -492,6 +499,7 @@ fn open_gateway(
         .with_mcp(Some(bus.endpoint()))
         .with_notices(notices)
         .with_files(Some(files))
+        .with_media(Some(media))
         .with_audit(Some(audit))
         .with_tusd(cfg.tusd.clone())
         .with_upgrades(Some(upgrades))
