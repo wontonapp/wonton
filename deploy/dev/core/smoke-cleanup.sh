@@ -47,6 +47,7 @@ cleanup() {
   remove_container "$mom_phone"
   [[ -z "${fake_upstream:-}" ]] || remove_container "$fake_upstream"
   [[ -z "${model_relay:-}" ]] || remove_container "$model_relay"
+  # 起探针时撞名挪开的旧容器。
   remove_container "$browser.stale"
   remove_container "$phone.stale"
   remove_container "$mom_phone.stale"

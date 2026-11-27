@@ -48,7 +48,7 @@ export RUST_LOG="${RUST_LOG:-wonton_core=debug}"
 WONTON_BUILD_COMMIT="$("$dev" commit)"
 export WONTON_BUILD_COMMIT
 core="$WONTON_DEV_PROJECT"
-browser="$WONTON_DEV_PROJECT-browser"
+browser="$WONTON_DEV_PROJECT-browser-x"
 phone="$WONTON_DEV_PROJECT-phone"
 # 家人（妈妈）的手机，停链、出箱、说话人几步用。
 mom_phone="$WONTON_DEV_PROJECT-mom"

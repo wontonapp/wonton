@@ -93,10 +93,12 @@ run_container() {
       printf '%s\n' "$_out" >&2
       return 1
     }
-    # 占着名字的那个删不掉时先挪开：改名字只动元数据，不用等它停；目标带序号，免得挪到一半的也撞名。
+    # 占着名字的那个删不掉时先挪开：改名字只动元数据，不用等它停。
     # 挪开的进程还活着，会继续占着本地代理的固定端口（18008 等），杀掉才算把位置让出来。
-    if timeout 30 docker rename "$_name" "$_name.stale.$_try" >/dev/null 2>&1; then
-      timeout 20 docker kill "$_name.stale.$_try" >/dev/null 2>&1 || true
+    # 上一轮挪开的多半还没删掉，先再删一次，免得它占着 .stale 这个名。
+    timeout 30 docker rm -f "$_name.stale" >/dev/null 2>&1 || true
+    if timeout 30 docker rename "$_name" "$_name.stale" >/dev/null 2>&1; then
+      timeout 20 docker kill "$_name.stale" >/dev/null 2>&1 || true
     fi
     sleep 1
   done
