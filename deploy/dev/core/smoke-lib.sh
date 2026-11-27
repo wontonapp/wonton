@@ -62,14 +62,34 @@ step() {
 # shellcheck source=deploy/dev/core/smoke-curl.sh
 source "$(dirname "${BASH_SOURCE[0]}")/smoke-curl.sh"
 
-# 起容器：撞上同名容器还在销毁时等一会儿再来。daemon 慢的时候 rm 先回、销毁还在后台跑，
-# 紧接着的 docker run 会撞名；真错了就把 docker 的原话打出来。
+# 起容器：撞上同名容器还在销毁、或者 daemon 慢到这一下没回来，都等一会儿再来。
+# 真错了就把 docker 的原话打出来。
 run_container() {
-  local _name=$1 _try _out
+  local _name=$1 _try _rc _out
   shift
   for _try in $(seq 60); do
-    if _out="$(docker run -d --name "$_name" "$@" 2>&1)"; then printf '%s\n' "$_out"; return 0; fi
-    grep -q 'is already in use by container' <<<"$_out" || { printf '%s\n' "$_out" >&2; return 1; }
+    _rc=0
+    _out="$(timeout 120 docker run -d --name "$_name" "$@" 2>&1)" || _rc=$?
+    if [[ $_rc == 0 ]]; then
+      printf '%s\n' "$_out"
+      return 0
+    fi
+    if [[ $_rc == 124 ]]; then
+      # 客户端超时了，容器可能还是建成了：等它现身，省得下一次撞自己的名。
+      for _ in $(seq 30); do
+        if _out="$(docker inspect -f '{{.Id}}' "$_name" 2>/dev/null)"; then
+          timeout 60 docker start "$_name" >/dev/null 2>&1 || true
+          printf '%s\n' "$_out"
+          return 0
+        fi
+        sleep 2
+      done
+      continue
+    fi
+    grep -q 'is already in use by container' <<<"$_out" || {
+      printf '%s\n' "$_out" >&2
+      return 1
+    }
     sleep 1
   done
   printf '%s\n' "$_out" >&2
