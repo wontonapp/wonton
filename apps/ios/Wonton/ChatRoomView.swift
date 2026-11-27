@@ -670,7 +670,6 @@ private extension ChatRoomView {
     var botAccessNotice: LocalizedStringResource? {
         guard let access = botAccess else { return nil }
         return botAccessNoticeText(access)
->>>>>>> 6642389a (feat(chat): 两端按 Bot 可达清单显示原因)
     }
 
     /// 确定的不能用才拦发送；资格未知（离线、老核心）照常发，进离线队列。

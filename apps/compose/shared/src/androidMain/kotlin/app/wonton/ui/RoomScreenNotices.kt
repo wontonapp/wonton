@@ -42,7 +42,6 @@ internal fun botAccessNotice(access: BotAccess?): Int? = when (access) {
     null, BotAccess.Own, BotAccess.Shared, BotAccess.Contact -> null
     BotAccess.Unknown -> R.string.room_bot_unknown
     is BotAccess.Unusable -> botAccessReasonNotice(access.reason)
->>>>>>> 6642389a (feat(chat): 两端按 Bot 可达清单显示原因)
 }
 
 /** 确定不能用时命令菜单和旁聊照片直发要说的那句；能用或资格未知（照常发）时为空。 */
