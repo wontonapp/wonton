@@ -666,6 +666,8 @@ const EXPECTED: &[(&str, &str)] = &[
     ("0.16", "x-wonton.provides.<名字>.operations"),
     ("0.16", "x-wonton.provides.<名字>.kinds"),
     ("0.16", "permission models 退役"),
+    // 0.17
+    ("0.17", "x-wonton.agent.models"),
 ];
 
 #[test]
@@ -692,6 +694,18 @@ fn media_source_lists_need_0_16() {
         "{found:?}"
     );
     assert!(problems(&document("0.16", manifest, plain())).is_empty());
+}
+
+#[test]
+fn agent_models_needs_0_17() {
+    let manifest = json!({
+        "kind": "agent",
+        "agent": {"protocol": "matrix", "models": {"service": "web", "command": ["models"]}},
+    });
+    let found = problems(&document("0.16", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("agent.models"), "{found:?}");
+    assert!(problems(&document("0.17", manifest, plain())).is_empty());
 }
 
 #[test]
