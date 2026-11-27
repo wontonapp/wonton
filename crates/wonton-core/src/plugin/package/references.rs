@@ -23,6 +23,44 @@ impl PluginPackage {
             })
     }
 
+    /// Agent 模型命令、Bot、GPU、局域网和隧道端口里的服务引用。
+    fn listed_service_refs(
+        manifest: &Manifest,
+    ) -> impl Iterator<Item = (&'static str, Option<&String>)> {
+        // 没写 `bots` 的插件，模型命令的服务也得在 compose 里；写了的，清单校验已要求它在 `bots.services` 里。
+        let agent_models = manifest
+            .agent
+            .as_ref()
+            .and_then(|a| a.models.as_ref())
+            .map(|m| ("agent.models.service", Some(&m.service)));
+        let bots = manifest
+            .bots
+            .iter()
+            .flat_map(|b| &b.services)
+            .map(|service| ("bots.services", Some(service)));
+        let gpu = manifest
+            .gpu
+            .iter()
+            .flat_map(|g| &g.services)
+            .map(|service| ("gpu.services", Some(service)));
+        let lan = manifest
+            .lan
+            .iter()
+            .flat_map(|l| &l.ports)
+            .map(|port| ("lan.ports", Some(&port.service)));
+        let tunnel = manifest
+            .tunnel
+            .iter()
+            .flat_map(|t| &t.ports)
+            .map(|port| ("tunnel.ports", Some(&port.service)));
+        agent_models
+            .into_iter()
+            .chain(bots)
+            .chain(gpu)
+            .chain(lan)
+            .chain(tunnel)
+    }
+
     pub(super) fn check_manifest_references(&self, langs: &Languages) -> Result<(), PackageError> {
         let models = self
             .manifest
@@ -63,45 +101,13 @@ impl PluginPackage {
                 }
                 SecretSpec::Generate(_) | SecretSpec::Input(_) => None,
             });
-        // 没写 `bots` 的插件，模型命令的服务也得在 compose 里；写了的，清单校验已要求它在 `bots.services` 里。
-        let agent_models = self
-            .manifest
-            .agent
-            .as_ref()
-            .and_then(|a| a.models.as_ref())
-            .map(|m| ("agent.models.service", Some(&m.service)));
         let bot_services = self.manifest.bots.iter().flat_map(|b| &b.services);
-        let bots = bot_services
-            .clone()
-            .map(|service| ("bots.services", Some(service)));
-        let gpu = self
-            .manifest
-            .gpu
-            .iter()
-            .flat_map(|g| &g.services)
-            .map(|service| ("gpu.services", Some(service)));
-        let lan = self
-            .manifest
-            .lan
-            .iter()
-            .flat_map(|l| &l.ports)
-            .map(|port| ("lan.ports", Some(&port.service)));
-        let tunnel = self
-            .manifest
-            .tunnel
-            .iter()
-            .flat_map(|t| &t.ports)
-            .map(|port| ("tunnel.ports", Some(&port.service)));
         for (field, service) in refs
             .iter()
             .cloned()
             .chain(collects)
-            .chain(agent_models)
-            .chain(bots)
-            .chain(gpu)
+            .chain(Self::listed_service_refs(&self.manifest))
             .chain(Self::device_service_refs(&self.manifest))
-            .chain(lan)
-            .chain(tunnel)
         {
             if let Some(service) = service
                 && !self.services.contains_key(service)
