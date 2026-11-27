@@ -33,84 +33,102 @@ pub(super) async fn read(
         Ok(person) => person,
         Err(denied) => return *denied,
     };
-    let result = read_for_person(&gateway, peer, &headers, &person);
+    let result = result_for_person(&gateway, peer, &headers, &person);
     if let Some(denied) = api::plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     if let Err(denied) = api::current_requester(&gateway, peer, &headers, &person) {
         return *denied;
     }
-    result
+    match result {
+        Ok((requester_user_id, result)) => Json(OwnPrivateBotResponse {
+            requester_user_id,
+            result,
+        })
+        .into_response(),
+        Err(error) => *error,
+    }
 }
 
-fn read_for_person(
+/// 当前人的私人 Bot 事实；`Err` 是要原样返回给壳的响应。
+///
+/// 主人和角色里没有私人 Bot 的人是 [`OwnPrivateBotResult::NotApplicable`]：他们的默认 Agent 是插件的默认
+/// Bot。有私人 Bot 但还没建好是 `pending`，不静默退到默认 Bot，否则壳会把“还没准备好”当成“就是它”。
+pub(super) fn result_for_person(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
     person: &Person,
-) -> Response {
+) -> Result<(String, OwnPrivateBotResult), Box<Response>> {
     if person.is_owner() {
         let Some(matrix) = gateway.matrix.as_ref() else {
-            return *unavailable(
+            return Err(unavailable(
                 "matrix_unavailable",
                 "Matrix identity source is unavailable",
-            );
+            ));
         };
         let requester_user_id = matrix.user_id(&person.username);
         let Ok(user_id) = <&UserId>::try_from(requester_user_id.as_str()) else {
-            return *invalid("member_identity_invalid", "Owner identity is invalid");
+            return Err(invalid(
+                "member_identity_invalid",
+                "Owner identity is invalid",
+            ));
         };
         if user_id.localpart() != person.username
             || user_id.server_name().as_str() != matrix.server_name()
         {
-            return *invalid(
+            return Err(invalid(
                 "member_identity_invalid",
                 "Owner identity does not match its source",
-            );
+            ));
         }
-        return Json(OwnPrivateBotResponse {
-            requester_user_id,
-            result: OwnPrivateBotResult::NotApplicable,
-        })
-        .into_response();
+        return Ok((requester_user_id, OwnPrivateBotResult::NotApplicable));
     }
     let Some(snapshot) = gateway.members.private_bot_snapshot(&person.username) else {
-        return *unavailable(
+        return Err(unavailable(
             "member_identity_unavailable",
             "Member record is unavailable",
-        );
+        ));
     };
     if snapshot.status != MemberStatus::Joined || snapshot.removing {
-        return *unavailable("member_identity_unavailable", "Member is not available");
+        return Err(unavailable(
+            "member_identity_unavailable",
+            "Member is not available",
+        ));
     }
     let Some(role) = gateway.roles.get(&snapshot.role_id) else {
-        return *unavailable("member_role_unavailable", "Member role is unavailable");
+        return Err(unavailable(
+            "member_role_unavailable",
+            "Member role is unavailable",
+        ));
     };
     let Some(matrix) = gateway.matrix.as_ref() else {
-        return *unavailable(
+        return Err(unavailable(
             "matrix_unavailable",
             "Matrix identity source is unavailable",
-        );
+        ));
     };
     let Ok(member_id) = <&UserId>::try_from(snapshot.user_id.as_str()) else {
-        return *invalid("member_identity_invalid", "Member identity is invalid");
+        return Err(invalid(
+            "member_identity_invalid",
+            "Member identity is invalid",
+        ));
     };
     if member_id.localpart() != person.username
         || member_id.server_name().as_str() != matrix.server_name()
     {
-        return *invalid(
+        return Err(invalid(
             "member_identity_invalid",
             "Member identity does not match its source",
-        );
+        ));
+    }
+    if !snapshot.wants_private_bot || !role.permissions.private_bot {
+        return Ok((snapshot.user_id.clone(), OwnPrivateBotResult::NotApplicable));
     }
     let result = match (&snapshot.bot, &snapshot.reservation) {
         (Some(bot), Some(reservation)) if bot != reservation => Err(invalid(
             "private_bot_conflict",
             "Private Bot reference conflicts with its reservation",
-        )),
-        (Some(_), _) if !snapshot.wants_private_bot => Err(invalid(
-            "private_bot_conflict",
-            "Private Bot reference conflicts with member intent",
         )),
         (Some(bot), _) => {
             let peer = peer.map(|Extension(peer)| peer);
@@ -125,7 +143,6 @@ fn read_for_person(
                 Ok(OwnPrivateBotResult::Ready(identity_from_record(first)))
             })
         }
-        (None, None) if !snapshot.wants_private_bot => Ok(OwnPrivateBotResult::Absent),
         _ => Err(unavailable(
             "private_bot_pending",
             "Private Bot creation is pending",
@@ -138,16 +155,9 @@ fn read_for_person(
         != Some(&snapshot)
         || gateway.roles.get(&snapshot.role_id).as_ref() != Some(&role)
     {
-        return *unavailable("private_bot_changed", "Member or role changed");
+        return Err(unavailable("private_bot_changed", "Member or role changed"));
     }
-    match result {
-        Ok(result) => Json(OwnPrivateBotResponse {
-            requester_user_id: snapshot.user_id,
-            result,
-        })
-        .into_response(),
-        Err(error) => *error,
-    }
+    Ok((snapshot.user_id.clone(), result?))
 }
 
 fn own_identity(
@@ -218,7 +228,7 @@ fn own_identity(
 
 fn identity_from_record(record: BotIdentityRecordFacts) -> PrivateBotIdentity {
     let (home_room, room_problem) = if record.home_room.is_empty() {
-        (None, None)
+        (None, Some(PrivateBotRoomProblem::Missing))
     } else if <&RoomId>::try_from(record.home_room.as_str()).is_ok() {
         (Some(record.home_room), None)
     } else {
