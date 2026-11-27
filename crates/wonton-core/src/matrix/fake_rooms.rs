@@ -8,7 +8,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{Value, json};
 
-use super::{Fake, Reply, Room, SERVER, auth, error, ok, reply};
+use super::http::{Reply, auth, error, ok, reply};
+use super::{Fake, Room, SERVER};
 
 pub struct RoomState {
     pub creator: String,

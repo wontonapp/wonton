@@ -7,6 +7,8 @@
 mod rooms;
 mod state;
 
+mod http;
+
 use std::sync::Arc;
 
 use aws_lc_rs::encoding::AsDer;
@@ -25,54 +27,11 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use wonton_protocol::AVATARS_FIELD;
 
-use self::state::seed_admin_room;
-pub use self::state::{ADMIN_ROOM_ALIAS, ADMIN_ROOM_ID, Fake, Room, SECRET, SERVER, Tuwunel, User};
+use self::http::{Reply, admin, auth, error, ok, reply};
+pub use self::state::*;
 
 use super::issuer::tests::verify;
 use crate::config::MatrixConfig;
-
-type Reply = (StatusCode, Json<Value>);
-
-fn error(status: StatusCode, errcode: &str) -> Reply {
-    (status, Json(json!({"errcode": errcode, "error": errcode})))
-}
-
-fn ok(body: Value) -> Reply {
-    (StatusCode::OK, Json(body))
-}
-
-/// 令牌属于谁：（用户，设备）。
-fn auth(state: &Tuwunel, headers: &HeaderMap) -> Result<(String, String), Reply> {
-    let token = headers
-        .get("authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .unwrap_or_default();
-    state
-        .tokens
-        .get(token)
-        .cloned()
-        .ok_or_else(|| error(StatusCode::UNAUTHORIZED, "M_UNKNOWN_TOKEN"))
-}
-
-/// 管理员以管理房间的成员身份为准（Tuwunel 的 `user_is_admin`），`admin` 标记只是注册时的门槛。
-fn admin(state: &Tuwunel, headers: &HeaderMap) -> Result<(), Reply> {
-    let (user, _) = auth(state, headers)?;
-    if state.users.get(&user).is_some_and(|entry| entry.admin)
-        && state
-            .rooms
-            .get(&state.admin_room)
-            .is_some_and(|room| room.members.contains(&user))
-    {
-        Ok(())
-    } else {
-        Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"))
-    }
-}
-
-fn reply(result: Result<Reply, Reply>) -> Reply {
-    result.unwrap_or_else(|e| e)
-}
 
 async fn register(State(fake): State<Fake>, Json(body): Json<Value>) -> Reply {
     let key = hmac::Key::new(hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY, SECRET.as_bytes());
