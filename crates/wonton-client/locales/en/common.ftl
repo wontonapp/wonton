@@ -193,3 +193,5 @@ panel-pins-refresh-failed = Couldn't load the pages bots pinned: { $error }
 
 # 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
 models-invalid-action = That action isn't available on this page.
+# 模型页（ADR-0129）：浏览器授权的回跳不是这次发起的（地址不对或 state 不一致），没交给插件。
+models-login-callback-mismatch = The sign-in page came back with a different sign-in than the one started here, so it was discarded. Sign in again.

@@ -50,6 +50,8 @@ struct Login {
     provider: String,
     session: String,
     redirect: bool,
+    /// 浏览器授权网址里的 `state`：回跳带回来的必须是它，见 [`AgentModelsLink::finish_login`]。
+    state: Option<String>,
 }
 
 impl AgentModelsLink {
@@ -222,22 +224,6 @@ impl AgentModelsLink {
             }
         });
         self.enqueue(bot, Op::LoginStart { provider, redirect });
-        Ok(())
-    }
-
-    fn finish_login(&self, bot: BotRef, callback_url: String) -> Result<(), CoreError> {
-        let login = lock(&self.local).login.clone();
-        let login = login
-            .filter(|login| login.redirect && login.bot == bot)
-            .ok_or_else(invalid)?;
-        self.busy()?;
-        self.enqueue(
-            bot,
-            Op::LoginFinish {
-                session: login.session,
-                callback_url,
-            },
-        );
         Ok(())
     }
 

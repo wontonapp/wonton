@@ -183,3 +183,5 @@ panel-pins-refresh-failed = 面板里 Bot 钉的页面取不到:{ $error }
 
 # 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
 models-invalid-action = 不是能在这一页做的操作。
+# 模型页（ADR-0129）：浏览器授权的回跳不是这次发起的（地址不对或 state 不一致），没交给插件。
+models-login-callback-mismatch = 回来的授权和这里发起的这次对不上，已作废。请重新登录。
