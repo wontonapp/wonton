@@ -10,8 +10,8 @@ use tokio::time::Instant;
 use wonton_matrix::{MatrixSession, UserProfile};
 use wonton_protocol::{
     AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotAccess, BotActivity, BotActivityFacts,
-    BotChatAvailability, BotChatUnavailable, BotRef, BotView, ChatForm, ChatViewModel, CoreError, HomeStatus,
-    InstalledPlugins, MediaHandle, RoomBot, SharedBot, SharedBotsState, SharedBotsView,
+    BotChatAvailability, BotChatUnavailable, BotRef, BotView, ChatForm, ChatViewModel, CoreError,
+    HomeStatus, InstalledPlugins, MediaHandle, RoomBot, SharedBot, SharedBotsState, SharedBotsView,
     StateAvatar, StateAvatars,
 };
 
@@ -426,7 +426,10 @@ impl Bots {
             return Some(RoomBot {
                 bot: row.bot.clone(),
                 // 缺记录的行没有自己的 Matrix ID：用房间里一直记着的那一个，发消息/建私聊不空着。
-                user_id: row.user_id.clone().unwrap_or_else(|| user_id.unwrap_or_default().to_owned()),
+                user_id: row
+                    .user_id
+                    .clone()
+                    .unwrap_or_else(|| user_id.unwrap_or_default().to_owned()),
                 title: row.title.clone(),
                 access: row.access,
             });
