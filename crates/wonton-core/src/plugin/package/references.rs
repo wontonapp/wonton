@@ -63,6 +63,13 @@ impl PluginPackage {
                 }
                 SecretSpec::Generate(_) | SecretSpec::Input(_) => None,
             });
+        // 没写 `bots` 的插件，模型命令的服务也得在 compose 里；写了的，清单校验已要求它在 `bots.services` 里。
+        let agent_models = self
+            .manifest
+            .agent
+            .as_ref()
+            .and_then(|a| a.models.as_ref())
+            .map(|m| ("agent.models.service", Some(&m.service)));
         let bot_services = self.manifest.bots.iter().flat_map(|b| &b.services);
         let bots = bot_services
             .clone()
@@ -89,6 +96,7 @@ impl PluginPackage {
             .iter()
             .cloned()
             .chain(collects)
+            .chain(agent_models)
             .chain(bots)
             .chain(gpu)
             .chain(Self::device_service_refs(&self.manifest))
