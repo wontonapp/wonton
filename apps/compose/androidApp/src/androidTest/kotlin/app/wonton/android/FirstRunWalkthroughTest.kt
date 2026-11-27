@@ -383,9 +383,7 @@ class FirstRunWalkthroughTest {
             return false
         }
         return matchesText(string(UiR.string.chat_empty)) ||
-            runCatching {
-                nodes(hasContentDescription(string(UiR.string.shortcut_new_chat))).isNotEmpty()
-            }.getOrDefault(false) ||
+            matchesTag("chat-list") ||
             runCatching { compose.onAllNodesWithText("Hermes").onLast().fetchSemanticsNode() }.isSuccess
     }
 

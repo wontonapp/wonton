@@ -316,6 +316,7 @@ struct SidebarPanel: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("sidebar-new-chat")
         }
     }
 

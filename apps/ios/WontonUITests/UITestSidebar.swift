@@ -20,13 +20,12 @@ enum UITestSidebar {
     }
 
     /// 聊天列表到了。配对页也有侧边栏按钮，不能只看它；交接/备份页是盖在列表上的层，
-    /// 下面的列表元素照样能查到，它们在场时也不算。认列表自己的东西：空列表的提示、新聊天按钮或已有的 Hermes 行。
+    /// 下面的列表元素照样能查到，它们在场时也不算。认列表自己的东西：空列表的提示、列表本体或已有的 Hermes 行。
     static func chatListVisible(_ app: XCUIApplication) -> Bool {
         if app.staticTexts["Continue on your other device"].firstMatch.exists { return false }
         if app.scrollViews["chat-backup"].exists { return false }
         if app.staticTexts["No chats yet"].firstMatch.exists { return true }
-        let newChat = app.buttons.matching(NSPredicate(format: "label IN %@", ["New chat", "New Chat"])).firstMatch
-        if newChat.exists { return true }
+        if app.scrollViews["chat-list"].exists { return true }
         return app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Hermes")).firstMatch.exists
     }
 

@@ -25,7 +25,7 @@ iOS 26 起，普通 NavigationStack 页面的导航与操作使用系统 toolbar
 ### 按钮与组合
 
 - toolbar 中的标准按钮让系统处理材质与反馈，不保留覆盖效果的旧底，不额外套 glassEffect。
-- 独立导航/辅助悬浮按钮用 `.glass`；新聊天等主要悬浮动作用 `.glassProminent`。形状、前景和尺寸遵循现有令牌与可读性约束。
+- 独立导航/辅助悬浮按钮用 `.glass`；主要悬浮动作用 `.glassProminent`。形状、前景和尺寸遵循现有令牌与可读性约束。
 - 只有标准按钮样式无法表达的自绘可操作件才用 `.regular.interactive()`；大面板、被动说明和整个列表不 interactive。
 - 同一功能簇存在多个独立自绘玻璃形状时使用 `GlassEffectContainer`。容器 spacing 取设计令牌，静止时不因过大 spacing 误融为一团；单个玻璃胶囊不额外包一层容器。
 - 玻璃 shell 与子按钮不能各铺一层玻璃。形变确有产品含义时才使用 glassEffectID 等关联，不为了效果新增动画。

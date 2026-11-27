@@ -19,7 +19,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -63,7 +62,6 @@ import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonNotice
-import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.wontonContentPadding
@@ -184,7 +182,6 @@ fun ChatRoute(
                         navigation.keyHandoffDeferred = false
                     } else navigation.showingBackup = true
                 },
-                onStartChat = { navigation.startingChat = true },
                 onOpenApps = onOpenApps,
             )
         }
@@ -220,9 +217,7 @@ internal fun ChatListScreen(
     onAction: (Action) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
-    onStartChat: () -> Unit,
     onOpenApps: () -> Unit,
-    showNewChat: Boolean = true,
     selectedRoom: String? = null,
     onReviewInstall: () -> Unit = {},
 ) {
@@ -243,13 +238,12 @@ internal fun ChatListScreen(
         },
     ) {
         Box(Modifier.fillMaxSize()) {
+            // 新聊天只在侧边栏，列表上不浮按钮（ADR-0095）。
             LazyColumn(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxSize().testTag("chat-list"),
                 state = listState,
                 overscrollEffect = null,
-                contentPadding = wontonContentPaddingValues(
-                    bottom = WontonTheme.size.floatingActionButton + WontonTheme.spacing.pageInset * 2,
-                ),
+                contentPadding = wontonContentPaddingValues(bottom = WontonTheme.spacing.pageInset),
             ) {
                 item(key = "notices") { Notices(viewModel, onOpenBackup) }
                 item(key = "confirmations") {
@@ -306,19 +300,6 @@ internal fun ChatListScreen(
                         color = WontonTheme.colors.textPrimary.toColor(),
                     )
                 }
-            }
-            if (showNewChat) FloatingActionButton(
-                onClick = onStartChat,
-                modifier = Modifier.align(Alignment.BottomEnd)
-                    .padding(
-                        end = WontonTheme.spacing.pageInset,
-                        bottom = LocalWontonBottomInset.current + WontonTheme.spacing.pageInset,
-                    )
-                    .size(WontonTheme.size.floatingActionButton),
-                containerColor = WontonTheme.colors.accentFill.toColor(),
-                contentColor = WontonTheme.colors.accentInkOnFill.toColor(),
-            ) {
-                Icon(WontonIcon.Add, stringResource(R.string.shortcut_new_chat), Modifier.size(WontonTheme.size.icon))
             }
         }
     }
@@ -576,7 +557,7 @@ private fun StartChatScreen(
             WontonTextField(
                 value = peer,
                 onValueChange = { peer = it },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("start-chat-field"),
                 placeholder = stringResource(R.string.chat_peer_placeholder),
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,

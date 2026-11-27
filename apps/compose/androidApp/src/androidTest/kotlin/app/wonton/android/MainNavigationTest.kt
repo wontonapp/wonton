@@ -114,16 +114,12 @@ class MainNavigationTest {
         assertChatRoot()
     }
 
+    /** 新聊天只从侧边栏进，聊天列表上没有浮着的加号（ADR-0095）。 */
     @Test
-    fun testNewChatFromSidebarAndChatList() {
-        openFromSidebar("New chat")
-        compose.onNodeWithText("Start a direct chat").assertIsDisplayed()
-        pressBack()
-        assertChatRoot()
-
-        // 聊天列表的新聊天是右下角只有图标的悬浮按钮。
-        compose.onNodeWithContentDescription("New chat").performClick()
-        compose.onNodeWithText("Start a direct chat").assertIsDisplayed()
+    fun testNewChatFromSidebar() {
+        openSidebar()
+        compose.onNodeWithTag("sidebar-new-chat").performClick()
+        compose.onNodeWithTag("start-chat-field").assertIsDisplayed()
         pressBack()
         assertChatRoot()
     }

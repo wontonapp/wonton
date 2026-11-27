@@ -157,9 +157,7 @@ internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
                     nav.settingsOverlay = false
                     nav.openApps(HomePage.LAUNCHER)
                 },
-                onStartChat = { nav.sidebar(SidebarDestination.NewChat) },
                 onOpenApps = { nav.openApps(HomePage.LAUNCHER) },
-                showNewChat = false,
                 selectedRoom = nav.chat.openRoom.takeIf {
                     nav.pages.current == TabRef.Chat && !nav.settingsOverlay && !nav.pages.viewModel.showsApps
                 },
