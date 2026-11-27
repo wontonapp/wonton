@@ -49,8 +49,8 @@ struct HomeStatusPanel: View {
     private var needsTheOwner: Bool {
         guard let notice = home.notice else { return false }
         switch notice {
-        case .deviceRejected, .versionMismatch, .relayRejected: true
-        default: false
+        case .deviceRejected, .versionMismatch, .relayRejected: return true
+        default: return false
         }
     }
 
