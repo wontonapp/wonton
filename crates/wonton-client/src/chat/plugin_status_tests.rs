@@ -74,7 +74,7 @@ fn view(status: PluginState) -> PluginsViewModel {
 fn a_room_with_a_missing_bot_record_matches_the_plugin_by_bot_ref() {
     let mut rooms = rooms();
     rooms[0].direct_user_id = None;
-    rooms[0].bot = Some(RoomBot {
+    rooms[0].bot = Some(wonton_protocol::RoomBot {
         bot: wonton_protocol::BotRef {
             plugin_id: "app.agent".into(),
             bot: "default".into(),
