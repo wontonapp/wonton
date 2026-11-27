@@ -430,7 +430,7 @@ matrix-sdk 0.19.1；主房间的建房、邀请、退出和撤回另在 v2.0.0 �
 ## 验证结果（M1，网关代登录）
 
 插件规范 v0.1 的 `sso: proxy` 已实现：应用不支持 OIDC、但认反向代理传来的用户名或一个固定密钥时，网关在转发给插件的
-请求上代加清单声明的请求头或 Cookie，主人打开网页不用再登录一次。实现见 `crates/wonton-core/src/plugin/proxy_auth.rs`
+请求上代加清单声明的请求头或 Cookie，主人打开网页不用再登录一次。实现见 `crates/wonton-core/src/plugin/proxy_auth/`
 （值模板和清单校验）和 `crates/wonton-core/src/gateway/proxy_sso.rs`（转发前代加、转发后清理）。可复跑：
 `cargo test -p wonton-core proxy_sso`、`cargo test -p wonton-core gateway::tunnel_tests::paired_devices_open_proxy`（经真实
 隧道），以及 `deploy/dev/core/smoke.sh` 的“模型设置”一步（magpie 的网页，见 ADR-0008）。

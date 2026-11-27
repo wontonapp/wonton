@@ -266,7 +266,7 @@ plugin-install-prv-models-apis-path = provides.models.apisのパスは/で始ま
 plugin-install-prv-models-default-model = provides.models.default_modelを空にはできません
 plugin-install-prv-credentials-argv = provides.models.credentials.{ $field }は空でないargvで、{ $placeholder }で認証情報の名前を示す必要があります
 
-# ── プロキシアプリのCookieとヘッダー（proxy_auth.rs）──────────────────────
+# ── プロキシアプリのCookieとヘッダー（proxy_auth/）──────────────────────
 
 plugin-install-proxy-secret-unknown = { "{{" }secret:{ $name }{ "}}" }は、secretsのうち自宅サーバーが生成する（generate）{ $min }バイト以上の項目を参照する必要があります
 plugin-install-proxy-cookie-template = Cookieの値に使えるのは{ "{{" }secret:…{ "}}" }と固定テキストだけです：`{ $template }`
