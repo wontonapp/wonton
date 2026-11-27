@@ -186,6 +186,7 @@ pub(super) fn build_page(
         .unwrap_or_else(|| metadata(state, bot, None));
     let _ = plugins;
     TabPage {
+        native: None,
         title: metadata.title,
         icon: metadata.icon,
         url,

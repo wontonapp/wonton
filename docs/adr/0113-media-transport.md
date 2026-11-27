@@ -276,6 +276,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
   `spec_floor.rs` 登记，旧核心按版本号拒装并提示升级，不是静默忽略；别去给 `Provides` 加 `deny_unknown_fields`。
 - 新 App + 旧核心：新 App 看不到 `Action::Media` 的订阅，音乐、影视原生页退到插件网页；只有壳的改动，不崩。
 - 旧 App + 新核心：新协议字段不认识，任务页照旧，原生页在旧 App 里不出现（ADR-0095 的“不认识的按钮不显示”）。
+- 原生页的入口是页面上的 `TabPage.native`（`Option<NativePage>`：`Music`、`Video`、`Photos`，认不得的落 `Other`）。核心给已装插件的整页（`TabRef::Plugin`、不带子路径）按插件声明的标准填，不认插件名（ADR-0015）：音乐看 `provides.media_source.browse`，影视看 `catalog`，相册看 `library`。壳认得就画原生页，网页留在胶囊菜单的“网页版”（同一插件的 `TabRef::PluginPath`，路径 `/`）；`None` 或 `Other` 照旧加载网页，旧 App 遇到新加的原生页因此回落到网页。不另加 `TabRef::Native`：页面栈、标签、返回和“加到我的应用”都还是这个插件的页，原生只是换一种画法。
 - #585 的网页媒体会话在收编期间保持可用，直到音乐原生页与第三方页的 renderer 都验过（见“待验证”）。
 - `FileFailure` 的码只增不改；服务端空间不足改用新码，旧壳落到通用文案。
 
