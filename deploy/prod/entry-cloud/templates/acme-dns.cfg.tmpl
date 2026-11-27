@@ -1,0 +1,25 @@
+[general]
+listen = "127.0.0.1:8053"
+protocol = "both4"
+domain = "auth.@DOMAIN@"
+nsname = "auth.@DOMAIN@"
+nsadmin = "admin.@DOMAIN@"
+records = ["auth.@DOMAIN@. A @PUBLIC_IP@", "auth.@DOMAIN@. NS auth.@DOMAIN@."]
+debug = false
+
+[database]
+engine = "sqlite3"
+connection = "/var/lib/acme-dns/acme-dns.db"
+
+[api]
+ip = "127.0.0.1"
+port = "8054"
+tls = "none"
+disable_registration = false
+corsorigins = []
+use_header = false
+
+[logconfig]
+loglevel = "info"
+logtype = "stdout"
+logformat = "text"

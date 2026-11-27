@@ -110,6 +110,7 @@ async fn reissued_code_keeps_submitted_requests_approvable() {
         PairResponse::Joining {
             outcome: JoinOutcome::CodeUsed,
             role: None,
+            invited_by: None,
         }
     );
     late.close().await;
@@ -145,6 +146,7 @@ async fn rejecting_one_pending_request_keeps_approving_the_other() {
         PairResponse::Joining {
             outcome: JoinOutcome::Rejected,
             role: None,
+            invited_by: None,
         }
     );
     assert_eq!(
@@ -152,6 +154,7 @@ async fn rejecting_one_pending_request_keeps_approving_the_other() {
         PairResponse::Joining {
             outcome: JoinOutcome::CodeUsed,
             role: None,
+            invited_by: None,
         }
     );
     endpoint_a.close().await;

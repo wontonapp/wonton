@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="connection_relay_rejected">中繼伺服器拒絕了這支手機的令牌</string>
     <string name="connection_updating">正在更新…</string>
     <string name="connection_pair_again">重新配對</string>
     <string name="connection_view">查看連線</string>

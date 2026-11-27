@@ -23,16 +23,19 @@ preview_package() {
 # 两个变量跨函数用，调用方接着拿去发请求；装不了（blocked）时退出。
 preview_read() {
   local preview="$1" blocked
+  # 装不了（架构不对等）时预览里可以没有 id、标题这些：先讲 blocked，缺字段不该先死在取字段上。
+  blocked="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("blocked") or "")' <<<"$preview" 2>/dev/null || true)"
+  [[ -z "$blocked" ]] || die "这台主机上装不了：$blocked"
+  PLUGIN_ID="$(json_field id <<<"$preview" 2>/dev/null || true)"
+  [[ -n "$PLUGIN_ID" ]] || die "预览里没有插件 ID：$preview"
   GRANTS="$(json_field permissions <<<"$preview" | python3 -c 'import json,sys
-print(",".join(p["permission"] for p in json.load(sys.stdin)))')"
-  PLUGIN_ID="$(json_field id <<<"$preview")"
-  echo "插件：$PLUGIN_ID（$(json_field title <<<"$preview")）" >&2
+print(",".join(p["permission"] for p in json.load(sys.stdin)))')" ||
+    die "预览里的权限读不出来：$preview"
+  echo "插件：$PLUGIN_ID（$(json_field title <<<"$preview" 2>/dev/null || echo ？)）" >&2
   echo "需要的权限：${GRANTS:-无}" >&2
   python3 -c 'import json,sys
-for notice in json.load(sys.stdin)["notices"]:
+for notice in json.load(sys.stdin).get("notices") or []:
     print("提示：" + notice["text"])' <<<"$preview" >&2
-  blocked="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["blocked"] or "")' <<<"$preview")"
-  [[ -z "$blocked" ]] || die "这台主机上装不了：$blocked"
 }
 
 # 密钥放头里，查询串会进日志：把 Wonton-Plugin-Secrets 追加进 $1 命名的头数组，值为空时不加。
@@ -43,12 +46,48 @@ secret_header() {
   hdrs+=(-H "Wonton-Plugin-Secrets: $(python3 -c 'import base64,json,sys;print(base64.urlsafe_b64encode(json.dumps(json.loads(sys.argv[1])).encode()).decode().rstrip("="))' "$2")")
 }
 
+# 插件装着没有：0 装了、1 没装、2 问不到。安装接口对已装的插件报错退出，复跑时改走升级（换容器，不吊销
+# Bot 的设备）；一次瞬时错误不能当成“没装”（那样复跑会撞 already installed），再问一次，仍不行报原因。
+plugin_installed() {
+  local out answer
+  out="$(api GET /_wonton/api/plugins)" || out="$(api GET /_wonton/api/plugins)" ||
+    die "查不到已装插件列表：$out"
+  answer="$(python3 -c 'import json, sys
+try:
+    rows = json.load(sys.stdin)["plugins"]
+except (ValueError, KeyError):
+    print("unknown")
+    raise SystemExit(0)
+print("yes" if sys.argv[1] in [row.get("id") for row in rows] else "no")' "$1" <<<"$out")"
+  case "$answer" in
+    yes) return 0 ;;
+    no) return 1 ;;
+    *) die "读不懂已装插件列表：$out" ;;
+  esac
+}
+
 install() {
-  local file="$1" yes="${2:-}" secrets="${3:-}" type preview answer
+  local file="$1" yes="${2:-}" secrets="${3:-}" type preview answer out
   local -a headers statuses
   [[ -e "$file" ]] || die "找不到插件包：$file"
   type="$(package_type "$file")"
   preview="$(preview_package "$file")" || die "预览失败：$preview"
+  # 已装过的插件，安装预览就是 blocked（already installed）：先取 ID，装了就走升级。预览里没有 id（无效包）
+  # 就留给下面的 preview_read 打印原因，别先死在取字段上。
+  PLUGIN_ID="$(json_field id <<<"$preview" 2>/dev/null || true)"
+  if [[ -n "$PLUGIN_ID" ]] && plugin_installed "$PLUGIN_ID"; then
+    echo "$PLUGIN_ID 已经装过，改走升级" >&2
+    out="$(upgrade "$file" "$yes" "$secrets" 2>&1)" || {
+      if grep -q 'nothing to update' <<<"$out"; then
+        echo "$PLUGIN_ID 已经是这个版本，不用动" >&2
+        return 0
+      fi
+      printf '%s\n' "$out" >&2
+      return 1
+    }
+    printf '%s\n' "$out"
+    return 0
+  fi
   preview_read "$preview"
   if [[ "$yes" != "--yes" ]]; then
     read -r -p "确认安装？[y/N] " answer

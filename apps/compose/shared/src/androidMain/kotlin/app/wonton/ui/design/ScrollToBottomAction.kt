@@ -36,8 +36,8 @@ fun ScrollToBottomAction(count: Int, onClick: () -> Unit, modifier: Modifier = M
         modifier = modifier
             .requiredSize(size)
             .semantics { contentDescription = label },
-        containerColor = WontonTheme.colors.accentFill.toColor(),
-        contentColor = WontonTheme.colors.accentInkOnFill.toColor(),
+        containerColor = WontonTheme.colors.primary.toColor(),
+        contentColor = WontonTheme.colors.onPrimary.toColor(),
     ) {
         // 角标叠在圆钮外面：FAB 的 Surface 会按圆形裁剪内容，放进 BadgedBox 超出的部分会被切掉。
         Box {

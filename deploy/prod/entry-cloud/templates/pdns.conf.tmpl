@@ -1,0 +1,18 @@
+# Rendered by prepare.py. PowerDNS is the authoritative server for the whole
+# zone and is never published: dnsdist answers 53 and forwards to this port.
+local-address=127.0.0.1
+local-port=5300
+
+launch=gsqlite3
+gsqlite3-database=/var/lib/powerdns/pdns.sqlite3
+
+api=yes
+api-key=@PDNS_API_KEY@
+webserver=yes
+webserver-address=127.0.0.1
+webserver-port=8084
+webserver-allow-from=127.0.0.1
+
+gsqlite3-dnssec=no
+socket-dir=/var/lib/powerdns
+security-poll-suffix=

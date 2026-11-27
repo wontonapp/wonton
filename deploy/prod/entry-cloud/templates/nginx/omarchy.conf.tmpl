@@ -1,0 +1,27 @@
+# Operator's existing public site. It is HTTP-only on the entry host (its own
+# domain is not certified here); the in-zone alias is HTTP-only too.
+server {
+    listen 127.0.0.1:4080 proxy_protocol;
+    server_name @OMARCHY_HOST@ @SITE_ALIAS@.@DOMAIN@;
+
+    root /var/www/omarchy;
+    index index.html;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    location ~* \.(?:js|css|png|jpg|jpeg|gif|svg|ico|woff2?)$ {
+        expires 7d;
+        add_header Cache-Control "public";
+        try_files $uri =404;
+    }
+
+    # Keep the site's SPA fallback; this is what the existing vhost did.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

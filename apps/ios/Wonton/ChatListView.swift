@@ -179,6 +179,8 @@ struct ChatListView: View {
                             }
                             .accessibilityIdentifier("chat-backup-reminder-dismiss")
                         }
+                        // 文字和设置行（WontonRow）一样离卡片左边 16；关闭钮的命中区贴着右边，图形自带留白。Android 同。
+                        .padding(.leading, WontonTheme.spacing.s16)
                     }
                 }
             }
@@ -191,6 +193,8 @@ struct ChatListView: View {
         Text(reminder)
             .wontonText(WontonTheme.typography.body)
             .foregroundStyle(Color(colors.textPrimary))
+            // 折成两行时上下也留白，不贴着卡片边。
+            .padding(.vertical, WontonTheme.spacing.s12)
             .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target, alignment: .leading)
             .contentShape(Rectangle())
     }
@@ -378,7 +382,7 @@ private struct RoomRowView: View {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         Text(row.name)
                             .wontonText(WontonTheme.typography.itemTitle)
-                            .foregroundStyle(Color(selected ? colors.accentInkOnFill : colors.textPrimary))
+                            .foregroundStyle(Color(selected ? colors.onPrimary : colors.textPrimary))
                             .lineLimit(1)
                         if row.isEncrypted {
                             WontonIcon.lockFill.view(size: WontonTheme.size.iconTiny)
@@ -388,7 +392,7 @@ private struct RoomRowView: View {
                         // 有人在通话（ADR-0096）。图标是装饰，读屏的那句挂在整行上（见列表里的 accessibilityValue）。
                         if row.callActive {
                             WontonIcon.voiceCallFill.view(size: WontonTheme.size.iconTiny)
-                                .foregroundStyle(Color(selected ? colors.accentInkOnFill : colors.success))
+                                .foregroundStyle(Color(selected ? colors.onPrimary : colors.success))
                         }
                     }
                     Spacer(minLength: 0)
@@ -411,10 +415,10 @@ private struct RoomRowView: View {
                         Text("\(row.unreadCount)")
                             .wontonText(WontonTheme.typography.caption)
                             .monospacedDigit()
-                            .foregroundStyle(Color(colors.accentInkOnFill))
+                            .foregroundStyle(Color(colors.onPrimary))
                             .padding(.horizontal, WontonTheme.spacing.s8)
                             .padding(.vertical, WontonTheme.spacing.s4)
-                            .accentFill(Capsule())
+                            .emphasisFill(Capsule())
                             .accessibilityLabel(Text(.Chat0.chatUnread(count: Int(row.unreadCount))))
                     }
                 }
@@ -423,7 +427,7 @@ private struct RoomRowView: View {
         .padding(.horizontal, WontonTheme.spacing.s16)
         .padding(.vertical, WontonTheme.spacing.s12)
         .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target, alignment: .leading)
-        .background(selected ? Color(colors.accentFill) : Color.clear)
+        .background(selected ? Color(colors.primary) : Color.clear)
         .contentShape(Rectangle())
     }
 

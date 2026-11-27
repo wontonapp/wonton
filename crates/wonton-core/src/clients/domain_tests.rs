@@ -58,6 +58,24 @@ fn request(suffix: Option<&str>) -> PutDomainRequest {
     }
 }
 
+/// 一份能解析的证书准备状态；`prepare` 会读它并和当前域名/服务商比对。
+fn prepared(dir: &Path, domain: &str, provider: &str) {
+    let path = dir.join("entry/prepared.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        path,
+        serde_json::json!({
+            "domain": domain,
+            "directory_url": "https://pebble.test:14000/dir",
+            "include_lan": true,
+            "provider": provider,
+            "account_uri": "https://pebble.test:14000/acct/1",
+        })
+        .to_string(),
+    )
+    .unwrap();
+}
+
 fn certificate(dir: &Path) {
     let directory = dir.join("entry/certs");
     fs::create_dir_all(&directory).unwrap();
@@ -73,7 +91,10 @@ async fn put_domain_requires_terms() {
     let mut put = request(None);
     put.accept_terms = false;
     let error = domain(dir.path()).save(put).await.err().unwrap();
-    assert!(matches!(error, DomainError::Invalid(_)), "{error}");
+    assert!(
+        matches!(error, DomainError::Invalid(_) | DomainError::InvalidKey(_)),
+        "{error}"
+    );
 }
 
 #[tokio::test]
@@ -84,7 +105,7 @@ async fn provider_name_charset_only() {
     put.provider = "Cloudflare_DNS".into();
     assert!(matches!(
         domain(dir.path()).save(put.clone()).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
     // 核心不按服务商分支：不在任何预设里的代码照样收下。
     put.provider = "notapreset1".into();
@@ -124,7 +145,7 @@ async fn external_certificate_conflicts() {
     fs::write(path, serde_json::to_vec(&settings).unwrap()).unwrap();
     assert!(matches!(
         domain(dir.path()).save(request(None)).await,
-        Err(DomainError::Conflict(_))
+        Err(DomainError::Conflict(_) | DomainError::ConflictKey(_))
     ));
 }
 
@@ -136,7 +157,7 @@ async fn suffix_fixed_when_server_name_set() {
     let mut put = request(Some("other.example.test"));
     assert!(matches!(
         clients.save(put.clone()).await,
-        Err(DomainError::Conflict(_))
+        Err(DomainError::Conflict(_) | DomainError::ConflictKey(_))
     ));
     put.suffix = None;
     assert!(clients.save(put).await.is_ok());
@@ -385,7 +406,7 @@ async fn credentials_accept_backslash_and_dollar_but_not_single_quote() {
     put.credentials[0].value = SecretString::new("it's");
     assert!(matches!(
         domain(dir.path()).save(put).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
 }
 
@@ -461,7 +482,7 @@ async fn first_provider_requires_credentials() {
     put.credentials.clear();
     assert!(matches!(
         clients.save(put).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
     assert!(!dir.path().join("entry/domain.json").exists());
 }
@@ -478,7 +499,7 @@ async fn changed_provider_requires_its_own_credentials() {
     put.credentials.clear();
     assert!(matches!(
         clients.save(put).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
     assert_eq!(
         fs::read(dir.path().join("entry/domain.json")).unwrap(),
@@ -538,7 +559,7 @@ async fn queued_issue_skips_when_settings_changed_before_the_lock() {
     let quiet = clients.engine.recorded_creations().len();
     // 旧任务此刻拿到锁：设置已变，必须跳过，不能按 A 起 lego。
     clients.pending.fetch_add(1, Ordering::SeqCst);
-    clients.clone().run_issue(stale).await;
+    clients.clone().run_issue(stale, false).await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet,
@@ -547,7 +568,7 @@ async fn queued_issue_skips_when_settings_changed_before_the_lock() {
     // 对照：按现状排的任务照常签（测试引擎在起容器那步失败，但“试图起”发生）。
     let fresh = clients.effective().unwrap();
     clients.pending.fetch_add(1, Ordering::SeqCst);
-    clients.clone().run_issue(fresh).await;
+    clients.clone().run_issue(fresh, false).await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet + 1,
@@ -591,7 +612,7 @@ async fn queued_issue_runs_even_after_last_error_changed() {
         .unwrap();
     let quiet = clients.engine.recorded_creations().len();
     clients.pending.fetch_add(1, Ordering::SeqCst);
-    clients.clone().run_issue(queued).await;
+    clients.clone().run_issue(queued, false).await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet + 1,
@@ -862,4 +883,130 @@ async fn a_published_certificate_writes_the_config_before_reloading() {
     let names: Vec<&str> = last.split_whitespace().collect();
     assert!(names.contains(&"example.test"), "记录：{seen:?}");
     assert!(!names.contains(&"old.example.test"), "记录：{seen:?}");
+}
+
+/// 证书还新、给的就是这个名字、上一次没失败：再保存一次不该重新签一张。
+/// 换名字时旧证书虽然新也不算数（`reset_prepared` 已经把身份删了）。
+#[tokio::test]
+async fn a_fresh_certificate_skips_the_repeat_issue() {
+    use std::sync::atomic::Ordering;
+    let dir = tempfile::tempdir().unwrap();
+    settings(dir.path(), Some("example.test"));
+    let clients = domain(dir.path());
+    clients
+        .apply(|store| {
+            *store = super::Store {
+                suffix: Some("example.test".into()),
+                provider: Some("httpreq".into()),
+                credentials: [("HTTPREQ_TOKEN".into(), "a-token".into())].into(),
+                env_file: None,
+                terms_accepted: true,
+                last_error: None,
+            };
+            Ok(())
+        })
+        .await
+        .unwrap();
+    certificate(dir.path());
+    prepared(dir.path(), "example.test", "httpreq");
+    let snapshot = clients.effective().unwrap();
+    assert_eq!(snapshot.suffix.as_deref(), Some("example.test"));
+    assert!(snapshot.last_error.is_none());
+    let certs = dir.path().join("entry/certs");
+    assert!(certs.join("site.key").is_file(), "key 没写出来");
+    let names = crate::entry_certificate::published_names(&certs.join("site.pem"));
+    assert_eq!(names, ["example.test"], "SAN 没读到");
+    assert!(
+        clients
+            .not_after_ms()
+            .is_some_and(|at| at > super::now_ms() + 30 * 86_400_000),
+        "到期时间不够远：{:?}",
+        clients.not_after_ms()
+    );
+    assert!(clients.fresh(&snapshot), "先决条件就该是新证书");
+    let quiet = clients.engine.recorded_creations().len();
+    clients.pending.fetch_add(1, Ordering::SeqCst);
+    clients
+        .clone()
+        .run_issue(clients.effective().unwrap(), false)
+        .await;
+    assert_eq!(
+        clients.engine.recorded_creations().len(),
+        quiet,
+        "证书还新且覆盖这个名字，不该再起 lego"
+    );
+    // 换了名字：旧的 SAN 不覆盖，必须重新签。
+    clients
+        .update(|store| store.suffix = Some("neu.example.test".into()))
+        .await
+        .unwrap();
+    // 真实的 save() 会在这里删准备状态；这里走 update()，补一下。
+    clients.reset_prepared();
+    clients.pending.fetch_add(1, Ordering::SeqCst);
+    clients
+        .clone()
+        .run_issue(clients.effective().unwrap(), false)
+        .await;
+    assert_eq!(
+        clients.engine.recorded_creations().len(),
+        quiet + 1,
+        "换名字后该照常走签发"
+    );
+}
+
+/// 证书还新，但换服务商（准备状态被删）或只换凭据：保存必须真的去签一次，验新配置。
+#[tokio::test]
+async fn provider_or_credential_change_with_a_fresh_certificate_still_issues() {
+    use std::sync::atomic::Ordering;
+    let dir = tempfile::tempdir().unwrap();
+    settings(dir.path(), Some("example.test"));
+    let clients = domain(dir.path());
+    clients
+        .apply(|store| {
+            *store = super::Store {
+                suffix: Some("example.test".into()),
+                provider: Some("httpreq".into()),
+                credentials: [("HTTPREQ_TOKEN".into(), "a-token".into())].into(),
+                env_file: None,
+                terms_accepted: true,
+                last_error: None,
+            };
+            Ok(())
+        })
+        .await
+        .unwrap();
+    certificate(dir.path());
+    prepared(dir.path(), "example.test", "httpreq");
+    let settle = async || {
+        for _ in 0..20_000 {
+            if clients.pending.load(Ordering::SeqCst) == 0 {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("签发没在限定的轮数里结束");
+    };
+    // 只换凭据：准备状态还在，也要强制签一次。
+    let quiet = clients.engine.recorded_creations().len();
+    let mut put = request(None);
+    put.credentials = vec![CredentialEntry {
+        name: "HTTPREQ_TOKEN".into(),
+        value: SecretString::new("b-token"),
+    }];
+    clients.clone().save(put).await.unwrap();
+    settle().await;
+    assert!(
+        clients.engine.recorded_creations().len() > quiet,
+        "只换凭据也得验一次新凭据"
+    );
+    // 换服务商：reset_prepared 删掉 prepared.json，fresh 不再成立。
+    let quiet = clients.engine.recorded_creations().len();
+    let mut put = request(None);
+    put.provider = "otherdns".into();
+    clients.clone().save(put).await.unwrap();
+    settle().await;
+    assert!(
+        clients.engine.recorded_creations().len() > quiet,
+        "换服务商必须重新签"
+    );
 }

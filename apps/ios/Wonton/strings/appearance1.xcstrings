@@ -2,38 +2,8 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "appearance.accent": {
-      "comment": "Section title for the accent color, and accessibility label prefix of the accent color swatches.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Accent Color"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重点色"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "強調色"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アクセントカラー"
-          }
-        }
-      }
-    },
     "appearance.expanded": {
-      "comment": "Accessibility value of the More row while the extra colors are shown.",
+      "comment": "Accessibility value of an expandable row or text while it is expanded.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -88,66 +58,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "等幅"
-          }
-        }
-      }
-    },
-    "appearance.hexInvalid": {
-      "comment": "Error under the color input field when the text isn't a valid #RRGGBB value.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter the color as #RRGGBB"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "颜色要写成 #RRGGBB"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "顏色要寫成 #RRGGBB"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "色は #RRGGBB の形式で入力してください"
-          }
-        }
-      }
-    },
-    "appearance.moreColors": {
-      "comment": "Accessibility label prefix of the extra color swatches behind the More row.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "More Colors"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更多颜色"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更多顏色"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "その他の色"
           }
         }
       }

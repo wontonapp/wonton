@@ -52,7 +52,7 @@ struct AgentRunRow: View {
             if state == .working, let progress {
                 ProgressView(value: Double(progress))
                     .progressViewStyle(.linear)
-                    .tint(Color(colors.accentInk))
+                    .tint(Color(colors.textPrimary))
             }
             if !choices.isEmpty, !isOther {
                 asking
@@ -147,7 +147,7 @@ struct AgentRunRow: View {
             if cardId != nil, state == .waiting {
                 // 装饰：整行可点，箭头只表示能过去。
                 WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
-                    .foregroundStyle(Color(colors.accentInk))
+                    .foregroundStyle(Color(colors.textPrimary))
             }
         }
     }
@@ -179,11 +179,11 @@ struct AgentRunRow: View {
                 WontonIcon.agent.view(size: WontonTheme.size.iconSmall)
                     .foregroundStyle(Color(colors.textSecondary))
             } else {
-                ProgressView().controlSize(.small).tint(Color(colors.accentInk))
+                ProgressView().controlSize(.small).tint(Color(colors.textPrimary))
             }
         case .waiting:
             WontonIcon.notify.view(size: WontonTheme.size.iconSmall)
-                .foregroundStyle(Color(colors.accentInk))
+                .foregroundStyle(Color(colors.textPrimary))
         case .failed:
             failureMark
         case .uncertain:
@@ -239,7 +239,7 @@ struct AgentRunRow: View {
         case .working, .done, .other:
             return colors.textSecondary
         case .waiting:
-            return colors.accentInk
+            return colors.textPrimary
         case .failed:
             switch end {
             case .cancelled: return colors.textSecondary
@@ -259,7 +259,7 @@ struct AgentRunRow: View {
                 Text(String(localized: .AgentRun.agentRunAsking(senderName)))
                     .wontonText(WontonTheme.typography.supporting)
             }
-            .foregroundStyle(Color(colors.accentInk))
+            .foregroundStyle(Color(colors.textPrimary))
             AgentRunChoices(choices: choices, state: state, answer: answerChoice)
         }
     }

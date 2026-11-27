@@ -333,6 +333,9 @@ mod tests {
 
     fn plugin(id: &str, state: PluginState, bot: Option<&str>) -> InstalledPlugin {
         InstalledPlugin {
+            bot_danger_can_toggle: false,
+            bot_shared: false,
+            bot_danger: false,
             chat: Some(PluginChat {
                 form: Default::default(),
             }),

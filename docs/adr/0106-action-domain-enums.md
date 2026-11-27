@@ -84,7 +84,7 @@ Agent 动作由同步 `dispatch` 发起后在后台完成：即时连接错误�
 | `BotAction` | `SetBotName`、`SetBotAvatar`、`ClearBotAvatar`、`DismissBotProfileProblem` |
 | `PushAction` | `SetPushEndpoint`、`PushUnavailable`、`SetPushMethod` |
 | `PluginAction` | `RefreshPlugins`、`ListOwnerSecrets`、`ShowOwnerSecret`、`HideOwnerSecret`、`DismissOwnerSecrets`、`StartPlugin`、`SetPortMapping`、`RefreshStore`、`InstallPlugin`、`UpgradePlugin`、`UninstallPlugin`、`SetPluginAudience`、`DismissPluginTask`、`InstallNow`、`UpgradeNow`、`UpgradeAll`、`DismissStoreConfirmation`、`StartTakeover`、`EndTakeover`、`RefreshEgressProxy`、`SaveEgressProxy`、`ConfirmEgressProxy`、`DismissEgressConfirmation`、`RefreshRegistryMirror`、`SaveRegistryMirror`、`TestRegistryMirrors`、`RefreshCoreUpgrade`、`StartCoreUpgrade`、`CancelCoreUpgrade`、`SkipCoreUpgrade`、`SetPluginMediaPermission` |
-| `SettingsAction` | `SetLanguages`、`SetAccentColor`、`SetThemeMode`、`SetTextSize`、`SetFont`、`SetLockScreenContent` |
+| `SettingsAction` | `SetLanguages`、`SetThemeMode`、`SetTextSize`、`SetFont`、`SetLockScreenContent` |
 | `OnboardingAction` | `RefreshOnboarding`、`RestartOnboarding`、`ContinueOnboarding`、`SkipOnboardingStep`、`BackOnboardingStep`、`ToggleOnboardingNeed`、`EditOnboardingProfile`、`UseCurrentModel`、`RetryOnboardingItem`、`DismissOnboardingTip`、`CloseOnboarding` |
 | `FileAction` | `UploadFile`、`DownloadFile`、`CancelTransfer`、`DismissTransfer`、`ResendFileLink`、`DeleteFile`、`SendFileToDevices`、`GrantFileToRoom`、`DismissFileProblem` |
 | `PageAction` | `OpenPage`、`ClosePage`、`AddMyApp`、`RemoveMyApp`、`MoveMyApp`、`SetAutoAddApps`、`RetryMyAppSync`、`AddPanelPage`、`RemovePanelPage`、`MovePanelPage`、`SelectPanelPage`、`SetBotPinConsent`、`PinCurrentPage`、`ReloadTab`、`TabLoadFailed`、`TabLoadSucceeded`、`DismissUninstalledTabs` |

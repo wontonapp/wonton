@@ -4,8 +4,8 @@ fn url(text: &str) -> RelayUrl {
     text.parse().unwrap()
 }
 
-fn relay(text: &str, tier: u8) -> Relay {
-    Relay {
+fn relay(text: &str, tier: u8) -> RelayView {
+    RelayView {
         url: url(text),
         token: None,
         quic_port: None,
@@ -13,8 +13,8 @@ fn relay(text: &str, tier: u8) -> Relay {
     }
 }
 
-fn table_of(relays: Vec<Relay>) -> RelayTable {
-    RelayTable::from_relays(relays)
+fn table_of(relays: Vec<RelayView>) -> RelayTable {
+    RelayTable::from_views(relays)
 }
 
 #[test]
@@ -104,9 +104,14 @@ fn wire_entries_must_not_carry_the_token_in_the_url() {
     let mut entry = relay("https://a.example", 0);
     assert_eq!(entry.validate(), Ok(()));
     entry.url = "https://tok@a.example".parse().unwrap();
-    assert!(entry.validate().unwrap_err().contains("userinfo"));
-    entry.url = "http://a.example".parse().unwrap();
-    assert!(entry.validate().unwrap_err().contains("https"));
+    let error = entry.validate().unwrap_err();
+    assert!(error.contains("userinfo"), "{error}");
+    // 报错串里不能再带一遍令牌。
+    assert!(!error.contains("tok"), "{error}");
+    entry.url = "http://tok@a.example".parse().unwrap();
+    let error = entry.validate().unwrap_err();
+    assert!(error.contains("https"), "{error}");
+    assert!(!error.contains("tok"), "{error}");
     entry = relay("https://a.example", 0);
     entry.token = Some(RelayToken::new(""));
     assert!(entry.validate().unwrap_err().contains("空"));
@@ -143,8 +148,8 @@ fn every_entry_point_yields_the_same_relay_for_both_spellings() {
     assert_eq!(table.tier(1)[0].url, url("https://a.example/"));
     assert_eq!(table.tier(1)[0].token.as_ref().unwrap().expose(), "tok");
     // 从连接信息或配对码组表也一样。
-    let table = RelayTable::from_relays(vec![relay("https://a.example./", 0)]);
-    assert_eq!(table.tier(0), [relay("https://a.example/", 0)]);
+    let table = RelayTable::from_views(vec![relay("https://a.example./", 0)]);
+    assert_eq!(table.views(), [relay("https://a.example/", 0)]);
     // iroh 的默认 n0 表里也没有带尾点的写法。
     assert!(
         RelayTable::builtin_n0().relays().iter().all(|relay| !relay
@@ -158,16 +163,16 @@ fn every_entry_point_yields_the_same_relay_for_both_spellings() {
 #[test]
 fn the_map_only_holds_the_requested_tiers() {
     let table = RelayTable::parse("https://a.example;n0").unwrap();
-    let map = relay_map(table.relays(), 1);
+    let map = relay_map(&table.views(), 1);
     assert_eq!(map.len(), 1);
     assert!(map.contains(&url("https://a.example/")));
-    let map = relay_map(table.relays(), 2);
+    let map = relay_map(&table.views(), 2);
     assert_eq!(map.len(), 1 + RelayTable::builtin_n0().tier(0).len());
     // 令牌进了 iroh 的配置，不在地址里。
     let config = map.get(&url("https://a.example/")).unwrap();
     assert_eq!(config.auth_token.as_deref(), None);
     let table = RelayTable::parse("https://tok@a.example").unwrap();
-    let map = relay_map(table.relays(), 1);
+    let map = relay_map(&table.views(), 1);
     let config = map.get(&url("https://a.example/")).unwrap();
     assert_eq!(config.auth_token.as_deref(), Some("tok"));
 }

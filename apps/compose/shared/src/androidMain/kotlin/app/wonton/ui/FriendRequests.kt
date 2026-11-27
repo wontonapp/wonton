@@ -49,7 +49,7 @@ internal fun IncomingFriendRequestRow(row: FriendRequest, onApprove: () -> Unit,
                 Text(
                     stringResource(it),
                     style = WontonTheme.typography.supporting,
-                    color = colors.primary.toColor(),
+                    color = colors.textPrimary.toColor(),
                 )
             }
         }

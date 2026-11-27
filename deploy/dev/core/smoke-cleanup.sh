@@ -44,8 +44,14 @@ cleanup() {
   remove_container "$egress_check"
   remove_container "$browser"
   remove_container "$phone"
+  remove_container "$mom_phone"
   [[ -z "${fake_upstream:-}" ]] || remove_container "$fake_upstream"
   [[ -z "${model_relay:-}" ]] || remove_container "$model_relay"
+  # 起探针时撞名挪开的旧容器。
+  remove_container "$browser.stale"
+  remove_container "$phone.stale"
+  remove_container "$mom_phone.stale"
+  remove_container "$model_relay.stale"
   # 中途失败时插件和核心可能都还在：先把这套实例的容器全删完（核心也就停了），网络和卷才删得掉。
   for resource in $(instance_containers); do remove_container "$resource"; done
   # 核心自己建的出口网络、卷和数据目录也在这里删；单步失败不影响后面的。

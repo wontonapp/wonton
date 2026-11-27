@@ -372,6 +372,7 @@ async fn serve() -> anyhow::Result<()> {
             dir.clone(),
         ))
     });
+
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),

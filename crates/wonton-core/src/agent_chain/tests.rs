@@ -170,7 +170,8 @@ fn rounds_stop_at_the_limit_and_a_new_grant_reopens_it() {
     assert_eq!(h.events.lock().expect("事件锁").len(), 2, "再到上限是新的");
 }
 
-/// 停链交出链上活的轮次和待答的卡片；之后用这条链的消息开轮、进链都是 `stopped`，停是幂等的。
+/// 停链交出链上活的轮次和待答的卡片；之后用这条链的消息开轮、进链都是 `stopped`。
+/// 停是幂等的：再停一次不重复交出已经交过的，但停以后才挂上的卡片照样交出去。
 #[test]
 fn stopping_returns_live_turns_and_pending_cards_then_refuses_everything() {
     let h = harness();
@@ -211,7 +212,14 @@ fn stopping_returns_live_turns_and_pending_cards_then_refuses_everything() {
         &ChainError::Stopped
     );
     let again = h.chains.stop(&chain).expect("再停是幂等");
-    assert!(again.turns.is_empty() && again.cards.is_empty());
+    assert!(again.turns.is_empty(), "停过的轮次不再取消一次");
+    assert!(again.cards.is_empty(), "交过的卡片不再交一次");
+    // 停和分发撞在一起时，卡片可能晚于停链挂上：再停一次要把它交出去，不能一直等人答。
+    h.chains
+        .bind_card(&chain, "card-late")
+        .expect("停后挂上的卡片");
+    let again = h.chains.stop(&chain).expect("停后挂上的卡片再停就交");
+    assert_eq!(again.cards, vec!["card-late".to_owned()]);
 }
 
 /// 两条链同时用同一个 Bot：计数互不影响。

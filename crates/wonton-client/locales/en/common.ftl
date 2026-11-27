@@ -34,6 +34,8 @@ plugins-api-server-status = Your home server returned HTTP { $status }
 
 plugins-api-not-connected = Try again once you're connected to your home server.
 
+plugins-api-not-paired = Pair this phone with your home server first, then try again.
+
 plugins-api-server-too-old = Home server { $version } is too old: this needs { $minimum } or newer.
 
 # Install, upgrade and uninstall tasks (crates/wonton-client/src/plugins/tasks.rs):

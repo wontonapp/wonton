@@ -197,7 +197,7 @@ final class ComposerTextView: UITextView {
         let ink = UIColor(Color(colors.textPrimary))
         self.font = font
         textColor = ink
-        tintColor = UIColor(Color(colors.primary))
+        tintColor = UIColor(Color(colors.textPrimary))
         typingAttributes = [.font: font, .foregroundColor: ink, .paragraphStyle: paragraph]
         typingStyle = typingAttributes
         placeholderLabel.font = font

@@ -171,6 +171,7 @@ impl ChatLink {
             view.encryption.recovery = RecoveryStatus::Unknown;
             super::recovery::refresh(&mut view.encryption);
         });
+        self.bots.publish_contacts();
         Ok(None)
     }
 

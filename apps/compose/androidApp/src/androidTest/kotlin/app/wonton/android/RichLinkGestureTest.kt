@@ -146,17 +146,8 @@ class RichLinkGestureTest {
             success = rgb(0x2E7D32),
             warning = rgb(0xF9A825),
             danger = rgb(0xC62828),
-            accentFill = rgb(0xE3F2FD),
-            accentInk = rgb(0x1565C0),
-            accentInkOnFill = rgb(0x0D47A1),
-            textOnAccentFill = rgb(0x0D47A1),
-            accentFillBorder = rgb(0xBBDEFB),
         )
         return AppearanceViewModel(
-            accent = rgb(0x3366FF),
-            presets = listOf(rgb(0x3366FF)),
-            moreColors = emptyList(),
-            swatchColumns = 6u,
             themeMode = ThemeMode.SYSTEM,
             themeModes = listOf(ThemeMode.SYSTEM),
             textSize = TextSize.STANDARD,

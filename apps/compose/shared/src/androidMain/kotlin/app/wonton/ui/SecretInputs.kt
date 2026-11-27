@@ -165,7 +165,7 @@ fun SecretInputField(
                     .clickable(role = androidx.compose.ui.semantics.Role.Button) { uri.openUri(url) }
                     .semantics { contentDescription = url },
                 style = WontonTheme.typography.caption,
-                color = colors.accentInk.toColor(),
+                color = colors.textPrimary.toColor(),
             )
         }
     }

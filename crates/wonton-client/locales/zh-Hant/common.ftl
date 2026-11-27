@@ -32,6 +32,8 @@ plugins-api-server-status = 家用伺服器傳回 HTTP { $status }
 
 plugins-api-not-connected = 連上家用伺服器後再試。
 
+plugins-api-not-paired = 先配對家裡的伺服器，再試。
+
 plugins-api-server-too-old = 家裡的伺服器 { $version } 太舊：這個功能要 { $minimum } 起。
 
 # 安裝、更新、解除安裝任務（crates/wonton-client/src/plugins/tasks.rs）。

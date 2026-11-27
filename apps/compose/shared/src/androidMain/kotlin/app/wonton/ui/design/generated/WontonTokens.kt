@@ -73,6 +73,8 @@ object WontonSize {
     val grabberHeight = 4.dp
     val hairline = 1.dp
     val quoteBar = 2.dp
+    val shadowBlur = 10.dp
+    val shadowY = 2.dp
     val bubbleTail = 6.dp
     val bubbleTailRise = 9.dp
     val chatControl = 44.dp
@@ -91,12 +93,13 @@ object WontonRatio {
     val codeFill = 0.1f
     val bubbleWidth = 0.8f
     val composerLines = 6f
-    val wallTint = 0.16f
-    val wallPattern = 0.14f
+    val wallPattern = 0.08f
     val serviceFill = 0.32f
     val serviceFillDark = 0.16f
-    val jumpHighlight = 0.2f
-    val tabHighlight = 0.14f
+    val jumpHighlight = 0.12f
+    val tabHighlight = 0.1f
+    val shadow = 0.08f
+    val shadowDark = 0.4f
 }
 
 object WontonGesture {

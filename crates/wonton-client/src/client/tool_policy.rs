@@ -51,6 +51,24 @@ impl ClientCore {
             .await
     }
 
+    /// 打开或关掉一个 Bot（`caller`）的危险模式（ADR-0091）；返回改完的设置。
+    pub async fn set_tool_danger(
+        &self,
+        id: String,
+        caller: String,
+        enabled: bool,
+    ) -> Result<ToolPolicyView, CoreError> {
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move {
+                plugins
+                    .set_tool_policy(&id, "danger", &caller, enabled)
+                    .await
+            })
+            .await
+    }
+
     /// 主人把这个工具标成只读，所有 Bot 调它都不再问；返回改完的设置。
     pub async fn set_tool_read_only(
         &self,

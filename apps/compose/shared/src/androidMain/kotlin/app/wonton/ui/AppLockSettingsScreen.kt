@@ -154,7 +154,7 @@ private fun TimeoutRow(timeout: AppLockTimeout, isSelected: Boolean, onClick: ()
             Icon(
                 WontonIcon.Check, null,
                 Modifier.semantics { hideFromAccessibility() },
-                tint = WontonTheme.colors.accentInk.toColor(),
+                tint = WontonTheme.colors.textPrimary.toColor(),
             )
         }
     }

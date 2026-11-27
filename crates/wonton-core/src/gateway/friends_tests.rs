@@ -129,6 +129,7 @@ async fn a_family_member_reads_an_empty_core_list_and_cannot_write_it() {
     let owner = home.owner_device();
     home.members
         .invite(MemberRecord {
+            invited_by: None,
             username: "mia".into(),
             user_id: "@mia:wonton.localhost".into(),
             display_name: "Mia".into(),

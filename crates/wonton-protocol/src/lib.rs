@@ -126,9 +126,9 @@ pub use bot_profile::{
     AvatarMediaProblem, AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity,
     BotActivityFacts, BotActivityReport, BotChatAvailability, BotChatUnavailable, BotNameProblem,
     BotPluginAccess, BotPluginAccessUpdate, BotProfileFailure, BotProfileProblem, BotProfileUpdate,
-    BotProfileUpdated, BotView, DefaultBotVisibility, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS,
-    MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars, bot_plugin_access_path,
-    bot_profile_path, check_bot_name,
+    BotProfileUpdated, BotView, DangerModeView, DefaultBotVisibility, MAX_AVATAR_BYTES,
+    MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars,
+    bot_plugin_access_path, bot_profile_path, check_bot_name,
 };
 pub use bot_web::{
     BOT_WEB_LABEL_PREFIX, BotWebFailure, BotWebPage, BotWebView, bot_web_label, bot_web_path,
@@ -147,7 +147,8 @@ pub use chat_layout::{
 };
 pub use clients::{
     Ban, CLIENTS_ERROR_HEADER, CLIENTS_HEADER, CaaState, CertificateState, ClientAuthKind,
-    ClientsBlocked, ClientsErrorBody, ClientsFailure, ClientsGuests, ClientsPassword,
+    ClientsBlocked, ClientsDomainCertificate, ClientsDomainProvider, ClientsDomainState,
+    ClientsDomainViewModel, ClientsErrorBody, ClientsFailure, ClientsGuests, ClientsPassword,
     ClientsPlugin, ClientsProblem, ClientsSettingsViewModel, ClientsState, ClientsStatus,
     ClientsViewModel, CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryEffect,
     EntryKind, EntrySwitch, GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState,
@@ -155,10 +156,10 @@ pub use clients::{
     NewPasswordRequest, PASSWORD_ID_HEADER, PASSWORD_PENDING_HEADER, PasswordSummary,
     PasswordValue, PendingChange, PendingChangeKind, PendingOp, ProbeResult, PublicAccess,
     PublicItem, PublicReach, PublicRuleMode, PublicRules, PublicSwitchState, PutDomainRequest,
-    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, clients_ban_path, clients_domain_path,
-    clients_entry_path, clients_guest_path, clients_guests_path, clients_ingress_path,
-    clients_password_path, clients_passwords_path, clients_path, clients_public_access_path,
-    clients_status_path, dns_providers_path,
+    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, SuffixProblem, clients_ban_path,
+    clients_domain_path, clients_entry_path, clients_guest_path, clients_guests_path,
+    clients_ingress_path, clients_password_path, clients_passwords_path, clients_path,
+    clients_public_access_path, clients_status_path, dns_providers_path, suffix_problem,
 };
 pub use composer::{
     AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerMention,
@@ -167,8 +168,8 @@ pub use composer::{
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
     ConfirmationCard, ConfirmationCategory, ConfirmationList, ConfirmationReply, ConfirmationState,
-    ConfirmationTool, ConfirmationToolImpact, ConfirmationView, ConfirmationWindow, WindowEnd,
-    WindowView, answer_path, window_path,
+    ConfirmationTool, ConfirmationToolImpact, ConfirmationView, ConfirmationWindow, OnBehalfView,
+    WindowEnd, WindowView, answer_path, window_path,
 };
 pub use confirmation_origin::{
     CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,
@@ -216,8 +217,8 @@ pub use friends::{
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
-    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, JoinRoleView, PairingFailure,
-    PairingStage, PairingStatus, ProxySettings,
+    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, JoinAbility, JoinAbilityState,
+    JoinRoleView, PairingFailure, PairingStage, PairingStatus, ProxySettings,
 };
 pub use inbox::*;
 pub use inbox_validate::{

@@ -12,6 +12,11 @@ use crate::plugins::rig::Rig;
 
 use support::{PAGE_ORIGIN, bar, environment, initialize, open_page, request, response};
 
+/// 桥写进 CSS 变量的颜色格式。
+fn hex(color: wonton_protocol::Rgb) -> String {
+    format!("#{:02X}{:02X}{:02X}", color.red, color.green, color.blue)
+}
+
 #[tokio::test]
 async fn initialization_exposes_only_standard_context_and_supported_capabilities() {
     let (rig, tab) = open_page(true).await;
@@ -41,7 +46,7 @@ async fn initialization_exposes_only_standard_context_and_supported_capabilities
     assert!(variables.keys().all(|key| !key.starts_with("--wonton-")));
     assert_eq!(
         variables["--color-background-primary"],
-        wonton_client::accent_hex(rig.app.appearance().light.canvas)
+        hex(rig.app.appearance().light.canvas)
     );
     let initialized = rig.app.tab_handle_message(
         bar(&tab),

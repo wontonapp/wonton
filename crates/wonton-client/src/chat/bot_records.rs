@@ -86,6 +86,8 @@ fn reconcile(
             })
             .cloned()
             .unwrap_or_else(|| BotView {
+                shared: false,
+                danger: None,
                 availability: Default::default(),
                 bot: id.clone(),
                 user_id: fact.user_id.clone(),
@@ -100,6 +102,16 @@ fn reconcile(
                 chat: Default::default(),
             });
         view.availability = fact.chat;
+        view.shared = plugin.is_some_and(|plugin| plugin.bot_shared);
+        view.danger = plugin.and_then(|plugin| {
+            (plugin.bot_danger || plugin.bot_danger_can_toggle).then_some(
+                wonton_protocol::DangerModeView {
+                    enabled: plugin.bot_danger,
+                    can_toggle: plugin.bot_danger_can_toggle,
+                    reason: None,
+                },
+            )
+        });
         view.chat = layout::bot_settings(
             settings,
             plugin.and_then(|plugin| plugin.chat.as_ref()),

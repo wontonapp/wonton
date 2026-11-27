@@ -177,6 +177,20 @@ Models 页选模型），不经核心。模型网关 magpie 不预装，要在�
 Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装一致；地址、来源检查和宿主开发模式见
 [ADR-0003 的“接口：推送”](../../../docs/adr/0003-matrix-and-encrypted-push.md#接口推送m0-3)。
 
+### HTTPS 和域名（本地 ACME）
+
+开发栈只能用测试 ACME。`dev.sh up` 多起三个只在开发栈里的服务：`pebble`（签发）、`challtestsrv`（记 DNS-01 的 TXT
+和 A 记录）、`httpreq`（把 lego 的 present/cleanup 转给 challtestsrv），核心的 ACME 坐标默认已指向它们，
+Pebble 的根证书由 `dev.sh up` 取到数据目录交给核心。走查“HTTPS 和域名”设置页时用 `dev.sh up` 末尾打印的
+`HTTPREQ_ENDPOINT`（服务商选“其他”），后缀填 `example.test`。
+
+局域网记录要的地址用 challtestsrv 加（它同时从 `127.0.0.1:18086` 暴露管理接口）：
+
+```bash
+curl -sS --noproxy '*' -X POST http://127.0.0.1:18086/add-a \
+  -d '{"host":"*.lan.example.test","addresses":["<这台主机的局域网地址>"]}'
+```
+
 ## 端到端冒烟
 
 核心一键升级有单独的一条（ADR-0025）：`deploy/dev/core/smoke-upgrade.sh`，在要测的主机上直接执行，用 install.sh 安装，走升级、自动回滚和手动退回，这台主机上不能有真装的云吞。
@@ -248,6 +262,9 @@ deploy/dev/core/smoke.sh        # 本机 Docker；要设 WONTON_SMOKE_MODEL（�
 DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 ```
 
+冒烟自己给核心开 `RUST_LOG=wonton_core=debug`（外面已经设了则照用），失败时日志里才有卡片认链那几行；
+对着保留下来的栈分段跑时核心的级别是它启动时定的，手工起栈记得同样导出 `RUST_LOG=wonton_core=debug`。
+
 用独立的 compose 项目、端口（18481，隧道 18483）和临时数据目录，依次验证：一条命令安装 Grafana 示例插件并通过
 健康检查；插件不暴露端口、只在自己的网络里、访问不到 Hydra 的管理端口；未登录的请求被拒；登录核心
 一次后打开插件自动登录（Grafana 里是 `owner`、管理员角色）；已配对设备经隧道打开插件不用登录、直接是
@@ -258,14 +275,14 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 有自己的账号、显示名和私聊主房间，主人的一台新设备经隧道发消息能收到它的回声，卸载后它的令牌立即
 失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心不预装模型网关，申请 `models` 的插件没有网关时照样
 装得上、拿到空变量；核心在主人配对之前就自己装好了 Hermes，它不经模型网关，过了健康检查
-之后，和它的私聊才出现在主人的聊天列表里，还没接模型时 Hermes 回提示去它网页的 Keys、Models 页；冒烟给它的 Bot
+之后，和它的私聊才出现在主人的聊天列表里，还没接模型时 Hermes 回提示去它网页的 Models 页；冒烟给它的 Bot
 在宿主 magpie 上建一条限定模型的凭据，再经 Hermes 自己的接口把宿主 magpie 配成它的 provider，之后主人的新设备
-经隧道和它对话两轮：逐轮检查宿主 magpie 用量在 Hermes 凭据名下新增了至少一条成功且有输出 token 的请求，
+经隧道和它对话两轮：逐轮检查宿主 magpie 的用量里新增了至少一条成功、有输出 token 的调用（这个 magpie 版本不记网关凭据名，按 OpenAI 的 UA 和本轮开始时间认），
 第二轮回复必须提到第一轮让它“介绍”或“自己”；本轮没有成功调用就带回复原文停止，不依赖 Hermes 的报错措辞。
 删除数据卸载后 Bot 账号停用、冒烟的凭据删掉；“模型设置”网页由网关代登录，局域网浏览器登录过核心、已配对设备经
 隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何响应和 Cookie 罐里；对 Hermes
 说装文件搜索，核心在确认列表里发卡片，Hermes 的插件网络和局域网浏览器都答不了，
-主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；没申请 `matrix.bot`、
+主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；主人在 App 里停掉 Hermes 正在跑的一轮（终端里的命令），命令被停掉、链不再显示在跑，之后 Hermes 照常回答；妈妈作为家人加入、成为 Hermes 的联系人后，Hermes 发给她的私聊主人拒绝的不发、卡片等着时停链的撤回不发、批准的经出箱发到她的手机，审计如实记下；妈妈说的那一轮链代表她，她让发的私聊不沾主人的放行时段，以 Hermes 的身份直接问总线时，说话人请求头决定按谁的权限给工具，没带时按这一轮的会话、再按在跑的轮次里最严的、都没有才按归属人；没申请 `matrix.bot`、
 `models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经

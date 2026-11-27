@@ -49,6 +49,8 @@ import app.wonton.protocol.DeviceVerification
 import app.wonton.protocol.EncryptionStatus
 import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
+import app.wonton.ui.design.WontonCopyButton
+import app.wonton.ui.design.WontonCopyLook
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -359,10 +361,7 @@ private fun RevealedKey(
             color = colors.textSecondary.toColor(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            WontonButton(
-                stringResource(R.string.chat_backup_copy), { copySensitive(context, key) },
-                Modifier.weight(1f), WontonButtonKind.SECONDARY,
-            )
+            WontonCopyButton({ copySensitive(context, key) }, Modifier.weight(1f), WontonCopyLook.WIDE)
             WontonButton(stringResource(R.string.chat_backup_saved), onConfirming, Modifier.weight(1f))
         }
     }

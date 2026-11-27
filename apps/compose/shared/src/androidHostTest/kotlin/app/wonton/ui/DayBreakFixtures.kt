@@ -112,8 +112,8 @@ private fun DayBreakRow(item: TimelineItem) {
     }
     val message = (item.content as TimelineContent.Message).message
     val colors = WontonTheme.colors
-    val fill = if (message.isOwn) colors.accentFill else colors.surfaceSubtle
-    val ink = if (message.isOwn) colors.textOnAccentFill else colors.textPrimary
+    val fill = if (message.isOwn) colors.primary else colors.surfaceSubtle
+    val ink = if (message.isOwn) colors.onPrimary else colors.textPrimary
     Column(
         Modifier.fillMaxWidth().padding(horizontal = WontonTheme.spacing.s16),
         horizontalAlignment = if (message.isOwn) Alignment.End else Alignment.Start,

@@ -1,0 +1,39 @@
+# Rendered by prepare.py into /opt/wonton-home/frps/frps.toml (0640).
+# frps owns 80/443: the control connection and the HTTPS vhosts share 443 the
+# same way the dev stack does. Home proxies are registered by each home frpc;
+# the fixed push/relay/omarchy/apex vhosts are registered by system-frpc.
+bindAddr = "0.0.0.0"
+bindPort = 443
+proxyBindAddr = "0.0.0.0"
+vhostHTTPPort = 80
+vhostHTTPSPort = 443
+
+log.to = "console"
+log.level = "info"
+
+auth.method = "token"
+auth.token = ""
+
+transport.maxPoolCount = 5
+transport.tls.force = true
+transport.tls.certFile = "/etc/frps/frps.crt"
+transport.tls.keyFile = "/etc/frps/frps.key"
+userConnTimeout = 10
+enablePrometheus = true
+maxPortsPerClient = 16
+
+webServer.addr = "127.0.0.1"
+webServer.port = 7500
+webServer.user = "wonton"
+webServer.password = "@FRPS_METRICS_PASSWORD@"
+
+detailedErrorsToClient = false
+
+# Home policy: per-home token is in metas.token; system vhosts are admitted
+# only for the operator token and the fixed allowlist in
+# WONTON_HOME_SYSTEM_DOMAINS.
+[[httpPlugins]]
+name = "wonton-home-policy"
+addr = "http://127.0.0.1:8083"
+path = "/frp"
+ops = ["Login", "NewProxy", "NewUserConn", "CloseProxy", "Ping"]

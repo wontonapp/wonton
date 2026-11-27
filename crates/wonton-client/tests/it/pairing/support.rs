@@ -89,7 +89,11 @@ impl PairHandler for Codes {
     fn pair(&self, device: EndpointId, secret: &PairingSecret, device_name: &str) -> PairResponse {
         let key = (secret.expose().to_owned(), device);
         if let Some((outcome, role)) = self.joins.lock().unwrap().get(secret.expose()).cloned() {
-            return PairResponse::Joining { outcome, role };
+            return PairResponse::Joining {
+                outcome,
+                role,
+                invited_by: None,
+            };
         }
         let first = self.seen.lock().unwrap().insert(key);
         // 登记先于回应，和真的核心一样：回应慢不代表登记慢，确认请求也不跟着一起慢。

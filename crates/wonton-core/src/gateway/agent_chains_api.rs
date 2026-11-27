@@ -39,7 +39,9 @@ fn person(
 
 /// 链代表的人是这个人：链上的 Matrix 用户 ID 和这个人的对上。
 fn represents(gateway: &Gateway, person: &super::Person, row: &AgentChainRow) -> bool {
-    super::matrix_user_id(gateway, &person.username) == row.user
+    let mine = super::matrix_user_id(gateway, &person.username);
+    tracing::debug!(person = %person.username, mine = ?mine, chain = %row.chain, user = %row.user, "链归不归这个人");
+    mine == row.user
 }
 
 /// 链上某个 Bot 归这个人：私人 Bot 是归属人，共享 Bot 是主人。

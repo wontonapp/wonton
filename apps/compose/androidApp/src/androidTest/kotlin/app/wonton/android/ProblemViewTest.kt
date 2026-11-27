@@ -76,10 +76,6 @@ class ProblemViewTest {
     }
 
     private fun appearance(mode: ThemeMode) = AppearanceViewModel(
-        accent = rgb(0x3366FF),
-        presets = listOf(rgb(0x3366FF)),
-        moreColors = emptyList(),
-        swatchColumns = 6u,
         themeMode = mode,
         themeModes = listOf(mode),
         textSize = TextSize.STANDARD,
@@ -104,11 +100,6 @@ class ProblemViewTest {
             success = rgb(0x81C784),
             warning = rgb(0xFFD54F),
             danger = rgb(0xEF5350),
-            accentFill = rgb(0x1E3A5F),
-            accentInk = rgb(0x90CAF9),
-            accentInkOnFill = rgb(0xE3F2FD),
-            textOnAccentFill = rgb(0xE3F2FD),
-            accentFillBorder = rgb(0x2C4F7A),
         )
         val lightPalette = ThemeColors(
             canvas = rgb(0xFFFFFF),
@@ -122,11 +113,6 @@ class ProblemViewTest {
             success = rgb(0x2E7D32),
             warning = rgb(0xF9A825),
             danger = rgb(0xC62828),
-            accentFill = rgb(0xE3F2FD),
-            accentInk = rgb(0x1565C0),
-            accentInkOnFill = rgb(0x0D47A1),
-            textOnAccentFill = rgb(0x0D47A1),
-            accentFillBorder = rgb(0xBBDEFB),
         )
         return if (dark) darkPalette else lightPalette
     }

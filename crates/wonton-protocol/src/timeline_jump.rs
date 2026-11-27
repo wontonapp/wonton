@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 pub struct TimelineFocus {
     /// 要滚到的条目（[`TimelineItem::id`](crate::TimelineItem::id)），已经在这一批应用后的列表里。
     pub item_id: String,
-    /// 跳到原消息时为真：壳把整条背景闪一次重点色再淡出。回到跳之前的位置时为假。
+    /// 跳到原消息时为真：壳把整条背景闪一次淡淡的正文色再淡出。回到跳之前的位置时为假。
     pub highlight: bool,
 }
 

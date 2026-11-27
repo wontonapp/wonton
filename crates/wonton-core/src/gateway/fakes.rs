@@ -258,8 +258,17 @@ pub(super) async fn loopback_tunnel_with(
     dir: &Path,
     lan: std::collections::BTreeSet<std::net::IpAddr>,
 ) -> (Tunnel, Arc<Members>) {
+    loopback_tunnel_relays(dir, lan, RelayTable::builtin_n0()).await
+}
+
+/// 同 [`loopback_tunnel_with`]，中继表也由调用方给。
+pub(super) async fn loopback_tunnel_relays(
+    dir: &Path,
+    lan: std::collections::BTreeSet<std::net::IpAddr>,
+    relays: RelayTable,
+) -> (Tunnel, Arc<Members>) {
     let members = Arc::new(Members::open(dir.join("members.json")).unwrap());
-    let tunnel = loopback_tunnel_with_members(dir, members.clone(), lan).await;
+    let tunnel = loopback_tunnel_with_table(dir, members.clone(), lan, relays).await;
     (tunnel, members)
 }
 
@@ -268,15 +277,22 @@ pub(super) async fn loopback_tunnel_with_members(
     members: Arc<Members>,
     lan: std::collections::BTreeSet<std::net::IpAddr>,
 ) -> Tunnel {
+    loopback_tunnel_with_table(dir, members, lan, RelayTable::builtin_n0()).await
+}
+
+async fn loopback_tunnel_with_table(
+    dir: &Path,
+    members: Arc<Members>,
+    lan: std::collections::BTreeSet<std::net::IpAddr>,
+    relays: RelayTable,
+) -> Tunnel {
     Tunnel::new(
         Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
         members,
         Arc::new(|| Languages::from_header(None)),
         loopback_endpoint(SecretKey::generate()).await,
         0,
-        Arc::new(crate::relay_settings::RelaySettings::for_table(
-            RelayTable::builtin_n0(),
-        )),
+        Arc::new(crate::relay_settings::RelaySettings::for_table(relays)),
         tokio::sync::watch::channel(lan).1,
     )
 }

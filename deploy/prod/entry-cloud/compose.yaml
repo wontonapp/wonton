@@ -1,0 +1,167 @@
+# Single-host production entry cloud. frps owns 80/443; nginx and the public
+# vhosts live on loopback and are reached only through the operator frpc.
+#
+# Everything uses host networking on purpose: frps must see the client peer
+# address so frpc can carry it to the home HAProxy as PROXY v2, and every
+# loopback binding below is part of the design (ADR-0021).
+name: ${COMPOSE_PROJECT_NAME:-wonton-entry}
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  mem_limit: 128m
+  tmpfs:
+    - /tmp
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  frps:
+    <<: *hardening
+    image: ${FRPS_IMAGE:?pin FRPS_IMAGE}
+    network_mode: host
+    cap_add:
+      - NET_BIND_SERVICE
+    command: ["-c", "/etc/frps/frps.toml"]
+    volumes:
+      - ${WONTON_ENTRY_ROOT:?}/frps:/etc/frps:ro
+      - ${WONTON_ENTRY_ROOT:?}/secrets:/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 443 && nc -z 127.0.0.1 80"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  home:
+    <<: *hardening
+    mem_limit: 256m
+    image: ${WONTON_HOME_IMAGE:?build and pin WONTON_HOME_IMAGE}
+    network_mode: host
+    depends_on:
+      frps:
+        condition: service_healthy
+      pdns:
+        condition: service_healthy
+      acme-dns:
+        condition: service_healthy
+    environment:
+      WONTON_HOME_LISTEN: ${WONTON_HOME_LISTEN:-127.0.0.1:8082}
+      WONTON_HOME_HOOK_LISTEN: ${WONTON_HOME_HOOK_LISTEN:-127.0.0.1:8083}
+      WONTON_HOME_STATE: /state/state.json
+      WONTON_HOME_ZONE: ${WONTON_DOMAIN:?}
+      WONTON_HOME_RELAY_IP: ${WONTON_PUBLIC_IP:?}
+      WONTON_HOME_RELAY_HOST: ${WONTON_RELAY_HOST:?}
+      WONTON_HOME_RELAY_PORT: "443"
+      WONTON_HOME_RELAY_SERVER_NAME: ${WONTON_RELAY_HOST:?}
+      WONTON_HOME_ACME_URL: https://${WONTON_NAMES_HOST}/acme
+      WONTON_HOME_ACME_INTERNAL_URL: http://${WONTON_ACME_DNS_API:-127.0.0.1:8054}
+      WONTON_HOME_PDNS_URL: http://${WONTON_PDNS_API:-127.0.0.1:8084}
+      WONTON_HOME_PDNS_KEY_FILE: /secrets/pdns-api-key
+      WONTON_HOME_CAA_ISSUER: letsencrypt.org
+      WONTON_HOME_FRPS_METRICS_URL: http://${WONTON_FRPS_METRICS:-127.0.0.1:7500}/metrics
+      WONTON_HOME_FRPS_METRICS_USER: wonton
+      WONTON_HOME_FRPS_METRICS_PASSWORD_FILE: /secrets/frps-metrics-password
+      WONTON_HOME_SYSTEM_TOKEN_FILE: /secrets/system-frpc-token
+      WONTON_HOME_SYSTEM_DOMAINS: ${WONTON_HOME_SYSTEM_DOMAINS:?set in .env}
+    volumes:
+      - ${WONTON_ENTRY_ROOT:?}/state:/state
+      - ${WONTON_ENTRY_ROOT:?}/secrets:/secrets:ro
+      - ${WONTON_ENTRY_ROOT:?}/frps/ca.crt:/control-ca.pem:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8082/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+
+  pdns:
+    <<: *hardening
+    user: "0:0"
+    image: ${PDNS_IMAGE:?pin PDNS_IMAGE}
+    network_mode: host
+    cap_add:
+      - NET_BIND_SERVICE
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        if [ ! -f /var/lib/powerdns/pdns.sqlite3 ]; then
+          sqlite3 /var/lib/powerdns/pdns.sqlite3 < /usr/local/share/doc/pdns/schema.sqlite3.sql
+        fi
+        exec /usr/local/sbin/pdns_server --config-dir=/config --disable-syslog --daemon=no --guardian=no
+    volumes:
+      - ${WONTON_ENTRY_ROOT:?}/pdns:/var/lib/powerdns
+      - ${WONTON_ENTRY_ROOT:?}/pdns-conf:/config:ro
+      - ${WONTON_ENTRY_ROOT:?}/secrets:/secrets:ro
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 5300), 2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  dnsdist:
+    <<: *hardening
+    mem_limit: 64m
+    user: "0:0"
+    image: ${DNSDIST_IMAGE:?pin DNSDIST_IMAGE}
+    network_mode: host
+    cap_add:
+      - NET_BIND_SERVICE
+    command: ["--config", "/config/dnsdist.conf", "--supervised"]
+    depends_on:
+      pdns:
+        condition: service_healthy
+      acme-dns:
+        condition: service_healthy
+    volumes:
+      - ${WONTON_ENTRY_ROOT:?}/dnsdist:/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "dnsdist --config /config/dnsdist.conf --check-config"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  acme-dns:
+    <<: *hardening
+    mem_limit: 64m
+    image: ${ACME_DNS_IMAGE:?pin ACME_DNS_IMAGE}
+    network_mode: host
+    cap_add:
+      - NET_BIND_SERVICE
+    volumes:
+      - ${WONTON_ENTRY_ROOT:?}/acme-dns:/etc/acme-dns:ro
+      - ${WONTON_ENTRY_ROOT:?}/acme-dns-data:/var/lib/acme-dns
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8054/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  system-frpc:
+    <<: *hardening
+    mem_limit: 64m
+    image: ${FRPC_IMAGE:?pin FRPC_IMAGE}
+    network_mode: host
+    entrypoint: ["/usr/bin/frpc", "-c", "/etc/frpc/system-frpc.toml"]
+    depends_on:
+      frps:
+        condition: service_healthy
+      home:
+        condition: service_healthy
+    volumes:
+      - ${WONTON_ENTRY_ROOT:?}/frpc:/etc/frpc:ro
+      - ${WONTON_ENTRY_ROOT:?}/frps:/etc/frps-tls:ro
+      - ${WONTON_ENTRY_ROOT:?}/secrets:/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 443"]
+      interval: 5s
+      timeout: 3s
+      retries: 30

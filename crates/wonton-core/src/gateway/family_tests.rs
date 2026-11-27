@@ -128,6 +128,7 @@ pub(super) async fn pair_member_phone(home: &Home, code: &PairingCode) -> (Secre
         matches!(
             response,
             PairResponse::Joining {
+                invited_by: _,
                 outcome: wonton_protocol::JoinOutcome::Pending,
                 ..
             }
@@ -279,6 +280,7 @@ async fn member_pairing_codes_are_single_use_and_voidable() {
     assert!(matches!(
         rejected,
         PairResponse::Joining {
+            invited_by: _,
             outcome: wonton_protocol::JoinOutcome::CodeUsed,
             role: None
         }
@@ -674,6 +676,7 @@ async fn installers_can_change_plugin_permissions() {
 pub(super) fn seed_member(h: &Harness, username: &str, can_install: bool) {
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             role_id: if can_install { "admin" } else { "friend" }.to_owned(),
             ..MemberRecord::for_test(username)
         })
@@ -707,6 +710,7 @@ async fn a_device_whose_member_is_gone_is_rejected() {
     let hers = SecretKey::generate().public();
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             display_name: "Mia".to_owned(),
             ..MemberRecord::for_test("mia")
         })

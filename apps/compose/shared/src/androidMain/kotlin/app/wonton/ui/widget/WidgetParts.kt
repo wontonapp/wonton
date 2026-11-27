@@ -90,11 +90,11 @@ internal fun UnreadBadge(state: WidgetState, count: ULong) {
     Text(
         // unread 是 ULong，显示和读屏都按十进制原样。
         count.toString(),
-        GlanceModifier.background(state.colors.accentFill)
+        GlanceModifier.background(state.colors.primary)
             .cornerRadius(WontonRadii.pill)
             .padding(horizontal = WontonSpacing.s8, vertical = 2.dp),
         style = TextStyle(
-            color = state.colors.accentInkOnFill,
+            color = state.colors.onPrimary,
             fontSize = widgetType.caption.fontSize,
             fontWeight = FontWeight.Medium,
         ),

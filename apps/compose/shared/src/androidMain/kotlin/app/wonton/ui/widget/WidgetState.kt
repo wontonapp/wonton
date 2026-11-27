@@ -45,9 +45,8 @@ class WidgetColors(private val light: ThemeColors, private val dark: ThemeColors
     val surface = pick { it.surface }
     val textPrimary = pick { it.textPrimary }
     val textSecondary = pick { it.textSecondary }
-    val accentFill = pick { it.accentFill }
-    val accentInk = pick { it.accentInk }
-    val accentInkOnFill = pick { it.accentInkOnFill }
+    val primary = pick { it.primary }
+    val onPrimary = pick { it.onPrimary }
     val success = pick { it.success }
     val warning = pick { it.warning }
 }

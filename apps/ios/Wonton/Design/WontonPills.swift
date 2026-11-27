@@ -35,7 +35,7 @@ struct WontonSearchField: View {
     }
 }
 
-/// 筛选用的小胶囊：选中的用重点色。图形比按钮矮，命中区还是 48。
+/// 筛选用的小胶囊：选中的用强调色。图形比按钮矮，命中区还是 48。
 struct WontonChip: View {
     let title: String
     let isSelected: Bool
@@ -46,12 +46,12 @@ struct WontonChip: View {
         Button(action: action) {
             Text(title)
                 .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(isSelected ? colors.textOnAccentFill : colors.textPrimary))
+                .foregroundStyle(Color(isSelected ? colors.onPrimary : colors.textPrimary))
                 .padding(.horizontal, WontonTheme.spacing.s12)
                 .frame(minHeight: WontonTheme.size.chip)
                 .background {
                     if isSelected {
-                        Color.clear.accentFill(Capsule())
+                        Color.clear.emphasisFill(Capsule())
                     } else {
                         Capsule().fill(Color(colors.surfaceSubtle))
                     }
@@ -118,11 +118,11 @@ struct WontonToggleStyle: ToggleStyle {
 
     private func track(isOn: Bool) -> some View {
         Capsule()
-            .fill(Color(isOn ? colors.primary : colors.separator))
+            .fill(Color(isOn ? colors.textPrimary : colors.separator))
             .frame(width: WontonTheme.size.switchWidth, height: WontonTheme.size.switchHeight)
             .overlay(alignment: isOn ? .trailing : .leading) {
                 Circle()
-                    .fill(Color(isOn ? colors.onPrimary : colors.textSecondary))
+                    .fill(Color(isOn ? colors.canvas : colors.textSecondary))
                     .frame(width: WontonTheme.size.switchKnob, height: WontonTheme.size.switchKnob)
                     .padding(.horizontal, (WontonTheme.size.switchHeight - WontonTheme.size.switchKnob) / 2)
             }

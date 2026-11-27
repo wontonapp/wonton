@@ -2,6 +2,7 @@
 <resources>
     <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
     <!-- Connection state value: this device isn't paired with a home server yet. -->
+    <string name="connection_rejected">Rejected</string>
     <string name="connection_unpaired">Not paired</string>
     <!-- Connection state value: the tunnel to the home server is up. -->
     <string name="connection_connected">Connected</string>

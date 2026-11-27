@@ -28,7 +28,7 @@ internal fun SettingsToolbarButton(upgrade: Boolean, onClick: () -> Unit) {
         if (upgrade) {
             Box(
                 Modifier.align(Alignment.TopEnd).padding(WontonTheme.spacing.s8).size(12.dp)
-                    .background(colors.primary.toColor(), CircleShape)
+                    .background(colors.textPrimary.toColor(), CircleShape)
                     .border(2.dp, colors.canvas.toColor(), CircleShape),
             )
         }

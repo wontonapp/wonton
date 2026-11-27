@@ -33,7 +33,7 @@ import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.accentFill
+import app.wonton.ui.design.emphasisFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Refresh
@@ -56,7 +56,7 @@ internal fun OutgoingRow(message: OutgoingMessage, roomId: String, core: ClientC
         Spacer(Modifier.weight(1f).widthIn(min = WontonTheme.spacing.s48))
         // 附件、配文和状态是同一次发送（ADR-0094）：装进同一个气泡，状态提示也画在里面，不看成几次发送。
         Column(
-            Modifier.accentFill(RoundedCornerShape(WontonTheme.radii.bubble))
+            Modifier.emphasisFill(RoundedCornerShape(WontonTheme.radii.bubble))
                 .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8),
             horizontalAlignment = Alignment.End,
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -76,7 +76,7 @@ internal fun OutgoingRow(message: OutgoingMessage, roomId: String, core: ClientC
                 Text(
                     message.body,
                     style = WontonTheme.typography.body,
-                    color = colors.textOnAccentFill.toColor(),
+                    color = colors.onPrimary.toColor(),
                 )
             }
             OutgoingFooter(message, roomId, onAction)
@@ -104,7 +104,7 @@ private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (
                         stringResource(R.string.timeline_sending_progress, percent)
                     } ?: stringResource(R.string.timeline_sending),
                     style = style,
-                    color = colors.textOnAccentFill.toColor(),
+                    color = colors.onPrimary.toColor(),
                 )
                 // 盲测在气泡上找不到取消：状态文字不像能点，取消要自己长成看得见的按钮，点开确认。
                 Row(
@@ -132,13 +132,13 @@ private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (
                     // 装饰：失败原因写在右边的文字里。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.iconTiny),
-                    tint = colors.textOnAccentFill.toColor(),
+                    tint = colors.onPrimary.toColor(),
                 )
                 Text(
                     state.details.takeIf { state.failure == SendFailure.OTHER }
                         ?: stringResource(state.failure.text),
                     style = style,
-                    color = colors.textOnAccentFill.toColor(),
+                    color = colors.onPrimary.toColor(),
                 )
             }
             SendState.Sent -> Unit

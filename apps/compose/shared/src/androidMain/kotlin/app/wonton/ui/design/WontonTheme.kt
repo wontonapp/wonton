@@ -62,7 +62,7 @@ object WontonTheme {
         @Composable @ReadOnlyComposable
         get() = LocalWontonTypography.current
 
-    /** 核心推导好的颜色令牌，按用户选的明暗选好了一套（ADR-0026）。 */
+    /** 核心给的颜色令牌，按用户选的明暗选好了一套（ADR-0026、ADR-0130）。 */
     val colors: ThemeColors
         @Composable @ReadOnlyComposable
         get() = LocalWontonColors.current
@@ -138,19 +138,20 @@ val FontStyle.family: FontFamily?
     }
 
 /**
- * 主按钮和链接用 `primary`：重点色只留给选中、自己的气泡、占位图和角标。不写全的话，没写的那些角色
+ * 没有重点色（ADR-0130）。Material 把 `primary` 当字色用（TextButton、进度圈、光标），所以它取 `textPrimary`；
+ * 我们的 `primary` 是强调填充（深色下是深灰），给 FAB 这类用的 container。不写全的话，没写的那些角色
  * （比如各级 surfaceContainer）会落回 Material 默认的紫色系。
  */
 private fun materialColors(colors: ThemeColors) = lightColorScheme(
-    primary = colors.primary.toColor(),
-    onPrimary = colors.onPrimary.toColor(),
-    primaryContainer = colors.accentFill.toColor(),
-    onPrimaryContainer = colors.textOnAccentFill.toColor(),
-    inversePrimary = colors.onPrimary.toColor(),
+    primary = colors.textPrimary.toColor(),
+    onPrimary = colors.canvas.toColor(),
+    primaryContainer = colors.primary.toColor(),
+    onPrimaryContainer = colors.onPrimary.toColor(),
+    inversePrimary = colors.canvas.toColor(),
     secondary = colors.textSecondary.toColor(),
     onSecondary = colors.canvas.toColor(),
-    secondaryContainer = colors.accentFill.toColor(),
-    onSecondaryContainer = colors.textOnAccentFill.toColor(),
+    secondaryContainer = colors.primary.toColor(),
+    onSecondaryContainer = colors.onPrimary.toColor(),
     tertiary = colors.textSecondary.toColor(),
     onTertiary = colors.canvas.toColor(),
     tertiaryContainer = colors.surfaceSubtle.toColor(),

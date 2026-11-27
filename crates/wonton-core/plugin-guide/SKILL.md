@@ -53,7 +53,7 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 
 ## 让页面像 App 的一部分
 
-- 颜色和字体用 CSS 变量，带后备值，`assets/` 的例子都这样写。这样跟随 App 的明暗和重点色。按钮用 `--wonton-accent-fill` 和 `--wonton-accent-ink`。
+- 颜色和字体用 CSS 变量，带后备值，`assets/` 的例子都这样写。这样跟随 App 的明暗。按钮底用 `--wonton-accent-fill`，按钮上的字用 `--wonton-accent-ink-on-fill`；页面上要强调的字和图标用 `--wonton-accent-ink`。
 - 不要自己画应用外壳，App 的页面是整页，只带右上角的胶囊。页面内部的分段自己做。
 - `tabs` 声明应用的页面，图标要单色、背景透明。它们出现在侧边栏的“我的应用”里，放不放由主人决定。
 - 给 `html` 设背景色，Home 条后面露出的是它。
