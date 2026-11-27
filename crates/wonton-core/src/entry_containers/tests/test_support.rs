@@ -137,7 +137,15 @@ impl Rig {
         &self,
         settings: Option<&EntrySettings>,
     ) -> Result<(), EntryError> {
-        self.containers.reconcile(settings).await
+        self.reconcile_with(settings, true).await
+    }
+
+    pub(super) async fn reconcile_with(
+        &self,
+        settings: Option<&EntrySettings>,
+        public: bool,
+    ) -> Result<(), EntryError> {
+        self.containers.reconcile(settings, public).await
     }
 
     pub(super) fn created(&self, name: &str) -> Value {

@@ -42,9 +42,9 @@ async fn previous_compose_containers_are_adopted() {
 async fn a_changed_publish_port_recreates_the_connector() {
     let rig = Rig::new().await;
     let containers = rig.containers.with_binding("127.0.0.1", "18443");
-    containers.reconcile(Some(&settings())).await.unwrap();
+    containers.reconcile(Some(&settings()), true).await.unwrap();
     let containers = containers.with_binding("127.0.0.1", "18444");
-    containers.reconcile(Some(&settings())).await.unwrap();
+    containers.reconcile(Some(&settings()), true).await.unwrap();
     assert_eq!(rig.docker.creations("wonton-connector"), 2);
     assert_eq!(
         rig.docker.created("wonton-connector").unwrap_or_default()["HostConfig"]["PortBindings"]["8443/tcp"],
@@ -61,7 +61,10 @@ async fn a_failed_recreate_reports_and_waits_for_retry() {
     let containers = rig.containers.with_binding("127.0.0.1", "18443");
     rig.docker
         .fail_next_create("wonton-connector", "bind: address already in use");
-    let error = containers.reconcile(Some(&settings())).await.unwrap_err();
+    let error = containers
+        .reconcile(Some(&settings()), true)
+        .await
+        .unwrap_err();
     assert_eq!(error.category(), "conflict");
     // 旧容器已按换法删掉，新的没建成：入口缺席，等下一次对账。
     assert!(
@@ -70,7 +73,7 @@ async fn a_failed_recreate_reports_and_waits_for_retry() {
             .contains(&"wonton-connector".to_owned())
     );
     // 下一次对账建回来（fail_next_create 已在失败那次被消费）。
-    containers.reconcile(Some(&settings())).await.unwrap();
+    containers.reconcile(Some(&settings()), true).await.unwrap();
     assert_eq!(
         rig.docker.created("wonton-connector").unwrap_or_default()["HostConfig"]["PortBindings"]["8443/tcp"],
         json!([{"HostIp": "127.0.0.1", "HostPort": "18443"}])

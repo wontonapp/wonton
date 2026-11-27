@@ -46,6 +46,7 @@ mod clients_api;
 mod clients_domain;
 mod clients_entry;
 mod clients_passwords;
+mod clients_status;
 mod clients_switches;
 mod confirmations;
 mod core_routes;
@@ -258,8 +259,8 @@ pub struct Gateway {
     pub(crate) domain: Option<Arc<crate::clients::domain::Domain>>,
     /// 客户端开关写入和入口配置刷新串行化，避免并发请求互相覆盖。
     pub(crate) clients_apply: tokio::sync::Mutex<()>,
-    /// 启动流程创建的入口容器；客户端开关使用同一个实例应用模型。
-    pub(crate) entry: Option<crate::entry_containers::EntryContainers>,
+    /// 启动流程创建的入口容器和公网访问总开关（ADR-0090）；客户端开关使用同一个实例应用模型，没装入口的核心没有。
+    pub(crate) entry: Option<Arc<crate::entry_access::EntryAdmin>>,
     /// 公网访问总开关，默认关闭；插件开关保留但模型不生成公网标签。
     pub(crate) public_access: Arc<AtomicBool>,
     /// C12 入口种类配置完成与否；C7 只读取，连接器由后续 PR 接入。
@@ -367,6 +368,8 @@ mod chain_mentions_tests;
 #[cfg(test)]
 #[path = "clients_entry_tests.rs"]
 mod clients_entry_tests;
+#[cfg(test)]
+mod clients_status_tests;
 #[cfg(test)]
 mod core_upgrade_tests;
 #[cfg(test)]

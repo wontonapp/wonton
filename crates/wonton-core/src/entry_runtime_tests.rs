@@ -74,6 +74,17 @@ impl Rig {
         .with_binding("127.0.0.1", "18443")
     }
 
+    fn access(&self) -> Arc<crate::entry_access::EntryAccess> {
+        let access = Arc::new(
+            crate::entry_access::EntryAccess::open(self.dir.path().join("core/entry-access.json"))
+                .unwrap(),
+        );
+        access
+            .save(wonton_protocol::PublicAccess { enabled: true })
+            .unwrap();
+        access
+    }
+
     fn entries(&self) -> usize {
         self.docker
             .containers()
@@ -210,7 +221,13 @@ async fn settle(domain: &Domain) {
 #[tokio::test(start_paused = true)]
 async fn none_mode_renews_after_the_owner_sets_a_domain() {
     let rig = Rig::new().await;
-    spawn(rig.containers(), rig.domain.clone(), None, None);
+    spawn(
+        Arc::new(rig.containers()),
+        rig.access(),
+        rig.domain.clone(),
+        None,
+        None,
+    );
     // 没配域名：没有要服务的东西，也不该联系 CA。
     tick(Duration::from_secs(3 * 3600)).await;
     assert_eq!(rig.entries(), 0);
@@ -236,7 +253,13 @@ async fn none_mode_renews_after_the_owner_sets_a_domain() {
 async fn own_domain_install_renews() {
     let rig = Rig::new().await;
     own_domain_settings(rig.dir.path());
-    spawn(rig.containers(), rig.domain.clone(), None, None);
+    spawn(
+        Arc::new(rig.containers()),
+        rig.access(),
+        rig.domain.clone(),
+        None,
+        None,
+    );
     until("入口和连接器建起来", || rig.created()).await;
     until("起来那一轮就排一次续期", || rig.attempts() > 0).await;
     let before = rig.attempts();
@@ -250,7 +273,13 @@ async fn own_domain_install_renews() {
 async fn given_name_install_renews() {
     let rig = Rig::new().await;
     registered_settings(rig.dir.path());
-    spawn(rig.containers(), rig.domain.clone(), None, None);
+    spawn(
+        Arc::new(rig.containers()),
+        rig.access(),
+        rig.domain.clone(),
+        None,
+        None,
+    );
     until("入口和连接器建起来", || rig.created()).await;
     let connector = rig
         .docker
@@ -273,7 +302,13 @@ async fn a_published_certificate_wakes_the_loop() {
         json!({"suffix": "home.example.test"}).to_string(),
     )
     .unwrap();
-    spawn(rig.containers(), rig.domain.clone(), None, None);
+    spawn(
+        Arc::new(rig.containers()),
+        rig.access(),
+        rig.domain.clone(),
+        None,
+        None,
+    );
     // 第一轮对账在 30 秒后退避到点，测试不等钟；唤醒要立刻建起入口。
     assert!(!rig.created());
     rig.domain.notify_refresh();

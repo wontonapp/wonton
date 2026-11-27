@@ -14,6 +14,8 @@ mod error_categories_tests;
 mod failure_handling_tests;
 /// 要不要入口、要不要删：无设置、撤设置、缺文件重建、幂等，核心不在容器里。
 mod lifecycle_tests;
+/// 公网访问总开关：撤/建连接器、清空/恢复公网证书列表、重复下发不重建、崩溃恢复。
+mod public_access_tests;
 /// 已有同名容器：陌生人、上一版 compose、换端口重建、重建失败、假 Docker 的地址冲突。
 mod recreate_tests;
 /// 向入口主进程发 reload：失败报启动日志，忙、空回、半截、连上不回都重试。
