@@ -22,6 +22,8 @@ struct VideoDetailView: View {
             .task { await refresh() }
             .task(id: season?.id) { await loadEpisodes() }
             .task(id: isInProgress) { await watchDownload() }
+            // 起播还没回来就离开了：回来的那一次作废，播放器不在别的页面弹出来。
+            .onDisappear { model.abandonPendingPlay() }
             .onChange(of: model.playbackEnded) {
                 // 放完回来：看过、接着看的位置、下一集都可能变了。原地换，不回到加载中。
                 Task {
@@ -59,6 +61,11 @@ struct VideoDetailView: View {
                         VideoOfflineRow(state: offline) {
                             Task {
                                 await model.retryDownload(item.id)
+                                offline = model.offline(item.id)
+                            }
+                        } resume: {
+                            Task {
+                                await model.resumeDownload(item.id)
                                 offline = model.offline(item.id)
                             }
                         }
@@ -153,8 +160,8 @@ struct VideoDetailView: View {
                 await model.download(item)
                 offline = model.offline(item.id)
             }
-        case .downloading, .waiting, .failed:
-            // 进度、等待和失败（带重试）在下面那一行。
+        case .downloading, .waiting, .paused, .failed:
+            // 进度、等待、暂停（带继续）和失败（带重试）在下面那一行。
             EmptyView()
         case .ready:
             Menu {

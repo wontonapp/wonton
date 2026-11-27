@@ -5,7 +5,7 @@ import SwiftUI
 import WontonClient
 
 /// 一次播放：AVPlayer、系统的播放器界面和核心的会话。位置每秒交给核心（核心按节奏报给服务器），暂停、拖动后
-/// 马上报；关掉时报停在哪。放本机离线副本时没开成会话就不报。
+/// 马上报；关掉时报停在哪。放本机离线副本时会话晚到（[attach(session:)]），没开成就不报。
 ///
 /// 播放器界面用系统的 `AVPlayerViewController` 整屏弹出：拖动、音轨字幕菜单（HLS 和带多轨的原片由 AVKit 列）、
 /// AirPlay、画中画和关闭按钮都是它的。
@@ -15,8 +15,10 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
     let title: String
     private let controller = AVPlayerViewController()
     private let core: ClientCore
-    private let session: String?
+    private var session: String?
     private let start: UInt64
+    /// 关掉时停在哪、是不是放完：晚到的会话按它停。
+    private var stoppedAt: (position: UInt64, finished: Bool)?
     private var timeObserver: Any?
     private var observations: [NSKeyValueObservation] = []
     private var tokens: [NSObjectProtocol] = []
@@ -42,11 +44,11 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
         prepare()
     }
 
-    /// 放本机文件；`session` 是尽力开的会话，开不成为空。
-    init(core: ClientCore, local: URL, session: String?, title: String, from position: UInt64) {
+    /// 放本机文件；会话由调用方尽力去开，回来了用 [attach(session:)] 挂上。
+    init(core: ClientCore, local: URL, title: String, from position: UInt64) {
         self.core = core
         self.title = title
-        self.session = session
+        session = nil
         start = position
         player = AVPlayer(url: local)
         super.init()
@@ -105,6 +107,17 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
         let seconds = player.currentTime().seconds
         guard seconds.isFinite, seconds > 0 else { return 0 }
         return UInt64(seconds * 1000)
+    }
+
+    /// 离线播放晚到的会话：还在放就挂上、马上报一次位置；已经关了就按关时的位置停掉，服务器上不留没人接的会话。
+    func attach(session: String) {
+        guard self.session == nil else { return }
+        self.session = session
+        if let stoppedAt {
+            stop(session: session, position: stoppedAt.position, finished: stoppedAt.finished)
+        } else {
+            report(force: true)
+        }
     }
 
     private func report(force: Bool) {
@@ -192,22 +205,12 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
         }
         closed = true
         let position = positionMs
+        stoppedAt = (position, finished)
         player.pause()
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         tokens.forEach(NotificationCenter.default.removeObserver)
         observations.removeAll()
-        if let session {
-            let core = core
-            let ended = onEnded
-            Task {
-                do {
-                    try await core.videoStop(session: session, positionMs: position, finished: finished)
-                    ended?(nil)
-                } catch {
-                    ended?(error)
-                }
-            }
-        }
+        if let session { stop(session: session, position: position, finished: finished) }
         onClose?()
         if inPictureInPicture {
             // 小窗没有关掉的接口：拿掉播放器，系统就收起它。
@@ -218,6 +221,20 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
             controller.dismiss(animated: true) { done?() }
         } else {
             done?()
+        }
+    }
+
+    /// 报停在哪；报完交给 `onEnded`。
+    private func stop(session: String, position: UInt64, finished: Bool) {
+        let core = core
+        let ended = onEnded
+        Task {
+            do {
+                try await core.videoStop(session: session, positionMs: position, finished: finished)
+                ended?(nil)
+            } catch {
+                ended?(error)
+            }
         }
     }
 

@@ -174,10 +174,12 @@ extension MediaTrack {
 }
 
 /// 离线副本这一行：在下的是进度条和一句“下载时保持 App 打开”（App 退到后台久了系统会停掉下载，回来接着下）；
-/// 等着接着下的是停着的进度条和上次没下成的原因；失败的是原因和重试。写完了和没下过的不占这一行。
+/// 等着接着下的是停着的进度条和上次没下成的原因；暂停了的是停着的进度条和“继续下载”（核心不会自己叫醒它）；
+/// 失败的是原因和重试。写完了和没下过的不占这一行。
 struct VideoOfflineRow: View {
     let state: OfflineState?
     let retry: () -> Void
+    let resume: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -189,6 +191,11 @@ struct VideoOfflineRow: View {
         case let .waiting(done, total, failure):
             progress(done: done, total: total, moving: false, label: .Video1.videoWaiting) {
                 if let failure { Text(failure.videoProblem.title) }
+            }
+        case let .paused(done, total):
+            progress(done: done, total: total, moving: false, label: .Video0.videoPaused) {
+                Button(String(localized: .Video0.videoResumeDownload), action: resume)
+                    .buttonStyle(WontonSmallButtonStyle())
             }
         case let .failed(failure):
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
