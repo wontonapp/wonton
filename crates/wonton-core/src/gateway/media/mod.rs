@@ -9,6 +9,7 @@
 mod bytes;
 mod queue;
 mod sessions;
+mod streams;
 mod tasks;
 
 use std::sync::Arc;
@@ -87,10 +88,18 @@ pub(super) fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
         .route(&at("/sessions/{id}/control"), post(sessions::control))
         .route(&at("/sessions/{id}/progress"), post(sessions::progress))
         .route(&at("/sessions/{id}/stop"), post(sessions::stop))
-        .route(&at("/sessions/{id}/stream"), get(bytes::stream))
+        .route(&at("/sessions/{id}/stream"), get(streams::stream))
+        .route(
+            &at("/sessions/{id}/stream/{*rest}"),
+            get(streams::stream_part),
+        )
         .route(
             &at("/sessions/{id}/items/{item}/stream"),
-            get(bytes::queued_stream),
+            get(streams::queued_stream),
+        )
+        .route(
+            &at("/sessions/{id}/items/{item}/stream/{*rest}"),
+            get(streams::queued_stream_part),
         )
         .route(&at("/queue"), get(queue::read).post(queue::change))
         .route(&at("/items"), get(bytes::items))

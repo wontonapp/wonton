@@ -10,13 +10,14 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Json, Response};
 use hyper::StatusCode;
-use wonton_protocol::media::api::{SessionList, session_stream_path};
+use wonton_protocol::media::api::SessionList;
 use wonton_protocol::media::provider::{PlaybackProgress, PlaybackStopped};
 use wonton_protocol::media::{
     ControlOp, MediaAction, MediaFailure, MediaFailureCode, MediaItemRef, MediaOperation,
-    PlaybackPlan, PlaybackRequest, PlaybackSession, PlaybackSessionId, ProviderStream, TrackKind,
+    PlaybackPlan, PlaybackRequest, PlaybackSession, PlaybackSessionId, TrackKind,
 };
 
+use super::streams::presented;
 use super::{Caller, reply, service_failure};
 use crate::gateway::Gateway;
 use crate::media::provider::ProviderRoute;
@@ -41,15 +42,10 @@ fn respond(result: Reply<PlaybackSession>) -> Response {
     }
 }
 
-/// 给客户端看的会话：流换成核心路由，原址不下发。
+/// 给客户端看的会话：流换成核心路由（[`presented`]），原址不下发。
 pub(super) fn present(mut session: PlaybackSession) -> PlaybackSession {
     if let Some(plan) = &mut session.plan {
-        let path = session_stream_path(session.id);
-        plan.stream = match plan.stream {
-            ProviderStream::Direct(_) => ProviderStream::Direct(path),
-            ProviderStream::Transcoded(_) => ProviderStream::Transcoded(path),
-            ProviderStream::Other(_) => ProviderStream::Other(path),
-        };
+        plan.stream = presented(session.id, &plan.stream);
         plan.origin_stream = None;
     }
     session

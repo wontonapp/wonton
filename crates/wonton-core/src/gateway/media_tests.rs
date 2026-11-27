@@ -62,78 +62,87 @@ fn partial(start: usize) -> Response {
 
 fn provider(shared: Shared) -> Router {
     let (start, head, patch, finish) = (shared.clone(), shared.clone(), shared.clone(), shared);
-    caps(&["upload", "download", "playback"], &["photo", "video"])
-        .route(
-            "/uploads",
-            post(move |body: Bytes| async move {
-                let mut state = start.lock().unwrap();
-                let started: Value = serde_json::from_slice(&body).unwrap();
-                if started["path"] == "deny" {
-                    return StatusCode::UNAUTHORIZED.into_response();
+    caps(
+        &["upload", "download", "playback", "list"],
+        &["photo", "video"],
+    )
+    .route(
+        "/uploads",
+        post(move |body: Bytes| async move {
+            let mut state = start.lock().unwrap();
+            let started: Value = serde_json::from_slice(&body).unwrap();
+            if started["path"] == "deny" {
+                return StatusCode::UNAUTHORIZED.into_response();
+            }
+            state.started.push(started);
+            state.next += 1;
+            let id = format!("u{}", state.next);
+            state.received.push((id.clone(), Vec::new()));
+            axum::Json(json!({"upload_id": id, "upload_offset": 0})).into_response()
+        }),
+    )
+    .route(
+        "/uploads/{id}",
+        axum::routing::head(move |Path(id): Path<String>| async move {
+            let state = head.lock().unwrap();
+            match state.received.iter().find(|(known, _)| *known == id) {
+                Some((_, bytes)) if !state.forget => (
+                    StatusCode::OK,
+                    [(UPLOAD_OFFSET_HEADER, bytes.len().to_string())],
+                )
+                    .into_response(),
+                _ => StatusCode::NOT_FOUND.into_response(),
+            }
+        })
+        .patch(
+            move |Path(id): Path<String>, headers: HeaderMap, body: Bytes| async move {
+                let mut state = patch.lock().unwrap();
+                if state.forget {
+                    return StatusCode::NOT_FOUND.into_response();
                 }
-                state.started.push(started);
-                state.next += 1;
-                let id = format!("u{}", state.next);
-                state.received.push((id.clone(), Vec::new()));
-                axum::Json(json!({"upload_id": id, "upload_offset": 0})).into_response()
-            }),
-        )
-        .route(
-            "/uploads/{id}",
-            axum::routing::head(move |Path(id): Path<String>| async move {
-                let state = head.lock().unwrap();
-                match state.received.iter().find(|(known, _)| *known == id) {
-                    Some((_, bytes)) if !state.forget => (
-                        StatusCode::OK,
-                        [(UPLOAD_OFFSET_HEADER, bytes.len().to_string())],
-                    )
-                        .into_response(),
-                    _ => StatusCode::NOT_FOUND.into_response(),
-                }
-            })
-            .patch(
-                move |Path(id): Path<String>, headers: HeaderMap, body: Bytes| async move {
-                    let mut state = patch.lock().unwrap();
-                    if state.forget {
-                        return StatusCode::NOT_FOUND.into_response();
-                    }
-                    let (_, bytes) = state
-                        .received
-                        .iter_mut()
-                        .find(|(known, _)| *known == id)
-                        .unwrap();
-                    // 只认 `Upload-Offset`，和真提供方一样（tus 的写法）。
-                    let at: usize = headers[UPLOAD_OFFSET_HEADER]
-                        .to_str()
-                        .unwrap()
-                        .parse()
-                        .unwrap();
-                    if at != bytes.len() {
-                        let current = bytes.len();
-                        return (
-                            StatusCode::CONFLICT,
-                            axum::Json(json!({"upload_offset": current})),
-                        )
-                            .into_response();
-                    }
-                    bytes.extend_from_slice(&body);
-                    axum::Json(json!({"upload_offset": bytes.len()})).into_response()
-                },
-            ),
-        )
-        .route(
-            "/uploads/{id}/finish",
-            post(move |Path(id): Path<String>| async move {
-                let state = finish.lock().unwrap();
-                let index = state
+                let (_, bytes) = state
                     .received
-                    .iter()
-                    .position(|(known, _)| *known == id)
+                    .iter_mut()
+                    .find(|(known, _)| *known == id)
                     .unwrap();
-                let duplicate = state.started[index]["path"] == "dup";
-                axum::Json(json!({"item_id": format!("asset-{id}"), "duplicate": duplicate}))
-            }),
-        )
+                // 只认 `Upload-Offset`，和真提供方一样（tus 的写法）。
+                let at: usize = headers[UPLOAD_OFFSET_HEADER]
+                    .to_str()
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                if at != bytes.len() {
+                    let current = bytes.len();
+                    return (
+                        StatusCode::CONFLICT,
+                        axum::Json(json!({"upload_offset": current})),
+                    )
+                        .into_response();
+                }
+                bytes.extend_from_slice(&body);
+                axum::Json(json!({"upload_offset": bytes.len()})).into_response()
+            },
+        ),
+    )
+    .route(
+        "/uploads/{id}/finish",
+        post(move |Path(id): Path<String>| async move {
+            let state = finish.lock().unwrap();
+            let index = state
+                .received
+                .iter()
+                .position(|(known, _)| *known == id)
+                .unwrap();
+            let duplicate = state.started[index]["path"] == "dup";
+            axum::Json(json!({"item_id": format!("asset-{id}"), "duplicate": duplicate}))
+        }),
+    )
+    .merge(reading())
+}
+
+/// 下载、播放、条目和封面这些读的路由。
+fn reading() -> Router {
+    Router::new()
         .route(
             "/items/{id}/download",
             get(|headers: HeaderMap| async move {
@@ -142,15 +151,43 @@ fn provider(shared: Shared) -> Router {
         )
         .route(
             "/playback",
-            post(|| async {
+            post(|body: Bytes| async move {
+                let request: Value = serde_json::from_slice(&body).unwrap();
+                // `hls` 给转码流的相对地址（像 Jellyfin 适配器那样带令牌）；其余给带主机名的直连地址，
+                // 主机名核心不认。
+                let stream = if request["item"]["id"] == "hls" {
+                    json!({"transcoded": "/hls/up-1/master.m3u8?token=abc"})
+                } else {
+                    json!({"direct": "http://upstream.invalid/stream/v1?token=abc"})
+                };
                 axum::Json(json!({
                     "session": "up-1",
-                    "stream": {"direct": "http://upstream.invalid/stream/v1?token=abc"},
+                    "stream": stream,
                     "origin_stream": null,
                     "segments": [], "audio": [], "subtitles": [],
                     "seekable": true, "duration_ms": 10_000, "expires_at": 0,
                 }))
             }),
+        )
+        .route("/hls/{*rest}", get(hls))
+        .route(
+            "/items",
+            get(|| async {
+                let item = |id: &str, artwork: Value| {
+                    json!({"id": id, "kind": "video", "title": id, "artist": null, "album": null,
+                           "artwork_url": artwork, "duration_ms": null, "series": null,
+                           "index": null, "played": false, "starred": false,
+                           "source": "app.example.other"})
+                };
+                axum::Json(json!({"items": [
+                    item("m1", json!("/items/m1/artwork")),
+                    item("m2", Value::Null),
+                ]}))
+            }),
+        )
+        .route(
+            "/items/{id}/artwork",
+            get(|| async { ([(header::CONTENT_TYPE, "image/jpeg")], "jpeg") }),
         )
         .route(
             "/stream/v1",
@@ -162,6 +199,17 @@ fn provider(shared: Shared) -> Router {
             "/playback/{session}/queue",
             put(|| async { StatusCode::NO_CONTENT }),
         )
+}
+
+/// 转码流：主列表、子列表里写相对地址，和 Jellyfin 的一样。
+async fn hls(Path(rest): Path<String>) -> &'static str {
+    if rest.ends_with("master.m3u8") {
+        "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nmain.m3u8?DeviceId=d1\n"
+    } else if rest.ends_with("main.m3u8") {
+        "#EXTM3U\n#EXTINF:6.0,\nhls1/main/0.ts?seg=0\n#EXT-X-ENDLIST\n"
+    } else {
+        "segment"
+    }
 }
 
 pub(super) struct Fixture {
@@ -192,6 +240,7 @@ pub(super) async fn fixture_with(extra: Vec<(Candidate, Router)>) -> Fixture {
                 MediaOperation::Upload,
                 MediaOperation::Download,
                 MediaOperation::Playback,
+                MediaOperation::List,
             ],
             &[MediaKind::Photo, MediaKind::Video],
         ),
@@ -316,6 +365,10 @@ impl Fixture {
     }
 
     pub(super) async fn start_session(&self) -> (PlaybackSessionId, Value) {
+        self.start_session_of("v1").await
+    }
+
+    pub(super) async fn start_session_of(&self, item: &str) -> (PlaybackSessionId, Value) {
         let f = self;
         let (status, session) = f
         .json(
@@ -323,7 +376,7 @@ impl Fixture {
             "/_wonton/api/media/sessions",
             json!({
                 "position_ms": 0, "audio": null, "subtitle": null, "device": "", "person": "",
-                "item": {"id": "v1", "kind": "video", "title": "海边", "artist": null,
+                "item": {"id": item, "kind": "video", "title": "海边", "artist": null,
                          "album": null, "artwork_url": null, "duration_ms": 10000, "series": null,
                          "index": null, "played": false, "starred": false},
                 "profile": {"direct_play": ["video/mp4"], "max_bitrate": 8000000, "hdr": false,
@@ -493,12 +546,14 @@ async fn the_session_stream_goes_through_the_core_to_the_provider_path() {
     let f = fixture().await;
     let (id, session) = f.start_session().await;
     let stream: ProviderStream = serde_json::from_value(session["plan"]["stream"].clone()).unwrap();
-    assert_eq!(stream, ProviderStream::Direct(session_stream_path(id)));
+    // 客户端拿到核心的地址，接上提供方流的文件名；提供方的主机和查询串（令牌）都不下发。
+    let path = format!("{}/v1", session_stream_path(id));
+    assert_eq!(stream, ProviderStream::Direct(path.clone()));
     assert!(session["plan"]["origin_stream"].is_null());
     let (status, _, body) = f
         .send(
             Method::GET,
-            &session_stream_path(id),
+            &path,
             &[("range", "bytes=8-".into())],
             Body::empty(),
         )

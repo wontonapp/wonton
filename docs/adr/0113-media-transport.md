@@ -93,7 +93,7 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 3. 核心按能力别名转发给提供方，字节**流式透传、不落盘**；`Range`、`If-Range`、`Content-Range` 原样过。客户端只认三条核心路由，路径里带任务/会话和 item，核心按它查到提供方：
    `POST|PATCH /_wonton/api/media/tasks/{id}/uploads/{item}`（`{item}` 是 `item_id`；POST 无体、核心用任务里的 `UploadItem` 补体建上传并记住 `upload_id` 映射，PATCH 按映射续写，两者都回当前 `upload_offset`）、
    `GET /_wonton/api/media/tasks/{id}/items/{item}/content`（转发 `/items/{id}/download`）、
-   `GET /_wonton/api/media/sessions/{id}/stream`（转发 plan 的流地址）。
+   `GET /_wonton/api/media/sessions/{id}/stream/{文件名}`（转发 plan 的流地址，文件名取它的最后一段；HLS 的子列表、分片按它解析成 `…/stream/{子路径}`，接在流地址的目录后面）。
 4. AirPlay/Chromecast 这类“接收端是另一台设备”的场景，核心另签发一个绑 LAN 地址的一次性绝对 URL（带短期令牌、只对被投的那一项有效）；回连不成立就退回局域网直连，外网未验证。
 
 回环（`/streams`）属于客户端核的导出，不在服务端 API 里；服务端只发“给我一个能投出去的地址”的工具/接口。
