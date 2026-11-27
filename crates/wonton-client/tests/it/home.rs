@@ -624,26 +624,3 @@ async fn switching_to_an_unreachable_server_says_so_after_the_first_failure() {
         "{view:?}"
     );
 }
-
-#[tokio::test]
-async fn retrying_reaches_a_device_paired_after_it_was_rejected() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[]).await;
-    phone.connect(&home);
-    phone
-        .wait_for(|view| view.notice == Some(ConnectionNotice::DeviceRejected))
-        .await;
-
-    home.allowlist.allow(phone.device_id());
-    phone
-        .dispatch(Action::Home {
-            action: wonton_protocol::HomeAction::RetryConnection,
-        })
-        .unwrap();
-
-    let view = phone
-        .wait_for(|view| view.status == HomeStatus::Connected)
-        .await;
-    assert_eq!(view.notice, None);
-}

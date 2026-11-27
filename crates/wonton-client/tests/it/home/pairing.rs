@@ -53,3 +53,26 @@ async fn an_unregistered_device_stops_trying_until_it_is_paired() {
         }
     ));
 }
+
+#[tokio::test]
+async fn retrying_reaches_a_device_paired_after_it_was_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[]).await;
+    phone.connect(&home);
+    phone
+        .wait_for(|view| view.notice == Some(ConnectionNotice::DeviceRejected))
+        .await;
+
+    home.allowlist.allow(phone.device_id());
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RetryConnection,
+        })
+        .unwrap();
+
+    let view = phone
+        .wait_for(|view| view.status == HomeStatus::Connected)
+        .await;
+    assert_eq!(view.notice, None);
+}
