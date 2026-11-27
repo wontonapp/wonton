@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Entry and section title in the native music library: the playlists. -->
+    <string name="music_playlists">Playlists</string>
+    <!-- Entry and section title in the native music library: the albums. -->
+    <string name="music_albums">Albums</string>
+    <!-- Row title on the music library home: albums played the most. -->
+    <string name="music_most_played">Most Played</string>
+    <!-- Button next to a row title on the music library home: open the full list. -->
+    <string name="music_see_all">See All</string>
+    <!-- Toolbar button and page title: search the music library. -->
+    <string name="music_search">Search</string>
+    <!-- Shown when a music search finds nothing. Argument: what the person typed. -->
+    <string name="music_no_results">No results for “%1$s”</string>
+    <!-- Album order: newest additions first. -->
+    <string name="music_sort_newest">Recently Added</string>
+    <!-- Album order: most recently played first. -->
+    <string name="music_sort_recent">Recently Played</string>
+    <!-- Menu item on the native music library: open the plugin's own web page instead. -->
+    <string name="music_web_version">Web Version</string>
+    <!-- Menu item: remove a song, album or artist from favorites. -->
+    <string name="music_unstar">Remove from Favorites</string>
+    <!-- How long an album or playlist plays. Argument: whole minutes. -->
+    <plurals name="music_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <!-- Line under an album or playlist. Arguments: the song count text and the minutes text. -->
+    <string name="music_summary">%1$s, %2$s</string>
+    <!-- Problem title: the music library plugin is not running yet. -->
+    <string name="music_problem_not_ready_title">The music library isn\'t ready</string>
+    <!-- Next step under the not-ready problem. -->
+    <string name="music_problem_not_ready_next_step">Try again once it has started.</string>
+    <!-- Problem title: the music library refused to show this to this person. -->
+    <string name="music_problem_forbidden_title">The music library won\'t show this</string>
+    <!-- Next step under the refused problem. -->
+    <string name="music_problem_forbidden_next_step">Ask whoever manages the music library for access.</string>
+    <!-- Next step under the not-found problem. -->
+    <string name="music_problem_not_found_next_step">It may have been deleted. Go back and refresh.</string>
+    <!-- Problem title: the music library returned an error code this app does not know. -->
+    <string name="music_problem_unknown_title">The music library returned an unfamiliar error</string>
+    <!-- Problem title: the music library's reply could not be understood. -->
+    <string name="music_problem_protocol_title">Couldn\'t read the music library\'s reply</string>
+</resources>

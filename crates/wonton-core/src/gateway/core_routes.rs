@@ -317,6 +317,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .merge(confirmation_routes().merge(super::inbox::routes()))
         .merge(chain_routes())
         .merge(files::routes(gateway.clone()))
+        .merge(super::media::routes(gateway.clone()))
         .fallback(|headers: HeaderMap| async move {
             let langs = api::languages(&headers);
             pages::error(

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Entry and section title in the native music library: the playlists. -->
+    <string name="music_playlists">歌单</string>
+    <!-- Entry and section title in the native music library: the albums. -->
+    <string name="music_albums">专辑</string>
+    <!-- Row title on the music library home: albums played the most. -->
+    <string name="music_most_played">常听</string>
+    <!-- Button next to a row title on the music library home: open the full list. -->
+    <string name="music_see_all">全部</string>
+    <!-- Toolbar button and page title: search the music library. -->
+    <string name="music_search">搜索</string>
+    <!-- Shown when a music search finds nothing. Argument: what the person typed. -->
+    <string name="music_no_results">没有找到“%1$s”</string>
+    <!-- Album order: newest additions first. -->
+    <string name="music_sort_newest">最近添加</string>
+    <!-- Album order: most recently played first. -->
+    <string name="music_sort_recent">最近播放</string>
+    <!-- Menu item on the native music library: open the plugin's own web page instead. -->
+    <string name="music_web_version">网页版</string>
+    <!-- Menu item: remove a song, album or artist from favorites. -->
+    <string name="music_unstar">取消收藏</string>
+    <!-- How long an album or playlist plays. Argument: whole minutes. -->
+    <plurals name="music_minutes">
+        <item quantity="other">%1$d 分钟</item>
+    </plurals>
+    <!-- Line under an album or playlist. Arguments: the song count text and the minutes text. -->
+    <string name="music_summary">%1$s，%2$s</string>
+    <!-- Problem title: the music library plugin is not running yet. -->
+    <string name="music_problem_not_ready_title">音乐库还没准备好</string>
+    <!-- Next step under the not-ready problem. -->
+    <string name="music_problem_not_ready_next_step">等它启动完再试。</string>
+    <!-- Problem title: the music library refused to show this to this person. -->
+    <string name="music_problem_forbidden_title">音乐库不让看这些内容</string>
+    <!-- Next step under the refused problem. -->
+    <string name="music_problem_forbidden_next_step">请管音乐库的人给你开权限。</string>
+    <!-- Next step under the not-found problem. -->
+    <string name="music_problem_not_found_next_step">可能已经被删掉了，返回刷新看看。</string>
+    <!-- Problem title: the music library returned an error code this app does not know. -->
+    <string name="music_problem_unknown_title">音乐库回了一个没见过的错误</string>
+    <!-- Problem title: the music library's reply could not be understood. -->
+    <string name="music_problem_protocol_title">看不懂音乐库的回复</string>
+</resources>

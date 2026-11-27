@@ -48,9 +48,11 @@ pub(super) fn stopped_state(
             message: "播放出错".into(),
             retry_after_secs: None,
         }),
-        StopReason::User | StopReason::Agent | StopReason::TakenOver | StopReason::Other(_) => {
-            TaskState::Cancelled
-        }
+        StopReason::User
+        | StopReason::Agent
+        | StopReason::TakenOver
+        | StopReason::Removed
+        | StopReason::Other(_) => TaskState::Cancelled,
     };
     if matches!(from, TaskState::Other(_)) {
         return Ok(to);

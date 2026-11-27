@@ -59,6 +59,7 @@ PREFIXES: Dict[str, str] = {
     "file": "file",
     "viewer": "viewer",
     "photo": "photo",
+    "music": "music",
     "preview": "plugins",
     "secret": "plugins",
     "sidebar": "sidebar",
@@ -141,6 +142,7 @@ PARTS: Dict[str, int] = {
     "contacts": 2,
     "handoff": 1,
     "matrixlogin": 2,
+    "music": 2,
 }
 
 GROUP_OF: Dict[str, str] = {
@@ -148,7 +150,7 @@ GROUP_OF: Dict[str, str] = {
     for group, prefixes in {
         "chat": "chat chatbackup chatstatus timeline message room bot botprofile transfer composer panel confirmation confirmationcard confirmations side agent agentrun",
         "onboarding": "onboarding pairing joining install home homestatus launcher",
-        "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo preview secret sidebar sessions scope takeover port mapping portmapping",
+        "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo music preview secret sidebar sessions scope takeover port mapping portmapping",
         "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff matrixlogin",
         "settings": "settings appearance applock egress notification push path shortcuts shortcut privacy licenses relays clients",
         "common": "common problem core coreupgrade design app language startup page pin unpin",
