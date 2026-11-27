@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -101,6 +102,8 @@ fun WontonButton(
     modifier: Modifier = Modifier,
     kind: WontonButtonKind = WontonButtonKind.PRIMARY,
     enabled: Boolean = true,
+    /** 核心说这件事在做：转圈、不能再点。字留着占宽，按钮不跳。 */
+    running: Boolean = false,
 ) {
     val colors = WontonTheme.colors
     val (fill, content) = when (kind) {
@@ -116,11 +119,29 @@ fun WontonButton(
             .alpha(if (!enabled) DISABLED_ALPHA else if (pressed) PRESSED_ALPHA else 1f)
             .clip(shape)
             .background(fill.toColor())
-            .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(
+                interaction,
+                indication = null,
+                enabled = enabled && !running,
+                role = Role.Button,
+                onClick = onClick,
+            )
             .padding(horizontal = WontonTheme.spacing.s16),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = WontonTheme.typography.body, color = content.toColor())
+        Text(
+            text,
+            Modifier.alpha(if (running) 0f else 1f),
+            style = WontonTheme.typography.body,
+            color = content.toColor(),
+        )
+        if (running) {
+            CircularProgressIndicator(
+                Modifier.size(WontonTheme.size.iconSmall),
+                color = content.toColor(),
+                strokeWidth = WontonTheme.size.hairline * 2,
+            )
+        }
     }
 }
 

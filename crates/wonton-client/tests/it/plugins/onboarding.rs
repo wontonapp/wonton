@@ -9,6 +9,7 @@ use wonton_client::{
 use super::rig::{Rig, WAIT, item};
 
 mod commit;
+mod connected_retry;
 mod loading;
 mod local_records;
 mod model;

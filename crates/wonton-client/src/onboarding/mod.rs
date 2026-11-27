@@ -70,6 +70,10 @@ struct LocalState {
     unavailable: HashSet<OnboardingStep>,
     /// 服务器比引导接口还旧：整段引导都不显示，只留一条升级提示。
     too_old: Option<OnboardingTooOld>,
+    /// 连着却没取到之后自己又取了几次，定下一次等多久（[`OnboardingLink::retry_while_connected`]）。
+    transport_retries: u32,
+    /// 已经排了一次自己再取：同一时刻只排一次，主人点的重试和自动的不叠成两串。
+    retry_scheduled: bool,
 }
 
 /// `test-hooks` 下发布前交给测试的回调：即将发出去的视图和已记下发过消息的房间。
@@ -223,7 +227,7 @@ impl OnboardingLink {
         let (generation, operation, revision) = {
             let mut state = lock(&self.state);
             state.loading = true;
-            state.problem = None;
+            // 上一次的问题留到这一趟有结果再换：重试时壳在“重试”上转圈，提示不先消失再原样冒出来。
             state.model_problem = None;
             // 每次重新取都从头判：服务器升级了，踢掉的步会回来。
             state.unavailable.clear();
@@ -275,7 +279,7 @@ impl OnboardingLink {
     }
 
     fn received(
-        &self,
+        self: &Arc<Self>,
         onboarding: Onboarding,
         details: Option<(
             Result<Me, PluginProblem>,
@@ -285,6 +289,8 @@ impl OnboardingLink {
     ) {
         {
             let mut state = lock(&self.state);
+            state.problem = None;
+            state.transport_retries = 0;
             // 服务端的 Onboarding 不带版本号，按请求发出时的 revision 判新旧：这趟请求发出后已有
             // 更新的响应落过地（静默刷新、点完成的保存），这份旧的丢弃，视图保持已落地的状态。
             let current = state.revision == revision;
@@ -333,10 +339,12 @@ impl OnboardingLink {
             state.loading = false;
         }
         self.publish();
+        // 资料取不到也会挂着“连不上”，和状态取不到一样要自己再取。
+        self.retry_while_connected();
     }
 
     fn finish_error(
-        &self,
+        self: &Arc<Self>,
         generation: u64,
         operation: u64,
         revision: u64,
@@ -361,9 +369,13 @@ impl OnboardingLink {
                 state.problem = Some(problem);
             }
             state.bot_refreshing = false;
+        } else {
+            // 这份错误比已落地的结果旧，丢掉；上一次的问题也跟着那份结果过时了。
+            state.problem = None;
         }
         drop(state);
         self.publish();
+        self.retry_while_connected();
     }
 
     fn dismiss_tip(&self, tip: OnboardingTip) -> Result<(), CoreError> {

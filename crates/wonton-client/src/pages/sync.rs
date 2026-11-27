@@ -1,6 +1,20 @@
 //! 我的应用和面板配置往 Matrix 账号数据的同步(ADR-0052):登录取会话、推送本机改动、
-//! 跟着别的设备写的变化走。断线重连的会话变了就重来。
+//! 跟着别的设备写的变化走。断线重连的会话变了就重来；会话没变（隧道断了又连上，聊天沿用原来的登录）时，
+//! 没同步上的由连上那一刻和之后的定时重试补上。
+use std::time::{Duration, Instant};
+
 use super::*;
+
+/// 没同步上之后第一次自己再来等多久；之后每次翻倍，到 [`SYNC_RETRY_MAX`] 为止。
+const SYNC_RETRY_FIRST: Duration = Duration::from_secs(5);
+const SYNC_RETRY_MAX: Duration = Duration::from_secs(60);
+
+/// 没同步上时下一次什么时候再来。
+#[derive(Default)]
+struct SyncRetry {
+    next: Option<Instant>,
+    wait: Duration,
+}
 
 impl PagesLink {
     pub(super) fn spawn_watchers(self: &Arc<Self>) {
@@ -25,6 +39,8 @@ impl PagesLink {
         let weak = Arc::downgrade(self);
         self.runtime.spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+            let mut was_connected = false;
+            let mut retry = SyncRetry::default();
             loop {
                 tokio::select! {
                     _ = tick.tick() => {}
@@ -36,6 +52,11 @@ impl PagesLink {
                     link.recompute();
                 }
                 let connected = matches!(link.home.borrow().status, HomeStatus::Connected);
+                let reconnected = connected && !was_connected;
+                was_connected = connected;
+                if connected {
+                    link.retry_sync(reconnected, &mut retry);
+                }
                 if connected && link.home.borrow().proxy.is_some() {
                     link.refresh_bot_pins().await;
                 }
@@ -52,6 +73,33 @@ impl PagesLink {
                 link.restart_sync();
             }
         });
+    }
+
+    /// 连着、却记着没同步上：重新对账（对账会把本机没写上的改动推上去）。连上的那一刻马上来，之后间隔翻倍。
+    /// 会话换了由 [`Self::restart_sync`] 自己来，没有会话（登出、还在登录）时等会话。
+    fn retry_sync(self: &Arc<Self>, reconnected: bool, retry: &mut SyncRetry) {
+        if self.sync_problem.borrow().is_none() {
+            *retry = SyncRetry::default();
+            return;
+        }
+        if self.session.borrow().is_none() {
+            return;
+        }
+        let now = Instant::now();
+        let wait = match retry.next {
+            _ if reconnected => SYNC_RETRY_FIRST,
+            None => {
+                // 刚发现没同步上：先等一会儿，失败当下就重来多半还是失败。
+                retry.wait = SYNC_RETRY_FIRST;
+                retry.next = Some(now + SYNC_RETRY_FIRST);
+                return;
+            }
+            Some(next) if now < next => return,
+            Some(_) => (retry.wait * 2).min(SYNC_RETRY_MAX),
+        };
+        retry.wait = wait;
+        retry.next = Some(now + wait);
+        self.restart_sync();
     }
 
     /// 会话来了（或换了）：先和账号数据对一次账，然后跟着它变化。
@@ -88,6 +136,10 @@ impl PagesLink {
                     link.recompute();
                 }
                 return;
+            }
+            // 对账成了、本机也没有要推的：断线时记下的“没同步上”不再成立（推了的由 push_layout 自己清）。
+            if !link.dirty.load(Ordering::SeqCst) && link.sync_problem.borrow().is_some() {
+                link.sync_problem.send_replace(None);
             }
             let Ok(changes) = session.layout_changes().await else {
                 link.sync_problem.send_replace(Some(l10n!(
@@ -159,7 +211,7 @@ impl PagesLink {
         persist(&self.path, &state.config)?;
         state.read_problem = None;
         self.sync_problem.send_replace(None);
-        let sync_stale = self.sync_problem.borrow().is_some();
+        let sync_stale = self.sync_stale();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);

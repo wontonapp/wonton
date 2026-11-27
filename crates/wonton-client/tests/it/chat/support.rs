@@ -189,6 +189,8 @@ struct Core {
     members_requests_dropped: AtomicUsize,
     /// 为真时取聊天显示方式账号数据的请求一接上就断开，别的请求不受影响。
     layout_down: AtomicBool,
+    /// 为真时读写“我的应用”账号数据（`app.wonton.layout`）的请求一接上就断开，别的请求不受影响。
+    my_apps_down: AtomicBool,
     reject_backup_creation: AtomicBool,
     /// 请求行（小写）含其中一段的 Matrix 请求由假核心直接回这个状态码和错误码，不转给 Tuwunel。
     refusals: Mutex<Vec<matrix::Refusal>>,
@@ -289,6 +291,7 @@ impl Core {
             members_down: AtomicBool::new(false),
             members_requests_dropped: AtomicUsize::new(0),
             layout_down: AtomicBool::new(false),
+            my_apps_down: AtomicBool::new(false),
             reject_backup_creation: AtomicBool::new(false),
             refusals: Mutex::default(),
             stale_join: watch::Sender::new(None),
@@ -504,6 +507,11 @@ impl Home {
     /// 取聊天显示方式账号数据的请求断开或恢复，别的请求不受影响。
     pub fn set_layout_down(&self, down: bool) {
         self.core.layout_down.store(down, Ordering::SeqCst);
+    }
+
+    /// 读写“我的应用”账号数据的请求断开或恢复：隧道、会话和同步都照常。
+    pub fn set_my_apps_down(&self, down: bool) {
+        self.core.my_apps_down.store(down, Ordering::SeqCst);
     }
 
     /// arm 起之后、有任何一条同步应答带过 `stale` 房间的加入事件（连接被丢弃也算）起，每个这样的应答都被改写

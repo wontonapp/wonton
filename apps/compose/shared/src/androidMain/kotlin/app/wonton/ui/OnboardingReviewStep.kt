@@ -117,7 +117,7 @@ private fun ReviewItemState(state: OnboardingItemState, retry: () -> Unit) {
         is OnboardingItemState.Failed -> key(state.problem) {
             when (val problem = state.problem) {
                 is OnboardingItemProblem.Plugin -> OnboardingProblem(
-                    problem.problem.onboardingTitle(), problem.problem.message, retry,
+                    problem.problem.onboardingTitle(), problem.problem.message, retry = retry,
                 )
             }
         }

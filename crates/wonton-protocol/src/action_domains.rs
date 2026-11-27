@@ -462,8 +462,6 @@ pub enum PageAction {
     MoveMyApp { app: crate::MyAppRef, index: u32 },
     /// 新装的应用自动加到我的应用末尾。
     SetAutoAddApps { enabled: bool },
-    /// 重新和账号数据对一次账（侧边栏“我的应用”过期提示的重试）。没有会话时无事可做，等重连后自动对账。
-    RetryMyAppSync,
     /// 把插件页面或 `https://` 公网页面放进面板末尾；重复、已满或不允许放入时返回 `InvalidInput`。
     /// 写入账号数据成功才生效，连接失败时不改变面板。
     AddPanelPage {

@@ -15,7 +15,7 @@ enum TabText {
     static var more: String { String(localized: .Tab2.tabMore) }
     static var myApps: String { String(localized: .Settings.settingsMyApps) }
     static var syncStale: String { String(localized: .myappSyncStale) }
-    static var syncStaleRetry: String { String(localized: .myappSyncStaleRetry) }
+    static var syncStaleDetail: String { String(localized: .myappSyncStaleDetail) }
     static var addToMyApps: String { String(localized: .myappAdd) }
     static var removeFromMyApps: String { String(localized: .myappRemove) }
     static var starting: String { String(localized: .Tab1.tabStarting) }

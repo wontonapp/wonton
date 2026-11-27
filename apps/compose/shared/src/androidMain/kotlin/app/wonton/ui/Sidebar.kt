@@ -475,7 +475,7 @@ internal fun SidebarApps(
     apps.forEach { app ->
         SidebarAppRow(app, plugins, tabs, current, interactive, onGo)
     }
-    MyAppsSyncHint(tabs, interactive)
+    MyAppsSyncHint(tabs)
     if (plugins.viewModel.sidebar.moreApps) {
         SidebarRow(
             title = stringResource(R.string.sidebar_all_apps),

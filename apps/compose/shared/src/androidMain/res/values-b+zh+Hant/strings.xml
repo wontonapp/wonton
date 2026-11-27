@@ -102,7 +102,7 @@
     <string name="myapp_problem">我的應用讀寫出錯</string>
     <string name="myapp_remove">從我的應用移出</string>
     <string name="myapp_sync_stale">改動還沒同步上</string>
-    <string name="myapp_sync_stale_detail">本機已存好；連上伺服器後自動同步。</string>
+    <string name="myapp_sync_stale_detail">本機已存好，會自動再同步。</string>
     <string name="owner_secrets_title">產生的金鑰</string>
     <string name="owner_secrets_empty">這個應用程式沒有可查看的產生金鑰。</string>
     <string name="owner_secrets_show">顯示</string>

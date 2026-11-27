@@ -70,7 +70,7 @@ internal fun OnboardingScreen(
             ) {
                 val problem = view.problem
                 if (problem != null) {
-                    OnboardingProblem(problem.onboardingTitle(), problem.message) {
+                    OnboardingProblem(problem.onboardingTitle(), problem.message, retrying = view.loading) {
                         send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
                     }
                 } else {

@@ -62,7 +62,9 @@ struct OnboardingView: View {
 
     @ViewBuilder private func content(_ proxy: ScrollViewProxy) -> some View {
         if let problem = view.problem {
-            ProblemView(problem: problem.problem) { model.send(.onboarding(action: .refreshOnboarding)) }
+            ProblemView(problem: problem.problem, isRetrying: view.loading) {
+                model.send(.onboarding(action: .refreshOnboarding))
+            }
         } else {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s16) {
                 if let problem = model.rejection {

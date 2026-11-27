@@ -259,13 +259,6 @@ impl PagesLink {
                 bot,
                 allowed,
             } => self.set_bot_consent(plugin_id, bot, allowed),
-            PageAction::RetryMyAppSync => {
-                let weak = lock(&self.weak).clone();
-                if let Some(link) = weak.upgrade() {
-                    link.restart_sync();
-                }
-                Ok(())
-            }
             PageAction::ReloadTab { page } => self.reload(page),
             PageAction::TabLoadFailed { page, status } => self.load_failed(page, status),
             PageAction::TabLoadSucceeded { page } => self.load_succeeded(page),
@@ -421,7 +414,7 @@ impl PagesLink {
         }
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
-        let sync_stale = self.sync_problem.borrow().is_some();
+        let sync_stale = self.sync_stale();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
@@ -449,7 +442,7 @@ impl PagesLink {
             let mut failed = previous;
             bot::replace_bots(&mut failed, state.bots.clone());
             failed.problem = Some(storage_problem(&error));
-            let sync_stale = self.sync_problem.borrow().is_some();
+            let sync_stale = self.sync_stale();
             let view = make_view(&failed, &plugins, sync_stale);
             *lock(&self.state) = failed;
             self.publish(view, &plugins);
@@ -459,13 +452,14 @@ impl PagesLink {
         state.read_problem = None;
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
-        let sync_stale = self.sync_problem.borrow().is_some();
+        // 本机落了盘，接着写账号数据；写不上不回滚，原因进 problem（失败即停，不说成功）。先记下有改动再出视图：
+        // 已经知道写不上（断着）时，这一版就该显示“还没同步上”。
+        self.dirty.store(true, Ordering::SeqCst);
+        let sync_stale = self.sync_stale();
         let view = make_view(&state, &plugins, sync_stale);
         let settings = state.config.layout();
         *lock(&self.state) = state;
         self.publish(view, &plugins);
-        // 本机落了盘，接着写账号数据；写不上不回滚，原因进 problem（失败即停，不说成功）。
-        self.dirty.store(true, Ordering::SeqCst);
         let session = self.session.borrow().clone();
         if let Some(session) = session
             && self.layout_ready.load(Ordering::SeqCst)
@@ -508,11 +502,18 @@ impl PagesLink {
         }
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
-        let sync_stale = self.sync_problem.borrow().is_some();
+        let sync_stale = self.sync_stale();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         Ok(())
+    }
+
+    /// 侧边栏的“改动还没同步上”：本机有改动没写进账号数据，并且上一次写或对账没成（断着、请求失败）。
+    /// 只是断着、本机没改过时不显示：连接状态在侧边栏顶上已经说了，这里再说一遍“本机已存好”是假话。
+    /// 正在写的那一下也不显示，写成了不闪。
+    fn sync_stale(&self) -> bool {
+        self.dirty.load(Ordering::SeqCst) && self.sync_problem.borrow().is_some()
     }
 
     /// 只给测试读：落了盘、还没写进账号数据的改动还在不在。
