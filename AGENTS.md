@@ -137,6 +137,10 @@
     作者卡写的、审的不是当前 head 的都不算，推了新提交要重审，通过之后又来一条“复审要改”也算没过。
   - 冻结：改到冻结路径（`merge-freeze.json` 里登记的，如发版前的 `crates/`、`apps/`）且不在放行名单。
   - 协议排队：改了 `crates/wonton-protocol` 的 PR 串行合，不是队首就报排位等着，轮到时自动合。
+- 默认走批量合并：PR 开成草稿（草稿只跑轻检查），复审照常对当前 head。维护者用 `~/wonton-dev/batch-merge.sh` 把一批
+  复审通过的 PR 原样 merge 进从最新 `main` 切的 `batch/` 分支，开一个批量 PR，只跑这一次完整 CI，绿了 squash 合，再关掉
+  成员 PR 并留链接。每个成员照样过上面的复审和冻结检查；和本批前面成员冲突的跳过，作者 rebase 后进下一批。批量 CI 红了，
+  按失败的模块找出是哪个成员，退回它，其余下一批再上。单独跑绿的 PR 和紧急修 `main` 的，仍可用 `safe-merge.sh` 单合。
 - 改了 `crates/wonton-protocol` 的 PR，`main` 在分支切出之后又改过协议时，lint 的“改了协议的 PR 基于最新 main”一步失败：
   先 `git rebase origin/main`、解完冲突再推。只在 PR 的 CI 跑时判断一次；没改协议的 PR 不受影响。
 - 慢的合进 `main` 之后跑，不挡合并：界面测试、镜像构建。新加的测试按这个分界放，哪个工作流在哪一边见
