@@ -109,7 +109,13 @@ fn a_relay_only_line_without_direct_candidates_is_left_alone() {
 fn after_a_redial_the_next_one_waits_for_the_backoff_and_then_stops() {
     let addrs = candidates(&["192.0.2.10:4433"]);
     let mut line = Line::new();
-    while !line.tick(1, true, &addrs, 300) {}
+    // 上限到点就失败，别在“重拨永不触发”时把整条测试挂到超时。
+    let max = RELAY_ONLY_BEFORE_REDIAL.as_secs() / TICK.as_secs() + 2;
+    let mut n = 0;
+    while !line.tick(1, true, &addrs, 300) {
+        n += 1;
+        assert!(n <= max, "时限内应重拨一次");
+    }
     let first = line.at;
     // 重拨后的新连接还是中继。
     while line.at.duration_since(first) < REDIAL_BACKOFF - TICK {
