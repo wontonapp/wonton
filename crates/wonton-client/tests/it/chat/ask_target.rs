@@ -139,12 +139,16 @@ async fn family_without_a_ready_bot_falls_back_to_the_default_bot() {
     let bot = home.bot("hermes", "Hermes").await;
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room = bot.create_direct_chat(&owner, false).await.unwrap();
-    // 邀请要先进房间列表，核心才能在默认 Bot 这条路上认到它；并发跑其余用例时会慢到几百毫秒。
+    // 问 Bot 按 `direct_user_id` 认默认 Bot 的私聊：房间先到、`m.direct` 还没同步时发，会另建一间。
     phone
         .wait_chat("邀请的默认 Bot 房间进了列表", |view| {
             view.rooms
                 .iter()
-                .any(|row| row.room_id == room.as_str())
+                .any(|row| {
+                    row.room_id == room.as_str()
+                        && row.is_direct
+                        && row.direct_user_id.as_deref() == Some(bot.user_id().as_str())
+                })
                 .then_some(())
         })
         .await;
