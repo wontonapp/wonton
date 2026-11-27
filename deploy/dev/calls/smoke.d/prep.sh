@@ -17,13 +17,8 @@ log "预检"
 # dev.sh status 会跑 docker compose ps，在共用机上常常一卡几分钟；这里只看 .dev-ports 和网关是否回 HTTP（根路径 401/404 都算在）。
 read -r gw tunnel < <(timeout 60 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports" 2>/dev/null)
 [[ -n ${gw:-} && -n ${tunnel:-} ]] || die "栈 $STACK 的 .dev-ports 没有（栈没起？）"
-if read -r ngw ntun < <(timeout 60 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $STACK" 2>/dev/null) && [[ -n ${ntun:-} ]]; then
-    old_tunnel=$tunnel; gw=$ngw; tunnel=$ntun
-    timeout 60 ssh "$HOST" "printf '%s %s\n' '$gw' '$tunnel' > ~/wonton-dev/stacks/dev-$STACK/.dev-ports" || true
-    if [[ $old_tunnel != "$tunnel" ]]; then
-        for d in "$DEV_A" "$DEV_B"; do timeout 60 ssh "$HOST" "adb -s $d reverse tcp:$old_tunnel tcp:$tunnel" >/dev/null 2>&1 || true; done
-    fi
-fi
+# 名额可能换了端口，也可能自动登记成了 wonton-<栈> 的名字（stack_ports 两种都试），以它现在发的为准。
+refresh_ports
 code=$(timeout 60 ssh "$HOST" "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$gw/" || true)
 [[ $code != 000 ]] || die "网关 127.0.0.1:$gw 不在"
 timeout 60 ssh "$HOST" "adb -s $DEV_A shell pm path app.wonton.android; adb -s $DEV_B shell pm path app.wonton.android" | grep -c package | grep -q 2 || die "App 没装上"
