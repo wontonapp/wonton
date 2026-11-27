@@ -29,7 +29,7 @@ use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use url::Url;
 use wonton_l10n::l10n;
-use wonton_tunnel::relays::{Relay, canonical_relay};
+use wonton_tunnel::relays::{RelayView, canonical_view};
 
 use crate::l10n::{CATALOG, language};
 
@@ -56,7 +56,7 @@ pub(crate) struct Ticket {
 struct Server {
     endpoint_id: EndpointId,
     #[serde(default)]
-    relays: Vec<Relay>,
+    relays: Vec<RelayView>,
     /// 配对码和核心报告的候选。
     #[serde(default)]
     direct_addrs: Vec<SocketAddr>,
@@ -101,7 +101,7 @@ impl Ticket {
             .server
             .relays
             .into_iter()
-            .map(canonical_relay)
+            .map(canonical_view)
             .collect();
         ticket.server.used_addrs.truncate(MAX_USED_ADDRS);
         let domain = ticket
@@ -218,7 +218,7 @@ impl Ticket {
     }
 
     /// 连接信息里的中继表，App 建 endpoint 用。
-    pub(crate) fn relays(&self) -> &[Relay] {
+    pub(crate) fn relays(&self) -> &[RelayView] {
         &self.server.relays
     }
 
@@ -235,6 +235,14 @@ impl Ticket {
         Some(updated)
     }
 
+    /// 核心报来的中继表逐项校验。坏了一项就整份不用、留旧表：半份表可能把还能走的中继也挤掉。
+    pub(crate) fn validate_reported_relays(relays: &[RelayView]) -> Result<(), String> {
+        for relay in relays {
+            relay.validate()?;
+        }
+        Ok(())
+    }
+
     /// 记上核心报告的地址；和已有的一样时返回 `None`。中继表或直连地址报告为空时留着旧候选，仍把
     /// 本次实证直连路径排第一：中继可能只是暂时没连上，地址也可能只是这一次没测出来。令牌变了以后，
     /// 跑着的 endpoint 不会跟着换（iroh#4642），要等下一次重建 endpoint。
@@ -243,7 +251,7 @@ impl Ticket {
     /// 避免失效地址积累并挤掉新候选（ADR-0032）；连通过的地址另记进历史，跨网络保留。
     pub(crate) fn with_reported(
         &self,
-        relays: Vec<Relay>,
+        relays: Vec<RelayView>,
         direct_addrs: &[SocketAddr],
         connected: Option<SocketAddr>,
     ) -> Option<Self> {
@@ -254,7 +262,7 @@ impl Ticket {
             updated = used;
         }
         if !relays.is_empty() {
-            updated.server.relays = relays.into_iter().map(canonical_relay).collect();
+            updated.server.relays = relays.into_iter().map(canonical_view).collect();
         }
         if connected.is_some() || !direct_addrs.is_empty() {
             let candidates = if direct_addrs.is_empty() {
@@ -331,7 +339,7 @@ mod tests {
         assert!(ticket.with_reported(Vec::new(), &[], None).is_none());
         let updated = ticket
             .with_reported(
-                vec![Relay {
+                vec![RelayView {
                     url: "https://b.example./".parse().unwrap(),
                     token: Some(RelayToken::new("tok")),
                     quic_port: None,

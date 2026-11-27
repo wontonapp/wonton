@@ -9159,6 +9159,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "iroh",
+ "iroh-relay",
  "jni 0.22.4",
  "libc",
  "linkify",

@@ -6,7 +6,7 @@ use std::time::Duration;
 use iroh::endpoint::{Builder, QuicTransportConfig, presets};
 use iroh::{Endpoint, RelayMode};
 use wonton_l10n::{Lang, l10n};
-use wonton_tunnel::relays::{Relay, RelayTable, relay_map};
+use wonton_tunnel::relays::{RelayTable, RelayView, relay_map};
 
 use super::{HomeLink, Network};
 use crate::l10n::CATALOG;
@@ -28,7 +28,7 @@ impl HomeLink {
     /// 再绑一次多半就好。真机上没有翻译层，但同样不该无限期地等一次绑定：时限是建连能自己重试的前提。
     pub(super) async fn bind_endpoint(
         &self,
-        relays: &[Relay],
+        relays: &[RelayView],
         tiers: usize,
         lang: Lang,
         deadline: Duration,
@@ -90,12 +90,12 @@ impl HomeLink {
     /// 多包的发送报 EIO。noq-udp 随后关掉这个 socket 的 GSO，但 iroh 1.4.1 的发送端把分段上限存在建连那一刻，
     /// 这条连接之后的多包发送每次都 EIO，错误还被吞掉：单包的心跳和确认照常往返，连接看着活着，请求却卡到
     /// 连接被换掉（#154）。手机上的流量用不上 GSO 省下的那点 CPU。
-    fn endpoint_builder(&self, relays: &[Relay], tiers: usize) -> Builder {
+    fn endpoint_builder(&self, relays: &[RelayView], tiers: usize) -> Builder {
         let builder = match (self.network, relays.is_empty()) {
             (Network::Internet, false) => Endpoint::builder(presets::N0)
                 .relay_mode(RelayMode::Custom(relay_map(relays, tiers))),
             (Network::Internet, true) => Endpoint::builder(presets::N0).relay_mode(
-                RelayMode::Custom(relay_map(RelayTable::builtin_n0().relays(), tiers)),
+                RelayMode::Custom(relay_map(&RelayTable::builtin_n0().views(), tiers)),
             ),
             #[cfg(feature = "test-hooks")]
             (Network::TestRelay, _) => Endpoint::builder(presets::Minimal)
