@@ -208,6 +208,8 @@ async fn adding_to_the_bar_checks_duplicates_the_limit_and_moves() {
     assert!(rig.app.pages().bar.full);
 
     // RefreshPlugins 只 spawn 任务，单线程测试里 dispatch 完立即断言读到的是旧视图；
+    rig.core.set_lists(vec![Vec::new()]);
+    wait_pages(&rig, |_| rig.app.plugins().installed.is_some()).await;
     // 用同步的 AddMyApp 走一遍 refresh_state/remove_uninstalled 的清理，拦得住回退。
     add_my_app(&rig, url_app(5)).await;
     assert!(rig.app.pages().bar.full);
