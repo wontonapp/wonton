@@ -1,6 +1,6 @@
 //! 当前请求人能发现的 Bot 列表（`GET SHARED_BOTS_PATH`）：走本地代理，核心凭隧道身份认出这台设备和它的人。
 //!
-//! 旧核心没有这个接口：404 当“没法用列表”返回 `Ok(None)`，客户端退回按活动快照猜的旧行为，不把它当失败。
+//! 旧核心没有这个接口：404/405 当“没法用列表”返回 `Ok(None)`，客户端退回按活动快照猜的旧行为，不把它当失败。
 
 use wonton_protocol::{CoreError, SHARED_BOTS_PATH, SharedBotsView};
 
@@ -15,15 +15,18 @@ impl PluginsLink {
     }
 }
 
-/// 404 是「这台核心还没这个接口」，回退到活动快照；其他失败才是真失败。
+/// 404/405 是「这台核心还没这个接口」，回退到活动快照；其他失败才是真失败。旧核心在同一个路径上只有 POST，
+/// axum 对缺失的 GET 回 405，不是 404。
 async fn fetch_shared_bots(api: &CoreApi) -> Result<Option<SharedBotsView>, CoreError> {
     match api
         .get_detailed::<SharedBotsView>(&shared_bots_segments(), &[], READ_TIMEOUT)
         .await
     {
         Ok(view) => Ok(Some(view)),
-        // 旧核心的 axum 回 HTML 404，不一定会带 `x-wonton-error`；只看状态码。
-        Err(CoreApiError::Http { status: 404, .. }) => Ok(None),
+        // 旧核心的 axum 回 HTML 错误，不一定会带 `x-wonton-error`；只看状态码（没有 GET 是 405）。
+        Err(CoreApiError::Http {
+            status: 404 | 405, ..
+        }) => Ok(None),
         Err(CoreApiError::Transport(problem)) => Err(to_core_error(problem)),
         Err(CoreApiError::Http {
             status, message, ..
@@ -47,32 +50,28 @@ mod tests {
     use axum::routing::get;
     use axum::{Json, Router};
     use serde_json::{Value, json};
-    use tokio::task::JoinHandle;
-
+    
     use super::*;
     use crate::plugins::api::ServerVersion;
 
-    async fn server() -> (CoreApi, JoinHandle<()>) {
-        let router = Router::new().route(
-            SHARED_BOTS_PATH,
-            get(|| async { (StatusCode::NOT_FOUND, Json(json!({"error": "nope"}))) }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let api = CoreApi {
-            base: format!("http://{address}").parse().unwrap(),
-            client: reqwest::Client::new(),
-            languages: String::new(),
-            version: ServerVersion::default(),
-        };
-        (api, task)
-    }
-
     #[tokio::test]
-    async fn a_404_is_an_old_core_not_a_failure() {
-        let (api, _server) = server().await;
-        assert!(fetch_shared_bots(&api).await.unwrap().is_none());
+    async fn a_404_or_405_is_an_old_core_not_a_failure() {
+        for status in [StatusCode::NOT_FOUND, StatusCode::METHOD_NOT_ALLOWED] {
+            let router = Router::new().route(
+                SHARED_BOTS_PATH,
+                get(move || async move { (status, Json(json!({"error": "nope"}))) }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = listener.local_addr().unwrap();
+            let _server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+            let api = CoreApi {
+                base: format!("http://{address}").parse().unwrap(),
+                client: reqwest::Client::new(),
+                languages: String::new(),
+                version: ServerVersion::default(),
+            };
+            assert!(fetch_shared_bots(&api).await.unwrap().is_none());
+        }
     }
 
     #[tokio::test]
