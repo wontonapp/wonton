@@ -6,7 +6,7 @@ use std::path::Path;
 
 use wonton_protocol::{CaaState, CredentialEntry, PutDomainRequest, SecretString};
 
-use super::{DNS_ENV_FILE, Domain, DomainError, dotenv_names, dotenv_value};
+use super::{DNS_ENV_FILE, Domain, DomainError, Store, dotenv_names, dotenv_value};
 use crate::entry_containers::EntryContainers;
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
