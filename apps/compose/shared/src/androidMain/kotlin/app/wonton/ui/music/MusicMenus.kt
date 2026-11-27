@@ -97,7 +97,9 @@ private fun SortButton(sort: AlbumSort, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
     ) {
         Text(
-            stringResource(sortName(sort)), style = WontonTheme.typography.supporting, color = colors.textPrimary.toColor(),
+            stringResource(sortName(sort)),
+            style = WontonTheme.typography.supporting,
+            color = colors.textPrimary.toColor(),
         )
         Icon(
             WontonIcon.Forward,

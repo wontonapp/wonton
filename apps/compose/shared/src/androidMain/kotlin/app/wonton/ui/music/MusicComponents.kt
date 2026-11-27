@@ -61,8 +61,6 @@ import app.wonton.ui.icons.WontonIcon
 private const val PLACEHOLDER_FRACTION = 0.36f
 private const val PLACEHOLDER_ALPHA = 0.5f
 private const val OUTLINE_ALPHA = 0.5f
-private const val THUMBNAIL = 44
-private const val ARTIST_AVATAR = 48
 private const val PLAYLIST_THUMBNAIL = 56
 private const val TRACK_NUMBER_WIDTH = 24
 
@@ -160,7 +158,7 @@ internal fun MusicTrackRow(track: TrackRow, inAlbum: Boolean = false) {
                     style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor(),
                 )
             } else {
-                MusicCover(track.cover, Modifier.size(THUMBNAIL.dp))
+                MusicCover(track.cover, Modifier.size(WontonTheme.size.fileThumbnail))
             }
             Column(Modifier.weight(1f)) {
                 MusicLine(track.title, secondary = false, style = WontonTheme.typography.body)
@@ -192,7 +190,7 @@ internal fun MusicArtistRow(artist: ArtistRow) {
         Modifier.fillMaxWidth(),
     ) {
         MusicRowLayout(
-            { MusicCover(artist.cover, Modifier.size(ARTIST_AVATAR.dp), round = true) },
+            { MusicCover(artist.cover, Modifier.size(WontonTheme.size.avatar), round = true) },
             artist.name,
             pluralStringResource(R.plurals.music_album_count, artist.albumCount.toInt(), artist.albumCount.toInt()),
         )
