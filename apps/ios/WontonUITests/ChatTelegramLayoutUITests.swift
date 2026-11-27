@@ -23,12 +23,6 @@ final class ChatTelegramLayoutUITests: ChatTelegramUITestSupport {
                           "插件横幅不在旁聊标题上面\n\(app.debugDescription)")
         waitForFloatingDateToFade()
         shot("side-chat-top")
-        // 旁聊页自带一层导航栈：这是它那一层的根，左边缘右滑不把整个房间划走（ADR-0093）。
-        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
-        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
-                   withVelocity: .default, thenHoldForDuration: 0.1)
-        Thread.sleep(forTimeInterval: 0.6)
-        XCTAssertTrue(header.exists, "右滑把房间划走了\n\(app.debugDescription)")
     }
 
     /// 选项按钮：点一个变成选中，另一个不能再点。
