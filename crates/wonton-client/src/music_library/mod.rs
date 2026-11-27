@@ -11,6 +11,7 @@ mod fetch;
 mod live;
 mod map;
 mod patch;
+mod star;
 mod wire;
 
 #[cfg(test)]
@@ -46,6 +47,7 @@ pub(crate) struct MusicLink {
     covers: covers::Covers,
     pages: Mutex<HashMap<u64, Arc<Page>>>,
     next_id: AtomicU64,
+    stars: star::Stars,
 }
 
 /// 一个开着的页。
@@ -81,6 +83,7 @@ impl MusicLink {
             covers: covers::Covers::new(cache_dir),
             pages: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
+            stars: star::Stars::default(),
         })
     }
 
@@ -159,23 +162,23 @@ impl MusicLink {
         });
     }
 
-    /// 加星或取消星：开着的页先改，曲库回失败就改回来，并把原因交回壳。
+    /// 加星或取消星：开着的页先改；曲库回失败时，等这一项的请求都落地，再改成曲库实际的状态，并把原因交回壳。
     pub(crate) async fn star(&self, plugin_id: &str, action: MusicAction) -> Option<MusicProblem> {
         let MusicAction::Star { target, starred } = action;
+        let ticket = self.stars.begin(plugin_id, &target, starred);
         self.patch_pages(plugin_id, |view| patch::star(view, &target, starred));
+        let turn = self.stars.turn().await;
         let result = match self.libraries.endpoint(plugin_id) {
             Ok(endpoint) => fetch::set_star(&endpoint, &target, starred)
                 .await
                 .map_err(|failure| self.problem(plugin_id, failure)),
             Err(problem) => Err(problem),
         };
-        match result {
-            Ok(()) => None,
-            Err(problem) => {
-                self.patch_pages(plugin_id, |view| patch::star(view, &target, !starred));
-                Some(problem)
-            }
+        drop(turn);
+        if let Some(actual) = self.stars.finish(ticket, result.is_ok()) {
+            self.patch_pages(plugin_id, |view| patch::star(view, &target, actual));
         }
+        result.err()
     }
 
     fn patch_pages(&self, plugin_id: &str, change: impl Fn(&mut MusicPageView)) {
@@ -230,7 +233,8 @@ impl MusicLink {
                     40 | 41 | 44 => MusicFailure::NotSignedIn,
                     50 => MusicFailure::PermissionDenied,
                     70 => MusicFailure::NotFound,
-                    _ => MusicFailure::Upstream,
+                    0 => MusicFailure::Upstream,
+                    other => MusicFailure::Other(other.to_string()),
                 },
                 format!("Subsonic {code}: {message}"),
             ),

@@ -78,11 +78,12 @@ impl Libraries for LiveLibraries {
                 format!("{plugin_id} has no web page"),
             )
         })?;
+        // `web_url` 是点开整页的入口，可能带 `webui.path`；OpenSubsonic 的 `/rest` 和建号的 `/app/` 在源站根上。
         let mut base = Url::parse(&web)
             .map_err(|error| problem(MusicFailure::Protocol, format!("{web}: {error}")))?;
-        if !base.path().ends_with('/') {
-            base.set_path(&format!("{}/", base.path()));
-        }
+        base.set_path("/");
+        base.set_query(None);
+        base.set_fragment(None);
         Ok(Endpoint {
             client: self.client(&proxy)?,
             base,

@@ -384,3 +384,32 @@ async fn a_refused_star_is_rolled_back_on_every_open_page() {
     assert_eq!(problem.failure, MusicFailure::PermissionDenied);
     assert!(starred(&list.view()) && starred(&home.view()));
 }
+
+/// 连点两下、两次都失败：界面回到曲库实际的状态（点之前），不会被两次回滚弄反。
+#[tokio::test]
+async fn two_refused_opposite_stars_leave_the_library_state() {
+    let h = harness().await;
+    let list = h.link.open(
+        "music".into(),
+        MusicPage::Albums {
+            sort: AlbumSort::Newest,
+        },
+    );
+    until(&list, ready).await;
+    let starred = |view: &MusicPageView| match content(view) {
+        MusicContent::Albums { albums } => albums[0].starred,
+        other => panic!("{other:?}"),
+    };
+    assert!(!starred(&list.view()));
+    h.library.star_fails.store(true, Ordering::SeqCst);
+    let star = |starred| MusicAction::Star {
+        target: MusicTarget::Album("al-0".into()),
+        starred,
+    };
+    let (first, second) = tokio::join!(
+        h.link.star("music", star(true)),
+        h.link.star("music", star(false))
+    );
+    assert!(first.is_some() && second.is_some());
+    assert!(!starred(&list.view()));
+}
