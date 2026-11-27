@@ -171,3 +171,4 @@ fn contact_rows(bot: &BotRef, contacts: Value) -> Value {
 mod access;
 mod availability;
 mod caller_identity;
+mod facts;
