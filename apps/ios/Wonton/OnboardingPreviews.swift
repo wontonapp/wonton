@@ -5,13 +5,15 @@ import WontonClient
 /// 重看引导的预览：每步左上的关闭，和确认页的三类汇总（改了的列新值，没改的标“不改动”）。假数据只在这里。
 enum OnboardingPreviews {
     static func nav(position: UInt32) -> StepNav {
-        StepNav(position: position, total: 4, canBack: position > 1, canSkip: false, canNext: true, canClose: true)
+        StepNav(position: position, total: 5, canBack: position > 1, canSkip: false, canNext: true, canClose: true)
     }
 
     static var review: OnboardingReview {
         OnboardingReview(items: [
             item(id: "profile", kind: .profile, titles: ["Ada Lovelace"], detail: .unchanged),
-            item(id: "model", kind: .model, titles: ["OpenAI"], detail: .unchanged),
+            item(id: "assistant", kind: .assistant, titles: ["Wonton"], detail: nil),
+            item(id: "model", kind: .model, titles: ["OpenRouter", "example/model-large"],
+                 detail: .model(test: .ok)),
             item(id: "app.immich.photos", kind: .app, titles: [String(localized: .Plugins.previewAppName1)],
                  detail: nil,
                  permissions: [
@@ -76,7 +78,7 @@ struct OnboardingPreviewFrame<Content: View>: View {
 
 #Preview("Redo setup, later step") {
     OnboardingPreviewFrame(
-        step: 2, title: String(localized: .Onboarding1.onboardingStepModel),
+        step: 3, title: String(localized: .Onboarding1.onboardingStepModel),
         primaryTitle: String(localized: .Onboarding2.onboardingNext)
     ) { EmptyView() }
 }
@@ -86,7 +88,7 @@ struct OnboardingPreviewFrame<Content: View>: View {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("onboarding-preview")
     if let core = try? ClientCore(dataDir: directory.path) {
         OnboardingPreviewFrame(
-            step: 4, title: String(localized: .Onboarding3.onboardingStepReview),
+            step: 5, title: String(localized: .Onboarding3.onboardingStepReview),
             primaryTitle: String(localized: .Onboarding3.onboardingDone)
         ) {
             OnboardingReviewStep(review: OnboardingPreviews.review, plugins: PluginsModel(core: core)) { _ in }
@@ -103,7 +105,7 @@ enum OnboardingReviewPreview {
     @MainActor
     static func root(core: ClientCore) -> some View {
         OnboardingPreviewFrame(
-            step: 4, title: String(localized: .Onboarding3.onboardingStepReview),
+            step: 5, title: String(localized: .Onboarding3.onboardingStepReview),
             primaryTitle: String(localized: .Onboarding3.onboardingDone)
         ) {
             OnboardingReviewStep(review: OnboardingPreviews.review, plugins: PluginsModel(core: core)) { _ in }

@@ -20,7 +20,6 @@ struct MainView: View {
     @State var showsSettings = false
     var showsApps: Bool { pages.viewModel.showsApps }
     @EnvironmentObject private var orientation: FullscreenOrientation
-    @State var onboardingGateway: TabChoice?
     @State var showsSidebar = false
     @State var showsMyApps = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -126,9 +125,6 @@ struct MainView: View {
         .onChange(of: onboarding.viewModel.step) { _, step in
             if step == .profile { showsSettings = false }
         }
-        .onChange(of: onboardingGatewayPage) { _, page in
-            if page == nil { onboardingGateway = nil }
-        }
         .sheet(item: $navigation.safari) { target in
             SafariView(url: target.url).ignoresSafeArea()
         }
@@ -170,7 +166,6 @@ struct MainView: View {
         if new.adding && !old.adding {
             addingReturn = (old.servers.first(where: { $0.current })?.id, showsSettings)
             showsSettings = false
-            onboardingGateway = nil
             // 配对页在根页面上，“全部应用”那一层盖着它。
             closeApps()
         } else if old.adding && !new.adding {
@@ -210,7 +205,7 @@ struct MainView: View {
             ))
         } else {
             OnboardingGate(model: onboarding, plugins: plugins, isPaired: isPaired,
-                           finished: finishOnboarding, openGateway: openOnboardingGateway,
+                           finished: finishOnboarding,
                            close: { showsSettings = true }, content: {
                 VStack(spacing: 0) {
                     if !pages.showsPluginPage, !pendingElsewhere.isEmpty {
@@ -277,11 +272,6 @@ struct MainView: View {
         if home.servers.adding { return true }
         if case .failed = home.viewModel.pairing { return true }
         return false
-    }
-
-    private var onboardingGatewayPage: TabPage? {
-        guard let choice = onboardingGateway else { return nil }
-        return pages.viewModel.stack.first(where: { $0.tab == choice.tab })?.page
     }
 }
 

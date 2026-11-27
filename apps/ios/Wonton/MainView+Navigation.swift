@@ -20,7 +20,6 @@ extension MainView {
         } else {
             appsPath = NavigationPath([AppsRoute.launcher])
         }
-        onboardingGateway = nil
         if navigation.opensSettings {
             settings.path = []
             showsSettings = true
@@ -33,7 +32,6 @@ extension MainView {
 
     /// 设置是主界面上唯一的整屏盖子，下面的层（网格、插件页）都不是盖子，直接弹；关掉设置回到原来那一层。
     func showServerRoute(_ route: SettingsRoute) {
-        onboardingGateway = nil
         settings.openServer(route)
         showsSettings = true
     }
@@ -53,7 +51,6 @@ extension MainView {
     func openCardRoom(_ roomId: String?) {
         showsSettings = false
         closeApps()
-        onboardingGateway = nil
         pages.open(.chat)
         chat.resetNavigation()
         if let roomId { chat.path = [.room(roomId)] } else { chat.openConfirmations() }
@@ -64,23 +61,6 @@ extension MainView {
         chat.path = []
         chat.visiting = nil
         if let bot { chat.openDirectChat(with: bot) }
-    }
-
-    func openOnboardingGateway(_ settings: ModelSettingsPage) {
-        let gateway = URL(string: settings.webUrl)?.appendingPathComponent("")
-        guard let gateway, let plugin = plugins.viewModel.installed?.plugins.first(where: {
-            $0.id == settings.pluginId
-                && $0.webUrl.flatMap(URL.init(string:))?.appendingPathComponent("") == gateway
-        }),
-              let choice = plugin.tabChoices.first else {
-            onboarding.rejection = Problem(
-                title: String(localized: .Onboarding1.onboardingGatewayMissingTitle),
-                nextStep: String(localized: .Onboarding3.onboardingGatewayMissingNextStep)
-            )
-            return
-        }
-        onboardingGateway = choice
-        pages.open(choice.tab)
     }
 
     func receiveDraft(_ text: String) {

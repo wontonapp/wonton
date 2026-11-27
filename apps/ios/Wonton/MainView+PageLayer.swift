@@ -27,14 +27,8 @@ extension MainView {
             pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
             tab: entry.tab, placed: .page(tab: entry.tab), store: pages.webViews,
             page: entry.page, draft: receiveDraft, open: open,
-            pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
-            close: onboardingGateway?.tab == entry.tab ? { closeGateway(entry.tab) } : nil
+            pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom
         )
         .id(entry.tab)
-    }
-
-    private func closeGateway(_ tab: TabRef) {
-        if pages.viewModel.stack.last?.tab == tab { pages.closeCurrent() }
-        onboardingGateway = nil
     }
 }

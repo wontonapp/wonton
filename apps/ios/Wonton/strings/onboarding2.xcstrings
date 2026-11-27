@@ -32,36 +32,6 @@
         }
       }
     },
-    "onboarding.model.collapsed": {
-      "comment": "Accessibility value of the provider-list toggle while the list is collapsed.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Collapsed"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已收起"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已收起"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "折りたたみ済み"
-          }
-        }
-      }
-    },
     "onboarding.next": {
       "comment": "Primary button that advances to the next setup step.",
       "extractionState": "manual",
@@ -88,66 +58,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "次へ"
-          }
-        }
-      }
-    },
-    "onboarding.problem.model.transportUnavailable.next": {
-      "comment": "Line under the problem title: reconnect before retrying.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Check your network, then try again once you're connected."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "检查网络，连上后再试。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "檢查網路，連上後再試。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ネットワークを確認して、接続してから再試行してください。"
-          }
-        }
-      }
-    },
-    "onboarding.problem.model.unauthorized": {
-      "comment": "Problem title in setup: the home server doesn't recognize this device.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your home server doesn't recognize this device"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "家里的服务器不认这台设备"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "家用伺服器不認得這部裝置"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自宅サーバがこのデバイスを認識していません"
           }
         }
       }
@@ -212,66 +122,6 @@
         }
       }
     },
-    "onboarding.review.keepCurrent": {
-      "comment": "Row description in the review step: the already-configured models are kept.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keep using the current one"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "继续用现在的"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "繼續用目前的"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "今のものをそのまま使います"
-          }
-        }
-      }
-    },
-    "onboarding.review.unreachableModel": {
-      "comment": "Row description in the review step. The argument is the model's name.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ · Unreachable when tested"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ · 测试时没连上"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ · 測試時沒連上"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ · テスト時に接続できませんでした"
-          }
-        }
-      }
-    },
     "onboarding.running": {
       "comment": "Busy label while a setup step or an install task is running.",
       "extractionState": "manual",
@@ -328,6 +178,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "スキップ"
+          }
+        }
+      }
+    },
+    "onboarding.review.modelTestPassed": {
+      "comment": "Review page, model row: the test got a reply.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Test passed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试通过"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "測試通過"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テストに合格しました"
           }
         }
       }
