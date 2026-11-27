@@ -155,7 +155,6 @@ fn stored_public_pages_must_stay_https() {
     let mut settings = LayoutSettings {
         my_apps: vec![app_row(url_tab("http://example.com/a"))],
         auto_add: true,
-        panel: Vec::new(),
         bar: wonton_protocol::default_bar(),
     };
     let error = adopt_layout(&mut file, settings.clone()).unwrap_err();

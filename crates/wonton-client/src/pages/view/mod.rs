@@ -4,9 +4,9 @@ use url::Url;
 use wonton_protocol::media::MediaBrowse;
 use wonton_protocol::{
     BarEntry, BarIcon, BarItem, BarViewModel, ChatViewModel, CoreError, InstalledPlugin,
-    MAX_BAR_ITEMS, MyAppRef, NativePage, OpenPage, OwnPrivateBotView, PagesViewModel, PanelEntry,
-    PanelItem, PanelScope, PanelSource, PlacedTab, PluginState, PluginsViewModel, SidebarApp,
-    SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabLoadFailure, TabPage, TabRef, TabState,
+    MAX_BAR_ITEMS, MyAppRef, NativePage, OpenPage, OwnPrivateBotView, PagesViewModel, PlacedTab,
+    PluginState, PluginsViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabIcon, TabLayout,
+    TabLoadFailure, TabPage, TabRef, TabState,
 };
 
 use super::{PagesState, StoredApp, StoredItem, StoredPage, bot, invalid};

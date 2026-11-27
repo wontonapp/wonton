@@ -14,10 +14,9 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
-    BarEntry, BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel,
-    LayoutSettings, MAX_PANEL_PAGES, MyAppRef, PageAction, PagesFailure, PagesProblem,
-    PagesViewModel, PanelEntry, PanelItem, PanelScope, PinTarget, PlacedTab, PluginState,
-    PluginsViewModel, RoomPanel, TabIcon, TabLoadFailure, TabRef,
+    BarEntry, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel, LayoutSettings,
+    MyAppRef, PageAction, PagesFailure, PagesProblem, PagesViewModel, PlacedTab, PluginState,
+    PluginsViewModel, TabIcon, TabLoadFailure, TabRef,
 };
 
 use crate::home::HomeLink;

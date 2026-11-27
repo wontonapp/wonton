@@ -331,8 +331,6 @@ fn pages_open_and_close_like_the_real_stack() {
     let top = core.pages().stack.pop().unwrap();
     assert!(matches!(top.tab, TabRef::Url { .. }));
     assert_eq!(top.page.state, TabState::Ready);
-    // 面板里钉着的那一页一直在，不跟着栈变。
-    assert_eq!(core.pages().panel.len(), 2);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

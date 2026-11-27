@@ -90,7 +90,6 @@ async fn switching_servers_discards_previous_pages_and_reload_counts() {
     let view = rig.view();
     assert!(view.stack.is_empty());
     assert_eq!(view.tab, BarEntry::Agent);
-    assert!(panel_tabs(&rig).is_empty());
 
     assert_eq!(rig.my_app_titles(), ["new-content"]);
     rig.open(page_tab());

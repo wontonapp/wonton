@@ -4,8 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wonton_protocol::{
     AskFailure, AskProblem, AskReceipt, AskState, BarEntry, BarIcon, BarItem, ChatAction,
-    CoreError, MAX_BAR_ITEMS, OpenPage, PageAction, PanelItem, PanelScope, PanelSource, TabIcon,
-    TabLayout, TabPage, TabRef, TabState,
+    CoreError, MAX_BAR_ITEMS, OpenPage, PageAction, TabIcon, TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::super::ClientCore;
@@ -267,50 +266,6 @@ impl ClientCore {
                         pages.bar.full = false;
                     }
                 });
-                Ok(())
-            }
-            // 面板的增删和选择在真核心写账号数据；假数据把同一份视图直接改掉，面板走屏不用后端。
-            // 只动主面板：房间面板的页来自时间线，假数据里没有对应的视图可改。
-            PageAction::AddPanelPage { scope, tab } => {
-                if scope != PanelScope::Main {
-                    return Ok(());
-                }
-                let Some(page) = super::tabs::fake_page(&tab) else {
-                    return Ok(());
-                };
-                views.pages.send_modify(|pages| {
-                    if pages.panel.iter().any(|item| item.tab == tab) {
-                        return;
-                    }
-                    pages.panel.push(PanelItem {
-                        tab,
-                        page,
-                        attention: false,
-                        source: PanelSource::User,
-                        movable: true,
-                    });
-                });
-                Ok(())
-            }
-            PageAction::RemovePanelPage { scope, tab } => {
-                if scope != PanelScope::Main {
-                    return Ok(());
-                }
-                views.pages.send_modify(|pages| {
-                    pages.panel.retain(|item| item.tab != tab);
-                    if pages.panel_selected.as_ref() == Some(&tab) {
-                        pages.panel_selected = None;
-                    }
-                });
-                Ok(())
-            }
-            PageAction::SelectPanelPage { scope, tab } => {
-                if scope != PanelScope::Main {
-                    return Ok(());
-                }
-                views
-                    .pages
-                    .send_modify(|pages| pages.panel_selected = Some(tab));
                 Ok(())
             }
             _ => Ok(()),

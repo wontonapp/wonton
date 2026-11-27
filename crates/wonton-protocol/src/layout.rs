@@ -3,7 +3,7 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::{MyAppEntry, TabRef};
+use crate::{BarEntry, MyAppEntry, TabRef};
 
 /// 全局账号数据事件类型，内容是 [`LayoutSettings`]：我的应用。
 pub const LAYOUT_EVENT: &str = "app.wonton.layout";
@@ -40,6 +40,12 @@ pub struct LayoutSettings {
     /// 新装的应用自动加到我的应用末尾。缺这一项时按开算。
     #[serde(default = "auto_add_default")]
     pub auto_add: bool,
+    /// 底栏的成员和顺序（ADR-0126）。缺这一项时是 [`crate::default_bar`]；认不出的项在反序列化时逐项丢掉。
+    ///
+    /// 这里只做逐项解析，不查 [`crate::check_bar`]：核心改栏时查，读别人的栏时由客户端核对后再用/写回。
+    /// 和我的应用的顺序各管各的。
+    #[serde(default = "crate::default_bar", deserialize_with = "drop_unknown")]
+    pub bar: Vec<BarEntry>,
 }
 
 impl Default for LayoutSettings {
@@ -47,6 +53,7 @@ impl Default for LayoutSettings {
         Self {
             my_apps: Vec::new(),
             auto_add: auto_add_default(),
+            bar: crate::default_bar(),
         }
     }
 }
@@ -105,6 +112,7 @@ mod tests {
                 },
             ],
             auto_add: false,
+            bar: Vec::new(),
         };
         let json = serde_json::to_value(&settings).unwrap();
         assert_eq!(json["auto_add"], serde_json::json!(false));
@@ -127,6 +135,7 @@ mod tests {
         assert_eq!(settings, LayoutSettings::default());
         assert!(settings.auto_add);
         assert!(settings.my_apps.is_empty());
+        assert!(!settings.bar.is_empty());
     }
 
     #[test]

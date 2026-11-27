@@ -290,7 +290,6 @@ pub(super) fn clear_plugin_config(state: &mut PagesState) {
     }
     // 换服务器只拿掉绑在插件上的项；用户删掉的根页不复活。
     state.settle_tab();
-    state.config.panel.clear();
     state.stack.clear();
 }
 

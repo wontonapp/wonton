@@ -17,8 +17,8 @@ use crate::plugins::rig::{FakeHome, Rig, installed};
 use support::{assert_invalid, item, page, tab, web_plugin};
 use wonton_client::{
     Action, BarEntry, CoreError, HomeStatus, InstalledPlugin, MAX_BAR_ITEMS, MyAppRef, OpenPage,
-    PageAction, PagesViewModel, PanelScope, PlacedTab, PluginHealth, PluginImage, PluginState,
-    TabIcon, TabLayout, TabLoadFailure, TabRef, TabState,
+    PageAction, PagesViewModel, PlacedTab, PluginHealth, PluginImage, PluginState, TabIcon,
+    TabLayout, TabLoadFailure, TabRef, TabState,
 };
 
 async fn wait_pages(rig: &Rig, mut ready: impl FnMut(&PagesViewModel) -> bool) -> PagesViewModel {
