@@ -70,7 +70,7 @@ final class PasteUITests: XCTestCase {
     // MARK: - 摆台
 
     /// 配对码可选：给了就带着配对（新设备，走引导）；没给就用 App 里已配对的会话直接进主界面。
-    /// 码 10 分钟过期，而 mini 重活锁的排队时长不可预期，重跑走已配对会话才不跟 TTL 赛跑。
+    /// 码 10 分钟过期，而开发机重活锁的排队时长不可预期，重跑走已配对会话才不跟 TTL 赛跑。
     private func launch() throws {
         app = XCUIApplication()
         try UITestBackend.passPairingCode(to: app)
