@@ -3,6 +3,7 @@ package app.wonton.ui.video
 import android.content.Context
 import android.content.Intent
 import android.hardware.display.DisplayManager
+import android.media.MediaCodecList
 import android.view.Display
 import app.wonton.client.ClientCore
 import kotlinx.coroutines.CoroutineScope
@@ -160,4 +161,31 @@ object VideoPlayback {
     /** 屏幕能不能显示 HDR：报给核心，它据此决定要不要把 HDR 片子转成 SDR。 */
     fun supportsHdr(context: Context): Boolean =
         context.getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)?.isHdr == true
+
+    /**
+     * 本机解码器能解的编解码，写成 RFC 6381 的四字码（`avc1`、`hvc1`…）。Media3 用系统解码器，所以问
+     * `MediaCodecList`：同是 mkv，有的手机能解 HEVC、AC-3，有的不能，只报容器的话提供方只能一律转码。
+     */
+    fun decodableCodecs(): List<String> {
+        val types = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+            .filterNot { it.isEncoder }
+            .flatMap { info -> info.supportedTypes.map { it.lowercase() } }
+            .toSet()
+        return DECODER_CODECS.filter { (mime, _) -> mime in types }.map { (_, codec) -> codec }.distinct()
+    }
 }
+
+/** 系统解码器的 MIME → RFC 6381 四字码。 */
+private val DECODER_CODECS = listOf(
+    "video/avc" to "avc1",
+    "video/hevc" to "hvc1",
+    "video/av01" to "av01",
+    "video/x-vnd.on2.vp9" to "vp09",
+    "video/x-vnd.on2.vp8" to "vp8",
+    "audio/mp4a-latm" to "mp4a",
+    "audio/ac3" to "ac-3",
+    "audio/eac3" to "ec-3",
+    "audio/opus" to "opus",
+    "audio/flac" to "flac",
+    "audio/mpeg" to "mp3",
+)

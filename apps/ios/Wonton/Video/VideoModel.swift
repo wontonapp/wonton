@@ -166,8 +166,12 @@ final class VideoModel {
     /// 告诉核心 AVPlayer 能直放什么；起播前报一次，核心按它让提供方选直放还是转码。
     private func reportSupport() {
         guard !reportedSupport else { return }
+        // 带上编解码（RFC 6381），提供方才知道哪些能直放；只报容器的话一律转码。AVPlayer 在 iOS 17 支持的机型上
+        // 都能硬解 HEVC。
+        let codecs = "avc1,hvc1,mp4a,ac-3,ec-3,alac,flac,mp3"
         let support = PlayerSupport(
-            mimeTypes: ["video/mp4", "video/quicktime", "video/x-m4v", "audio/mp4", "audio/aac", "audio/mpeg"],
+            mimeTypes: ["video/mp4", "video/quicktime", "video/x-m4v"].map { "\($0); codecs=\"\(codecs)\"" }
+                + ["audio/mp4", "audio/aac", "audio/mpeg"],
             containers: ["mp4", "m4v", "mov"],
             maxBitrate: 0,
             hdr: AVPlayer.eligibleForHDRPlayback

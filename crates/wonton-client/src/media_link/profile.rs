@@ -16,7 +16,8 @@ const FILE: &str = "media-profile.json";
 /// 壳报的播放器能力。
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PlayerSupport {
-    /// 能直放的 MIME 类型，如 `video/mp4`、`audio/flac`。
+    /// 能直放的 MIME 类型，带 RFC 6381 的 `codecs` 参数，如 `video/mp4; codecs="avc1,mp4a"`：提供方按里面的
+    /// 编解码判断能不能直放，只写容器的那一项等于没说能解什么。
     pub mime_types: Vec<String>,
     /// 能直放的容器，如 `mp4`、`mkv`。
     pub containers: Vec<String>,

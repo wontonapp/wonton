@@ -102,8 +102,10 @@ class VideoModel(val core: ClientCore, private val context: Context, val source:
     /** 告诉核心 ExoPlayer 能直放什么；起播前报一次，核心按它让提供方选直放还是转码。 */
     private fun reportSupport() {
         if (reportedSupport) return
+        val codecs = VideoPlayback.decodableCodecs().joinToString(",")
         val support = PlayerSupport(
-            mimeTypes = listOf("video/mp4", "video/x-matroska", "video/webm", "audio/mp4", "audio/aac", "audio/mpeg"),
+            mimeTypes = listOf("video/mp4", "video/x-matroska", "video/webm").map { "$it; codecs=\"$codecs\"" } +
+                listOf("audio/mp4", "audio/aac", "audio/mpeg"),
             containers = listOf("mp4", "m4v", "mkv", "webm", "mov"),
             maxBitrate = 0u,
             hdr = VideoPlayback.supportsHdr(context),
