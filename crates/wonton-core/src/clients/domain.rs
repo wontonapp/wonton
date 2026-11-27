@@ -387,12 +387,14 @@ impl Domain {
                 })
             })
             .await?;
+        let credentials_supplied = !credentials.is_empty();
         if saved.suffix_changed || saved.provider_changed {
             // 删准备状态要和进行中的签发互斥：签发正用着它们。
             let _serial = self.issuance.lock().await;
             self.reset_prepared();
         }
-        self.spawn_issue();
+        // 换了名字或服务商要重签；只换凭据时准备状态还在、证书也新，得强制一次去验新凭据。
+        self.spawn_issue(credentials_supplied || saved.suffix_changed || saved.provider_changed);
         Ok(saved)
     }
 
@@ -410,7 +412,7 @@ impl Domain {
     }
 
     /// 准入条件够了就排一次签发；续期循环和保存都走这里。
-    fn spawn_issue(self: &Arc<Self>) {
+    fn spawn_issue(self: &Arc<Self>, force: bool) {
         let store = match self.effective() {
             Ok(store) => store,
             Err(error) => {
@@ -427,12 +429,12 @@ impl Domain {
             return;
         }
         self.pending.fetch_add(1, Ordering::SeqCst);
-        tokio::spawn(self.clone().run_issue(store));
+        tokio::spawn(self.clone().run_issue(store, force));
     }
 
     /// 续期循环的一轮：条件不够就如实跳过，够了就排一次签发。
     pub fn renew_if_configured(self: &Arc<Self>) {
-        self.spawn_issue();
+        self.spawn_issue(false);
     }
 
     fn ready(&self, store: &Store) -> bool {
@@ -450,14 +452,14 @@ impl Domain {
         registration.is_some() || (store.provider.is_some() && store.has_credentials())
     }
 
-    async fn run_issue(self: Arc<Self>, snapshot: Store) {
+    async fn run_issue(self: Arc<Self>, snapshot: Store, force: bool) {
         let _serial = self.issuance.lock().await;
         // 排队时设置可能已经变过：拿到锁后以现状为准，快照过期就跳过——变更方自己排的
         // 任务会按新设置签。旧任务若按旧快照重新 prepare，会把新设置的准备状态和证书
         // 都写成旧的，续期从此对不上。
         match self.effective() {
             Ok(current) if current.clone().issuance_snapshot() == snapshot.issuance_snapshot() => {
-                if self.fresh(&current) {
+                if !force && self.fresh(&current) {
                     tracing::info!("证书还新且上次没失败，跳过重复的签发");
                 } else {
                     self.issue_locked(&current).await;
@@ -486,7 +488,12 @@ impl Domain {
         if store.last_error.is_some() {
             return false;
         }
-        let certs = self.install_dir.join("entry/certs");
+        let entry = self.install_dir.join("entry");
+        // 准备状态属于这次的服务商和名字：换过就删了，删了就得重签。
+        if !entry.join("prepared.json").is_file() {
+            return false;
+        }
+        let certs = entry.join("certs");
         if !certs.join("site.key").is_file() {
             return false;
         }

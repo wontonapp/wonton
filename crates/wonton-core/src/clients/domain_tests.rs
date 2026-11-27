@@ -541,7 +541,7 @@ async fn queued_issue_skips_when_settings_changed_before_the_lock() {
     let quiet = clients.engine.recorded_creations().len();
     // 旧任务此刻拿到锁：设置已变，必须跳过，不能按 A 起 lego。
     clients.pending.fetch_add(1, Ordering::SeqCst);
-    clients.clone().run_issue(stale).await;
+    clients.clone().run_issue(stale, false).await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet,
@@ -550,7 +550,7 @@ async fn queued_issue_skips_when_settings_changed_before_the_lock() {
     // 对照：按现状排的任务照常签（测试引擎在起容器那步失败，但“试图起”发生）。
     let fresh = clients.effective().unwrap();
     clients.pending.fetch_add(1, Ordering::SeqCst);
-    clients.clone().run_issue(fresh).await;
+    clients.clone().run_issue(fresh, false).await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet + 1,
@@ -594,7 +594,7 @@ async fn queued_issue_runs_even_after_last_error_changed() {
         .unwrap();
     let quiet = clients.engine.recorded_creations().len();
     clients.pending.fetch_add(1, Ordering::SeqCst);
-    clients.clone().run_issue(queued).await;
+    clients.clone().run_issue(queued, false).await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet + 1,
@@ -890,6 +890,7 @@ async fn a_fresh_certificate_skips_the_repeat_issue() {
         .await
         .unwrap();
     certificate(dir.path());
+    std::fs::write(dir.path().join("entry/prepared.json"), b"{}").unwrap();
     let snapshot = clients.effective().unwrap();
     assert_eq!(snapshot.suffix.as_deref(), Some("example.test"));
     assert!(snapshot.last_error.is_none());
@@ -909,7 +910,7 @@ async fn a_fresh_certificate_skips_the_repeat_issue() {
     clients.pending.fetch_add(1, Ordering::SeqCst);
     clients
         .clone()
-        .run_issue(clients.effective().unwrap())
+        .run_issue(clients.effective().unwrap(), false)
         .await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
@@ -924,11 +925,68 @@ async fn a_fresh_certificate_skips_the_repeat_issue() {
     clients.pending.fetch_add(1, Ordering::SeqCst);
     clients
         .clone()
-        .run_issue(clients.effective().unwrap())
+        .run_issue(clients.effective().unwrap(), false)
         .await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet + 1,
         "换名字后该照常走签发"
+    );
+}
+
+/// 证书还新，但换服务商（准备状态被删）或只换凭据：保存必须真的去签一次，验新配置。
+#[tokio::test]
+async fn provider_or_credential_change_with_a_fresh_certificate_still_issues() {
+    use std::sync::atomic::Ordering;
+    let dir = tempfile::tempdir().unwrap();
+    settings(dir.path(), Some("example.test"));
+    let clients = domain(dir.path());
+    clients
+        .apply(|store| {
+            *store = super::Store {
+                suffix: Some("example.test".into()),
+                provider: Some("httpreq".into()),
+                credentials: [("HTTPREQ_TOKEN".into(), "a-token".into())].into(),
+                env_file: None,
+                terms_accepted: true,
+                last_error: None,
+            };
+            Ok(())
+        })
+        .await
+        .unwrap();
+    certificate(dir.path());
+    std::fs::write(dir.path().join("entry/prepared.json"), b"{}").unwrap();
+    let settle = async || {
+        for _ in 0..20_000 {
+            if clients.pending.load(Ordering::SeqCst) == 0 {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("签发没在限定的轮数里结束");
+    };
+    // 只换凭据：准备状态还在，也要强制签一次。
+    let quiet = clients.engine.recorded_creations().len();
+    let mut request = request(None);
+    request.credentials = vec![CredentialEntry {
+        name: "HTTPREQ_TOKEN".into(),
+        value: SecretString::new("b-token"),
+    }];
+    clients.clone().save(request).await.unwrap();
+    settle().await;
+    assert!(
+        clients.engine.recorded_creations().len() > quiet,
+        "只换凭据也得验一次新凭据"
+    );
+    // 换服务商：reset_prepared 删掉 prepared.json，fresh 不再成立。
+    let quiet = clients.engine.recorded_creations().len();
+    let mut request = request(None);
+    request.provider = "otherdns".into();
+    clients.clone().save(request).await.unwrap();
+    settle().await;
+    assert!(
+        clients.engine.recorded_creations().len() > quiet,
+        "换服务商必须重新签"
     );
 }
