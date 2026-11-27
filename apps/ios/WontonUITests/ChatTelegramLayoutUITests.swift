@@ -1,6 +1,6 @@
 import XCTest
 
-/// 顶栏叠放、选项按钮、深色模式、宽表格横滚、最大字号、Bot 资料页面板、群聊头像。
+/// 顶栏叠放、选项按钮、深色模式、宽表格横滚、最大字号、群聊头像。
 final class ChatTelegramLayoutUITests: ChatTelegramUITestSupport {
     /// 顶栏下面照 Telegram 的叠放：插件横幅在最上，旁聊标题在它下面。
     func testPluginBannerSitsAboveSideChatTitle() {
@@ -139,19 +139,6 @@ final class ChatTelegramLayoutUITests: ChatTelegramUITestSupport {
             XCTAssertLessThanOrEqual(inside.frame.maxY, button.frame.maxY + 0.5, "\(label) 的字被按钮裁掉")
             XCTAssertLessThanOrEqual(inside.frame.maxX, button.frame.maxX + 0.5, "\(label) 的字横着出框")
         }
-    }
-
-    /// 房间顶栏没有“打开面板”的按钮；点头像进 Bot 资料页，从那里打开这个房间的面板（ADR-0052）。
-    func testPanelOpensFromBotProfile() {
-        enter(Self.directRoom)
-        XCTAssertFalse(app.buttons["panelOpen"].exists, "房间顶栏还有打开面板的按钮")
-        tap(app.buttons["roomTopBarAvatar"])
-        let open = app.buttons["botProfilePanelOpen"]
-        for _ in 0..<4 where !open.isHittable {
-            app.swipeUp()
-        }
-        tap(open)
-        XCTAssertTrue(app.otherElements["chatPanel"].waitForExistence(timeout: 5), "资料页的按钮没有打开面板\n\(app.debugDescription)")
     }
 
     /// 群聊里别人的组尾旁边有头像，私聊里没有。

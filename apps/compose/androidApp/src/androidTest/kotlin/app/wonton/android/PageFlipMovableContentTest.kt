@@ -22,7 +22,7 @@ import org.junit.rules.TestRule
 import org.junit.runner.RunWith
 
 /**
- * 覆盖面板启用/停用导致的页面组合切换；每次都确认目标页面实际渲染，再检查房间输入仍可用。
+ * 覆盖根页面来回切换导致的页面组合切换；每次都确认目标页面实际渲染，再检查房间输入仍可用。
  * 这是 onReuse/movableContent 路径的行为回归，帧级竞态不保证在旧实现上稳定失败。
  */
 @RunWith(AndroidJUnit4::class)

@@ -224,7 +224,7 @@ iOS 是 XCFramework 和 Swift 绑定，Android 是 .so 和 Kotlin 绑定。键�
   `XCTSkip`。要后端的用例没有配对码时 `XCTSkip`，不静默通过。手动触发可以填 `pairing_code`，把开发栈的
   配对码带进来（经 `TEST_RUNNER_PAIRING_CODE`，见 `apps/ios/scripts/ui-test.sh`）。
 - 不需要后端的用例：全新安装落在配对页，和用 `WONTON_UI_FAKE` 假数据的首屏、侧边栏、主入口导航
-  （`MainNavigationUITests`）、插件页的出口（`PluginExitUITests`）、面板网页的手势（`PanelGestureUITests`）、房间的通话入口（`CallEntryUITests`，
+  （`MainNavigationUITests`）、插件页的出口（`PluginExitUITests`）、房间的通话入口（`CallEntryUITests`，
   Android 是 `CallEntryTest`）。假数据入口整个
   在 cargo feature `ui-fake` 后面（`crates/wonton-client`）：Debug 构建默认带上，Release 不带；夜跑在
   构建时显式传开关（iOS 的 `WONTON_UI_FAKE=1`、Android 的 `-Pwonton.uiFake=1`），壳的调用在 `#if DEBUG`

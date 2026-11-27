@@ -281,7 +281,7 @@ impl Store {
         &self.bots
     }
 
-    /// Bot 钉在面板上的页面，在记录目录下的 `pins/` 里。
+    /// 原来 Bot 钉的页面，在记录目录下的 `pins/` 里；只读，见 [`super::pins`]。
     pub fn pins(&self) -> &PinStore {
         &self.pins
     }

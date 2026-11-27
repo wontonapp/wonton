@@ -280,7 +280,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .merge(me_routes())
         .merge(link_preview_routes())
         .merge(member_routes())
-        .merge(panel_routes())
+        .merge(bot_page_routes())
         .route(
             wonton_protocol::ONBOARDING_PATH,
             get(onboarding::get).put(onboarding::put),
@@ -335,28 +335,12 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .with_state(gateway)
 }
 
-/// 聊天页面板（ADR-0052）和 MCP Apps：Bot 活动、钉页，以及界面的宿主页和转发。
-fn panel_routes() -> Router<Arc<Gateway>> {
+/// Bot 活动和 MCP Apps 界面的宿主页、转发。
+fn bot_page_routes() -> Router<Arc<Gateway>> {
     Router::new()
         .route(
             wonton_protocol::BOT_ACTIVITY_PATH,
             get(super::bot_activity::get),
-        )
-        .route(
-            wonton_protocol::BOT_PANEL_PINS_PATH,
-            get(super::panel_pins::list),
-        )
-        .route(
-            &wonton_protocol::bot_panel_pin_path("{id}"),
-            delete(super::panel_pins::remove),
-        )
-        .route(
-            &wonton_protocol::bot_panel_pin_seen_path("{id}"),
-            post(super::panel_pins::seen),
-        )
-        .route(
-            &wonton_protocol::bot_panel_consent_path("{plugin_id}", "{bot}"),
-            put(super::panel_pins::consent),
         )
         .route(
             &wonton_protocol::mcp_app_host_path("{pin}"),
