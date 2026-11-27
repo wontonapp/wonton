@@ -80,7 +80,7 @@ struct ContentWindow: View {
         navigation.request { nav in
             guard let roomId else {
                 guard try await nav.navigationReady() else { return }
-                try await nav.open(.tab(tab: .chat))
+                try await nav.open(.bar(entry: .agent))
                 nav.chat.openConfirmations()
                 return
             }
@@ -94,7 +94,7 @@ struct ContentWindow: View {
             chat.appendDraft(text, to: TimelineTarget(roomId: roomId, threadRoot: nil))
         } else {
             navigation.chat.receiveDraft(text)
-            navigation.pages.open(.chat)
+            navigation.pages.select(.agent)
         }
     }
 
@@ -103,7 +103,7 @@ struct ContentWindow: View {
             switch entry {
             case let .web(tab): try await nav.open(.tab(tab: tab))
             case let .chat(botUserId):
-                try await nav.open(.tab(tab: .chat))
+                try await nav.open(.bar(entry: .agent))
                 nav.chat.openDirectChat(with: botUserId)
             case let .browser(url):
                 nav.safari = SafariTarget(url: url)

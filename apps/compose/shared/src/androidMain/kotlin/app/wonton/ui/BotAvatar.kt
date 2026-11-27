@@ -87,8 +87,10 @@ fun BotActivity.label(): String = stringResource(labelRes())
 /** [label] 的资源；不在 Compose 里（桌面小组件）时用它取字。 */
 fun BotActivity.labelRes(): Int = when (this) {
     BotActivity.IDLE -> R.string.bot_state_idle
+    BotActivity.THINKING -> R.string.bot_state_thinking
     BotActivity.WORKING -> R.string.bot_state_working
     BotActivity.WAITING -> R.string.bot_state_waiting
+    BotActivity.ERROR -> R.string.bot_state_error
     BotActivity.OFFLINE -> R.string.bot_state_offline
 }
 

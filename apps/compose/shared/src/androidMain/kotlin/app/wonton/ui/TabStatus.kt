@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.PluginAction
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.PlacedTab
@@ -41,7 +42,12 @@ internal fun PluginTabStatus(
             page, tabs.core,
             attempted = browserAttempted,
             allowed = browserAllowed,
-            onBackToChat = { tabs.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))) },
+            onBackToChat = {
+                when (place) {
+                    is PlacedTab.Panel -> tabs.send(Action.Pages(PageAction.RemovePanelPage(place.scope, tab)))
+                    else -> tabs.select(BarEntry.Agent)
+                }
+            },
         )
         return
     }

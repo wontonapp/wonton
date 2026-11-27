@@ -41,6 +41,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import app.wonton.protocol.Action
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.TabRef
 import app.wonton.ui.R
@@ -109,7 +110,7 @@ abstract class RoomTelegramCase {
     @Before
     fun openEchoRoom() {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
-        assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
+        assertNull(core.send(Action.Pages(PageAction.SelectBarItem(BarEntry.Agent))))
         compose.onNodeWithText("Echo").performClick()
         // 假房间的落点在第三条，先把输入框等出来，各用例自己滚到要的那一条。
         compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }

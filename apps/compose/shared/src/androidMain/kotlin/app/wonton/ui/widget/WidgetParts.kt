@@ -19,6 +19,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import app.wonton.protocol.AppLink
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.WidgetAccount
 import app.wonton.protocol.WidgetSnapshotRead
@@ -117,4 +118,4 @@ internal fun updatedAt(context: Context, state: WidgetState, updatedAtMs: Long):
 }
 
 /** 默认打开的地方：聊天列表。 */
-internal val chatList: AppLink = AppLink.Tab(TabRef.Chat)
+internal val chatList: AppLink = AppLink.Bar(BarEntry.Agent)

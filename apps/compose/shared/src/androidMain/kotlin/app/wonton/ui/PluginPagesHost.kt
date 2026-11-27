@@ -59,7 +59,7 @@ internal fun PluginPagesHost(
     pages: PagesState, home: HomeViewModel, appearance: AppearanceViewModel,
     active: TabRef?, onDetails: (String) -> Unit, onDraft: (String) -> Unit, bannerTop: Dp,
 ) {
-    val stack = pages.viewModel.stack.filter { it.tab != TabRef.Chat && it.tab != TabRef.Apps }
+    val stack = pages.viewModel.stack.filter { !it.tab.isNativeRoot() }
     val closed = remember { ClosedPages() }
     val kept = remember(stack) { closed.update(stack) }
     val openTabs = stack.mapTo(HashSet()) { it.tab }

@@ -139,8 +139,8 @@ private fun okAction(onDismiss: () -> Unit) = WontonDialogAction(
 private fun surfaceShowing(navigation: AppNavigation): Boolean {
     // 页面盖着时确认流程进不去那两层：设置里看邀请和备份，聊天里看备份。
     val settingsVisible = navigation.settingsOverlay
-    val chatVisible = !settingsVisible && !navigation.pages.viewModel.showsApps &&
-        navigation.pages.current == TabRef.Chat
+    val chatVisible = !settingsVisible && !navigation.pages.appsOpen &&
+        navigation.pages.current == TabRef.Rooms
     return (settingsVisible && navigation.settingsPage == SettingsSubpage.INVITE) ||
         (chatVisible && navigation.chat.showingBackup) ||
         (settingsVisible && navigation.settingsPage == SettingsSubpage.BACKUP)

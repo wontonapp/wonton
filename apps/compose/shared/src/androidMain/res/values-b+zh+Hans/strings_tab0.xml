@@ -20,4 +20,5 @@
     <string name="tab_menu_details">插件详情</string>
     <!-- 第一次打开整页应用时的引导:怎么离开。无参数。 -->
     <string name="tab_exit_hint">从屏幕边缘向内滑或按返回键，回到云吞</string>
+    <string name="tab_rooms">所有会话</string>
 </resources>

@@ -31,4 +31,5 @@
     <!-- 關掉這條引導、以後不再出現的按鈕。無參數;短標籤。 -->
     <string name="tab_exit_hint_got_it">知道了</string>
     <string name="tab_browser_return_hint">想回到雲吞，可以試試系統返回，或關掉瀏覽器裡的頁面。</string>
+    <string name="tab_inbox">收件匣</string>
 </resources>

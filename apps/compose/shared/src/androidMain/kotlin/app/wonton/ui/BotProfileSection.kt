@@ -246,7 +246,7 @@ private fun NameLine(bot: BotView, busy: Boolean, onEditName: () -> Unit) {
 @Composable
 private fun StateGrid(bot: BotView, plugins: PluginsState, busy: Boolean, onPick: (BotActivity) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
-        listOf(BotActivity.IDLE, BotActivity.WORKING, BotActivity.WAITING, BotActivity.OFFLINE).forEach { state ->
+        BotActivity.entries.forEach { state ->
             StateCell(state, bot, plugins, busy) { onPick(state) }
         }
     }

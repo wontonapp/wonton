@@ -154,6 +154,8 @@
     <string name="bot_state_working">Working</string>
     <string name="bot_state_waiting">Waiting for you</string>
     <string name="bot_state_offline">Offline</string>
+    <string name="bot_state_thinking">Thinking</string>
+    <string name="bot_state_error">Error</string>
     <string name="bot_avatar_pick_state">Change the %1$s picture</string>
     <string name="bot_profile_open">View Bot profile</string>
     <string name="bot_identity_value">Plugin: %1$s\nBot: %2$s</string>

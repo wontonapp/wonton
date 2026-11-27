@@ -12,7 +12,7 @@ extension MainView {
         showsSidebar = false
         switch destination {
         case .chat:
-            pages.open(.chat)
+            pages.select(.agent)
             chat.path = []
         case .store:
             openApps(above: [.store])
@@ -22,7 +22,7 @@ extension MainView {
             settings.path = []
             showsSettings = true
         case .newChat:
-            pages.open(.chat)
+            pages.select(.agent)
             chat.path = [.startChat]
         case let .reload(tab):
             // 核心只重新加载栈里的页面：先打开，打开被拒了就只报那一条。
