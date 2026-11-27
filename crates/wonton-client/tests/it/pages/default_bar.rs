@@ -207,12 +207,9 @@ async fn adding_to_the_bar_checks_duplicates_the_limit_and_moves() {
     }));
     assert!(rig.app.pages().bar.full);
 
-    // 普通刷新（每次 recompute 都跑卸载清理）不抹掉满的标记。
-    rig.app
-        .dispatch(Action::Plugins {
-            action: wonton_protocol::PluginAction::RefreshPlugins,
-        })
-        .unwrap();
+    // RefreshPlugins 只 spawn 任务，单线程测试里 dispatch 完立即断言读到的是旧视图；
+    // 用同步的 AddMyApp 走一遍 refresh_state/remove_uninstalled 的清理，拦得住回退。
+    add_my_app(&rig, url_app(5)).await;
     assert!(rig.app.pages().bar.full);
 
     // 加成功了才清 full。

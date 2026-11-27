@@ -229,7 +229,7 @@ impl ClientCore {
                             TabRef::Plugin { plugin_id, .. } => Some(plugin_id.clone()),
                             _ => None,
                         },
-                        tab: None,
+                        tab: Some(tab.clone()),
                         title,
                         open: wonton_protocol::SidebarOpen::Page { tab },
                         icon: None,
@@ -371,7 +371,7 @@ fn side_app_matches(app: &wonton_protocol::MyAppRef, row: &wonton_protocol::Side
             wonton_protocol::SidebarOpen::Page { tab: open },
         ) => tab == open,
         (wonton_protocol::MyAppRef::Plugin { plugin_id }, _) => {
-            row.plugin_id.as_deref() == Some(plugin_id)
+            row.tab.is_none() && row.plugin_id.as_deref() == Some(plugin_id)
         }
         _ => false,
     }
