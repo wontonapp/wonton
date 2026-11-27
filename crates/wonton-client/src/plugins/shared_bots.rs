@@ -50,7 +50,7 @@ mod tests {
     use axum::routing::get;
     use axum::{Json, Router};
     use serde_json::{Value, json};
-    
+
     use super::*;
     use crate::plugins::api::ServerVersion;
 
