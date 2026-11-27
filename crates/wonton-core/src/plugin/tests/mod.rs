@@ -9,6 +9,7 @@ use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 
+mod agent_models;
 mod bot_ai_levels;
 mod bot_avatars;
 mod bot_lifecycle;

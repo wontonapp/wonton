@@ -1,5 +1,6 @@
 //! 插件管理：解析 `x-wonton` 插件包、渲染部署计划、经 Docker API 安装和卸载。
 
+pub(crate) mod agent_models;
 mod audience;
 mod bot_activity;
 mod bot_avatars;

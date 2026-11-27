@@ -262,24 +262,18 @@ fn agent_with_web(port: u16) -> PluginPackage {
 }
 
 #[tokio::test]
-async fn model_settings_falls_back_to_the_default_bot_page_without_a_gateway() {
+async fn model_settings_never_opens_the_default_bot_page_without_a_gateway() {
     let bed = bed_with(None).await;
     let manager = &bed.manager;
-    let bot = PluginId::parse("app.hermes").unwrap();
-    // 没有默认 Bot 插件、或它还没有网页时仍报错。
-    assert!(manager.model_settings(&langs()).await.is_err());
-    manager.set_default_bot_plugin(Some(bot.clone()));
-    assert!(manager.model_settings(&langs()).await.is_err());
-
     let port = ok_server().await;
     manager
         .install_package(agent_with_web(port), &[Permission::MatrixBot], langs())
         .await
         .unwrap();
-    let settings = manager.model_settings(&langs()).await.unwrap();
-    assert_eq!(settings.plugin_id, bot.as_str());
-    assert!(settings.web_url.is_some());
-    assert!(!settings.has_configured_models);
+    manager.set_default_bot_plugin(Some(PluginId::parse("app.hermes").unwrap()));
+    // Agent 的模型在 App 里原生地接（ADR-0129），设置页不退回 Agent 自己的网页。
+    let error = manager.model_settings(&langs()).await.unwrap_err();
+    assert_eq!(error.kind(), "models_unavailable");
 }
 
 #[tokio::test]
