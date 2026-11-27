@@ -522,6 +522,96 @@
           }
         }
       }
+    },
+    "music.pause": {
+      "comment": "Player button: pause.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂停"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暫停"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止"
+          }
+        }
+      }
+    },
+    "music.playback.unsupported.title": {
+      "comment": "Problem title: the song's format cannot be played on this device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This song can't play on this device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这首歌在这台设备上放不了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這首歌在這台裝置上放不了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この曲はこのデバイスで再生できません"
+          }
+        }
+      }
+    },
+    "music.playback.unsupported.nextStep": {
+      "comment": "Next step under the can't-play-on-this-device problem.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The music library couldn't convert it to a format this device can play."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音乐库没能把它转成这台设备能放的格式。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音樂庫沒能把它轉成這台裝置能播放的格式。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ミュージックライブラリがこのデバイスで再生できる形式に変換できませんでした。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

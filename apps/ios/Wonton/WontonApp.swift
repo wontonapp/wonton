@@ -50,6 +50,7 @@ struct WontonApp: App {
                     }
                 }
                 .environmentObject(orientation)
+                .environment(\.musicPlayer, navigation.music)
                 .modifier(ContentWindowOpening(core: chat.core))
                 .task { await appearance.observe() }
                 .task { await lock.observe() }
@@ -87,6 +88,7 @@ struct WontonApp: App {
                     }
                 }
                 .environmentObject(orientation)
+                .environment(\.musicPlayer, navigation.music)
                 .modifier(ContentWindowOpening(core: chat.core))
                 .task { await lock.observe() }
             case let .failed(reason):

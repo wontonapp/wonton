@@ -38,6 +38,7 @@ private struct MusicPageBody: View {
     let root: MusicRootActions?
     @State private var query = ""
     @Environment(\.wontonColors) private var colors
+    @Environment(\.musicPlayer) private var player
 
     var body: some View {
         content
@@ -48,6 +49,12 @@ private struct MusicPageBody: View {
             .toolbar { toolbar }
             .modifier(MusicSearchField(enabled: model.view.page == .search, query: $query))
             .onChange(of: query) { _, text in model.act(.query(text: text)) }
+            .safeAreaInset(edge: .bottom) {
+                if let player { MusicMiniPlayer(player: player) }
+            }
+            .environment(\.musicPlay, player.map { player -> (String) -> Void in
+                { [subscription = model.subscription] songId in player.play(subscription, songId: songId) }
+            })
             .wontonDialog(problem: model.actionProblem, isPresented: Binding(
                 get: { model.actionProblem != nil }, set: { if !$0 { model.actionProblem = nil } }
             ))

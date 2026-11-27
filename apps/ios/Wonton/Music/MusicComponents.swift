@@ -89,6 +89,7 @@ struct MusicTrackRow: View {
     var inAlbum = false
     let star: (MusicTarget, Bool) -> Void
     @Environment(\.wontonColors) private var colors
+    @Environment(\.musicPlay) private var play
 
     var body: some View {
         HStack(spacing: WontonTheme.spacing.s12) {
@@ -124,6 +125,8 @@ struct MusicTrackRow: View {
         }
         .padding(.vertical, WontonTheme.spacing.s4)
         .contentShape(Rectangle())
+        .onTapGesture { play?(track.id) }
+        .accessibilityAddTraits(play == nil ? [] : .isButton)
         .contextMenu { MusicStarButton(starred: track.starred) { star(.song(track.id), $0) } }
     }
 
