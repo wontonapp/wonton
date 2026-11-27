@@ -69,6 +69,7 @@ grabberHeight = 4
 hairline = 1
 quoteBar = 2
 # 浮在同色底上的一层（别人的气泡、选项按钮、卡片）靠投影分开：模糊半径、往下的偏移（ADR-0130）。
+# 模糊半径只有 iOS 用；Compose 的 shadow 只认高度，Android 拿 shadowY 当 elevation，模糊由系统按高度算。
 shadowBlur = 10
 shadowY = 2
 # 气泡尾巴伸出气泡的宽度，尾巴从底边往上占的高度（ADR-0109 第 9 节）。
@@ -95,14 +96,14 @@ codeFill = 0.1
 # 气泡最大宽度占可用宽度；输入框最多长到几行（ADR-0109，估计值）。
 bubbleWidth = 0.8
 composerLines = 6
-# 聊天背景上细线图案的浓度，用 `primary` 画（ADR-0109 第 9 节）。
+# 聊天背景上细线图案的浓度，用 `textPrimary` 画（ADR-0109 第 9 节）。
 wallPattern = 0.08
 # 压在聊天背景上的日期胶囊、说明行和选项按钮的半透明底：浅色主题盖黑、深色主题盖白。
 serviceFill = 0.32
 serviceFillDark = 0.16
-# 跳到原消息后整行闪的 `primary` 浓度。
+# 跳到原消息后整行闪的 `textPrimary` 浓度。
 jumpHighlight = 0.12
-# 附件面板那排切换里当前一项垫的 `primary` 浓度（ADR-0109，估计值）。
+# 附件面板那排切换里当前一项垫的 `textPrimary` 浓度（ADR-0109，估计值）。
 tabHighlight = 0.1
 # 投影的浓度（黑色）：深色底上同样的浓度看不出来，所以深色另取一档（ADR-0130）。
 shadow = 0.08

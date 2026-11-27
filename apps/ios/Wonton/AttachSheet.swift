@@ -127,7 +127,7 @@ struct AttachSheet: View {
                 icon.view()
                 Text(title).wontonText(WontonTheme.typography.caption).fontWeight(.medium).lineLimit(1)
             }
-            .foregroundStyle(Color(isCurrent ? colors.textPrimary : colors.textPrimary))
+            .foregroundStyle(Color(colors.textPrimary))
             .frame(width: WontonTheme.size.attachTab, height: WontonTheme.size.attachTab)
             .background {
                 if isCurrent {

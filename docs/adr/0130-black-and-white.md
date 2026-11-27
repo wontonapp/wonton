@@ -32,7 +32,7 @@ ADR-0026 的界面是黑白为主加一个用户可换的重点色，默认 `#FE
 
 Android 的 Material 主题里 `primary` 是字色（TextButton、进度圈、光标都取它），所以 Material 的 `primary` 对应 `textPrimary`，我们的 `primary` 只给 `primaryContainer`。
 
-噪点照 ADR-0026 留在强调色的填充上（`emphasisFill`），气泡不叠，和原来一样。
+噪点照 ADR-0026 留在强调填充上（`emphasisFill`）。自己的气泡按平台照旧：iOS 不叠，Android 叠（ADR-0109 第 9 节）。
 
 ### 分层
 

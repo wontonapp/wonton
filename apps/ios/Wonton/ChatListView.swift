@@ -131,7 +131,7 @@ struct ChatListView: View {
             .buttonStyle(.glassProminent)
             .buttonBorderShape(.circle)
             .controlSize(.large)
-            .tint(Color(colors.textPrimary))
+            .tint(Color(colors.primary))
             .frame(minWidth: WontonTheme.size.floatingActionButton, minHeight: WontonTheme.size.floatingActionButton)
             .contentShape(Circle())
             .accessibilityLabel(Text(.Chat1.chatNewChat))

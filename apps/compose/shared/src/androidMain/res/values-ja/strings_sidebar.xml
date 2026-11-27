@@ -26,7 +26,7 @@
     <string name="sidebar_all_apps">すべてのアプリ</string>
     <!-- サイドバー下部で設定を開く丸いボタン。 -->
     <string name="sidebar_settings">設定</string>
-    <!-- サイドバー下部で新しいチャットを始めるアクセント色のカプセル。 -->
+    <!-- サイドバー下部で新しいチャットを始める強調色で塗ったカプセル。 -->
     <string name="sidebar_new_chat">新しいチャット</string>
     <!-- ストアの行にある赤い数字バッジの読み上げ：アップデートのあるアプリの数。 -->
     <string name="sidebar_updates_badge">%1$d件のアップデートあり</string>

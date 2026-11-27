@@ -19,7 +19,7 @@ struct ChatPalette {
             : Color.black.opacity(WontonTheme.ratio.serviceFill)
     }
     var serviceInk: Color { .white }
-    /// 消息下选项按钮的底：入气泡的颜色透一点背景，字用 `primary`。
+    /// 消息下选项按钮的底：入气泡的颜色透一点背景，字用 `textPrimary`。
     var choiceFill: Color { incoming.opacity(WontonTheme.ratio.secondaryContent) }
     /// 浮在背景上的一层（别人的气泡、选项按钮）的投影：没有重点色以后，白气泡和浅灰背景只靠它分层（ADR-0130）。
     var lift: Color { .black.opacity(isDark ? WontonTheme.ratio.shadowDark : WontonTheme.ratio.shadow) }

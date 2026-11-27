@@ -41,7 +41,7 @@
 
 ### 颜色
 
-> 取值和用法以 [ADR-0130](0130-black-and-white.md) 为准；下表是当时的灰阶，ADR-0130 沿用。
+> 取值和用法以 [ADR-0130](0130-black-and-white.md) 为准；下表是当时的灰阶，ADR-0130 沿用，只有深色的 `primary`、`onPrimary` 改成了 `#454545`、`#FFFFFF`。
 
 灰阶不带色相，只有这一份，由核心输出给两端：
 
@@ -58,7 +58,7 @@
 
 主按钮用 `primary`。错误和警告用独立的状态色：`success` `#18753C`/`#7CDCA0`，`warning` `#8A4B00`/`#FFC379`，`danger` `#B42318`/`#FFA69F`。
 
-> 重点色（`accentFill`、`accentInk`、`accentInkOnFill`、`textOnAccentFill`、`accentFillBorder`，默认 `#FEEBEA`，按 OKLCH 推导）已被 [ADR-0130](0130-black-and-white.md) 取代，原文删去：强调一律用 `primary`。
+> 重点色（`accentFill`、`accentInk`、`accentInkOnFill`、`textOnAccentFill`、`accentFillBorder`，默认 `#FEEBEA`，按 OKLCH 推导）已被 [ADR-0130](0130-black-and-white.md) 取代，原文删去：强调填充用 `primary`，强调字用 `textPrimary`。
 
 ### Agent 的身份色（2026-11-21 补充）
 
@@ -90,7 +90,7 @@
 
 一张 128×128 的噪点小图（黑白颗粒各半，透明度不超过 7%），两端用同一个文件，平铺叠在强调色填充（[ADR-0130](0130-black-and-white.md) 起是 `primary`）和底栏上。1 个噪点像素对 1 个物理像素：Compose 用 `ImageShader` 配 `TileMode.Repeated`，SwiftUI 的平铺缩放取 `displayScale`。按 pt 或 dp 平铺时，颗粒会随屏幕密度放大变糊，两端也不一样。
 
-> 按重点色算的对比度余量已被 [ADR-0130](0130-black-and-white.md) 取代，原文删去：`primary` 上的 `onPrimary` 有十几比一，噪点的影响可以不计。
+> 按重点色算的对比度余量已被 [ADR-0130](0130-black-and-white.md) 取代，原文删去：`primary` 上的 `onPrimary` 浅色约 18.9:1、深色约 9.6:1，噪点的影响可以不计。
 
 > 下面这段已被 [ADR-0029](0029-platform-material.md) 取代：iOS 用系统材质，栏上不再叠噪点。
 

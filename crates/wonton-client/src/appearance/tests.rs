@@ -86,20 +86,21 @@ fn option_lists_are_enums_in_display_order() {
     );
 }
 
-/// 新版本要读得了旧文件；缺的项用默认值。
+/// 新版本要读得了旧文件；缺的项用默认值，去掉的项（重点色时期的 `accent`）忽略，不算读坏。
 #[test]
 fn settings_file_format_is_stable() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join(SETTINGS_FILE);
     fs::write(
         &file,
-        r#"{"theme_mode":"dark","text_size":"extra_large","font":"monospaced"}"#,
+        r##"{"theme_mode":"dark","accent":"#4A47D6","text_size":"extra_large","font":"monospaced"}"##,
     )
     .unwrap();
     let view = AppearanceLink::new(dir.path()).view();
     assert_eq!(view.theme_mode, ThemeMode::Dark);
     assert_eq!(view.text_size, TextSize::ExtraLarge);
     assert_eq!(view.font, FontStyle::Monospaced);
+    assert_eq!(view.problem, None);
 
     fs::write(&file, r#"{"font":"serif"}"#).unwrap();
     let view = AppearanceLink::new(dir.path()).view();
