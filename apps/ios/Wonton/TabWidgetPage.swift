@@ -50,6 +50,7 @@ struct CallRelayHint: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(Color(colors.textPrimary))
+        .wontonIconMono()
         .padding(WontonTheme.spacing.s8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WontonTheme.radii.control))

@@ -45,6 +45,7 @@ struct AttachmentTile: View {
                 if let remove {
                     Button(action: remove) {
                         WontonIcon.close.view(size: WontonTheme.size.iconTiny)
+                            .wontonIconMono()
                             .foregroundStyle(.white)
                             .padding(WontonTheme.spacing.s4)
                             .background(Circle().fill(.black.opacity(WontonTheme.ratio.scrim)))
@@ -115,7 +116,7 @@ struct AttachmentTile: View {
         case .paused:
             ZStack {
                 Color.black.opacity(WontonTheme.ratio.scrim)
-                WontonIcon.pause.view(size: WontonTheme.size.iconSmall).foregroundStyle(.white)
+                WontonIcon.pause.view(size: WontonTheme.size.iconSmall).wontonIconMono().foregroundStyle(.white)
             }
             .allowsHitTesting(false)
             .accessibilityElement()

@@ -502,6 +502,7 @@ private struct PanelEmpty: View {
             Spacer()
             Button(action: add) {
                 WontonIcon.add.view(size: WontonTheme.size.icon)
+                    .wontonIconMono()
                     .foregroundStyle(Color(colors.textPrimary))
                     .frame(width: WontonTheme.size.detailIcon, height: WontonTheme.size.detailIcon)
                     .background(.ultraThinMaterial, in: Circle())

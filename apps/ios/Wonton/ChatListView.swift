@@ -126,6 +126,7 @@ struct ChatListView: View {
         if #available(iOS 26, *) {
             NavigationLink(value: ChatRoute.startChat) {
                 WontonIcon.add.view()
+                    .wontonIconMono()
                     .foregroundStyle(Color(colors.onPrimary))
             }
             .buttonStyle(.glassProminent)
@@ -138,6 +139,7 @@ struct ChatListView: View {
         } else {
             NavigationLink(value: ChatRoute.startChat) {
                 WontonIcon.add.view()
+                    .wontonIconMono()
                     .foregroundStyle(Color(colors.textPrimary))
                     .frame(width: WontonTheme.size.floatingActionButton, height: WontonTheme.size.floatingActionButton)
                     .background(.ultraThinMaterial, in: Circle())

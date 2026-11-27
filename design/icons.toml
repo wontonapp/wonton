@@ -1,74 +1,99 @@
-# 语义名 = Phosphor 的名字。fill 表示还要实心版（选中时用）；mirror 表示从右到左时要翻转。
-[upstream]
+# 每个语义名两套图形：phosphor 是单色线框（玻璃栏里用，也是彩色版的回滚），kubai 是彩色分层，color 取 [palette] 里的名字。
+# 没写 kubai 的只有单色版。fill 表示 Phosphor 还要实心版（选中时用）；mirror 表示从右到左时要翻转。
+[upstream.phosphor]
 package = "@phosphor-icons/core"
 version = "2.1.1"
 license = "MIT"
 
+# Kubai 是 0.x，图形会变：版本和 tarball 的校验值钉死，用到的 SVG 原件放在 kubai/svg/。
+# 升级或加图标时运行 python3 scripts/generate-design.py --vendor-kubai <tarball>。
+[upstream.kubai]
+package = "kubai-icons-static"
+version = "0.15.0"
+license = "MIT"
+integrity = "sha512-Nkgn0vaPujk/IjehYPyubgA18OQbgLN/ECCnk06LUgyeIbpMjOfM/BRHEi40XMD72nngeQEtV22aYKY/GrifTw=="
+# 包里 svg/ 的主色。换色时按它反推每个颜色是怎么从主色调出来的。
+base = "#5393FF"
+
+# 图标的主色。同一张图浅色、深色两种页面都用，所以每个颜色对两边的页面底和卡片底都要有 3:1（生成时检查）。
+[palette]
+blue = "#2A78F5"
+green = "#188F4F"
+orange = "#CB5C18"
+red = "#E44045"
+purple = "#8365F1"
+pink = "#D74781"
+teal = "#0D8C80"
+amber = "#BF7A0A"
+indigo = "#6072EA"
+sky = "#1284C2"
+slate = "#6D7E97"
+
 [icons]
-add = { phosphor = "plus" }
-agent = { phosphor = "sparkle", fill = true }
-apps = { phosphor = "squares-four", fill = true }
-attach = { phosphor = "paperclip" }
-back = { phosphor = "caret-left", mirror = true }
-blocked = { phosphor = "prohibit" }
-cameraOff = { phosphor = "camera-slash" }
-chat = { phosphor = "chats-circle", fill = true }
-check = { phosphor = "check" }
-checkCircle = { phosphor = "check-circle", fill = true }
+add = { kubai = "circle-plus", color = "blue", phosphor = "plus" }
+agent = { kubai = "sparkles", color = "purple", phosphor = "sparkle", fill = true }
+apps = { kubai = "grid", color = "indigo", phosphor = "squares-four", fill = true }
+attach = { kubai = "paperclip", color = "slate", phosphor = "paperclip" }
+back = { kubai = "chevron-left", color = "slate", phosphor = "caret-left", mirror = true }
+blocked = { kubai = "ban", color = "red", phosphor = "prohibit" }
+cameraOff = { kubai = "camera-off", color = "slate", phosphor = "camera-slash" }
+chat = { kubai = "messages", color = "blue", phosphor = "chats-circle", fill = true }
+check = { kubai = "circle-check", color = "green", phosphor = "check" }
+checkCircle = { kubai = "circle-check", color = "green", phosphor = "check-circle", fill = true }
 checks = { phosphor = "checks" }
-clock = { phosphor = "clock" }
-close = { phosphor = "x" }
-code = { phosphor = "code", fill = true }
-compose = { phosphor = "note-pencil" }
-connection = { phosphor = "broadcast" }
-copy = { phosphor = "copy" }
-cpu = { phosphor = "cpu", fill = true }
-device = { phosphor = "device-mobile-camera" }
-disk = { phosphor = "hard-drive" }
-document = { phosphor = "file-text", fill = true }
-download = { phosphor = "download-simple", fill = true }
-error = { phosphor = "x-circle", fill = true }
-expand = { phosphor = "corners-out" }
-eye = { phosphor = "eye" }
-file = { phosphor = "file" }
-folder = { phosphor = "folder", fill = true }
-forward = { phosphor = "caret-right", mirror = true }
-globe = { phosphor = "globe", fill = true }
-help = { phosphor = "question" }
-home = { phosphor = "house", fill = true }
-image = { phosphor = "image", fill = true }
-imageBroken = { phosphor = "image-broken" }
-info = { phosphor = "info" }
-leave = { phosphor = "record" }
-list = { phosphor = "list" }
-lock = { phosphor = "lock", fill = true }
-lockKey = { phosphor = "lock-key" }
-more = { phosphor = "dots-three" }
-music = { phosphor = "music-notes", fill = true }
-notify = { phosphor = "bell-ringing" }
-pause = { phosphor = "pause", fill = true }
-person = { phosphor = "user-plus" }
-pin = { phosphor = "push-pin", fill = true }
-play = { phosphor = "play", fill = true }
-qrCode = { phosphor = "qr-code" }
-refresh = { phosphor = "arrows-clockwise" }
-reply = { phosphor = "arrow-elbow-down-left", mirror = true }
-search = { phosphor = "magnifying-glass" }
-send = { phosphor = "arrow-up" }
-serialPort = { phosphor = "plugs" }
-server = { phosphor = "hard-drives" }
-settings = { phosphor = "gear-six", fill = true }
-share = { phosphor = "export" }
-shield = { phosphor = "shield-check", fill = true }
-star = { phosphor = "star", fill = true }
-store = { phosphor = "storefront" }
-tasks = { phosphor = "list-checks", fill = true }
-trash = { phosphor = "trash" }
-upload = { phosphor = "upload-simple" }
-usb = { phosphor = "usb" }
-videoCall = { phosphor = "video-camera", fill = true }
-voiceCall = { phosphor = "phone", fill = true }
-warning = { phosphor = "warning", fill = true }
-warningCircle = { phosphor = "warning-circle", fill = true }
-web = { phosphor = "compass" }
-wrench = { phosphor = "wrench", fill = true }
+clock = { kubai = "clock", color = "sky", phosphor = "clock" }
+close = { kubai = "circle-x", color = "slate", phosphor = "x" }
+code = { kubai = "code", color = "indigo", phosphor = "code", fill = true }
+compose = { kubai = "notebook-pen", color = "orange", phosphor = "note-pencil" }
+connection = { kubai = "radio-tower", color = "teal", phosphor = "broadcast" }
+copy = { kubai = "copy", color = "sky", phosphor = "copy" }
+cpu = { kubai = "cpu", color = "indigo", phosphor = "cpu", fill = true }
+device = { kubai = "smartphone", color = "slate", phosphor = "device-mobile-camera" }
+disk = { kubai = "hard-drive", color = "slate", phosphor = "hard-drive" }
+document = { kubai = "file-text", color = "orange", phosphor = "file-text", fill = true }
+download = { kubai = "download", color = "sky", phosphor = "download-simple", fill = true }
+error = { kubai = "circle-x", color = "red", phosphor = "x-circle", fill = true }
+expand = { kubai = "maximize", color = "indigo", phosphor = "corners-out" }
+eye = { kubai = "eye", color = "sky", phosphor = "eye" }
+file = { kubai = "file", color = "slate", phosphor = "file" }
+folder = { kubai = "folder", color = "amber", phosphor = "folder", fill = true }
+forward = { kubai = "chevron-right", color = "slate", phosphor = "caret-right", mirror = true }
+globe = { kubai = "globe", color = "teal", phosphor = "globe", fill = true }
+help = { kubai = "circle-help", color = "sky", phosphor = "question" }
+home = { kubai = "home", color = "orange", phosphor = "house", fill = true }
+image = { kubai = "image", color = "teal", phosphor = "image", fill = true }
+imageBroken = { kubai = "image-x", color = "slate", phosphor = "image-broken" }
+info = { kubai = "info", color = "blue", phosphor = "info" }
+leave = { kubai = "log-out", color = "red", phosphor = "record" }
+list = { kubai = "list", color = "slate", phosphor = "list" }
+lock = { kubai = "lock", color = "green", phosphor = "lock", fill = true }
+lockKey = { kubai = "lock-keyhole", color = "green", phosphor = "lock-key" }
+more = { kubai = "more-horizontal", color = "slate", phosphor = "dots-three" }
+music = { kubai = "music", color = "pink", phosphor = "music-notes", fill = true }
+notify = { kubai = "bell-ring", color = "amber", phosphor = "bell-ringing" }
+pause = { kubai = "pause", color = "slate", phosphor = "pause", fill = true }
+person = { kubai = "user-plus", color = "pink", phosphor = "user-plus" }
+pin = { kubai = "pin", color = "red", phosphor = "push-pin", fill = true }
+play = { kubai = "play", color = "blue", phosphor = "play", fill = true }
+qrCode = { kubai = "scan-qr", color = "indigo", phosphor = "qr-code" }
+refresh = { kubai = "sync", color = "sky", phosphor = "arrows-clockwise" }
+reply = { kubai = "reply", color = "blue", phosphor = "arrow-elbow-down-left", mirror = true }
+search = { kubai = "search", color = "slate", phosphor = "magnifying-glass" }
+send = { kubai = "send", color = "blue", phosphor = "arrow-up" }
+serialPort = { kubai = "plug", color = "orange", phosphor = "plugs" }
+server = { kubai = "server", color = "teal", phosphor = "hard-drives" }
+settings = { kubai = "settings", color = "slate", phosphor = "gear-six", fill = true }
+share = { kubai = "share", color = "blue", phosphor = "export" }
+shield = { kubai = "shield-check", color = "green", phosphor = "shield-check", fill = true }
+star = { kubai = "star", color = "amber", phosphor = "star", fill = true }
+store = { kubai = "store", color = "orange", phosphor = "storefront" }
+tasks = { kubai = "list-checks", color = "green", phosphor = "list-checks", fill = true }
+trash = { kubai = "trash", color = "red", phosphor = "trash" }
+upload = { kubai = "cloud-upload", color = "sky", phosphor = "upload-simple" }
+usb = { kubai = "usb", color = "indigo", phosphor = "usb" }
+videoCall = { kubai = "video", color = "blue", phosphor = "video-camera", fill = true }
+voiceCall = { kubai = "phone", color = "green", phosphor = "phone", fill = true }
+warning = { kubai = "triangle-alert", color = "amber", phosphor = "warning", fill = true }
+warningCircle = { kubai = "circle-alert", color = "orange", phosphor = "warning-circle", fill = true }
+web = { kubai = "compass", color = "blue", phosphor = "compass" }
+wrench = { kubai = "wrench", color = "slate", phosphor = "wrench", fill = true }
