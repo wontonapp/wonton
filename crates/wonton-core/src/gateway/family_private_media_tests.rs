@@ -50,7 +50,13 @@ async fn removal_waits_for_the_media_credential_to_be_revoked() {
     let media = bed.gateway.media.clone().unwrap();
     media
         .providers
-        .route_to(alice, |_| true, PROVIDER)
+        .route_to(
+            alice,
+            |_| true,
+            PROVIDER,
+            &MediaOperation::Playback,
+            Some(&MediaKind::Video),
+        )
         .await
         .unwrap();
 

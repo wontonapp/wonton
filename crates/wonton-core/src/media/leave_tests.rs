@@ -65,7 +65,13 @@ async fn leaving_cancels_tasks_stops_sessions_and_revokes_only_that_person() {
     for person in [alice, bob] {
         media
             .providers
-            .route_to(person, anyone, PROVIDER)
+            .route_to(
+                person,
+                anyone,
+                PROVIDER,
+                &MediaOperation::Playback,
+                Some(&MediaKind::Video),
+            )
             .await
             .unwrap();
     }
@@ -106,7 +112,13 @@ async fn an_uninstalled_provider_only_loses_the_cores_copy() {
     let media = Media::with_directory(dir.path(), Arc::new(directory), HttpClient::new()).unwrap();
     media
         .providers
-        .route_to(alice, |_| true, PROVIDER)
+        .route_to(
+            alice,
+            |_| true,
+            PROVIDER,
+            &MediaOperation::Playback,
+            Some(&MediaKind::Video),
+        )
         .await
         .unwrap();
     drop(media);
@@ -130,7 +142,13 @@ async fn an_uninstalled_provider_only_loses_the_cores_copy() {
     let media = Media::with_directory(dir.path(), Arc::new(directory), HttpClient::new()).unwrap();
     media
         .providers
-        .route_to(alice, |_| true, PROVIDER)
+        .route_to(
+            alice,
+            |_| true,
+            PROVIDER,
+            &MediaOperation::Playback,
+            Some(&MediaKind::Video),
+        )
         .await
         .unwrap();
     assert_eq!(book.issued.lock().unwrap().len(), 1);
