@@ -225,17 +225,6 @@ final class ChatModel {
         }
     }
 
-    func resetNavigation() {
-        awaitedPeer = nil
-        awaitedRoom = nil
-        openingFailed = false
-        visiting = nil
-        path = []
-        sideChats = [:]
-        composingSideChat = nil
-        noSideChatsRoom = nil
-    }
-
     /// 从 `origin` 这一页打开和 `peer` 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开，这期间留在原页；
     /// 默认保留邀请供主人接受；系统打开默认 Agent 时接受邀请并等加入。返回主界面要不要切到聊天页。
     @discardableResult
@@ -278,6 +267,26 @@ final class ChatModel {
         }
     }
 
+    private var pendingAsk: PendingAsk?
+    private var askRequestId: UInt32 = 0
+    /// 没收到回执（旧核心）时，等这么短就按旧行为自己找默认 Bot 的私聊打开。
+    private var askFallback: Task<Void, Never>?
+    /// 最近一次问 Bot 失败的原因；成功或开始重试时清掉。
+    var askFailure: AskFailureBanner?
+}
+
+extension ChatModel {
+    func resetNavigation() {
+        awaitedPeer = nil
+        awaitedRoom = nil
+        openingFailed = false
+        visiting = nil
+        path = []
+        sideChats = [:]
+        composingSideChat = nil
+        noSideChatsRoom = nil
+    }
+
     /// 按房间 ID 打开（matrix.to 的房间和事件永久链接都落到房间）：已经在的就直接开；还没加入就先加入、等它出现。
     func openRoom(id: String) {
         awaitedPeer = nil
@@ -295,6 +304,45 @@ final class ChatModel {
         }
     }
 
+    private func show(_ roomId: String, from origin: AppTab) {
+        if origin == .chat {
+            path = [.room(roomId)]
+        } else {
+            visiting = VisitingRoom(tab: origin, roomId: roomId)
+        }
+    }
+
+    private func openAwaitedChat() {
+        if let room = awaitedRoom {
+            if viewModel.rooms.contains(where: { $0.roomId == room && $0.membership == .joined }) {
+                awaitedRoom = nil
+                path = [.room(room)]
+            } else if viewModel.problem != nil {
+                awaitedRoom = nil
+                openingFailed = true
+            }
+            return
+        }
+        guard let peer = awaitedPeer else { return }
+        if let room = viewModel.rooms.first(where: { $0.directUserId == peer && $0.membership == .joined }) {
+            awaitedPeer = nil
+            show(room.roomId, from: awaitedFrom)
+        } else if viewModel.problem != nil {
+            awaitedPeer = nil
+            openingFailed = true
+        }
+    }
+
+    func startNewChat() {
+        resetNavigation()
+        path = [.startChat]
+    }
+
+    func openConfirmations() {
+        resetNavigation()
+        path = [.confirmations]
+    }
+
     /// 一次“问 Bot”的回执还没到时记着的请求；只认这个 ID 的回执。
     private struct PendingAsk {
         let id: UInt32
@@ -310,13 +358,6 @@ final class ChatModel {
         let reason: AskFailure
         let detail: String
     }
-
-    private var pendingAsk: PendingAsk?
-    private var askRequestId: UInt32 = 0
-    /// 没收到回执（旧核心）时，等这么短就按旧行为自己找默认 Bot 的私聊打开。
-    private var askFallback: Task<Void, Never>?
-    /// 最近一次问 Bot 失败的原因；成功或开始重试时清掉。
-    var askFailure: AskFailureBanner?
 
     /// 当前打开的房间能不能原样当作“问 Bot”的目标：Bot 私聊、本人 Bot 的主房间，或者只读的通知房
     /// （只读的交给核心回明确原因，不静默换成默认 Bot）。
@@ -442,46 +483,5 @@ final class ChatModel {
         case .other:
             pendingAsk = nil
         }
-    }
-
-    private func show(_ roomId: String, from origin: AppTab) {
-        if origin == .chat {
-            path = [.room(roomId)]
-        } else {
-            visiting = VisitingRoom(tab: origin, roomId: roomId)
-        }
-    }
-
-    private func openAwaitedChat() {
-        if let room = awaitedRoom {
-            if viewModel.rooms.contains(where: { $0.roomId == room && $0.membership == .joined }) {
-                awaitedRoom = nil
-                path = [.room(room)]
-            } else if viewModel.problem != nil {
-                awaitedRoom = nil
-                openingFailed = true
-            }
-            return
-        }
-        guard let peer = awaitedPeer else { return }
-        if let room = viewModel.rooms.first(where: { $0.directUserId == peer && $0.membership == .joined }) {
-            awaitedPeer = nil
-            show(room.roomId, from: awaitedFrom)
-        } else if viewModel.problem != nil {
-            awaitedPeer = nil
-            openingFailed = true
-        }
-    }
-}
-
-extension ChatModel {
-    func startNewChat() {
-        resetNavigation()
-        path = [.startChat]
-    }
-
-    func openConfirmations() {
-        resetNavigation()
-        path = [.confirmations]
     }
 }
