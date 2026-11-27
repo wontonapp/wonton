@@ -36,7 +36,7 @@
 
 ## 正在跑的
 
-- 没有在跑的了；`green1` 已结束（34 条 0 失败）。截图在 minidir `/Users/jiale/wonton-dev/chat-ios-831/.walk/shots-1122-203512/`（深色在 `dark/`）。记得 `xcrun simctl shutdown chat-ios-831`。
+- 没有在跑的了；`green1` 已结束（34 条 0 失败）。截图在 minidir `/Users/jiale/wonton-dev/chat-ios-831/.walk/shots-1122-203512/`（`/Users/jiale` 是开发机家目录，可换成 `~/`；深色在 `dark/`）。记得 `xcrun simctl shutdown chat-ios-831`。
 
 ## 剩下步骤
 
@@ -56,7 +56,7 @@
 - `Logger.notice` 收 `OSLogMessage`，**不能用 `+` 拼**；先拼成 String 再 `"\(s, privacy: .public)"`。
 - 浮空/多元素：盖层开着时主对话还在无障碍树里，`app.textViews["Message"]`、`barActivity` 都要 `firstMatch`（已用 `input`/`visibleBounds` 包起来）。
 - `ForwardRoomSheet` 的发送要 `pending` + `onDismiss` 才发；room id 用字符串比较，别改成 target 化。
-- 卡目录已改成 `/home/npchy/wonton-dev/new-wt`（host-guard 只认卡上的目录和 cwd，两个 worktree 都要用）。
+- 卡目录已改成 `/home/npchy/wonton-dev/new-wt`（`/home/npchy` 是开发机家目录，可换成 `~/`；host-guard 只认卡上的目录和 cwd，两个 worktree 都要用）。
 - 卡名 `chat-ios-831`；PR 都开着草稿状态，别自己合。
 
 交接完毕

@@ -133,12 +133,14 @@ impl PluginManager {
         file.reconcile_problem = problem.clone();
         match problem {
             Some(problem) => {
+                file.problem = Some(problem.clone());
                 store.save(id, &file)?;
                 Err(unavailable(problem))
             }
             None => {
                 // 值不一定变，接口路径和默认模型却会跟着网关版本变：成功就按现在的刷新一遍变量。
                 self.refresh_model_vars(id, &route, langs, &mut file);
+                file.problem = None;
                 store.save(id, &file)?;
                 Ok(())
             }

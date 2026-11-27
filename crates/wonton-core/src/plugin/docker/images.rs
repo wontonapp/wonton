@@ -22,6 +22,21 @@ impl Engine {
         Ok(inspect.config.and_then(|config| config.healthcheck))
     }
 
+    /// 镜像自带的 `VOLUME` 挂载点。镜像要先拉下来。
+    pub async fn image_volumes(&self, image: &str) -> Result<Vec<String>> {
+        let inspect = self.docker.inspect_image(image).await.map_err(|e| {
+            self.fail(
+                "plugin-install-docker-context-image-healthcheck",
+                &[("image", image.into())],
+                e,
+            )
+        })?;
+        Ok(inspect
+            .config
+            .and_then(|config| config.volumes)
+            .unwrap_or_default())
+    }
+
     /// 镜像的平台列表（`GET /distribution/{name}/json`，不拉镜像）：架构，以及单个清单时报的压缩后大小。
     /// 装了镜像仓库的凭据由 daemon 自己用。读不到时算查不出来，由调用方决定怎么显示。
     pub async fn image_platforms(&self, image: &str) -> Result<ImagePlatforms> {

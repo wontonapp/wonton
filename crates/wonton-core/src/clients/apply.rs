@@ -213,7 +213,7 @@ pub(crate) async fn block_reason(
         && gateway
             .entry
             .as_ref()
-            .is_none_or(|entry| !entry.lan_forward_available())
+            .is_none_or(|entry| !entry.lan().usable())
     {
         return Ok(Some(EntryBlock::LanUnavailable));
     }
@@ -373,12 +373,13 @@ async fn check_can_open(
             vec![("error", format!("{cause:#}"))],
         )
     })?;
-    if view.suffix.is_none() || !certificate_ready(&view.certificate) {
-        return Err(error(ClientsFailure::Conflict, "clients-switch-domain"));
-    }
+    let suffix = match view.suffix {
+        Some(suffix) if certificate_ready(&view.certificate) => suffix,
+        _ => return Err(error(ClientsFailure::Conflict, "clients-switch-domain")),
+    };
 
-    if kind == Kind::Lan && !entry.lan_forward_available() {
-        return Err(error(ClientsFailure::LanUnavailable, "clients-switch-lan"));
+    if kind == Kind::Lan {
+        super::lan_forward::check_open(gateway, entry, &suffix).await?;
     }
 
     let route = gateway

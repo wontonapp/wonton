@@ -114,10 +114,16 @@ impl EntryAdmin {
             .is_some_and(|c| c.core_in_container())
     }
 
-    pub fn lan_forward_available(&self) -> bool {
+    /// 局域网入口能不能用；核心不在容器里（或还没检测过）时按不能用。
+    pub fn lan(&self) -> crate::clients::lan_forward::LanState {
         self.containers
             .as_ref()
-            .is_some_and(|containers| containers.lan_forward_available())
+            .map(|containers| containers.lan())
+            .unwrap_or(crate::clients::lan_forward::LanState::Unknown)
+    }
+
+    pub fn lan_forward_available(&self) -> bool {
+        self.lan().usable()
     }
 
     pub fn containers(&self) -> Option<&std::sync::Arc<EntryContainers>> {

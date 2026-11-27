@@ -119,8 +119,30 @@ impl PluginManager {
         })
     }
 
-    /// 检测一次，按结果更新开了局域网端口的插件，结论变了才写日志。
+    /// 检测一次，按结果更新开了局域网端口的插件和局域网入口，结论变了才写日志。
     pub(in crate::plugin) async fn lan_pass(
+        &self,
+        langs: &Languages,
+    ) -> Result<Detected, InstallError> {
+        let detected = self.follow_detection(langs).await?;
+        self.follow_entry(&detected, self.lan.announce.as_deref())
+            .await;
+        Ok(detected)
+    }
+
+    /// 局域网入口跟上这次检测。放在检测锁外：卸载先拿入口的串行锁再拿检测锁，这里反过来拿会死锁。
+    pub(super) async fn follow_entry(
+        &self,
+        detected: &Detected,
+        announce: Option<&[super::announce::Announced]>,
+    ) {
+        if let Some(gateway) = self.clients_gateway() {
+            let picked = super::entry_address::pick(detected, announce);
+            crate::clients::lan_forward::follow(&gateway, picked).await;
+        }
+    }
+
+    pub(super) async fn follow_detection(
         &self,
         langs: &Languages,
     ) -> Result<Detected, InstallError> {

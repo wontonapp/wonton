@@ -131,7 +131,7 @@ impl PluginManager {
                     .as_ref()
                     .is_some_and(|p| p.models.is_some())
                 {
-                    for (plugin, error) in self.reconcile_models().await {
+                    for (plugin, error) in self.reconcile_models_locked().await {
                         tracing::error!(%plugin, %error, "模型网关装好了，接上使用方失败");
                     }
                 }

@@ -6,6 +6,7 @@ mod bot_avatars;
 mod bot_intents;
 pub mod bot_profile;
 pub mod bot_services;
+mod bot_volumes;
 pub mod bot_web;
 mod bot_web_install;
 mod bot_web_oidc;

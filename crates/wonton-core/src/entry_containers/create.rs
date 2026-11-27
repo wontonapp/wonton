@@ -29,8 +29,7 @@ pub(super) struct Side {
 }
 
 impl EntryContainers {
-    /// 一个组件的全部创建参数。安全选项和主 compose 里原来那段一样（ADR-0021“网络规则”）：非 root、只读根、
-    /// 能力全去、不升权、清代理变量；不挂任何 Docker socket。
+    /// 入口或连接器的全部创建参数。安全选项和主 compose 里原来那段一样（ADR-0021“网络规则”），见 [`Self::hardened`]。
     pub(super) fn side(
         &self,
         component: &'static str,
@@ -47,6 +46,28 @@ impl EntryContainers {
                     message: error.to_string(),
                 })
             })?;
+        let endpoints = endpoints(component, networks);
+        let dns = (!resolvers.is_empty()).then_some(resolvers);
+        let body = self.hardened(component, command, binds, &ports, dns, &endpoints)?;
+        Ok(Side {
+            component,
+            image,
+            body,
+            endpoints,
+        })
+    }
+
+    /// 核心建的容器共用的创建参数：非 root、只读根、能力全去、不升权、清代理变量、日志限量；不挂任何
+    /// Docker socket。端点在创建时就写进去（主网络写 NetworkMode）。
+    pub(super) fn hardened(
+        &self,
+        component: &str,
+        command: Vec<String>,
+        binds: Vec<String>,
+        ports: &[(String, String)],
+        dns: Option<Vec<String>>,
+        endpoints: &[(String, Endpoint)],
+    ) -> Result<ContainerCreateBody, EntryError> {
         let port_bindings: HashMap<String, Option<Vec<PortBinding>>> = ports
             .iter()
             .map(|(key, host)| {
@@ -60,7 +81,6 @@ impl EntryContainers {
                 )
             })
             .collect();
-        let endpoints = endpoints(component, networks);
         // `network_mode: none` 的容器接不上别的网络（Docker 29 实测）：创建时就把端点写进 networking_config，
         // 主网络写 NetworkMode，其余端点一起带上。
         let primary = endpoints.first().expect("每个组件都有网络").0.clone();
@@ -81,50 +101,45 @@ impl EntryContainers {
                 )
             })
             .collect();
-        Ok(Side {
-            component,
-            image,
-            body: ContainerCreateBody {
-                user: Some(self.user()?),
-                cmd: Some(command),
-                env: Some(
-                    ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]
-                        .into_iter()
-                        .map(|name| format!("{name}="))
-                        .collect(),
-                ),
-                labels: Some(self.labels(component)),
-                // Docker 重启时停容器用它。不写就跟镜像的 StopSignal 走，镜像改了可能来不及排空连接。
-                stop_signal: Some("SIGTERM".to_owned()),
-                exposed_ports: (!ports.is_empty())
-                    .then(|| ports.iter().map(|(key, _)| key.clone()).collect()),
-                networking_config: Some(NetworkingConfig {
-                    endpoints_config: Some(endpoints_config),
-                }),
-                host_config: Some(HostConfig {
-                    binds: Some(binds),
-                    network_mode: Some(primary),
-                    dns: (!resolvers.is_empty()).then_some(resolvers),
-                    restart_policy: Some(RestartPolicy {
-                        name: Some(RestartPolicyNameEnum::ALWAYS),
-                        ..Default::default()
-                    }),
-                    cap_drop: Some(vec!["ALL".to_owned()]),
-                    security_opt: Some(vec!["no-new-privileges:true".to_owned()]),
-                    readonly_rootfs: Some(true),
-                    port_bindings: (!ports.is_empty()).then_some(port_bindings),
-                    log_config: Some(HostConfigLogConfig {
-                        typ: Some("json-file".to_owned()),
-                        config: Some(HashMap::from([
-                            ("max-size".to_owned(), "10m".to_owned()),
-                            ("max-file".to_owned(), "3".to_owned()),
-                        ])),
-                    }),
+        Ok(ContainerCreateBody {
+            user: Some(self.user()?),
+            cmd: Some(command),
+            env: Some(
+                ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]
+                    .into_iter()
+                    .map(|name| format!("{name}="))
+                    .collect(),
+            ),
+            labels: Some(self.labels(component)),
+            // Docker 重启时停容器用它。不写就跟镜像的 StopSignal 走，镜像改了可能来不及排空连接。
+            stop_signal: Some("SIGTERM".to_owned()),
+            exposed_ports: (!ports.is_empty())
+                .then(|| ports.iter().map(|(key, _)| key.clone()).collect()),
+            networking_config: Some(NetworkingConfig {
+                endpoints_config: Some(endpoints_config),
+            }),
+            host_config: Some(HostConfig {
+                binds: Some(binds),
+                network_mode: Some(primary),
+                dns,
+                restart_policy: Some(RestartPolicy {
+                    name: Some(RestartPolicyNameEnum::ALWAYS),
                     ..Default::default()
                 }),
+                cap_drop: Some(vec!["ALL".to_owned()]),
+                security_opt: Some(vec!["no-new-privileges:true".to_owned()]),
+                readonly_rootfs: Some(true),
+                port_bindings: (!ports.is_empty()).then_some(port_bindings),
+                log_config: Some(HostConfigLogConfig {
+                    typ: Some("json-file".to_owned()),
+                    config: Some(HashMap::from([
+                        ("max-size".to_owned(), "10m".to_owned()),
+                        ("max-file".to_owned(), "3".to_owned()),
+                    ])),
+                }),
                 ..Default::default()
-            },
-            endpoints,
+            }),
+            ..Default::default()
         })
     }
 
@@ -218,7 +233,7 @@ impl EntryContainers {
 }
 
 /// 容器里只读挂的配置文件。
-fn mounts(entry: &Path, names: &[(&str, &str)]) -> Vec<String> {
+pub(super) fn mounts(entry: &Path, names: &[(&str, &str)]) -> Vec<String> {
     names
         .iter()
         .map(|(file, mount)| {

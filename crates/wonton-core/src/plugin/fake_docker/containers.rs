@@ -173,11 +173,15 @@ fn container_details(
             let body: Value = serde_json::from_slice(raw).unwrap_or(Value::Null);
             let cmd = serde_json::from_value(body["Cmd"].clone()).unwrap_or_default();
             let id = format!("exec{}", docker.execs.len() + 1);
+            let created = docker.next_exec;
+            docker.next_exec += 1;
             let exec = FakeExec {
                 container: (*name).to_owned(),
                 cmd,
                 stdin: Vec::new(),
+                started: false,
                 exit_code: None,
+                created,
             };
             docker.execs.insert(id.clone(), exec);
             json_reply(StatusCode::CREATED, json!({"Id": id}))

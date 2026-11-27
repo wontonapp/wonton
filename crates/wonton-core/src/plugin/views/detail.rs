@@ -105,7 +105,7 @@ impl PluginManager {
             blocked: None,
             notices: self.installed_notices(needs_configuration, id, m, langs, listed.firewalled),
             hints: self
-                .models_hint(id, m)
+                .models_hint(id, m, langs)
                 .into_iter()
                 .chain(self.dependency_hints(m, langs))
                 .chain(self.hosted_hint(m))

@@ -162,8 +162,18 @@ fn others(
             json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
         }
         (&Method::GET, ["images", image @ .., "json"]) => {
-            let check = docker.image_healthchecks.get(&image.join("/"));
-            json_reply(StatusCode::OK, json!({"Config": {"Healthcheck": check}}))
+            let image = image.join("/");
+            let check = docker.image_healthchecks.get(&image);
+            let volumes = docker.image_volumes.get(&image).map(|paths| {
+                paths
+                    .iter()
+                    .map(|path| (path.clone(), json!({})))
+                    .collect::<serde_json::Map<_, _>>()
+            });
+            json_reply(
+                StatusCode::OK,
+                json!({"Config": {"Healthcheck": check, "Volumes": volumes}}),
+            )
         }
         (&Method::POST, ["images", "create"]) if docker.pull_error.is_some() => json_reply(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -197,10 +207,15 @@ fn others(
                 .unwrap()
         }
         (&Method::GET, ["exec", id, "json"]) if docker.execs.contains_key(*id) => {
-            let code = docker.execs[*id].exit_code;
+            let exec = &docker.execs[*id];
+            let running = exec.exit_code.is_none() && exec.started;
             json_reply(
                 StatusCode::OK,
-                json!({"ExitCode": code, "Running": code.is_none()}),
+                json!({
+                    "ExitCode": exec.exit_code,
+                    "Running": running,
+                    "Pid": if running { 4242 } else { 0 },
+                }),
             )
         }
         _ => return None,

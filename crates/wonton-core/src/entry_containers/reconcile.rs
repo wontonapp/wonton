@@ -2,7 +2,9 @@
 
 use super::error::config_error;
 use super::target::Target;
-use super::{CONNECTOR_COMPONENT, ENTRY_COMPONENT, EntryContainers, EntryError};
+use super::{
+    CONNECTOR_COMPONENT, ENTRY_COMPONENT, EntryContainers, EntryError, LAN_FORWARD_COMPONENT,
+};
 use crate::entry_settings::EntrySettings;
 use crate::l10n;
 use crate::plugin::docker::EngineError;
@@ -10,7 +12,7 @@ use crate::plugin::languages::Languages;
 use wonton_protocol::{GateState, PublicSwitchState};
 
 impl EntryContainers {
-    /// 根据插件开关重写 HAProxy 模型，并让入口容器热加载。
+    /// 根据插件开关重写 HAProxy 模型、让局域网转发跟上，再让入口容器热加载。
     pub async fn apply_clients_model(
         &self,
         settings: &EntrySettings,
@@ -30,6 +32,13 @@ impl EntryContainers {
             ));
         }
         let core = self.core_container.as_deref().expect("已检查核心容器");
+        let project = self.project(core).await?;
+        // 有插件开着局域网入口才要 `lanfwd`；建了以后入口一直接着（见 `networks`）。
+        let link = if lan_labels.is_empty() {
+            None
+        } else {
+            self.lan_link(&project, true).await?
+        };
         let (_, networks) = self.networks(core).await?;
         // 证书还没换到新后缀时先按旧名字服务（和 `write_config` 同一条规则）。
         let names = crate::entry_certificate::published_names(
@@ -43,17 +52,12 @@ impl EntryContainers {
         } else {
             Vec::new()
         };
-        model.lan_labels = if self.lan_forward_available {
-            lan_labels
-        } else {
-            Vec::new()
-        };
-        model.lan_forward = self
-            .lan_forward_available
-            .then(|| crate::entry_haproxy::LAN_FORWARD_ADDRESS.to_owned());
+        model.lan_labels = lan_labels;
+        model.lan_forward = link.as_ref().map(|link| link.forward.to_string());
         model.connectors = vec![networks.connector];
         if applied_model.as_ref() == Some(&model) {
-            return self.reconcile_inner(Some(settings), public_access).await;
+            self.reconcile_inner(Some(settings), public_access).await?;
+            return self.follow_lan_forward(&project, link.as_ref()).await;
         }
         let snapshot = crate::entry_compose::ModelSnapshot::read(&self.install_dir)
             .map_err(|error| config_error("读取旧入口配置", error))?;
@@ -63,6 +67,7 @@ impl EntryContainers {
             crate::entry_compose::prepare_permissions(&self.install_dir)
                 .map_err(|error| config_error("入口文件权限", error))?;
             self.reconcile_inner(Some(settings), public_access).await?;
+            self.follow_lan_forward(&project, link.as_ref()).await?;
             self.reload(&self.reload_addr).await
         }
         .await;
@@ -131,6 +136,7 @@ impl EntryContainers {
         let target = Target::resolve(&self.install_dir, settings)?;
         // 文件缺了（旧版坏掉的安装）、证书换过（要按新证书重算名字）或公网证书列表和总开关对不上
         // （崩在写盘和重载之间、文件被改坏了）就按设置重写一份；否则只对容器，别把客户端开关写的标签覆盖成只有联邦。
+        // 没有设置文件的装法没有第二个写入者，每轮都按 `domain.json` 和已发布的证书写。
         let missing = !self.install_dir.join("entry/haproxy.cfg").is_file();
         let cert_changed = self.cert_changed();
         // 列表为空 ⇔ 开关关着；对不上说明文件不是这一版开关写的。
@@ -234,10 +240,10 @@ impl EntryContainers {
         public: bool,
     ) -> Result<bool, EntryError> {
         let Some(target) = target else {
-            // 没有要服务的名字和证书：两个容器都删掉，不去动网络；下次起来是新的。
+            // 没有要服务的名字和证书：容器都删掉，不去动网络；下次起来是新的。
             self.reload_pending
                 .store(false, std::sync::atomic::Ordering::SeqCst);
-            for component in [ENTRY_COMPONENT, CONNECTOR_COMPONENT] {
+            for component in [LAN_FORWARD_COMPONENT, ENTRY_COMPONENT, CONNECTOR_COMPONENT] {
                 self.engine.remove_container(&self.name(component)).await?;
             }
             return Ok(false);

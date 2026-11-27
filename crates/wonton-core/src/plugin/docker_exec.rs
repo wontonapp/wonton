@@ -33,7 +33,7 @@ impl Engine {
         stdin: Option<&[u8]>,
         timeout: Duration,
     ) -> Result<ExecOutput, EngineError> {
-        self.exec_inner(container, argv, stdin, timeout, false)
+        self.exec_inner(container, argv, stdin, timeout, false, |_| Ok(()))
             .await
     }
 
@@ -45,7 +45,33 @@ impl Engine {
         stdin: Option<&[u8]>,
         timeout: Duration,
     ) -> Result<ExecOutput, EngineError> {
-        self.exec_inner(container, argv, stdin, timeout, true).await
+        self.exec_inner(container, argv, stdin, timeout, true, |_| Ok(()))
+            .await
+    }
+
+    pub(super) async fn exec_tracked(
+        &self,
+        container: &str,
+        argv: &[String],
+        stdin: Option<&[u8]>,
+        timeout: Duration,
+        prepare: impl FnOnce(&str) -> Result<(), EngineError> + Send,
+    ) -> Result<ExecOutput, EngineError> {
+        self.exec_inner(container, argv, stdin, timeout, false, prepare)
+            .await
+    }
+
+    /// 命令的记录没了吗（容器重启时 Docker 会丢掉它），或者创建后根本没启动过（没有进程、也没有退出码）：
+    /// 这条命令不会再自行改变，剩下的事实由调用方重新验证凭据确定。
+    pub(super) async fn exec_finished(&self, id: &str) -> Result<bool, EngineError> {
+        match self.docker.inspect_exec(id).await {
+            Ok(info) => Ok(info.running == Some(false)
+                && (info.exit_code.is_some() || !info.pid.is_some_and(|pid| pid > 0))),
+            Err(bollard::errors::Error::DockerResponseServerError {
+                status_code: 404, ..
+            }) => Ok(true),
+            Err(error) => Err(from_bollard(&self.owner_languages(), "inspect exec", error)),
+        }
     }
 
     async fn exec_inner(
@@ -55,6 +81,7 @@ impl Engine {
         stdin: Option<&[u8]>,
         timeout: Duration,
         capture_stdout: bool,
+        prepare: impl FnOnce(&str) -> Result<(), EngineError> + Send,
     ) -> Result<ExecOutput, EngineError> {
         let langs = self.owner_languages();
         let context = l10n::text(
@@ -77,6 +104,7 @@ impl Engine {
             .create_exec(container, config)
             .await
             .map_err(|e| from_bollard(&langs, &context, e))?;
+        prepare(&created.id)?;
         let run = async {
             let started = self
                 .docker

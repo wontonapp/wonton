@@ -221,7 +221,14 @@ gateway-install-card-setting = Setting filled in by the request: { $title } = { 
 gateway-install-changed = The permissions, devices or settings of { $id } changed after the card was sent, so it was not upgraded. Please ask again.
 clients-switch-container = The core is not running in a container, so the entry network is unavailable
 clients-switch-domain = Configure a domain and a valid certificate before opening this entry
-clients-switch-lan = LAN access is unavailable because the LAN forwarder is not ready
+clients-switch-lan = This host's LAN address has not been detected yet. Try again shortly
+clients-switch-lan-selection = No LAN address could be chosen, so LAN access cannot be opened: { $reason }
+clients-switch-lan-not-private = This host's LAN addresses ({ $addresses }) are not private IPv4 addresses. LAN access only works on 10.x, 172.16–31.x and 192.168.x
+clients-switch-lan-wide-subnet = The LAN subnet { $subnet } extends beyond private addresses, so access cannot be limited to devices on the LAN
+clients-switch-lan-unknown-subnet = The subnet of LAN address { $address } is unknown, so access cannot be limited to devices on the LAN
+clients-switch-lan-record-wrong = The LAN domain points to { $found }. Change the record at your DNS provider to: { $record }
+clients-switch-lan-record-missing = The LAN domain has no record yet. Add this at your DNS provider: { $record }
+clients-switch-lan-record-failed = The LAN domain record could not be checked. Try again shortly. The record needed is: { $record } ({ $error })
 clients-switch-setup = Complete the app's initial registration on its website first
 clients-switch-app-unavailable = The app is not running, so its setup cannot be checked
 clients-switch-credentials = The app has not issued a password successfully

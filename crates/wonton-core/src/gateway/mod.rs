@@ -418,6 +418,8 @@ mod isolation_tests;
 #[cfg(test)]
 mod join_recovery_tests;
 #[cfg(test)]
+mod join_reissue_tests;
+#[cfg(test)]
 mod join_requests_tests;
 #[cfg(test)]
 mod join_role_tests;

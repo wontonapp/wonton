@@ -39,6 +39,14 @@ impl FakeDocker {
             .insert(image.to_owned(), check);
     }
 
+    /// 给镜像设上它自带的 `VOLUME`（Docker inspect 的 `Config.Volumes` 写法）。
+    pub fn set_image_volumes(&self, image: &str, paths: &[&str]) {
+        self.lock().image_volumes.insert(
+            image.to_owned(),
+            paths.iter().map(|path| (*path).to_owned()).collect(),
+        );
+    }
+
     /// 让 `GET /distribution/{镜像}/json` 报告这些架构（不写 `os`）。
     pub fn set_platforms(&self, image: &str, architectures: &[&str], size: Option<u64>) {
         self.lock().platforms.insert(

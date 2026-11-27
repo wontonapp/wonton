@@ -1,4 +1,4 @@
-//! 判断运行中的入口容器是否仍符合期望的安全选项。
+//! 判断运行中的入口、连接器和局域网转发是否仍符合期望的安全选项和配置。
 
 use bollard::models::{ContainerCreateBody, ContainerInspectResponse, PortBinding};
 use std::collections::HashMap;
@@ -21,6 +21,16 @@ pub(super) fn same_options(info: &ContainerInspectResponse, body: &ContainerCrea
     if ports(host.port_bindings.as_ref())
         != ports(wanted_host.and_then(|h| h.port_bindings.as_ref()))
     {
+        return false;
+    }
+    // 要的标签都得在：局域网转发的配置摘要放在标签里，配置变了就重建。
+    let labels = config.labels.clone().unwrap_or_default();
+    let labeled = body.labels.as_ref().is_none_or(|wanted| {
+        wanted
+            .iter()
+            .all(|(key, value)| labels.get(key) == Some(value))
+    });
+    if !labeled {
         return false;
     }
     let have: std::collections::BTreeSet<&str> = config

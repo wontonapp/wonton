@@ -1,5 +1,6 @@
 //! 成员和加入请求（ADR-0088）：记录在 `core/members.json`，整份重写，0600，启动时读回。
 //! 已移除的成员留在表里，用户名不再分配。邀请码只存 SHA-256；请求绑定设备 endpoint，批准后的同设备重试到期前有效。
+//! 换码不删已提交的请求，旧码只不能再发起新的加入。
 
 mod join_requests;
 mod lifecycle;
@@ -294,6 +295,7 @@ impl Members {
     }
 
     /// 主人给这个家人出码：一次一个，再出一个旧的作废。已移除的家人不再出码。
+    /// 已经提交、还没处理的加入请求不走：它们留在待批准列表里，旧码只不能再发起新的加入。
     pub fn issue_pairing_code(&self, username: &str) -> Result<IssuedCode, MembersError> {
         let mut stored = self.lock();
         let mut next = stored.clone();
@@ -311,7 +313,6 @@ impl Members {
         let expires_at_ms = (self.now_ms)() + MEMBER_PAIRING_CODE_TTL_SECS * 1000;
         record.pairing_code_hash = Some(code_hash(secret.expose()));
         record.pairing_code_expires_at_ms = Some(expires_at_ms);
-        next.joins.retain(|join| join.request.username != username);
         self.commit(&mut stored, next)?;
         Ok(IssuedCode {
             secret,

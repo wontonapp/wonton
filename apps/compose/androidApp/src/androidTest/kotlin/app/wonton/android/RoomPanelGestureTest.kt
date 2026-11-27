@@ -203,7 +203,11 @@ class RoomPanelGestureTest {
         screenshot("not-ready-resumed")
     }
 
-    /** 房间里的拖动不再拿起面板（ADR-0052 2026-11-16 起入口是按钮），各种距离和甩速都不许误开。 */
+    /**
+     * 房间里的拖动不再拿起面板（ADR-0052 2026-11-16 起入口是按钮），各种距离和甩速都不许误开。
+     * #556 报的是这一条：它在 iOS 上叫 `testRoomPullFromBottom`，入口从顶栏按钮换成 Bot 资料页后改了名，
+     * issue 和夜跑里还挂着旧名。这里一直用假核心，开头就验了按钮和拖动都碰不开、返回和条带照常。
+     */
     @Test
     fun roomSwipesStayClosedAndButtonBackAndStripWork() {
         compose.onNodeWithText("Echo").performClick()

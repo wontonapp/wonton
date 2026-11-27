@@ -1,5 +1,8 @@
 //! Recoverable member Bot creation/removal shares the ordinary Bot lifecycle.
 
+use std::collections::BTreeMap;
+
+use bollard::models::ContainerInspectResponse;
 use wonton_protocol::{BotKeeper, BotRef};
 
 use super::bot_services::{BotVars, DEFAULT_BOT};
@@ -8,7 +11,7 @@ use super::bots_lifecycle::BotCreated;
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{PluginId, PluginKind};
 use super::package::PluginPackage;
-use super::render::{Deployment, render};
+use super::render::{ContainerPlan, Deployment, render};
 use super::store::InstalledRecord;
 use super::upgrade::installed_package;
 use crate::matrix::ProvisionedBot;
@@ -279,12 +282,25 @@ impl PluginManager {
     }
 
     pub async fn sync_member_bot_home(&self, reference: &BotRef) -> Result<(), InstallError> {
+        self.sync_home(reference, false).await
+    }
+
+    /// 只收紧：私人空间的挂载比归属人现在的角色给得多（多挂了、挂错了人、该只读却可写）才按现在的角色换容器，
+    /// 不建 Bot、不放宽、不管别的漂移。成员同步半路失败时用，没轮到的家人的 Bot 不能继续留着撤掉的写权限。
+    pub async fn restrict_member_bot_home(&self, reference: &BotRef) -> Result<(), InstallError> {
+        self.sync_home(reference, true).await
+    }
+
+    async fn sync_home(&self, reference: &BotRef, tighten_only: bool) -> Result<(), InstallError> {
         let id = PluginId::parse(&reference.plugin_id)
             .map_err(|e| InstallError::Invalid(e.to_string()))?;
         let _allocating = self.bot_allocation.lock().await;
-        let result = self.sync_home_locked(&id, &reference.bot).await;
+        let result = self
+            .sync_home_locked(&id, &reference.bot, tighten_only)
+            .await;
         if result.is_err() {
-            // A failed downgrade cannot leave the previously writable mount available.
+            // A failed downgrade cannot leave the previously writable mount available. The Bot's
+            // stable volumes are mounted by name, so removing its containers keeps their data.
             for name in self.bot_containers(&id, &reference.bot).await? {
                 self.engine.remove_container(&name).await?;
             }
@@ -292,7 +308,21 @@ impl PluginManager {
         result
     }
 
-    async fn sync_home_locked(&self, id: &PluginId, bot: &str) -> Result<(), InstallError> {
+    async fn sync_home_locked(
+        &self,
+        id: &PluginId,
+        bot: &str,
+        tighten_only: bool,
+    ) -> Result<(), InstallError> {
+        let mut actual = BTreeMap::new();
+        for name in self.bot_containers(id, bot).await? {
+            if let Some(info) = self.engine.inspect_container(&name).await? {
+                actual.insert(name, info);
+            }
+        }
+        if tighten_only && actual.values().all(|info| actual_home(info).is_none()) {
+            return Ok(());
+        }
         let record = self
             .store
             .load(id)?
@@ -316,25 +346,23 @@ impl PluginManager {
         let plan = self
             .member_bot_plan(&package, &record, bot, runtime.clone())
             .await?;
-        let mut changed = false;
-        for container in &plan.containers {
-            let info = self.engine.inspect_container(&container.name).await?;
-            let actual = info
-                .as_ref()
-                .and_then(|info| info.host_config.as_ref())
-                .and_then(|host| host.mounts.as_ref());
-            let expected = container
-                .body
-                .host_config
-                .as_ref()
-                .and_then(|host| host.mounts.as_ref());
-            changed |= home_mounts(actual) != home_mounts(expected);
-            let digest = info
-                .and_then(|info| info.config)
-                .and_then(|config| config.labels)
-                .and_then(|labels| labels.get(super::render_drift::LABEL_RENDER).cloned());
-            changed |= digest.as_deref() != Some(super::render_drift::digest(container).as_str());
-        }
+        let changed = if tighten_only {
+            actual.iter().any(|(name, info)| {
+                let planned = plan.containers.iter().find(|c| &c.name == name);
+                wider(actual_home(info), planned.and_then(planned_home))
+            })
+        } else {
+            plan.containers.iter().any(|container| {
+                let info = actual.get(&container.name);
+                let digest = info
+                    .and_then(|info| info.config.as_ref())
+                    .and_then(|config| config.labels.as_ref())
+                    .and_then(|labels| labels.get(super::render_drift::LABEL_RENDER));
+                info.and_then(actual_home) != planned_home(container)
+                    || digest.map(String::as_str)
+                        != Some(super::render_drift::digest(container).as_str())
+            })
+        };
         if changed {
             self.replace_bot_containers(&package, &record, bot, runtime)
                 .await?;
@@ -351,15 +379,33 @@ fn created(bot: &str, provisioned: ProvisionedBot) -> BotCreated {
     }
 }
 
-fn home_mounts(mounts: Option<&Vec<bollard::models::Mount>>) -> Option<(&str, bool)> {
+fn actual_home(info: &ContainerInspectResponse) -> Option<(String, bool)> {
+    home_mount(info.host_config.as_ref()?.mounts.as_ref()?)
+}
+
+fn planned_home(container: &ContainerPlan) -> Option<(String, bool)> {
+    home_mount(container.body.host_config.as_ref()?.mounts.as_ref()?)
+}
+
+fn home_mount(mounts: &[bollard::models::Mount]) -> Option<(String, bool)> {
     mounts
-        .into_iter()
-        .flatten()
+        .iter()
         .find(|mount| mount.target.as_deref() == Some(super::private_homes::HOME_TARGET))
         .map(|mount| {
             (
-                mount.source.as_deref().unwrap_or(""),
+                mount.source.clone().unwrap_or_default(),
                 mount.read_only.unwrap_or(false),
             )
         })
+}
+
+/// 现有挂载比应有的给得多：不该挂、挂的不是同一个目录、该只读却可写。
+fn wider(actual: Option<(String, bool)>, expected: Option<(String, bool)>) -> bool {
+    match (actual, expected) {
+        (None, _) => false,
+        (Some(_), None) => true,
+        (Some((source, read_only)), Some((wanted, wanted_read_only))) => {
+            source != wanted || (!read_only && wanted_read_only)
+        }
+    }
 }

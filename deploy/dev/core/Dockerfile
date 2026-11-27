@@ -135,7 +135,7 @@ COPY --from=system-plugins /plugins/system-plugins /usr/share/wonton/system-plug
 COPY --from=system-plugins /plugins/default-plugins /usr/share/wonton/default-plugins
 COPY --from=docs /docs /usr/share/wonton/docs
 # 这个核心支持哪些核心管理的组件（ADR-0025）：切到不声明某个组件的镜像之前，升级器删掉它的容器。
-LABEL wonton.core.components="wonton-egress,entry,connector"
+LABEL wonton.core.components="wonton-egress,entry,connector,lan-forward"
 ENTRYPOINT ["wonton-core"]
 CMD ["serve"]
 

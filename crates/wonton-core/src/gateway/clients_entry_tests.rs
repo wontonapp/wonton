@@ -158,7 +158,6 @@ impl Home {
             Instance::default(),
             Some("wonton-core".into()),
         )
-        .with_lan_forward_available(true)
         .with_reload_addr(reload_addr);
         let access = Arc::new(
             crate::entry_access::EntryAccess::open(install.join("core/entry-access.json")).unwrap(),

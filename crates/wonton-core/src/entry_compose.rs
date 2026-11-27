@@ -316,6 +316,7 @@ pub fn prepare_permissions(dir: &Path) -> anyhow::Result<()> {
         "certs/public.crt-list",
         "certs/lan.crt-list",
         "connector.cfg",
+        "lan-forward.cfg",
         "frpc.json",
         "relay-ca.pem",
         "certs",

@@ -199,3 +199,29 @@ async fn put_state(
         Ok(ok(json!({"event_id": "$state"})))
     }))
 }
+
+/// 房间成员用状态接口改别人的成员事件：`invite` 记成邀请，其余（`ban`、`leave`）按移出房间。
+pub(super) async fn put_member_state(
+    State(fake): State<Fake>,
+    headers: HeaderMap,
+    Path((room, target)): Path<(String, String)>,
+    Json(content): Json<Value>,
+) -> Reply {
+    let mut state = fake.state();
+    reply(auth(&state, &headers).and_then(|(user, _)| {
+        let room = state
+            .rooms
+            .get_mut(&room)
+            .filter(|room| room.members.contains(&user))
+            .ok_or_else(|| error(StatusCode::FORBIDDEN, "M_FORBIDDEN"))?;
+        if content["membership"] == "invite" {
+            room.left.remove(&target);
+            room.invited.insert(target);
+        } else {
+            room.invited.remove(&target);
+            room.members.remove(&target);
+            room.left.insert(target);
+        }
+        Ok(ok(json!({"event_id": "$member"})))
+    }))
+}
