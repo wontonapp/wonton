@@ -130,6 +130,13 @@ pub enum QueueOp {
     },
     Clear,
     SetMode(QueueMode),
+    /// 整条换掉（“从这首起放这张专辑”）：一次请求换成 `entries`，`cursor` 指向要放的那一项，空着指第一项；
+    /// 越界和 `Jump` 一样回错、队列不动。`entries` 为空等于 `Clear`（`cursor` 也得空）。条目的 `source` 照
+    /// `Enqueue` 的规矩；模式不变。版本比对和别的改动一样：撞上别处先改回 409 和当前队列。
+    Replace {
+        entries: Vec<MediaItemRef>,
+        cursor: Option<usize>,
+    },
 }
 
 /// 下载完的一项，带本机路径。
