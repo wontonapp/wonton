@@ -47,7 +47,7 @@ Home Assistant 的教训：cloudhook 关了 Remote UI 还开着、单个关掉�
 好友联系不到你”，状态如实显示：
 
 - 核心删掉连接器容器（frpc、cloudflared 或 TCP 转发），清空入口容器公网前端的 `crt-list`，并在 8484 上拒绝所有 `X-Wonton-Entry: public`，
-  断开已有的公网连接。三道都做，任何一道没做成都如实显示“没关干净”和原因，不显示为已关（吸取 HA cloudhook 的教训）。
+  断开已有的公网连接（网页版开着时三道各给它留一条口子，见 ADR-0124）。三道都做，任何一道没做成都如实显示“没关干净”和原因，不显示为已关（吸取 HA cloudhook 的教训）。
 - 包括 ADR-0051 公网入口上的 Matrix 联邦和 `.well-known`：关着时别的 Matrix 服务器上的人联系不到这台，重新打开后对方重试才收到消息。
   经 iroh 配对过的云吞、局域网入口、App 都不受影响。
   配对过的云吞之间不是这条总开关能关的：它们经 iroh 走，见 [ADR-0112](0112-peer-cert-pinning.md)（核心在隧道两端终结 TLS、按配对表钉证书）。

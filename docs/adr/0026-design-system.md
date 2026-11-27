@@ -134,7 +134,8 @@ MIT，每个图标都有线框和实心。未选中用 Regular，选中用 Fill�
 不引入运行时依赖。仓库放一份白名单 `design/icons.toml`，写明语义名、Phosphor 名、上游版本和 `mirror`（返回箭头这类带方向的图标），以及上游原始 SVG 和 LICENSE。脚本从 SVG 生成，每个图标一个文件，生成结果提交进仓库，CI 重新生成并比对：
 
 - iOS：Xcode 的 SVG 资源（模板渲染，保留矢量，`mirror` 对应资源的方向属性）和 `WontonIcon` 枚举。
-- Compose：`ImageVector` 和 `WontonIcon` 对象，Android 用，`mirror` 对应 `autoMirror`；Web/Electron 的图标走 SVG/React 组件。转换用 [Valkyrie](https://github.com/ComposeGears/Valkyrie) 的命令行工具（Apache-2.0，固定版本，只在生成时用，不进 App）：它输出的就是一个图标一个文件的 `ImageVector`（1.2.1 验证过，`--auto-mirror` 按次运行，带方向和不带方向的各跑一次）。没选 svg-to-compose：2024 年后没有更新。
+- Compose：`ImageVector` 和 `WontonIcon` 对象，Android 用，`mirror` 对应 `autoMirror`。转换用 [Valkyrie](https://github.com/ComposeGears/Valkyrie) 的命令行工具（Apache-2.0，固定版本，只在生成时用，不进 App）：它输出的就是一个图标一个文件的 `ImageVector`（1.2.1 验证过，`--auto-mirror` 按次运行，带方向和不带方向的各跑一次）。没选 svg-to-compose：2024 年后没有更新。
+- Web/Electron：从同一份 SVG 生成 React 组件和 `WontonIcon`，`mirror` 用 CSS 镜像（ADR-0124）。
 
 没选的方案（2026-11 核对，Phosphor core 2.1.1）：
 
