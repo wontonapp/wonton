@@ -60,6 +60,8 @@ impl ChatLink {
     fn background_notification(self: &Arc<Self>, own: &UserId, event: BackgroundNotification) {
         tracing::info!(
             sender = %event.message.sender,
+            room = %event.room_id,
+            event = %event.event_id,
             background = self.background.load(Ordering::SeqCst),
             method = ?*self.method.borrow(),
             "background notification callback"

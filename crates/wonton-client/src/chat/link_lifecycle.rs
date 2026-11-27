@@ -14,6 +14,9 @@ use super::recovery;
 use super::session;
 use super::util::lock;
 
+/// 换会话时最多等旧同步收尾这么久；死连接的长轮询一轮 30 秒，等不到就直接放掉旧会话。
+const STOP_SYNC_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
 impl ChatLink {
     pub(super) async fn forget_current(&self) {
         self.bots.set_session(None);
@@ -30,7 +33,20 @@ impl ChatLink {
         });
         let session = lock(&self.session).take();
         if let Some(session) = session {
-            session.stop_sync().await;
+            // 停同步要等滑动同步在途的那一次请求回来：matrix-sdk 的 sliding sync 只在两次请求之间收
+            // `SyncLoopStop`（`sliding_sync::sync` 的 select 里，请求在 `sync_once` 内不受打断）。隧道刚断、
+            // 代理已经不在了的时候，那次长轮询要等到自己超时，几十秒都有可能；而调用方这时多半正要重新登录，
+            // 等待期间 `session` 是空的，要会话的动作全吃 `NotReady`。
+            //
+            // 所以只等一小会儿就放掉旧会话：Arc 一落，客户端也就走了，它在途的那次请求跟着断，服务器那边的
+            // 长轮询随之了断。把旧的留在后台停、让新登录和它并存，反而会和它的在途请求抢同一个会话（实测
+            // `a_restart_does_not_wait_for_the_dead_long_poll` 从 12s 变成 40s）。
+            if tokio::time::timeout(STOP_SYNC_GRACE, session.stop_sync())
+                .await
+                .is_err()
+            {
+                tracing::info!(slot = %self.slot, "旧同步没停下来，直接放掉旧会话");
+            }
         }
     }
 

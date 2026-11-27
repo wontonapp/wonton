@@ -105,10 +105,20 @@ impl ChatLink {
             }
             Target::External => (String::new(), None),
         };
+        // 等锁、过守卫的这会儿隧道可能又换过代理（抖动时每 1–3 秒一次）：用眼下最新的那个登录，别拿一个已经拆掉的
+        // 旧地址去 restore——旧地址的连接刚被掐断，restore 只会失败，再把连接号往前推一轮。
+        let proxy = match target {
+            Target::External => proxy,
+            _ => self.home.view().proxy.clone().or(proxy),
+        };
         if let Some(old) = active.take() {
             self.forget_current().await;
             drop(old);
         }
+        // 会话刚被清掉，视图立刻改成“正在登录”：窗口里不能还挂着上一次的 SignedIn，否则要会话的动作
+        // 都回 `NotReady`、界面却显示已登录。
+        self.view
+            .send_modify(|view| view.account = ChatAccount::SigningIn);
         *lock(&self.signing_proxy) = proxy.clone();
         tracing::info!(server = %server_id, proxy = proxy.is_some(), "Matrix sign-in starting");
         // 账号数据跟着服务器走：断线时先留着，换服务器才清。
@@ -116,8 +126,6 @@ impl ChatLink {
             self.view
                 .send_modify(|view| view.chat_layout_default = Default::default());
         }
-        self.view
-            .send_modify(|view| view.account = ChatAccount::SigningIn);
         let signed_in = match &target {
             Target::External => self.sign_in_external().await,
             _ => self.sign_in(proxy.as_ref(), server_id).await,
