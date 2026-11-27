@@ -30,7 +30,7 @@ pub const EXIT_NOT_READY: i32 = 4;
 pub const MODELS_TEST_TIMEOUT_SECS: u64 = 60;
 /// 其余操作最多等多久（秒）。
 pub const MODELS_TIMEOUT_SECS: u64 = 30;
-/// 命令一次输出的上限，超了算上游出错。
+/// 命令一次标准输出的上限（字节）：不超过它的照常解析，超过的整份算上游出错。核心执行命令时按它收。
 pub const MAX_MODELS_OUTPUT_BYTES: usize = 1024 * 1024;
 /// 一份目录最多几家服务商、一家最多几个模型。
 pub const MAX_MODEL_PROVIDERS: usize = 500;
@@ -114,7 +114,8 @@ pub struct ModelsCommandInput {
     pub op: ModelsOp,
     /// 哪个 Bot（插件规范 `bots` 里的 Bot 名）。
     pub bot: String,
-    /// App 的语言，从最想要的排起（BCP 47）。插件写给人看的那一句按它挑。
+    /// App 的语言，从最想要的排起（BCP 47）。核心发的标签都是小写（如 `zh-hans`），插件比较时不要区分大小写。
+    /// 插件写给人看的那一句按它挑。
     pub languages: Vec<String>,
 }
 
@@ -417,8 +418,10 @@ pub enum AgentModelsFailure {
 
 /// 插件给的网址能不能在 App 里打开：只收 `https://`，不收别的 scheme，防止插件让 App 打开任意协议。
 pub fn is_browser_url(url: &str) -> bool {
-    url.strip_prefix("https://").is_some_and(|rest| {
-        !rest.is_empty()
+    // 网址的 scheme 不分大小写（RFC 3986 第 3.1 节）：`HTTPS://` 也是 https。
+    url.split_once("://").is_some_and(|(scheme, rest)| {
+        scheme.eq_ignore_ascii_case("https")
+            && !rest.is_empty()
             && !rest.starts_with('/')
             && !url.chars().any(|c| c.is_whitespace() || c.is_control())
     })
@@ -492,9 +495,13 @@ impl ModelList {
         if self.models.len() > MAX_PROVIDER_MODELS {
             return Err(ModelsOutputProblem("too many models".into()));
         }
+        let mut seen = std::collections::BTreeSet::new();
         for model in &self.models {
             text("models.id", &model.id, MAX_MODELS_TEXT_CHARS)?;
             optional_text("models.name", model.name.as_deref())?;
+            if !seen.insert(model.id.as_str()) {
+                return Err(ModelsOutputProblem(format!("duplicate model {}", model.id)));
+            }
         }
         Ok(())
     }
