@@ -2,11 +2,12 @@
 //!
 //! [`store`] 是任务、播放会话、队列与配额账本的唯一落点；[`task_service`] 是任务状态机，字节在走时
 //! 任务怎么变在 `transfer`，配额的拒与记在 `quota`；[`session_service`] 管播放会话的状态与接管。
-//! [`provider`] 选提供方、按人签凭据。HTTP 在 `gateway::media`，事件不在这里。
+//! [`commands`] 是到设备的命令通道。[`provider`] 选提供方、按人签凭据。HTTP 在 `gateway::media`，事件不在这里。
 
 use std::path::Path;
 use std::sync::Arc;
 
+pub mod commands;
 mod leave;
 pub(crate) mod prefetch;
 pub(crate) mod provider;
@@ -37,6 +38,7 @@ use provider::{MediaProviders, ProviderDirectory};
 /// 网关用的媒体服务：一个库、两台状态机和提供方目录。
 pub struct Media {
     pub store: Arc<Store>,
+    pub commands: commands::Commands,
     pub tasks: TaskService,
     pub sessions: SessionService,
     pub(crate) providers: MediaProviders,
@@ -60,6 +62,7 @@ impl Media {
     ) -> Result<Self, MediaStoreError> {
         let store = Arc::new(Store::open(dir)?);
         Ok(Self {
+            commands: commands::Commands::new(store.clone()),
             tasks: TaskService::new(store.clone()),
             sessions: SessionService::new(store.clone()),
             providers: MediaProviders::new(directory, http, dir.join("keys")),

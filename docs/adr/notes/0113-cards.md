@@ -27,7 +27,7 @@
 | M10 | 队列表服务：所有操作带 `revision`，不等回 409 带快照 | `media/queue_service.rs` | M4、M9 | M | 两边读同一 `revision` 后先写一方，后写方得 409 与当前快照 | 靠 M9 |
 | M11 | 提供方客户端与凭据：按 `X-Wonton-User` 取凭据、转发、失败封解成 `MediaFailure` | `media/provider.rs`、`plugin/capabilities.rs` 的客户端 | M5、M7 | L | 假提供方回 401 → 任务 `Failed{authentication_required}` 不退避；缺凭据报 `permission_denied` | 靠 M7 |
 | M12 | 契约测试：两个假提供方（只上传 / 只播放下载）跑同一组用例 | `plugin/tests/media_source_contract/mod.rs` | M11 | L | 同一组用例两边断言一致：重试次数、断点续、换提供方壳不改 | 靠 M11 |
-| M13 | 设备命令通道：`GET /api/media/commands?after=` 长轮询、幂等、`seq` 回执、30 秒超时报 `device_no_response` | `gateway/media.rs`、`media/commands.rs` | M7 | L | 挂起→投递→回执走通；30 秒无回执→工具结果带 `device_no_response` 列全起因 | 与 M7–M12 并行 |
+| M13 | 设备命令通道：`GET /api/media/commands?device=&after=` 长轮询、幂等、`seq` 回执、30 秒超时报 `device_no_response` | `gateway/media.rs`、`media/commands.rs` | M7 | L | 挂起→投递→回执走通；30 秒无回执→工具结果带 `device_no_response` 列全起因 | 与 M7–M12 并行 |
 | M14 | MCP 工具八个（`wonton__media_*`、`wonton__backup_now`），只读不发卡、变更发卡按 ADR-0024 | `mcp/media.rs`、工具注册 | M8、M9、M13 | L | 只读工具不发卡；`backup_now` 发本人卡；删离线文件走删除类卡 | 靠 M13 |
 | M15 | 事件发出：`media.task.*`/`media.playback.*`/`media.session.taken_over` 进总线 | `media/events.rs` | M8、M9 | M | 汇聚完成→发 `media.task.done`；接管→发 `taken_over` | 靠 M8、M9 |
 | M16 | 配额与清理：两本账本（提供方上传、设备离线），超限在 `Preparing` 拒绝 | `media/quota.rs` | M7 | M | 超上限拒建任务并回当前用量与上限；显式清理后额度回 | 与 M7 并行 |

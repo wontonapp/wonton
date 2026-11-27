@@ -20,11 +20,13 @@ use wonton_protocol::media::TaskId;
 use wonton_protocol::media::view::{QuotaEntry, QuotaView};
 use wonton_protocol::media::{PlaybackSessionId, Queue};
 
+mod commands;
 mod routes;
 mod schema;
 mod sessions;
 mod tasks;
 
+pub use commands::AckState;
 pub use routes::UploadBinding;
 use schema::{QueueRow, classify, migrate, queue_row};
 pub use sessions::StoredSession;

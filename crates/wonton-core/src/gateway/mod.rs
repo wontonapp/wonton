@@ -456,6 +456,8 @@ mod mcp_tests;
 #[cfg(test)]
 mod media_browse_tests;
 #[cfg(test)]
+mod media_command_tests;
+#[cfg(test)]
 mod media_flow_tests;
 #[cfg(test)]
 mod media_quota_tests;

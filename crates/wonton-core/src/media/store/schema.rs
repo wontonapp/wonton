@@ -8,7 +8,7 @@ use rusqlite::Row;
 
 use super::MediaStoreError;
 
-pub(crate) const CURRENT_VERSION: i64 = 1;
+pub(crate) const CURRENT_VERSION: i64 = 2;
 
 /// 建表。有外部用户之前结构直接改、不写迁移（AGENTS.md“兼容”）：改了结构的库按版本号拒开，删掉重建。
 pub(super) const SCHEMA: &str = "
@@ -92,6 +92,20 @@ CREATE TABLE IF NOT EXISTS uploads (
     provider TEXT NOT NULL,
     upload_id TEXT NOT NULL,
     PRIMARY KEY (task_id, item_id)
+);
+-- 发给设备的命令（ADR-0113 第 5 节）；回执了的等设备下次拉时清。
+CREATE TABLE IF NOT EXISTS commands (
+    command_id TEXT PRIMARY KEY,
+    device TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    acked INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS commands_by_device ON commands(device, seq);
+-- 每台设备发到第几条；命令清掉了也不回退。
+CREATE TABLE IF NOT EXISTS command_seq (
+    device TEXT PRIMARY KEY,
+    last INTEGER NOT NULL
 );
 ";
 
