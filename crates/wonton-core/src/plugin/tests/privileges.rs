@@ -420,15 +420,12 @@ fn mail_sending_is_fine_without_host_network() {
 
 #[test]
 fn unknown_capabilities_are_highest_risk() {
-    use crate::plugin::privileges::{CapabilityRisk, capability_risk};
+    use crate::plugin::manifest::{RiskLevel, capability_risk};
 
-    assert_eq!(capability_risk("NET_ADMIN"), CapabilityRisk::VeryHigh);
-    assert_eq!(capability_risk("NET_RAW"), CapabilityRisk::VeryHigh);
-    assert_eq!(capability_risk("SYS_ADMIN"), CapabilityRisk::Highest);
-    assert_eq!(
-        capability_risk("future_kernel_cap"),
-        CapabilityRisk::Highest
-    );
+    assert_eq!(capability_risk("NET_ADMIN"), RiskLevel::VeryHigh);
+    assert_eq!(capability_risk("NET_RAW"), RiskLevel::VeryHigh);
+    assert_eq!(capability_risk("SYS_ADMIN"), RiskLevel::Highest);
+    assert_eq!(capability_risk("future_kernel_cap"), RiskLevel::Highest);
 }
 
 #[test]

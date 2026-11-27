@@ -7,7 +7,7 @@ use wonton_protocol::{
 use super::{ToolFailure, cards};
 use crate::l10n;
 use crate::plugin::languages::Languages;
-use crate::plugin::privileges::{self, CapabilityRisk};
+use crate::plugin::manifest::RiskLevel;
 use crate::plugin::{InstallError, PluginManager, PluginPackage};
 
 pub(super) struct Proposed {
@@ -164,7 +164,7 @@ pub(super) async fn propose(
             .manifest
             .permissions
             .iter()
-            .any(|p| privileges::risk(p) == Some(CapabilityRisk::Highest))
+            .any(|p| p.risk() == Some(RiskLevel::Highest))
         {
             let provider_second = cards::highest_confirm(&provider_package, langs);
             match &mut second {

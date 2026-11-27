@@ -2,7 +2,7 @@ use serde_json::{Map, Value, json};
 
 use super::*;
 use crate::plugin::languages::Languages;
-use crate::plugin::manifest::{Manifest, ManifestExt, Permission, PermissionExt};
+use crate::plugin::manifest::{Manifest, ManifestExt, Permission};
 
 fn base() -> Map<String, Value> {
     serde_json::from_value(json!({

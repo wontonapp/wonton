@@ -20,9 +20,8 @@ use super::file_results::human_size;
 use crate::files::share_fs::saving::{SaveTarget, StagedFile};
 use crate::l10n;
 use crate::plugin::languages::Languages;
-use crate::plugin::manifest::{LocalizedText, Manifest};
+use crate::plugin::manifest::{LocalizedText, Manifest, RiskLevel};
 use crate::plugin::manifest_widget;
-use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::InstalledRecord;
 use crate::plugin::views::{cross_origin_isolation_notice, permission_line};
 use crate::plugin::{PluginPackage, render};
@@ -317,8 +316,8 @@ pub fn agent_install(
     lines.extend(manifest_widget::manifest_notices(manifest, langs));
     let always_asks = manifest.permissions.iter().any(|p| {
         matches!(
-            privileges::risk(p),
-            Some(CapabilityRisk::VeryHigh) | Some(CapabilityRisk::Highest)
+            p.risk(),
+            Some(RiskLevel::VeryHigh) | Some(RiskLevel::Highest)
         )
     });
     if quiet_updates && !always_asks {

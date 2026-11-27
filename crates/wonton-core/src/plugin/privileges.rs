@@ -6,18 +6,12 @@ use bollard::models::{DeviceMapping, HostConfig};
 
 use super::compose::{NetworkMode, Service, VolumeEntry, VolumeType};
 use super::languages::Languages;
-use super::manifest::{Manifest, ManifestError, ManifestExt, Permission, PluginKind, Sso};
+use super::manifest::{
+    Manifest, ManifestError, ManifestExt, Permission, PluginKind, RiskLevel, Sso,
+};
 use crate::l10n::text;
 
 pub const DOCKER_SOCKET: &str = "/var/run/docker.sock";
-
-/// `cap_add` 的风险级别。名单外能力按最高级处理。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CapabilityRisk {
-    High,
-    VeryHigh,
-    Highest,
-}
 
 /// 规范化并校验 Compose 的 capability 名字。
 pub fn normalize_capability(name: &str) -> Option<String> {
@@ -32,16 +26,6 @@ pub fn normalize_capability(name: &str) -> Option<String> {
 pub fn capability_permission(name: &str) -> Permission {
     Permission::Capability {
         name: normalize_capability(name).unwrap_or_else(|| name.trim().to_ascii_uppercase()),
-    }
-}
-
-/// `cap_add` 的风险级别；未列出的 Linux capability 一律按最高级。
-pub fn capability_risk(name: &str) -> CapabilityRisk {
-    match normalize_capability(name).as_deref() {
-        Some(
-            "NET_ADMIN" | "NET_RAW" | "NET_BIND_SERVICE" | "SYS_TIME" | "SYS_NICE" | "IPC_LOCK",
-        ) => CapabilityRisk::VeryHigh,
-        _ => CapabilityRisk::Highest,
     }
 }
 
@@ -74,56 +58,10 @@ pub fn parse_security_opt(opt: &str, langs: &Languages) -> Result<SecurityOpt, S
     }
 }
 
-/// 权限对应的风险级别，供确认页和清单限制共用。
-pub fn risk(permission: &Permission) -> Option<CapabilityRisk> {
-    match permission {
-        Permission::EgressProxy
-        | Permission::NetworkLan
-        | Permission::DevicesGpu
-        | Permission::DevicesSerial
-        | Permission::DevicesUsb
-        | Permission::Device { .. } => Some(CapabilityRisk::High),
-        // 硬盘能读到整盘上的数据，还带着能发写命令的 SYS_RAWIO。
-        Permission::DevicesDisk => Some(CapabilityRisk::VeryHigh),
-        Permission::Capability { name } => Some(capability_risk(name)),
-        Permission::NetworkHost => Some(CapabilityRisk::VeryHigh),
-        Permission::HostPid
-        | Permission::HostIpc
-        | Permission::SecurityOpt
-        | Permission::Privileged
-        | Permission::DockerSocket => Some(CapabilityRisk::Highest),
-        _ => None,
-    }
-}
-
-/// 可以声明成可选、默认关的权限（ADR-0057）。判据：关着时整段字段能拿掉，插件还能运行。
-pub fn may_be_optional(permission: &Permission) -> bool {
-    matches!(
-        permission,
-        Permission::DockerSocket
-            | Permission::DevicesGpu
-            | Permission::DevicesSerial
-            | Permission::DevicesUsb
-            // 由 [`super::device::validate`] 拦下，说清为什么不能可选。
-            | Permission::DevicesDisk
-    )
-}
-
-/// 开着时注入给插件的变量名（ADR-0057）。注入给这个插件的所有服务，关着时不定义。
-pub fn permission_var(permission: &Permission) -> Option<&'static str> {
-    match permission {
-        Permission::DockerSocket => Some("WONTON_PERMISSION_DOCKER_SOCKET"),
-        Permission::DevicesGpu => Some("WONTON_PERMISSION_DEVICES_GPU"),
-        Permission::DevicesSerial => Some("WONTON_PERMISSION_DEVICES_SERIAL"),
-        Permission::DevicesUsb => Some("WONTON_PERMISSION_DEVICES_USB"),
-        _ => None,
-    }
-}
-
 /// `optional_permissions` 的键和 `off_loss`：在允许名单里、不和必需的重复、每种语言都写了。
 pub fn validate_optional(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
     for (permission, optional) in &manifest.optional_permissions {
-        if !may_be_optional(permission) {
+        if !permission.spec().optional {
             return Err(ManifestError::Invalid(text(
                 langs,
                 "plugin-install-optional-not-allowed",
@@ -182,8 +120,8 @@ pub fn validate_manifest(manifest: &Manifest, langs: &Languages) -> Result<(), M
     if restricted
         && let Some(permission) = manifest.all_permissions().find(|permission| {
             matches!(
-                risk(permission),
-                Some(CapabilityRisk::VeryHigh | CapabilityRisk::Highest)
+                permission.risk(),
+                Some(RiskLevel::VeryHigh | RiskLevel::Highest)
             )
         })
     {

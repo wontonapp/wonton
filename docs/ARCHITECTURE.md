@@ -464,8 +464,9 @@ scripts/             CI 与开发脚本
 ```
 
 插件清单的类型和 serde 解析在 `wonton-protocol::manifest`，不导出到 UniFFI；服务端的
-`plugin::manifest` 重新导出这些类型。语义校验、权限风险表、Compose 白名单和规范版本下限仍由
-`wonton-core` 执行；`ManifestExt`、`PermissionExt` 扩展 trait 保留核心的校验与权限计算方法。
+`plugin::manifest` 重新导出这些类型。权限表（写法、风险级别、能否可选、注入变量、说明的消息键）也在这里，
+每种权限一行（ADR-0128）。语义校验、Compose 白名单和规范版本下限仍由 `wonton-core` 执行；`ManifestExt` 扩展 trait
+保留核心的校验与权限计算方法。
 
 ## 选型
 

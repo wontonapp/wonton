@@ -6,8 +6,6 @@ pub use super::manifest_device::{DeviceClass, DeviceSlot, ManifestDevices};
 pub use super::manifest_gpu_images::GpuImages;
 pub(super) use super::manifest_mcp::DEFAULT_TOOL_TOTAL_SECONDS;
 pub use super::manifest_mcp::{McpEndpoint, McpTransport};
-pub use super::manifest_permission::PermissionExt;
-pub use super::manifest_permission::{Access, Permission};
 pub use super::manifest_remote::RemoteMcpSpec;
 pub use super::manifest_static::{LinkSpec, StaticWebSpec};
 use super::manifest_tabs;
@@ -20,9 +18,9 @@ pub use super::secret_spec::{
 pub use super::secret_spec::{MAX_SECRET_BYTES, is_secret_name};
 use std::collections::BTreeMap;
 pub use wonton_protocol::manifest::{
-    Accounts, BotProfile, BotServices, LocalizedTags, LocalizedText, MAX_ID_LEN, Manifest,
-    ManifestError, OidcClient, OptionalPermission, PluginId, PluginKind, ProxyCredentials,
-    RoleClaim, Runtime, Sso, TokenAuthMethod, WebUi,
+    Access, Accounts, BotProfile, BotServices, LocalizedTags, LocalizedText, MAX_ID_LEN, Manifest,
+    ManifestError, OidcClient, OptionalPermission, Permission, PluginId, PluginKind,
+    ProxyCredentials, RiskLevel, RoleClaim, Runtime, Sso, TokenAuthMethod, WebUi, capability_risk,
 };
 use wonton_protocol::{ChatForm, PortProtocol};
 

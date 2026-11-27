@@ -25,7 +25,7 @@ fn is_nvme(device: &PluginDevice) -> bool {
 }
 
 /// 生效的权限里有最高级（`docker.socket`、`privileged`、最高级的能力等）。级别和 Agent 卡片
-/// 同出 [`crate::plugin::privileges::risk`]；关着的可选项不算。
+/// 同出权限表（[`crate::plugin::Permission::risk`]）；关着的可选项不算。
 fn effective_highest(lines: &[PermissionLine]) -> bool {
     lines
         .iter()
