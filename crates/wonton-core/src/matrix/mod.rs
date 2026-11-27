@@ -11,6 +11,7 @@ mod bot_profile;
 mod contact_api;
 mod family_room;
 pub mod federation_config;
+pub mod federation_tls;
 pub mod invite_filter;
 pub mod issuer;
 mod notices;

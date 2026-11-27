@@ -17,7 +17,7 @@
 
 ## 环境
 
-代码在 npchy 的 `/home/npchy/wonton-dev/fix-833-snap`（分支 `fix/ios-push-lock`），构建发 mini（`ssh mini-ios`），
+代码在开发机的 `~/wonton-dev/fix-833-snap`（分支 `fix/ios-push-lock`），构建发开发机（`ssh mini-ios`），
 Swift 用例和 UI 用例在模拟器上跑。连栈的 UI 用例走 `mini-walkthrough.sh`。
 
 ## 结论

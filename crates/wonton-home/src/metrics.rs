@@ -82,7 +82,9 @@ impl App {
             let Some((label, _)) = name.split_once('.') else {
                 continue;
             };
-            if !store.data.homes.contains_key(label) {
+            // `system` is an operator identity with no home row; keep its
+            // proxies/connection counts so the hook's 16-proxy cap is real.
+            if !store.data.homes.contains_key(label) && label != "system" {
                 continue;
             }
             match metric {
@@ -100,8 +102,9 @@ impl App {
                     } else {
                         value
                     };
-                    let home = store.data.homes.get_mut(label).expect("known home");
-                    home.usage_bytes = home.usage_bytes.saturating_add(delta);
+                    if let Some(home) = store.data.homes.get_mut(label) {
+                        home.usage_bytes = home.usage_bytes.saturating_add(delta);
+                    }
                 }
                 _ => {}
             }

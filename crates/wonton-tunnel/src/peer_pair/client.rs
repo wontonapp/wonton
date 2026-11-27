@@ -64,6 +64,27 @@ pub async fn deliver_decision(
         })
 }
 
+/// 把自己的自签叶证书送给对方（ADR-0112）：配对成立后互换，轮换时新旧一起给；`ack` 表示这是对
+/// 对方最近一条的回执。
+pub async fn deliver_certificate(
+    endpoint: &Endpoint,
+    to: iroh::EndpointAddr,
+    certificate: super::PeerCertificate,
+    ack: bool,
+) -> Result<(), TunnelError> {
+    exchange(endpoint, to, PeerMessage::Certificate { certificate, ack })
+        .await
+        .and_then(|reply| match reply {
+            PeerReply::Ok => Ok(()),
+            PeerReply::Error { message, .. } => Err(TunnelError::transport(format!(
+                "对方没有收下证书：{message}"
+            ))),
+            other => Err(TunnelError::protocol(format!(
+                "证书的回应不对：对方回的是 {other:?}"
+            ))),
+        })
+}
+
 /// 告诉对方我们删了和它的配对。尽力而为：对方收没收到都返回，对方离线时它以后在联邦握手被拒时知道
 /// （ADR-0050 的“状态”）。
 pub async fn notify_removed(

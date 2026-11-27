@@ -52,6 +52,8 @@ pub mod net;
 pub mod oidc;
 pub mod owner;
 pub mod pairing;
+pub(crate) mod peer_tls;
+pub(crate) mod peer_window;
 pub mod peers;
 pub mod plugin;
 pub mod private_home;

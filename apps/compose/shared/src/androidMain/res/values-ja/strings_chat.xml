@@ -171,8 +171,13 @@
     <string name="timeline_send_failure_upstream">サーバーの問題</string>
     <!-- 核心がまだ種類を分けられない失敗メッセージ横の脚注。引数なし。原文があるときは原文に置き換わる。 -->
     <string name="timeline_send_failure_other">送信できませんでした</string>
-    <string name="room_bot_other_private">これは家族の他の人のプライベート Bot です。持ち主はまだ利用を許可していません。</string>
+    <string name="room_bot_owner_private">これは家族の他の人のプライベート Bot です。持ち主はまだ利用を許可していません。</string>
     <string name="room_bot_grant_revoked">この Bot へのアクセスは取り消されました。</string>
     <string name="room_bot_unavailable">この Bot は今使えません。</string>
     <string name="room_bot_unknown">この Bot に送れるかまだ確かめていません。</string>
+    <string name="room_bot_role_lacks_shared_bots">これは家族の共有 Bot ですが、あなたの役割では共有 Bot を使えません。</string>
+    <string name="room_bot_app_not_shared">このアプリはあなたに開放されていません。</string>
+    <string name="room_bot_contact_pending">連絡先のリクエストはまだ承認待ちです。</string>
+    <string name="room_bot_contact_declined">相手が拒否したか、相手のサーバーにこの Bot がありません。</string>
+    <string name="room_bot_missing">この Bot はまだ作成されていません。</string>
 </resources>

@@ -712,6 +712,7 @@ mod tests {
             },
             installing_bots: Vec::new(),
             rooms: Vec::new(),
+            shared_contacts: Vec::new(),
             problem: None,
             push: PushStatus::NoEndpoint,
             pending_confirmations: Vec::new(),

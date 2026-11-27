@@ -144,6 +144,19 @@ impl PeerTable {
         }
     }
 
+    /// 一次出站 TLS 失败：这台服务器记成离线，带上原因（pin 不符、名字不符等），下一次握手或探活成功
+    /// 后由状态任务改回去。QUIC 连接本身还在，只是 Tuwunel 这一路走不通。
+    pub(crate) fn note_tls_failure(&self, name: &str, err: &TunnelError) {
+        let next = offline_status(&self.status, name, err);
+        self.status.send_if_modified(|states| {
+            if states.get(name) == Some(&next) {
+                return false;
+            }
+            states.insert(name.to_owned(), next);
+            true
+        });
+    }
+
     /// 停掉所有任务并断开连接。转发器停止时调用；状态条目留给正在订阅的嵌入方看最后一份。
     pub(crate) fn stop_all(&self) {
         for (_, tracked) in lock(&self.peers).drain() {

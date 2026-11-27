@@ -67,6 +67,8 @@ pub(super) async fn keep_checking(home: Weak<HomeLink>, endpoint: Endpoint, clie
         wait = match result {
             Ok(_) => {
                 relay_lost = 0;
+                // 刚确认通了：一直走中继、又有直连候选时，隧道客户端趁空闲重拨一次。
+                client.redial_if_stuck_on_relay();
                 CHECK_INTERVAL
             }
             Err(err) => {

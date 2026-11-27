@@ -6,10 +6,14 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use wonton_l10n::l10n;
+use wonton_matrix::MatrixSession;
+
 use wonton_protocol::{ChatAccount, ChatFailure, ChatSync, HomeStatus, ProxySettings};
 
 use super::link::Active;
 use super::{ChatLink, failure, lock};
+use crate::l10n::{CATALOG, language};
 
 /// 登录到哪里：经家里的本地代理登录配对的服务器，或者直连外部 Matrix 账号的 homeserver（ADR-0051）。
 /// `HomeOffline` 是本机还有那台服务器的会话、本地代理却还没起来（隧道没通）：先不带代理恢复，代理来了再由带代理的
@@ -28,6 +32,9 @@ const OFFLINE_GRACE: Duration = Duration::from_millis(500);
 /// 第一次重试前等这么久，之后每次翻倍，最多等 [`MAX_BACKOFF`]。
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
+
+/// 一次登录最多等多久：开存储、建同步服务这几步没有自己的时限。超时按传输错误收掉，走退避重登。
+const SIGN_IN_BUDGET: Duration = Duration::from_secs(90);
 
 /// 自动重登的进度。每次开始登录都换一代：还在等的重试醒来发现代数变了就作罢，同一时刻最多一路重试在等。
 #[derive(Default)]
@@ -107,14 +114,7 @@ impl ChatLink {
             }
             Target::External => (String::new(), None),
         };
-        // 会话马上要让位（清理本身可能等 2 秒），视图先改成“正在登录”：这期间不能还挂着上一次的 SignedIn，
-        // 否则要会话的动作都回 `NotReady`、界面却显示已登录。
-        self.view
-            .send_modify(|view| view.account = ChatAccount::SigningIn);
-        if let Some(old) = active.take() {
-            self.forget_current().await;
-            drop(old);
-        }
+        self.retire_active(&mut active).await;
         // 清理这会儿隧道可能又换过代理（抖动时每 1–3 秒一次）：用眼下最新的那个登录，别拿一个已经拆掉的旧地址
         // 去 restore。走的时候还有代理、这时没了就交给 follow_home 的 `None` 分支（它会断开会话、离线恢复）。
         let proxy = match target {
@@ -129,10 +129,11 @@ impl ChatLink {
             self.view
                 .send_modify(|view| view.chat_layout_default = Default::default());
         }
-        let signed_in = match &target {
-            Target::External => self.sign_in_external().await,
-            _ => self.sign_in(proxy.as_ref(), server_id).await,
-        };
+        self.view
+            .send_modify(|view| view.account = ChatAccount::SigningIn);
+        let signed_in = self
+            .sign_in_within_budget(&target, proxy.as_ref(), server_id)
+            .await;
         let session = match signed_in {
             Ok(session) => Arc::new(session),
             Err((reason, message)) => {
@@ -165,6 +166,44 @@ impl ChatLink {
                     message: error.to_string(),
                 };
             });
+        }
+    }
+
+    /// 收掉旧会话再登录：先把“正在登录”写进视图（不能还挂着“已登录”却没有会话），再等旧任务真的收完。
+    /// JoinHandle 落了只是请求中止，旧 Client 没落就会和新登录抢同一份存储，卡在开库上。
+    async fn retire_active(&self, active: &mut Option<Active>) {
+        let Some(mut old) = active.take() else { return };
+        self.view.send_modify(|view| {
+            view.account = ChatAccount::SigningIn;
+            view.sync = ChatSync::Starting;
+        });
+        self.forget_current().await;
+        for task in std::mem::take(&mut old.tasks) {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+
+    /// 登录一次。整个流程有时限：开存储、建同步服务这几步没有自己的时限，卡住时视图会一直停在“正在登录”、
+    /// 会话槽却是空的；超时按传输错误收掉，走退避重登。
+    async fn sign_in_within_budget(
+        &self,
+        target: &Target,
+        proxy: Option<&ProxySettings>,
+        server_id: String,
+    ) -> Result<MatrixSession, (ChatFailure, String)> {
+        let signed_in = async {
+            match target {
+                Target::External => self.sign_in_external().await,
+                _ => self.sign_in(proxy, server_id).await,
+            }
+        };
+        match tokio::time::timeout(SIGN_IN_BUDGET, signed_in).await {
+            Ok(result) => result,
+            Err(_) => Err((
+                ChatFailure::TransportUnavailable,
+                l10n!(CATALOG, language(), "chat-sign-in-timeout"),
+            )),
         }
     }
 

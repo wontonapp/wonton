@@ -48,6 +48,7 @@ fn rooms() -> Vec<RoomRow> {
         direct_user_id: Some("@agent:example.org".into()),
         plugin: None,
         bot_chat: None,
+        bot: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,
@@ -67,6 +68,27 @@ fn view(status: PluginState) -> PluginsViewModel {
         }),
         ..Default::default()
     }
+}
+
+#[test]
+fn a_room_with_a_missing_bot_record_matches_the_plugin_by_bot_ref() {
+    let mut rooms = rooms();
+    rooms[0].direct_user_id = None;
+    rooms[0].bot = Some(wonton_protocol::RoomBot {
+        bot: wonton_protocol::BotRef {
+            plugin_id: "app.agent".into(),
+            bot: "default".into(),
+        },
+        user_id: String::new(),
+        title: "Agent".into(),
+        access: wonton_protocol::BotAccess::Unusable {
+            reason: wonton_protocol::BotChatUnavailable::BotMissing,
+        },
+    });
+    let plugins = view(PluginState::Stopped);
+
+    assert!(refresh(&mut rooms, &plugins));
+    assert_eq!(rooms[0].plugin.as_ref().unwrap().plugin_id, "app.agent");
 }
 
 #[test]

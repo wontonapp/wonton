@@ -24,6 +24,11 @@ frps 的 Login/NewProxy/NewUserConn/Ping 绑定 `user` 与 `metas.token`；Close
 重置后从新值累计。并发计数最多滞后一轮采集。停用的新连接立即拒绝，既有连接由 frpc 下一次
 30 秒心跳中断，不合作的 frpc 由 frps 90 秒 heartbeatTimeout 断开，DNS 缓存不能绕过 hook。
 
+运营者还可以配置一个 `system` 身份（`WONTON_HOME_SYSTEM_TOKEN_FILE` +
+`WONTON_HOME_SYSTEM_DOMAINS`，逗号分隔）：它只用来挂固定的公网 vhost（push、relay、
+omarchy、安装页、apex），域名必须逐条在 allowlist 里，http/https 都可以，最多 16 条代理；
+它不占每家的月流量、并发和五入口配额。两个变量都不给时钩子行为不变。
+
 后台每 30 秒按已持久化的期望状态调和 DNS（包括到期的 CAA），不是对失败的用户请求偷偷重试。
 API 的失败不代表 DNS 完全没有变化；客户端用相同 endpoint 发新签名请求恢复，不能换身份重新注册。
 

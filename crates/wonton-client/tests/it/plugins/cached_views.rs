@@ -9,11 +9,18 @@ use super::rig::{Rig, WAIT, running};
 
 const PLUGINS: &str = "/_wonton/api/plugins";
 
-/// 等对话里的 Bot 列表跟上插件视图；联系人只读 Bot 列表，不等会撞上两条订阅的先后。
+/// 等对话里的 Bot 列表和联系人跟上插件视图。联系人从 Bot 列表现算、分两步写进 ViewModel，
+/// 只等其中一步会撞上两步之间的窗口。
 async fn wait_bot(rig: &Rig, user: &str) {
     let deadline = tokio::time::Instant::now() + WAIT;
     loop {
-        if rig.app.chat().bots.iter().any(|bot| bot.user_id == user) {
+        let in_bots = rig.app.chat().bots.iter().any(|bot| bot.user_id == user);
+        let in_contacts = rig
+            .app
+            .chat_contacts(String::new())
+            .iter()
+            .any(|contact| contact.user_id == user);
+        if in_bots && in_contacts {
             return;
         }
         assert!(tokio::time::Instant::now() < deadline, "{user} 没出现");

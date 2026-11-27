@@ -33,8 +33,27 @@ pub struct Report {
     pub kept: Vec<PathBuf>,
 }
 
-/// 写出已选定身份的配置；CLI 在调用前完成家名注册和证书准备，`None` 仅用于明确的私用模式。
+/// 安装目录之外的输入（数据目录、镜像）由调用方给：CLI 传环境里的，测试传临时的。
 pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
+    let data_dir = std::env::var_os("WONTON_DATA_DIR").map(PathBuf::from);
+    let image = std::env::var("WONTON_CORE_IMAGE").ok();
+    init_with(dir, requested, data_dir.as_deref(), image.as_deref())
+}
+
+pub(crate) fn init_with(
+    dir: &Path,
+    requested: Option<&str>,
+    data_dir: Option<&Path>,
+    image: Option<&str>,
+) -> anyhow::Result<Report> {
+    // 一键升级在容器里跑 init，没有调用方的环境变量：数据目录和镜像从安装目录的 `.env` 里读。
+    let data_dir = data_dir
+        .map(Path::to_path_buf)
+        .or_else(|| saved(dir, "WONTON_DATA_DIR").map(PathBuf::from));
+    let image = image
+        .map(str::to_owned)
+        .or_else(|| saved(dir, "WONTON_CORE_IMAGE"));
+    let (data_dir, image) = (data_dir.as_deref(), image.as_deref());
     if let Some(name) = requested {
         validate_server_name(name)?;
     }
@@ -66,17 +85,21 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
         &format!("SECRETS_SYSTEM={hydra}\n"),
     )?;
 
-    // 有没有入口设置决定 Tuwunel 的联邦配置（谁终结 TLS、听哪个端口、要不要自签），也决定 compose 里联邦流的
-    // 投放地址，所以先读。
+    // 有没有入口设置决定 Tuwunel 听哪个端口、compose 里联邦流投到哪，所以先读。
     let settings = crate::entry_settings::EntrySettings::load(dir)?;
     let config = tuwenel.join("tuwunel.toml");
     let server_name = server_name(&secrets, &config, requested, &mut report)?;
-    if federation_config::is_private(&server_name) {
-        tls_cert(&tuwenel, &server_name, &mut report)?;
-    }
+    // 配对联邦的证书材料（ADR-0112）：每台都生成，Tuwunel 按信任文件验证核心。
+    crate::peer_tls::ensure(&secrets, &server_name, image, &mut report)?;
     write_private(
         &config,
-        &tuwunel_config(&server_name, &registration, &public_key, settings.is_some()),
+        &tuwunel_config(
+            &server_name,
+            &registration,
+            &public_key,
+            settings.is_some(),
+            legacy_window(data_dir)?,
+        ),
     )?;
     fed_files(&tuwenel, &server_name, &mut report)?;
     // 这份 PR 之前配置和名单在 `secrets/` 根和 `fed/` 下；现在都不挂了，删掉免得两处内容分叉。
@@ -238,26 +261,23 @@ fn read_server_name(path: &Path) -> anyhow::Result<Option<String>> {
 
 /// 证书校验按安装时定下的模式选择；配对目标和黑名单在第二份配置里热加载。
 ///
-/// `entry` 是安装时有没有入口设置。有入口时 TLS 由入口容器的配对前端（8449）用有效证书终结，Tuwunel 只有
-/// 明文 8008；没有入口时公网联邦关着，Tuwunel 也不自签，但保留内部 8448 让 iroh 投进来的流有监听可落
-/// （核心的投放地址是 `tuwunel.wonton.internal:8448`），对端的严格验证会停在 TLS 握手上，配好入口才通。
-/// 私用名不受入口影响：照旧自签、两个端口和证书例外（ADR-0050 的封闭配对联邦）。
+/// `entry` 是安装时有没有入口设置。有入口时公网联邦由入口容器的配对前端（8449）用有效证书终结，Tuwunel 只有
+/// 明文 8008；没有入口时公网联邦关着，Tuwunel 保留内部 8448 让 iroh 投进来的流有监听可落（核心的投放地址是
+/// `tuwunel.wonton.internal:8448`）。两种模式下过程都一样：核心在隧道两端终结 TLS，Tuwunel 只和核心说话，
+/// 按 `SSL_CERT_FILE`（系统根加本机 CA）验证核心（ADR-0112）。
+///
+/// `window` 是升级前就有配对、还没钉住证书时的放宽窗口（ADR-0112 §5b）：老对端还在自签，钉齐后由核心关掉。
 fn tuwunel_config(
     server_name: &str,
     registration_secret: &str,
     public_key: &str,
     entry: bool,
+    window: bool,
 ) -> String {
-    let private = federation_config::is_private(server_name);
-    let ports = if private || !entry {
+    let ports = if federation_config::is_private(server_name) || !entry {
         "[8008, 8448]"
     } else {
         "8008"
-    };
-    let tls = if private {
-        "\n[global.tls]\ncerts = \"/etc/tuwunel/tuwunel-tls.crt\"\nkey = \"/etc/tuwunel/tuwunel-tls.key\"\ndual_protocol = true\n"
-    } else {
-        ""
     };
     format!(
         r#"# 由 wonton-core init 生成，升级时按新版本重写；改了会被覆盖。
@@ -280,8 +300,8 @@ registration_shared_secret = "{registration_secret}"
 # 服务器建 `#admins:<server>` 管理房间；核心的热加载在房间里发 `!admin server reload-config`（ADR-0116）。
 # 2.0 的分组名是 [global.admin.room] create，扁平键名仍兼容。
 create_admin_room = true
-# 私用名拿不到公共证书，仅封闭配对模式保留此例外（ADR-0051）；有名字但还没配入口的也不放宽。
-allow_invalid_tls_certificates = {private}
+# 老对端还在自签、还没钉住时留窗口（ADR-0112 §5b）；钉齐、窗口到期由核心关掉。
+allow_invalid_tls_certificates = {window}
 
 [global.jwt]
 enable = true
@@ -296,37 +316,25 @@ audience = ["tuwunel"]
 key = """
 {public_key}"""
 
-{tls}
 "#
     )
 }
 
-/// 为本机服务器名生成自签证书，放进 Tuwunel 的配置目录（0600）。已有的成对保留：重装、升级不换。
-/// 这份 PR 之前它和 `tuwunel.toml` 一起放在 `secrets/` 根上，升级时挪进子目录。
-fn tls_cert(tuwenel: &Path, server_name: &str, report: &mut Report) -> anyhow::Result<()> {
-    let cert = tuwenel.join("tuwunel-tls.crt");
-    let key = tuwenel.join("tuwunel-tls.key");
-    if cert.exists() && key.exists() {
-        report.kept.push(cert);
-        report.kept.push(key);
-        return Ok(());
-    }
-    let old = tuwenel.parent().context("secrets 没有上级目录")?;
-    let (old_cert, old_key) = (old.join("tuwunel-tls.crt"), old.join("tuwunel-tls.key"));
-    if old_cert.exists() && old_key.exists() {
-        fs::rename(&old_cert, &cert)?;
-        fs::rename(&old_key, &key)?;
-        report.kept.push(cert);
-        report.kept.push(key);
-        return Ok(());
-    }
-    let pair = rcgen::generate_simple_self_signed(vec![server_name.to_owned()])
-        .map_err(|e| anyhow::anyhow!("生成 {server_name} 的自签证书失败：{e}"))?;
-    write_private(&cert, &pair.cert.pem())?;
-    write_private(&key, &pair.signing_key.serialize_pem())?;
-    report.created.push(cert);
-    report.created.push(key);
-    Ok(())
+/// 安装目录 `.env` 里记下的值：一键升级在容器里跑 init，没有调用方的环境变量。
+fn saved(dir: &Path, key: &str) -> Option<String> {
+    let text = fs::read_to_string(dir.join(".env")).ok()?;
+    let prefix = format!("{key}=");
+    text.lines()
+        .find_map(|line| line.strip_prefix(&prefix).map(str::to_owned))
+        .filter(|value| !value.is_empty())
+}
+
+/// 升级前就有、还没钉住证书的配对（ADR-0112 §5b）：有这类记录、且窗口没过期时先把 `allow_invalid` 留着。
+///
+/// 记录在数据目录的 `core/peers.json`。读不出、读不懂时按失败停下：窗口该不该开是安全取舍，不猜。
+/// 运行期由 [`crate::matrix::FederationConfig`] 按同一判据（[`crate::peer_window`]）关掉。
+fn legacy_window(data_dir: Option<&Path>) -> anyhow::Result<bool> {
+    Ok(crate::peer_window::window_state(data_dir, crate::build_info::version())?.needed)
 }
 
 /// 联邦名单的初值（`secrets/tuwunel/wonton-fed.toml`，ADR-0050）。只在还没有时创建：第一次
@@ -350,6 +358,11 @@ pub(crate) fn write_private(path: &Path, text: &str) -> anyhow::Result<()> {
     write_file(path, text, 0o600)
 }
 
+/// 不保密的生成物（信任包、系统根）：主机上都能读，容器里按普通文件用。
+pub(crate) fn write_public(path: &Path, text: &str) -> anyhow::Result<()> {
+    write_file(path, text, 0o644)
+}
+
 /// 先删掉挡路的目录（旧版对账没写文件就建了容器，Docker 把缺的挂载源建成了目录，改名盖不过目录），
 /// 再写临时文件、改名：中途失败不会留下写了一半的文件。
 fn write_file(path: &Path, text: &str, mode: u32) -> anyhow::Result<()> {
@@ -370,6 +383,9 @@ fn write_file(path: &Path, text: &str, mode: u32) -> anyhow::Result<()> {
     file.sync_all()?;
     fs::rename(&tmp, path).with_context(|| format!("写入 {}", path.display()))
 }
+
+#[cfg(test)]
+mod peer_tls_tests;
 
 #[cfg(test)]
 mod entry_mode_tests;
@@ -406,16 +422,10 @@ mod tests {
         assert_eq!(mode("secrets/matrix-jwt.pem"), 0o600);
         assert_eq!(mode("secrets/tuwunel"), 0o700);
         assert_eq!(mode("secrets/tuwunel/tuwunel.toml"), 0o600);
-        assert_eq!(
-            mode("secrets/tuwunel/tuwunel-tls.crt"),
-            0o600,
-            "联邦的自签证书"
-        );
-        assert_eq!(
-            mode("secrets/tuwunel/tuwunel-tls.key"),
-            0o600,
-            "联邦的证书私钥"
-        );
+        assert_eq!(mode("secrets/peer-tls"), 0o700);
+        assert_eq!(mode("secrets/peer-tls/peer.pem"), 0o600, "对外的证书");
+        assert_eq!(mode("secrets/peer-tls/peer.key"), 0o600, "对外证书的私钥");
+        assert_eq!(mode("secrets/peer-tls/trust.pem"), 0o644, "信任包");
         assert_eq!(mode("secrets/tuwunel/wonton-fed.toml"), 0o600);
         assert_eq!(mode("wonton"), 0o755, "主机上的 wonton 命令要能执行");
 
@@ -466,15 +476,25 @@ mod tests {
     }
 
     /// 记录之前装的服务器：Tuwunel 的数据库里全是原来的名字，接着用它。
-    /// 这份 PR 之前 `tuwunel.toml` 和证书就放在 `secrets/` 根上，升级时既认旧位置也把文件挪进子目录。
+    /// 更早的安装把 `tuwunel.toml` 放在 `secrets/` 根上、自签证书当 Tuwunel 的 TLS 证书，升级时分别归位。
     #[test]
     fn an_install_from_before_the_record_keeps_its_name_and_moves_its_files() {
         let dir = tempfile::tempdir().unwrap();
-        // 私用名才有自签证书，三种文件都得跟着搬。
+        // 私用名才有旧的自签证书，配置和证书都得跟着搬。
         init(dir.path(), Some("home.wonton.internal")).unwrap();
         let secrets = dir.path().join("secrets");
         fs::remove_file(secrets.join("matrix-server-name")).unwrap();
-        for name in ["tuwunel.toml", "tuwunel-tls.crt", "tuwunel-tls.key"] {
+        for name in ["peer.pem", "peer.key"] {
+            fs::remove_file(secrets.join("peer-tls").join(name)).unwrap();
+        }
+        fs::write(secrets.join("tuwunel/tuwunel-tls.crt"), "OLD CERT").unwrap();
+        fs::write(secrets.join("tuwunel/tuwunel-tls.key"), "OLD KEY").unwrap();
+        fs::rename(
+            secrets.join("tuwunel/tuwunel.toml"),
+            secrets.join("tuwunel.toml"),
+        )
+        .unwrap();
+        for name in ["tuwunel-tls.crt", "tuwunel-tls.key"] {
             fs::rename(secrets.join("tuwunel").join(name), secrets.join(name)).unwrap();
         }
         let report = init(dir.path(), None).unwrap();
@@ -485,14 +505,17 @@ mod tests {
                 .contains(&dir.path().join("secrets/matrix-server-name"))
         );
         assert!(!secrets.join("tuwunel.toml").exists(), "旧位置的配置挪走");
-        for name in ["tuwunel.toml", "tuwunel-tls.crt", "tuwunel-tls.key"] {
+        assert!(
+            secrets.join("tuwunel/tuwunel.toml").exists(),
+            "配置挪进子目录"
+        );
+        for name in ["tuwunel-tls.crt", "tuwunel-tls.key"] {
+            assert!(!secrets.join(name).exists(), "旧位置的 {name} 还在");
+        }
+        for name in ["peer.pem", "peer.key"] {
             assert!(
-                !secrets.join(name).exists(),
-                "旧位置的 {name} 还在，容器读不到"
-            );
-            assert!(
-                secrets.join("tuwunel").join(name).exists(),
-                "{name} 挪进子目录"
+                secrets.join("peer-tls").join(name).exists(),
+                "{name} 挪进材料目录"
             );
         }
         assert!(init(dir.path(), Some("home.example")).is_err());

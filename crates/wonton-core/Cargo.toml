@@ -126,8 +126,10 @@ zip = { version = "9.3.0", default-features = false, features = ["deflate-flate2
 flate2 = "1.1.10"
 # Apache-2.0 OR MIT。读 WONTON_SHARE_CA_FILE 里额外的根证书，交给 iroh 的中继 TLS。
 rustls-pemfile = "2.2.0"
-# MIT OR Apache-2.0。读已发布证书的到期时间给 App 显示；已在依赖树里（wonton-client 用它）。
-x509-parser = "0.18.1"
+# MIT OR Apache-2.0。配对证书的有效期按“现在加五年”算，rcgen 收 `time` 的日期类型。
+time = "0.3.55"
+# MIT OR Apache-2.0。读已发布证书的到期时间给 App 显示；测试里验签证书链。
+x509-parser = { version = "0.18.1", features = ["verify-aws"] }
 
 # MIT。检测局域网地址（ADR-0019）：经 netlink 列出宿主的地址。
 [target.'cfg(target_os = "linux")'.dependencies]

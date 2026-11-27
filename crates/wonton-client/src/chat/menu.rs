@@ -506,6 +506,7 @@ mod tests {
                 key_handoff: None,
             },
             rooms: Vec::new(),
+            shared_contacts: Vec::new(),
             installing_bots: Vec::new(),
             problem: None,
             push: wonton_protocol::PushStatus::NoEndpoint,

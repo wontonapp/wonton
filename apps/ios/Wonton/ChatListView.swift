@@ -511,6 +511,7 @@ private struct InviteRow: View {
 private struct StartChatView: View {
     let model: ChatModel
     let plugins: PluginsModel
+    @Environment(\.wontonColors) private var colors
     @State private var peer = ""
 
     var body: some View {
@@ -536,9 +537,22 @@ private struct StartChatView: View {
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
                 .disabled(input.isEmpty)
-                if !contacts.isEmpty {
+                if let problem = model.viewModel.ownPrivateBotProblem {
+                    Text(problem.detail)
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                }
+                let usable = contacts.filter { contact in
+                    if case .unusable = contact.access { return false }
+                    return true
+                }
+                let unavailable = contacts.filter { contact in
+                    if case .unusable = contact.access { return true }
+                    return false
+                }
+                if !usable.isEmpty {
                     WontonGroup {
-                        ForEach(Array(contacts.enumerated()), id: \.element.userId) { index, contact in
+                        ForEach(Array(usable.enumerated()), id: \.element.key) { index, contact in
                             if index > 0 { WontonSeparator() }
                             Button {
                                 model.startChat(with: contact)
@@ -549,11 +563,37 @@ private struct StartChatView: View {
                         }
                     }
                 }
+                if !unavailable.isEmpty {
+                    Text(.Chat0.chatStartUnavailable)
+                        .wontonText(WontonTheme.typography.caption)
+                        .foregroundStyle(Color(colors.textSecondary))
+                    WontonGroup {
+                        ForEach(Array(unavailable.enumerated()), id: \.element.key) { index, contact in
+                            if index > 0 { WontonSeparator() }
+                            Button {
+                                model.startChat(with: contact)
+                            } label: {
+                                WontonRow(
+                                    title: contact.name,
+                                    value: botAccessNoticeText(contact.access).map { String(localized: $0) },
+                                    showsForward: true
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(contact.userId.isEmpty)
+                        }
+                    }
+                }
             }
             .padding(WontonTheme.spacing.pageInset)
         }
         .wontonPushedScreen(String(localized: .Chat1.chatStartTitle), usesSystemToolbar: true)
     }
+}
+
+private extension ChatContact {
+    /// 行的稳定身份：Bot 记录缺失时没有用户 ID，用精确 Bot 区分两行。
+    var key: String { bot.map { "\($0.pluginId)/\($0.bot)" } ?? userId }
 }
 
 /// 房间列表预览的一行：正文原样，图片、文件等占位在这里写。旁聊的根、结果行或旁聊里的消息给标题和状态

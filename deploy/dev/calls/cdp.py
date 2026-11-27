@@ -233,7 +233,7 @@ JS_STATS = r"""
                               width: report.frameWidth, height: report.frameHeight};
       }
       if (report.type === 'inbound-rtp' && report.kind === 'audio') {
-        row.inbound.audio = {bytes: report.bytesReceived, lost: report.packetsLost};
+        row.inbound.audio = {bytes: report.bytesReceived, lost: report.packetsLost, jitter: report.jitter};
       }
       if (report.type === 'outbound-rtp' && report.kind === 'audio') {
         row.outbound.audio = {bytes: report.bytesSent};

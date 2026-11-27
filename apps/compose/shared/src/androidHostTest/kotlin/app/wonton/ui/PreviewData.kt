@@ -376,6 +376,7 @@ internal fun previewChat() = ChatViewModel(
     encryption = previewEncryption(),
     installingBots = emptyList(),
     rooms = emptyList(),
+    sharedContacts = emptyList(),
     problem = null,
     push = PushStatus.NoEndpoint,
     pendingConfirmations = emptyList(),

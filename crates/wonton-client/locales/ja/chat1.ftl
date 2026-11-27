@@ -7,6 +7,8 @@ chat-sign-in-external-missing = このスマートフォンにはこの Matrix �
 
 chat-sign-in-login-failed = Matrixにログインできません：{ $reason }
 
+chat-sign-in-timeout = ログインがタイムアウトしました。しばらくして再試行します。
+
 # $reason はHTTPクライアントの元のエラーです。
 chat-login-http-client = HTTPクライアントを作成できません：{ $reason }
 

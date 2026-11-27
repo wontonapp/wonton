@@ -17,7 +17,7 @@ bash run.sh                              # 全部四组，约两分钟，结尾�
 cat results/*/page.log                   # 每组一份页面日志
 ```
 
-在 mini 上按要求经名额跑：把本目录复制到 mini（`~/wonton-src/<名字>/`），`ssh mini-ios run <名字> -- bash <目录>/run.sh`。
+在开发机上按要求经名额跑：把本目录复制到开发机（`~/wonton-src/<名字>/`），`ssh mini-ios run <名字> -- bash <目录>/run.sh`。
 外接盘没挂上时 `run ios` 直接失败（退出码 6）。只跑某几组用 `MODES="loopback"` 放在命令前。
 
 `run.sh` 自己起 LiveKit、页面服务器（`127.0.0.1:8000`）和模拟器 `call-ios-loopback`，按顺序跑四种配置：
