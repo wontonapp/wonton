@@ -236,7 +236,10 @@ async fn approving_one_outsider_lets_only_that_person_in() {
 
     // 只批准 bob：名单里恰好是他。
     matrix_b
-        .allow_invitees("kid", std::slice::from_ref(&bob.user_id))
+        .allow_invitees(
+            "kid",
+            &[super::invite_filter::ExactUserId::parse(&bob.user_id).unwrap()],
+        )
         .await
         .unwrap();
     let stored = matrix_b.global_account_data(&kid.user_id).await.unwrap();

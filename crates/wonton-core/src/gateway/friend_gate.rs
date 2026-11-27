@@ -1,8 +1,8 @@
 //! 出站 Matrix 邀请按邀请人的“加好友”权限项判断（ADR-0088 第 2、3 节）。邀请 Matrix 上的人进私聊或群
-//! 都经过这里；家里人（同一台服务器上的用户）不受限。`Allow` 放行，`Deny` 和不认识的取值回 403，
-//! `AskAdmin` 记一张管理员卡片（谁先答算谁的）并挂住这次请求：同意后在锁里复核设备归属和当前角色，
-//! 把这次获批的人写进邀请人的 `allowed_users`，再按原请求转发给 Tuwunel；拒绝、过期按 403、408 回给
-//! 邀请人的设备。设备断开不影响卡片，管理员批准后邀请照样发出。
+//! 都经过这里（几种写法见 [`Shape`]）；家里人（同一台服务器上的用户）不受限。`Allow` 放行，`Deny` 和
+//! 不认识的取值回 403，`AskAdmin` 记一张管理员卡片（谁先答算谁的）并挂住这次请求：同意后在锁里复核
+//! 设备归属和当前角色，把这次获批的人写进邀请人的 `allowed_users`，再按原请求转发给 Tuwunel；拒绝、
+//! 过期按 403、408 回给邀请人的设备。设备断开不影响卡片，管理员批准后邀请照样发出。
 
 use std::sync::Arc;
 
@@ -10,16 +10,18 @@ use axum::body::{Body, to_bytes};
 use axum::extract::Request;
 use axum::response::Response;
 use hyper::{Method, StatusCode};
+use serde::Deserialize;
 use wonton_protocol::{Answer, CardChoice, CardLine, Gate};
 
 use super::api::acted_by;
 use super::matrix::{deliver_client_request, matrix_error};
 use super::{Gateway, Person, TunnelPeer};
 use crate::l10n;
+use crate::matrix::invite_filter::ExactUserId;
 use crate::mcp::{Draft, Refusal};
 use crate::plugin::languages::Languages;
 
-/// 看 `createRoom` 请求体时的上限；超过按“不算加好友”放行，和 `people_limits` 一样不猜。
+/// 看邀请请求体时的上限；超过就看不出邀请了谁，回 413，不放过去（同 `people_limits`）。
 const MAX_BODY: usize = 1024 * 1024;
 
 pub(crate) enum Outcome {
@@ -35,20 +37,25 @@ pub(crate) async fn check(gateway: &Arc<Gateway>, req: Request) -> Outcome {
     let Some(matrix) = gateway.matrix.as_deref() else {
         return Outcome::Pass(req);
     };
-    let (method, path) = (req.method().clone(), req.uri().path().to_owned());
-    if !is_managed_invite(&method, &path) {
+    let Some(shape) = Shape::of(req.method(), req.uri().path()) else {
         return Outcome::Pass(req);
-    }
-    let (parts, body) = req.into_parts();
-    let bytes = match to_bytes(body, MAX_BODY).await {
-        Ok(bytes) => bytes,
-        Err(_) => return Outcome::Pass(Request::from_parts(parts, Body::empty())),
     };
-    let invitees = parse_invitees(&method, &path, &bytes);
-    let remote: Vec<String> = invitees
-        .into_iter()
-        .filter(|user| localpart_server(user) != matrix.server_name())
-        .collect();
+    let (parts, body) = req.into_parts();
+    let Ok(bytes) = to_bytes(body, MAX_BODY).await else {
+        return Outcome::Stop(matrix_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "M_TOO_LARGE",
+            "invalid_input",
+            "请求体太大，看不出邀请了谁",
+        ));
+    };
+    let remote: Vec<ExactUserId> = match shape.invitees(&bytes) {
+        Ok(invitees) => invitees
+            .into_iter()
+            .filter(|user| user.server_name() != matrix.server_name())
+            .collect(),
+        Err(refused) => return Outcome::Stop(*refused),
+    };
     let peer = parts.extensions.get::<TunnelPeer>().copied();
     // 判断阶段只借用，放行时请求连同 body 原样交回。
     enum Decision {
@@ -81,63 +88,129 @@ pub(crate) async fn check(gateway: &Arc<Gateway>, req: Request) -> Outcome {
     }
 }
 
-/// `POST …/rooms/{房间}/invite` 和带邀请名单的 `createRoom`，加好友和拉人进群都走这两条。
-fn is_managed_invite(method: &Method, path: &str) -> bool {
-    let Some(rest) = path.strip_prefix("/_matrix/client/") else {
-        return false;
-    };
-    let mut segments = rest.split('/');
-    let Some(version) = segments.next() else {
-        return false;
-    };
-    if version.is_empty() {
-        return false;
-    }
-    match (method, segments.next()) {
-        (&Method::POST, Some("createRoom")) => true,
-        (&Method::POST, Some("rooms")) => {
-            let room = segments.next().unwrap_or_default();
-            !room.is_empty() && segments.next() == Some("invite")
+/// 能发出邀请的写法。Tuwunel v2.0.0 对后两种的远端目标不查 MSC4155（`api/client/state.rs` 的
+/// `validate_member` 只查本服务器的），照样把成员事件发给对方服务器（`timeline/build.rs`），所以都要过门。
+enum Shape {
+    /// `POST …/rooms/{房间}/invite`
+    Invite,
+    /// `POST …/createRoom`：`invite` 名单和 `initial_state` 里的成员事件。
+    CreateRoom,
+    /// `PUT …/rooms/{房间}/state/m.room.member/{对方}`，带解码后的状态键。
+    MemberState(String),
+}
+
+impl Shape {
+    fn of(method: &Method, path: &str) -> Option<Self> {
+        let rest = path.strip_prefix("/_matrix/client/")?;
+        let mut segments = rest.split('/');
+        // 版本段（v3、r0）非空就行。
+        segments.next().filter(|version| !version.is_empty())?;
+        match (method, segments.next()?) {
+            (&Method::POST, "createRoom") => Some(Self::CreateRoom),
+            (method, "rooms") => {
+                segments.next().filter(|room| !room.is_empty())?;
+                match (method, segments.next()?) {
+                    (&Method::POST, "invite") => Some(Self::Invite),
+                    (&Method::PUT, "state") if decoded(segments.next()?) == "m.room.member" => {
+                        let key: Vec<&str> = segments.collect();
+                        Some(Self::MemberState(decoded(&key.join("/"))))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
         }
-        _ => false,
     }
-}
 
-/// 邀请了谁：`invite` 的 `user_id`，或 `createRoom` 的 `invite` 名单。读不出来按“没邀请人”放行，
-/// 让后面的转发给出 Matrix 本来的错误，不在这里猜。
-fn parse_invitees(method: &Method, path: &str, body: &[u8]) -> Vec<String> {
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
-        return Vec::new();
-    };
-    let rest = path.strip_prefix("/_matrix/client/").unwrap_or_default();
-    let mut segments = rest.split('/');
-    let _version = segments.next();
-    let into_list = |users: Vec<&str>| {
-        users
-            .into_iter()
-            .filter(|user| user.starts_with('@') && user.contains(':'))
-            .map(str::to_owned)
+    /// 这次邀请了谁。空请求体按 `{}`（ruma 的读法）；JSON 读不出来回 400 `M_BAD_JSON`，邀请的不是一个
+    /// 具体用户（通配、超长、格式不对，见 [`ExactUserId`]）回 400 `M_INVALID_PARAM`，都不开卡。字段按
+    /// 结构体读：重复的键报错而不是取最后一个，和 Tuwunel 的读法一致，免得两边看到的邀请对象不一样。
+    fn invitees(&self, body: &[u8]) -> Result<Vec<ExactUserId>, Box<Response>> {
+        let body = if body.is_empty() {
+            b"{}".as_slice()
+        } else {
+            body
+        };
+        let raw: Vec<String> = match self {
+            Self::Invite => json::<InviteBody>(body)?.user_id.into_iter().collect(),
+            Self::CreateRoom => {
+                let room = json::<CreateRoomBody>(body)?;
+                let members = room.initial_state.into_iter().filter_map(|event| {
+                    (event.kind == "m.room.member" && event.content.is_invite())
+                        .then_some(event.state_key)
+                });
+                room.invite.into_iter().chain(members).collect()
+            }
+            Self::MemberState(target) => {
+                if json::<MemberContent>(body)?.is_invite() {
+                    vec![target.clone()]
+                } else {
+                    Vec::new()
+                }
+            }
+        };
+        raw.iter()
+            .map(|user| {
+                ExactUserId::parse(user).ok_or_else(|| {
+                    Box::new(matrix_error(
+                        StatusCode::BAD_REQUEST,
+                        "M_INVALID_PARAM",
+                        "invalid_input",
+                        "邀请的不是一个具体的 Matrix 用户 ID",
+                    ))
+                })
+            })
             .collect()
-    };
-    match (method, segments.next()) {
-        (_, Some("createRoom")) => into_list(
-            value["invite"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(|user| user.as_str())
-                .collect(),
-        ),
-        (_, Some("rooms")) => value["user_id"]
-            .as_str()
-            .map(|user| into_list(vec![user]))
-            .unwrap_or_default(),
-        _ => Vec::new(),
     }
 }
 
-fn localpart_server(user_id: &str) -> &str {
-    user_id.split_once(':').map_or("", |(_, server)| server)
+#[derive(Deserialize)]
+struct InviteBody {
+    user_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CreateRoomBody {
+    #[serde(default)]
+    invite: Vec<String>,
+    #[serde(default)]
+    initial_state: Vec<InitialState>,
+}
+
+#[derive(Deserialize)]
+struct InitialState {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(default)]
+    state_key: String,
+    #[serde(default)]
+    content: MemberContent,
+}
+
+#[derive(Deserialize, Default)]
+struct MemberContent {
+    membership: Option<String>,
+}
+
+impl MemberContent {
+    fn is_invite(&self) -> bool {
+        self.membership.as_deref() == Some("invite")
+    }
+}
+
+fn json<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, Box<Response>> {
+    serde_json::from_slice(body).map_err(|_| {
+        Box::new(matrix_error(
+            StatusCode::BAD_REQUEST,
+            "M_BAD_JSON",
+            "invalid_input",
+            "邀请的请求体不是合法的 JSON",
+        ))
+    })
+}
+
+fn decoded(segment: &str) -> String {
+    String::from_utf8_lossy(&super::matrix::percent_decode(segment)).into_owned()
 }
 
 /// `AskAdmin`：开卡片、挂住请求；批准后按原请求（同一个人、同一个访问令牌）把邀请发出去。
@@ -147,7 +220,7 @@ fn hold(
     bytes: axum::body::Bytes,
     person: Person,
     peer: Option<TunnelPeer>,
-    invitees: Vec<String>,
+    invitees: Vec<ExactUserId>,
 ) -> Outcome {
     let Some(mcp) = gateway.mcp.as_ref() else {
         return Outcome::Stop(matrix_error(
@@ -180,10 +253,10 @@ fn hold(
 }
 
 /// 卡片内容：谁把谁加成好友。
-fn invite_card(langs: &Languages, inviter: &str, invities: &[String]) -> Draft {
+fn invite_card(langs: &Languages, inviter: &str, invitees: &[ExactUserId]) -> Draft {
     Draft {
         title: l10n::text(langs, "gateway-friend-invite-title", &[]),
-        lines: invities
+        lines: invitees
             .iter()
             .map(|user| CardLine {
                 text: l10n::text(
@@ -226,7 +299,7 @@ async fn after_approval(
     bytes: axum::body::Bytes,
     person: Person,
     peer: Option<TunnelPeer>,
-    invitees: Vec<String>,
+    invitees: Vec<ExactUserId>,
 ) -> Response {
     // 复核和写名单在同一把锁里：批准后这个人记进受限成员的 `allowed_users`，之后他发来的邀请
     // 也放行（ADR-0088 第 98 行）。角色已经放开的不用记，过滤本来就撤了。

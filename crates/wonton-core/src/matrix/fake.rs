@@ -831,7 +831,7 @@ pub async fn start() -> (Fake, MatrixConfig) {
         )
         .route(
             &format!("{client}/rooms/{{room}}/state/m.room.member/{{user}}"),
-            get(member_state),
+            get(member_state).put(rooms::put_member_state),
         )
         .route(
             &format!("{client}/user/{{user}}/account_data/m.direct"),
