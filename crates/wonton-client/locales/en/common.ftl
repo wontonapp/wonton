@@ -190,3 +190,6 @@ panel-config-duplicate = The same page appears twice in the panel.
 panel-sync-failed-read = Couldn't read the panel settings from the server.
 panel-sync-unreadable = The panel settings from the server can't be read here; keeping the ones on this device.
 panel-pins-refresh-failed = Couldn't load the pages bots pinned: { $error }
+
+# 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
+models-invalid-action = That action isn't available on this page.

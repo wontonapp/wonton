@@ -180,3 +180,6 @@ panel-config-duplicate = 同一個頁面在面板裡出現了兩次。
 panel-sync-failed-read = 從伺服器讀面板設定沒有成功。
 panel-sync-unreadable = 伺服器上的面板設定這台裝置讀不懂，先用本機的。
 panel-pins-refresh-failed = 面板裡 Bot 釘的頁面取不到:{ $error }
+
+# 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
+models-invalid-action = 不是能在這一頁做的操作。
