@@ -194,9 +194,16 @@ impl ClientCore {
                     },
                 };
                 let known = match &tab {
-                    TabRef::Url { url } => url.starts_with("https://"),
+                    TabRef::Url { url } => {
+                        url::Url::parse(url).is_ok_and(|url| url.scheme() == "https")
+                    }
                     _ => fake_open(tab.clone()).is_some(),
                 };
+                if !known {
+                    return Err(CoreError::InvalidInput {
+                        reason: "fake app is unknown".into(),
+                    });
+                }
                 let mut duplicate = false;
                 views.plugins.send_modify(|plugins| {
                     if plugins
@@ -229,21 +236,29 @@ impl ClientCore {
                         badge: wonton_protocol::SidebarBadge::default(),
                     });
                 });
-                if !known || duplicate {
+                if duplicate {
                     return Err(CoreError::InvalidInput {
-                        reason: "fake app is already in my apps or unknown".into(),
+                        reason: "fake app is already in my apps".into(),
                     });
                 }
                 Ok(())
             }
             PageAction::RemoveMyApp { app } => {
                 let entry = BarEntry::App { app: app.clone() };
+                let mut removed = false;
                 views.plugins.send_modify(|plugins| {
+                    let before = plugins.sidebar.apps.len();
                     plugins
                         .sidebar
                         .apps
                         .retain(|row| !side_app_matches(&app, row));
+                    removed = plugins.sidebar.apps.len() < before;
                 });
+                if !removed {
+                    return Err(CoreError::InvalidInput {
+                        reason: "fake app is not in my apps".into(),
+                    });
+                }
                 views.pages.send_modify(|pages| {
                     let before = pages.bar.items.len();
                     pages.bar.items.retain(|item| item.entry != entry);

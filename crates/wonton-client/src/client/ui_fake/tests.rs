@@ -248,6 +248,21 @@ fn pages_open_and_close_like_the_real_stack() {
         },
     })
     .unwrap();
+    // http 不算：和真核的 is_https_url 一样。
+    assert!(
+        core.dispatch(Action::Pages {
+            action: PageAction::AddMyApp {
+                app: MyAppRef::Page {
+                    tab: TabRef::Url {
+                        url: "http://example.com/plain".into(),
+                    },
+                },
+                title: None,
+                index: None,
+            },
+        })
+        .is_err()
+    );
     assert!(
         core.dispatch(Action::Pages {
             action: PageAction::AddBarItem {
@@ -295,6 +310,17 @@ fn pages_open_and_close_like_the_real_stack() {
         core.dispatch(Action::Pages {
             action: PageAction::RemoveBarItem {
                 entry: core.pages().bar.items[0].entry.clone(),
+            },
+        })
+        .is_err()
+    );
+
+    assert!(
+        core.dispatch(Action::Pages {
+            action: PageAction::RemoveMyApp {
+                app: MyAppRef::Plugin {
+                    plugin_id: "app.example.one-more".into(),
+                },
             },
         })
         .is_err()
