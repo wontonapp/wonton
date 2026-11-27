@@ -11,10 +11,14 @@ use crate::entry_containers::EntryContainers;
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
 
+mod caa;
 mod credentials;
 mod install_env;
+mod issue_failure;
 mod prepared_issuance;
+mod publication;
 mod queued_issue;
+mod renewal;
 mod save_validation;
 mod suffix;
 
