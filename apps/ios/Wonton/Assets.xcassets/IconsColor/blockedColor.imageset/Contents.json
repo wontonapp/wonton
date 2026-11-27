@@ -3,6 +3,16 @@
     {
       "filename": "blockedColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "blockedColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

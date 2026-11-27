@@ -3,6 +3,16 @@
     {
       "filename": "starColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "starColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

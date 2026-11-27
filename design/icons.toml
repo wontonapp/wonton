@@ -1,5 +1,6 @@
 # 每个语义名两套上游：iOS 用 kubai（彩色分层，color 取 [palette] 里的名字；单色版由同一张图生成），
 # Android 用 phosphor。没写 kubai 的语义名 iOS 没有（checks 上游没有对应图形，iOS 也没用到）。
+# bare 表示只留图形本体、去掉上游自带的圆底（箭头和加号会放进圆钮或成排出现）。
 # fill 表示 Phosphor 还要实心版（选中时用），Kubai 不分线框和实心；mirror 表示从右到左时要翻转。
 [upstream.phosphor]
 package = "@phosphor-icons/core"
@@ -16,26 +17,27 @@ integrity = "sha512-Nkgn0vaPujk/IjehYPyubgA18OQbgLN/ECCnk06LUgyeIbpMjOfM/BRHEi40
 # 包里 svg/ 的主色。换色时按它反推每个颜色是怎么从主色调出来的。
 base = "#5393FF"
 
-# 图标的主色。同一张图浅色、深色两种页面都用，所以每个颜色对两边的页面底和卡片底都要有 3:1（生成时检查）。
+# 图标的主色，浅色和深色页面各一个：浅色页面上取深一档，不然浅面在白底上发灰；深色页面上取亮一档。
+# 各自对那一边的页面底和卡片底都要有 3:1（生成时检查）。
 [palette]
-blue = "#2A78F5"
-green = "#188F4F"
-orange = "#CB5C18"
-red = "#E44045"
-purple = "#8365F1"
-pink = "#D74781"
-teal = "#0D8C80"
-amber = "#BF7A0A"
-indigo = "#6072EA"
-sky = "#1284C2"
-slate = "#6D7E97"
+blue = { light = "#0D66F3", dark = "#2D7AF5" }
+green = { light = "#158046", dark = "#189150" }
+orange = { light = "#B55215", dark = "#CD5D18" }
+red = { light = "#DA1F25", dark = "#E44348" }
+purple = { light = "#7452EF", dark = "#8567F1" }
+pink = { light = "#CD2D6D", dark = "#D74A83" }
+teal = { light = "#0B7D73", dark = "#0D8E82" }
+amber = { light = "#9B6308", dark = "#B07109" }
+indigo = { light = "#4D62E7", dark = "#6274EA" }
+sky = { light = "#1076AD", dark = "#1385C4" }
+slate = { light = "#536074", dark = "#6F8098" }
 
 [icons]
-add = { kubai = "circle-plus", color = "blue", phosphor = "plus" }
+add = { bare = true, kubai = "circle-plus", color = "blue", phosphor = "plus" }
 agent = { kubai = "sparkles", color = "purple", phosphor = "sparkle", fill = true }
 apps = { kubai = "grid", color = "indigo", phosphor = "squares-four", fill = true }
 attach = { kubai = "paperclip", color = "slate", phosphor = "paperclip" }
-back = { kubai = "chevron-left", color = "slate", phosphor = "caret-left", mirror = true }
+back = { bare = true, kubai = "chevron-left", color = "slate", phosphor = "caret-left", mirror = true }
 blocked = { kubai = "ban", color = "red", phosphor = "prohibit" }
 cameraOff = { kubai = "camera-off", color = "slate", phosphor = "camera-slash" }
 chat = { kubai = "messages", color = "blue", phosphor = "chats-circle", fill = true }
@@ -58,7 +60,7 @@ expand = { kubai = "maximize", color = "indigo", phosphor = "corners-out" }
 eye = { kubai = "eye", color = "sky", phosphor = "eye" }
 file = { kubai = "file", color = "slate", phosphor = "file" }
 folder = { kubai = "folder", color = "amber", phosphor = "folder", fill = true }
-forward = { kubai = "chevron-right", color = "slate", phosphor = "caret-right", mirror = true }
+forward = { bare = true, kubai = "chevron-right", color = "slate", phosphor = "caret-right", mirror = true }
 globe = { kubai = "globe", color = "teal", phosphor = "globe", fill = true }
 help = { kubai = "circle-help", color = "sky", phosphor = "question" }
 home = { kubai = "home", color = "orange", phosphor = "house", fill = true }

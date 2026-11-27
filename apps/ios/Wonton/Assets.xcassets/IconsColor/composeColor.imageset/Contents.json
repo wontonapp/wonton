@@ -3,6 +3,16 @@
     {
       "filename": "composeColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "composeColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

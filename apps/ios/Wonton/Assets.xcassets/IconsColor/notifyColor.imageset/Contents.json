@@ -3,6 +3,16 @@
     {
       "filename": "notifyColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "notifyColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

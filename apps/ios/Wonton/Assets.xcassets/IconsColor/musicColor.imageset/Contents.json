@@ -3,6 +3,16 @@
     {
       "filename": "musicColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "musicColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

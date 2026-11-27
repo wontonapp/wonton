@@ -3,6 +3,16 @@
     {
       "filename": "storeColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "storeColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

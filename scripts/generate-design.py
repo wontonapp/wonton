@@ -47,7 +47,7 @@ VALKYRIE_SHA256 = "5929fb15395059e566c51dcdb2bed98a2d2e92ad8d344f8186d3b701be653
 
 KUBAI = DESIGN / "kubai"
 # 浅色、深色下的页面底和卡片底：crates/wonton-client/src/appearance/derive.rs 的 canvas 和 surfaceSubtle。
-ICON_BACKGROUNDS = ["#FFFFFF", "#F4F4F4", "#0E0E0E", "#262626"]
+ICON_BACKGROUNDS = {"light": ["#FFFFFF", "#F4F4F4"], "dark": ["#0E0E0E", "#262626"]}
 # WCAG 1.4.11 对图形的最低要求。
 ICON_MIN_CONTRAST = 3.0
 # 通道差小于它的是白、黑、灰，换色时不动。
@@ -68,6 +68,10 @@ KUBAI_WHITE = 240
 KUBAI_TINT_FLOOR = 0.25
 KUBAI_TINT_SCALE = 0.4
 # 蒙版的范围照上游自己的蒙版写：比画布（-2.5 -5.5 36 36）大一圈。
+# 深色页面上浅面里混的白压到这么多：原样的浅面在黑底上太亮，比旁边的字还抢眼。
+KUBAI_DARK_WHITE = 0.8
+# 去掉底的图形绕画布中心（15.5, 12.5）放大：上游的线条是按放在圆底里画的，单独用偏小。
+KUBAI_BARE_TRANSFORM = "translate(15.5 12.5) scale(1.5) translate(-15.5 -12.5)"
 KUBAI_MASK_BOX = {"x": "-40", "y": "-40", "width": "111", "height": "109"}
 SVG_MATRIX = re.compile(r'values="([^"]+)"')
 SVG_PAINT = re.compile(r"#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{3}|url\(#[\w-]+\)")
@@ -213,7 +217,7 @@ def swift_icons(icons):
 
 
 def ios_assets(icons):
-    """每个图标两张：彩色分层（原色）和单色（模板渲染，颜色跟界面走）。都保留矢量。"""
+    """每个图标两套：彩色分层（原色，浅色、深色各一张）和单色（模板渲染，颜色跟界面走）。都保留矢量。"""
     files = {
         IOS / "Assets.xcassets/Contents.json": json_bytes(XCASSETS_INFO),
         IOS / "Assets.xcassets/IconsColor/Contents.json": json_bytes(XCASSETS_INFO),
@@ -229,23 +233,36 @@ def ios_assets(icons):
         if "kubai" not in icon:
             continue
         source = kubai_source(f'svg/{icon["kubai"]}.svg', sums).decode()
-        styles = {
-            "Color": ("original", kubai_recolored(source, base, hex_rgb(icons["palette"][icon["color"]]))),
-            "Mono": ("template", kubai_mono(icon["kubai"], source, base)),
-        }
-        for suffix, (intent, svg) in styles.items():
-            check_plain_svg(f"{name}{suffix}", svg)
-            folder = IOS / f"Assets.xcassets/Icons{suffix}/{name}{suffix}.imageset"
-            image = {"filename": f"{name}{suffix}.svg", "idiom": "universal"}
-            if icon.get("mirror"):
-                image["language-direction"] = "left-to-right"
-            contents = {
-                "images": [image],
-                **XCASSETS_INFO,
-                "properties": {"preserves-vector-representation": True, "template-rendering-intent": intent},
-            }
-            files[folder / "Contents.json"] = json_bytes(contents)
-            files[folder / f"{name}{suffix}.svg"] = svg.encode()
+        if icon.get("bare"):
+            source = kubai_bare(source, icons["upstream"]["kubai"]["base"])
+        color = icons["palette"][icon["color"]]
+        files.update(image_set(name, "Color", "original", icon, {
+            "": kubai_recolored(source, base, hex_rgb(color["light"]), 1),
+            "Dark": kubai_recolored(source, base, hex_rgb(color["dark"]), KUBAI_DARK_WHITE),
+        }))
+        files.update(image_set(name, "Mono", "template", icon, {"": kubai_mono(icon["kubai"], source, base)}))
+    return files
+
+
+def image_set(name, suffix, intent, icon, variants):
+    """variants：外观后缀（空是通用，Dark 是深色）到 SVG。"""
+    folder = IOS / f"Assets.xcassets/Icons{suffix}/{name}{suffix}.imageset"
+    files, images = {}, []
+    for appearance, svg in variants.items():
+        check_plain_svg(f"{name}{suffix}{appearance}", svg)
+        image = {"filename": f"{name}{suffix}{appearance}.svg", "idiom": "universal"}
+        if appearance == "Dark":
+            image["appearances"] = [{"appearance": "luminosity", "value": "dark"}]
+        if icon.get("mirror"):
+            image["language-direction"] = "left-to-right"
+        images.append(image)
+        files[folder / image["filename"]] = svg.encode()
+    contents = {
+        "images": images,
+        **XCASSETS_INFO,
+        "properties": {"preserves-vector-representation": True, "template-rendering-intent": intent},
+    }
+    files[folder / "Contents.json"] = json_bytes(contents)
     return files
 
 
@@ -271,11 +288,15 @@ def contrast(first, second):
 
 
 def check_palette(palette):
-    for name, value in palette.items():
-        for background in ICON_BACKGROUNDS:
-            ratio = contrast(hex_rgb(value), hex_rgb(background))
-            if ratio < ICON_MIN_CONTRAST:
-                sys.exit(f"图标颜色 {name} {value} 在 {background} 上的对比度只有 {ratio:.2f}，要 {ICON_MIN_CONTRAST}")
+    for name, values in palette.items():
+        for appearance, backgrounds in ICON_BACKGROUNDS.items():
+            for background in backgrounds:
+                ratio = contrast(hex_rgb(values[appearance]), hex_rgb(background))
+                if ratio < ICON_MIN_CONTRAST:
+                    sys.exit(
+                        f"图标颜色 {name} {values[appearance]} 在 {background} 上的对比度只有 {ratio:.2f}，"
+                        f"要 {ICON_MIN_CONTRAST}"
+                    )
 
 
 def oklab(color):
@@ -322,30 +343,31 @@ def mix_weights(color, base):
     return a, b, error
 
 
-def kubai_recolor(color, base, accent):
+def kubai_recolor(color, base, accent, white=1):
     """上游的颜色都是从主色调出来的：多数是主色混白或混黑，深色描边是主色在 OKLab 里压暗并偏一点色相。
-    前一种按同样的配比换成新主色；后一种配比对不上，在 OKLCH 里照搬亮度比、彩度比和色相差。"""
+    前一种按同样的配比换成新主色；后一种配比对不上，在 OKLCH 里照搬亮度比、彩度比和色相差。
+    white 小于 1 时混进去的白压暗这么多（深色页面上用）；纯白的细节不算混色，不受影响。"""
     if max(color) - min(color) < KUBAI_GRAY_SPREAD:
         return color
     a, b, error = mix_weights(color, base)
     if error <= KUBAI_MIX_TOLERANCE:
-        return tuple(a * x + b * 255 for x in accent)
+        return tuple(a * x + b * white * 255 for x in accent)
     (cl, ca, cb), (bl, ba, bb), (al, aa, ab) = oklab(color), oklab(base), oklab(accent)
     chroma = math.hypot(aa, ab) * math.hypot(ca, cb) / math.hypot(ba, bb)
     hue = math.atan2(ab, aa) + math.atan2(cb, ca) - math.atan2(bb, ba)
     return from_oklab((al * cl / bl, chroma * math.cos(hue), chroma * math.sin(hue)))
 
 
-def kubai_recolored(svg, base, accent):
+def kubai_recolored(svg, base, accent, white):
     def paint(match):
         value = match.group(1)
         value = value if len(value) == 6 else "".join(c * 2 for c in value)
-        return rgb_hex(kubai_recolor(hex_rgb("#" + value), base, accent))
+        return rgb_hex(kubai_recolor(hex_rgb("#" + value), base, accent, white))
 
     def matrix(match):
         # 投影和高光的颜色写在 feColorMatrix 第 5 列（每行的常数项，0–1）。
         values = match.group(1).split()
-        color = kubai_recolor(tuple(float(values[i]) * 255 for i in (4, 9, 14)), base, accent)
+        color = kubai_recolor(tuple(float(values[i]) * 255 for i in (4, 9, 14)), base, accent, white)
         for index, channel in zip((4, 9, 14), color):
             values[index] = f"{max(0, min(255, channel)) / 255:.4f}".rstrip("0").rstrip(".")
         return f'values="{" ".join(values)}"'
@@ -427,12 +449,34 @@ def knock_out(children, masks, name):
     return drawn
 
 
+def kubai_bare(svg, base):
+    """只留图形本体：去掉闭合的底（圆底和它的描边、高光），剩下的线条放大。用在本来就放进圆钮或成排出现的
+    箭头和加号上，免得圆里套圆。线条一律改成主色：白线没有底可衬，深色描边单独放在深色页面上不到 3:1。"""
+    ElementTree.register_namespace("", SVG_NAMESPACE)
+    root = ElementTree.fromstring(svg)
+    glyph = ElementTree.Element(SVG_TAG + "g", {"transform": KUBAI_BARE_TRANSFORM})
+    for node in root.iter(SVG_TAG + "path"):
+        if node.get("d").rstrip().endswith("Z") or "mask" in node.attrib or "filter" in node.attrib:
+            continue
+        node.set("stroke", base)
+        glyph.append(node)
+    if not len(glyph):
+        sys.exit("去掉底以后什么都不剩，这个图标不能写 bare")
+    for child in list(root):
+        root.remove(child)
+    root.append(glyph)
+    return ElementTree.tostring(root, encoding="unicode")
+
+
 def kubai_mono(name, svg, base):
     """单色版仍是 Kubai 的图形，交给模板渲染上色：颜色全换成黑，浓淡写进不透明度，白色挖空。
     投影和高光的滤镜去掉：模板渲染会把投影也染成前景色，小图标周围糊一圈。"""
     ElementTree.register_namespace("", SVG_NAMESPACE)
     root = ElementTree.fromstring(svg)
     defs = root.find(SVG_TAG + "defs")
+    if defs is None:
+        defs = ElementTree.Element(SVG_TAG + "defs")
+        root.insert(0, defs)
     for node in defs.findall(SVG_TAG + "filter"):
         defs.remove(node)
     for node in root.iter():

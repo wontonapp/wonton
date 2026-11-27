@@ -3,6 +3,16 @@
     {
       "filename": "leaveColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "leaveColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

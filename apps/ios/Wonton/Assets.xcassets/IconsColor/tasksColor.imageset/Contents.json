@@ -3,6 +3,16 @@
     {
       "filename": "tasksColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "tasksColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

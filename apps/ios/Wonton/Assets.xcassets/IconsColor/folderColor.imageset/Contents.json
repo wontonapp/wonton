@@ -3,6 +3,16 @@
     {
       "filename": "folderColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "folderColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

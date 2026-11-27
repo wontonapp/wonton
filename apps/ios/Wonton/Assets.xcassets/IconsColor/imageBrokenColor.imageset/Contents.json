@@ -3,6 +3,16 @@
     {
       "filename": "imageBrokenColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "imageBrokenColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

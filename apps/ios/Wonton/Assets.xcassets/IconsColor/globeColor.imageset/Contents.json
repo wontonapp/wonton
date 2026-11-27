@@ -3,6 +3,16 @@
     {
       "filename": "globeColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "globeColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

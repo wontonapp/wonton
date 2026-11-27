@@ -3,6 +3,16 @@
     {
       "filename": "cameraOffColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "cameraOffColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

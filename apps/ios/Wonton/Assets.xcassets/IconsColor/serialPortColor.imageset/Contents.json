@@ -3,6 +3,16 @@
     {
       "filename": "serialPortColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "serialPortColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

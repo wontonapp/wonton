@@ -3,6 +3,16 @@
     {
       "filename": "qrCodeColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "qrCodeColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

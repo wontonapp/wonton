@@ -3,6 +3,16 @@
     {
       "filename": "webColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "webColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

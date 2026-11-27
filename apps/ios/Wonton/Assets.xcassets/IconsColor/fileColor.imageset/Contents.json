@@ -3,6 +3,16 @@
     {
       "filename": "fileColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "fileColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

@@ -3,6 +3,16 @@
     {
       "filename": "trashColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "trashColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

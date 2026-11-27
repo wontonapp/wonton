@@ -3,6 +3,16 @@
     {
       "filename": "voiceCallColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "voiceCallColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

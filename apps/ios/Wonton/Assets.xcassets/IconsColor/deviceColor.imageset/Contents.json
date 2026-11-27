@@ -3,6 +3,16 @@
     {
       "filename": "deviceColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "deviceColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

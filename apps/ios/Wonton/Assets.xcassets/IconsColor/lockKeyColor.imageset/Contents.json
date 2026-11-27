@@ -3,6 +3,16 @@
     {
       "filename": "lockKeyColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "lockKeyColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

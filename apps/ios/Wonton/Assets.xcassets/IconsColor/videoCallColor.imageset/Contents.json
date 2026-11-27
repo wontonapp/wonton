@@ -3,6 +3,16 @@
     {
       "filename": "videoCallColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "videoCallColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

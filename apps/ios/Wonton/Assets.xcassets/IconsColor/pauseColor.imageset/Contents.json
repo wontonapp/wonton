@@ -3,6 +3,16 @@
     {
       "filename": "pauseColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "pauseColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

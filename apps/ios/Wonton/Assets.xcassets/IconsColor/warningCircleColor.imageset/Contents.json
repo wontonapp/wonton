@@ -3,6 +3,16 @@
     {
       "filename": "warningCircleColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "warningCircleColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

@@ -3,6 +3,16 @@
     {
       "filename": "searchColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "searchColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

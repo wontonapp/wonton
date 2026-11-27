@@ -3,6 +3,16 @@
     {
       "filename": "diskColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "diskColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

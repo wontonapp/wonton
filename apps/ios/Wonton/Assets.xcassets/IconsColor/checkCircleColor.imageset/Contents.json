@@ -3,6 +3,16 @@
     {
       "filename": "checkCircleColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "checkCircleColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

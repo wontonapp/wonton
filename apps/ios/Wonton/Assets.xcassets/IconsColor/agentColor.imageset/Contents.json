@@ -3,6 +3,16 @@
     {
       "filename": "agentColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "agentColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

@@ -3,6 +3,16 @@
     {
       "filename": "cpuColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "cpuColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

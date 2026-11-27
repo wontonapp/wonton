@@ -3,6 +3,16 @@
     {
       "filename": "usbColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "usbColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

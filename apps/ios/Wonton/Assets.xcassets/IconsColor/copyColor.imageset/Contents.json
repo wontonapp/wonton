@@ -3,6 +3,16 @@
     {
       "filename": "copyColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "copyColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

@@ -3,6 +3,16 @@
     {
       "filename": "uploadColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "uploadColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

@@ -4,6 +4,17 @@
       "filename": "forwardColor.svg",
       "idiom": "universal",
       "language-direction": "left-to-right"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "forwardColorDark.svg",
+      "idiom": "universal",
+      "language-direction": "left-to-right"
     }
   ],
   "info": {

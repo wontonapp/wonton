@@ -3,6 +3,16 @@
     {
       "filename": "playColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "playColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {

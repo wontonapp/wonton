@@ -3,6 +3,16 @@
     {
       "filename": "lockColor.svg",
       "idiom": "universal"
+    },
+    {
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ],
+      "filename": "lockColorDark.svg",
+      "idiom": "universal"
     }
   ],
   "info": {
