@@ -37,7 +37,7 @@ jobs:
     # push（合进 main）也进这个作业：main 上 rust 一律全跑——合后必须真验一遍，之前只在每天 3 点的定时里跑，
     # 合进 main 的提交到那时之前一次单测都没有（11-13 #470 就是这样合进去的）。ios/android 合后仍交给夜间兜底；
     # docker 合后由 rust-docker.yml 自己的 push 跑，这里不重复触发。
-    # edited 只在改 base 时干活：改 body/title 也发 edited，不挡就整晚重跑全量。
+    # edited：只有改 base 才跑重作业；改 body/title 也发 edited，不挡就整晚重跑全量，由下面的汇总镜像上一轮真结果。
     if: ((github.event_name == 'pull_request' && github.event.pull_request.draft == false) || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.event.action != 'edited' || github.event.changes.base != null)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
