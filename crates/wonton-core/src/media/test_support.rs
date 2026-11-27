@@ -69,6 +69,10 @@ impl ProviderDirectory for FakeDirectory {
             .push((provider.into(), name.into()));
         Box::pin(async { Ok(()) })
     }
+
+    fn installed(&self, provider: &str) -> bool {
+        self.endpoints.contains_key(provider)
+    }
 }
 
 /// 假提供方收到的请求：方法与路径（带查询串）、凭据、替谁。

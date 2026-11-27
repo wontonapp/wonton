@@ -7,6 +7,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+mod leave;
 pub(crate) mod prefetch;
 pub(crate) mod provider;
 pub mod session_service;
@@ -21,6 +22,7 @@ pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use leave::LeaveError;
 pub use session_service::SessionService;
 pub use store::{Ledger, MediaStoreError, Store};
 pub use task_service::{TaskService, TaskServiceError};

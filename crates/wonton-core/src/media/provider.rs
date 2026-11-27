@@ -48,9 +48,10 @@ pub(crate) trait ProviderDirectory: Send + Sync {
     fn endpoint<'a>(&'a self, provider: &'a str) -> Pending<'a, Endpoint>;
     /// 执行提供方的 `credentials.issue`，凭据值从标准输入给。
     fn issue<'a>(&'a self, provider: &'a str, name: &'a str, key: &'a str) -> Pending<'a, ()>;
-    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// 执行提供方的 `credentials.revoke`。
     fn revoke<'a>(&'a self, provider: &'a str, name: &'a str) -> Pending<'a, ()>;
+    /// 装着没有，在不在跑都算。
+    fn installed(&self, provider: &str) -> bool;
 }
 
 /// 选好的提供方和替这个人调它的客户端。
@@ -186,14 +187,19 @@ impl MediaProviders {
             .await
     }
 
-    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
-    #[cfg_attr(not(test), allow(dead_code))]
     /// 收回这个人在所有提供方上的凭据：先让提供方注销上游凭据，再执行它的 `credentials.revoke`，最后删掉
     /// 核心存的这把。哪一家失败就停在哪一家、保留它的凭据，返回失败；已收回的不再出现。
+    ///
+    /// 插件已经卸了的只删核心这把：凭据值只有核心拿着，删了就没人拿得出来；要它在跑才收，成员移除就会
+    /// 一直卡在一个不存在的插件上。没卸只是停了的照常失败，主人把它开起来再重试。
     pub(crate) async fn revoke_person(&self, person: &str) -> Result<(), MediaFailure> {
         let name = credential_name(person);
         let _issuing = self.issuing.lock().await;
         for provider in self.providers_with_key(person)? {
+            if !self.directory.installed(&provider) {
+                self.forget_key(&provider, person)?;
+                continue;
+            }
             let route = self.client_locked(person, &provider).await?;
             route.client.revoke(person, &name).await?;
             self.directory.revoke(&provider, &name).await?;
@@ -287,16 +293,12 @@ impl MediaProviders {
         write_json(&self.key_file(provider), keys).map_err(|e| key_store_failure(&e))
     }
 
-    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
-    #[cfg_attr(not(test), allow(dead_code))]
     fn forget_key(&self, provider: &str, person: &str) -> Result<(), MediaFailure> {
         let mut keys = self.keys(provider)?;
         keys.remove(person);
         self.save_keys(provider, &keys)
     }
 
-    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
-    #[cfg_attr(not(test), allow(dead_code))]
     fn providers_with_key(&self, person: &str) -> Result<Vec<String>, MediaFailure> {
         let entries = match std::fs::read_dir(&self.keys_dir) {
             Ok(entries) => entries,

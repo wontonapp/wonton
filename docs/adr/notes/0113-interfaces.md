@@ -539,7 +539,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 ### 核心对提供方的凭据
 
 核心是使用方，凭据按人各一把：名字是 `wonton-core.media.<人>`，第一次替这个人调某个提供方时现签（执行它的 `credentials.issue`），存在核心数据目录、只有核心读得到。
-每个请求带 `Authorization: Bearer <这把>` 和 `X-Wonton-User: <人>`。这个人不在插件的可用范围里就不签，回 `permission_denied`。退出家庭时先 `POST /revoke {name}`，再执行 `credentials.revoke`，最后删掉这把。
+每个请求带 `Authorization: Bearer <这把>` 和 `X-Wonton-User: <人>`。这个人不在插件的可用范围里就不签，回 `permission_denied`。退出家庭时先 `POST /revoke {name}`，再执行 `credentials.revoke`，最后删掉这把。插件已经卸了的只删核心这把（凭据值只有核心拿着）；没卸只是停了的，成员移除停在这一步，等插件开起来再重试。会话停在 `removed`。
 
 `/streams` 不在服务端 API 里：是客户端核本机的回环（见 ADR 正文第 2 节）。服务端只给 `POST /sessions/{id}/cast-url`，回一个绑 LAN 的一次性绝对地址。
 

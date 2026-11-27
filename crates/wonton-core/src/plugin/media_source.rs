@@ -235,8 +235,6 @@ impl MediaSourceClient {
         decode::<SegmentsPage>(&raw).map(|page| page.segments)
     }
 
-    // 成员退出家庭时收回凭据；接上成员移除之前只有测试调用。
-    #[cfg_attr(not(test), allow(dead_code))]
     /// 让提供方注销这把凭据对应的上游凭据、停掉上游会话。
     pub(crate) async fn revoke(&self, user: &str, name: &str) -> Reply<()> {
         let request = RevokeRequest {

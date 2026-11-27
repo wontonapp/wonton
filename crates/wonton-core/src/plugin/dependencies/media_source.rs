@@ -3,7 +3,7 @@
 
 use wonton_protocol::media::{MEDIA_CAPABILITY, MediaFailure, MediaFailureCode};
 
-use super::{PluginManager, PluginStatus, Provider, service};
+use super::{PluginId, PluginManager, PluginStatus, Provider, service};
 use crate::media::provider::{Candidate, Pending, ProviderDirectory};
 use crate::plugin::media_source::failure;
 use crate::plugin::upstreams::Endpoint;
@@ -127,5 +127,9 @@ impl ProviderDirectory for PluginManager {
 
     fn revoke<'a>(&'a self, provider: &'a str, name: &'a str) -> Pending<'a, ()> {
         Box::pin(self.media_command(provider, false, name, None))
+    }
+
+    fn installed(&self, provider: &str) -> bool {
+        PluginId::parse(provider).is_ok_and(|id| self.is_installed(&id))
     }
 }
