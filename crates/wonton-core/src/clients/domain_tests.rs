@@ -58,6 +58,24 @@ fn request(suffix: Option<&str>) -> PutDomainRequest {
     }
 }
 
+/// 一份能解析的证书准备状态；`prepare` 会读它并和当前域名/服务商比对。
+fn prepared(dir: &Path, domain: &str, provider: &str) {
+    let path = dir.join("entry/prepared.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        path,
+        serde_json::json!({
+            "domain": domain,
+            "directory_url": "https://pebble.test:14000/dir",
+            "include_lan": true,
+            "provider": provider,
+            "account_uri": "https://pebble.test:14000/acct/1",
+        })
+        .to_string(),
+    )
+    .unwrap();
+}
+
 fn certificate(dir: &Path) {
     let directory = dir.join("entry/certs");
     fs::create_dir_all(&directory).unwrap();
@@ -890,7 +908,7 @@ async fn a_fresh_certificate_skips_the_repeat_issue() {
         .await
         .unwrap();
     certificate(dir.path());
-    std::fs::write(dir.path().join("entry/prepared.json"), b"{}").unwrap();
+    prepared(dir.path(), "example.test", "httpreq");
     let snapshot = clients.effective().unwrap();
     assert_eq!(snapshot.suffix.as_deref(), Some("example.test"));
     assert!(snapshot.last_error.is_none());
@@ -922,6 +940,8 @@ async fn a_fresh_certificate_skips_the_repeat_issue() {
         .update(|store| store.suffix = Some("neu.example.test".into()))
         .await
         .unwrap();
+    // 真实的 save() 会在这里删准备状态；这里走 update()，补一下。
+    clients.reset_prepared();
     clients.pending.fetch_add(1, Ordering::SeqCst);
     clients
         .clone()
@@ -956,7 +976,7 @@ async fn provider_or_credential_change_with_a_fresh_certificate_still_issues() {
         .await
         .unwrap();
     certificate(dir.path());
-    std::fs::write(dir.path().join("entry/prepared.json"), b"{}").unwrap();
+    prepared(dir.path(), "example.test", "httpreq");
     let settle = async || {
         for _ in 0..20_000 {
             if clients.pending.load(Ordering::SeqCst) == 0 {
@@ -968,12 +988,12 @@ async fn provider_or_credential_change_with_a_fresh_certificate_still_issues() {
     };
     // 只换凭据：准备状态还在，也要强制签一次。
     let quiet = clients.engine.recorded_creations().len();
-    let mut request = request(None);
-    request.credentials = vec![CredentialEntry {
+    let mut put = request(None);
+    put.credentials = vec![CredentialEntry {
         name: "HTTPREQ_TOKEN".into(),
         value: SecretString::new("b-token"),
     }];
-    clients.clone().save(request).await.unwrap();
+    clients.clone().save(put).await.unwrap();
     settle().await;
     assert!(
         clients.engine.recorded_creations().len() > quiet,
@@ -981,9 +1001,9 @@ async fn provider_or_credential_change_with_a_fresh_certificate_still_issues() {
     );
     // 换服务商：reset_prepared 删掉 prepared.json，fresh 不再成立。
     let quiet = clients.engine.recorded_creations().len();
-    let mut request = request(None);
-    request.provider = "otherdns".into();
-    clients.clone().save(request).await.unwrap();
+    let mut put = request(None);
+    put.provider = "otherdns".into();
+    clients.clone().save(put).await.unwrap();
     settle().await;
     assert!(
         clients.engine.recorded_creations().len() > quiet,

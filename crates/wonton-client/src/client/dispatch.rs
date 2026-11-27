@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, AgentAction, BotAction, ChatAction, ClientsAction, DefaultBotVisibility, DeviceNetwork,
-    HomeAction, HomeStatus, PageAction, PluginAction, PushAction, SessionAction, SettingsAction,
+    HomeAction, PageAction, PluginAction, PushAction, SessionAction, SettingsAction,
     TimelineAction,
 };
 
