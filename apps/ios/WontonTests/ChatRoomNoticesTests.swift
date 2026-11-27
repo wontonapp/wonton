@@ -1,4 +1,5 @@
 import XCTest
+import WontonClient
 @testable import Wonton
 
 /// 房间提示的规矩：能用的不吵，确定不能用的按原因给专属句，不认识的原因退回通用句。
