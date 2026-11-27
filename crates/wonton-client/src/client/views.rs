@@ -1,6 +1,8 @@
 //! 界面状态的读取和订阅：每个 ViewModel 的当前值和 watch 通道入口，拆出 [client mod] 保持文件在门禁内。
 
 use super::*;
+use crate::subscription::ClientsDomainSubscription;
+use wonton_protocol::ClientsDomainViewModel;
 
 #[uniffi::export]
 impl ClientCore {

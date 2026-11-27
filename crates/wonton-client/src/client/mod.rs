@@ -8,7 +8,7 @@ use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, AvatarUpload, ChatContact,
-    ChatViewModel, ClientsDomainViewModel, ComposerDraft, CoreError, FamilyViewModel, FileCard, FileCardActions,
+    ChatViewModel, ComposerDraft, CoreError, FamilyViewModel, FileCard, FileCardActions,
     FileFailure, FileId, FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel,
     InstallPreview, LanChoice, LanSettings, LicensesViewModel, Me, MediaHandle, MyAvatarProblem,
     OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
@@ -26,7 +26,7 @@ use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppLockSubscription, AppearanceSubscription, ChatSubscription, ClientsDomainSubscription, FamilySubscription,
+    AppLockSubscription, AppearanceSubscription, ChatSubscription, FamilySubscription,
     FriendsSubscription, HomeSubscription, OnboardingSubscription, PagesSubscription,
     PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
     SettingsSubscription, TransfersSubscription, UnreadSubscription,
@@ -43,6 +43,7 @@ mod browser;
 mod composer;
 mod confirmations;
 mod dispatch;
+mod lan;
 mod limits;
 mod media;
 mod my_avatar;
