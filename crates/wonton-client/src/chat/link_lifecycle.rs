@@ -44,8 +44,9 @@ impl ChatLink {
                 .is_err()
             {
                 tracing::info!(slot = %self.slot, "旧同步没停下来，直接放掉旧会话");
+                let session = session.clone();
                 self.runtime
-                    .spawn(session.keep_store_lease_until_sync_settles());
+                    .spawn(async move { session.keep_store_lease_until_sync_settles().await });
             }
         }
     }

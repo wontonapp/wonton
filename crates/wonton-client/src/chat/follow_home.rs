@@ -33,7 +33,8 @@ pub(super) async fn run(chat: Weak<ChatLink>, mut home: watch::Receiver<HomeView
             // 等隧道稳一小会儿再用最后的代理：中间的地址不各换一次会话。等不及或一直不稳就按最后看到的值走。
             // 等待里只看不消费（`borrow`），等完重算一次 key 和连接状态：另一个变化还没被标记过，下一次循环
             // 会照它再来一遍。
-            let (mut latest, mut latest_connected) = key.clone();
+            let mut latest = key.clone();
+            let mut latest_connected = now_connected;
             for _ in 0..PROXY_SETTLE_ROUNDS {
                 tokio::time::sleep(PROXY_SETTLE).await;
                 let (now, now_connected) = {
