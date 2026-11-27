@@ -54,4 +54,5 @@
     <string name="chat_ask_failed_not_in_room">このルームは Bot とのダイレクトチャットではありません。</string>
     <string name="chat_ask_failed_forbidden">Bot がこのメッセージを受け取りませんでした。</string>
     <string name="chat_ask_failed_not_ready">まだ準備できていません。</string>
+    <string name="chat_start_unavailable">まだ話せません</string>
 </resources>
