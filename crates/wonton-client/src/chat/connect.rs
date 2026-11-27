@@ -58,6 +58,8 @@ fn backoff(failures: u32) -> Duration {
 
 impl ChatLink {
     /// 登录或恢复会话，然后开始同步。
+    // 守卫、清理、换代理、失败回退都在这条路上，按顺序列着比分出去好读。
+    #[allow(clippy::too_many_lines)]
     pub(super) async fn connect(self: Arc<Self>, target: Target) {
         let generation = {
             let mut relogin = lock(&self.relogin.0);

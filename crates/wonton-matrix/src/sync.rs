@@ -5,8 +5,7 @@
 //! [`MatrixSession::keep_syncing`] 做，它分得清吊销。
 
 use std::collections::HashMap;
-use std::future::Future;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_util::{Stream, StreamExt, future, stream};
@@ -167,29 +166,24 @@ impl MatrixSession {
     /// 应答之后的处理（`handle_response` + 写存储）。名字要是跟着会话一起落，下一个 Client 就会沿用这个名字，
     /// 旧任务写回去的东西会被当成自己写的（`store_holder` 的 #804/#1047）。多留一份租约，下一个 Client 就换新名字，
     /// SDK 拿锁时标脏、重读。
-    pub fn keep_store_lease_until_sync_settles(
-        self: &Arc<Self>,
-    ) -> impl Future<Output = ()> + use<> {
-        let sync = self.sync.clone();
+    pub async fn keep_store_lease_until_sync_settles(self: &Arc<Self>) {
+        let mut state = self.sync.state();
         let lease = self.store_lease();
-        async move {
-            let mut state = sync.state();
-            let _ = tokio::time::timeout(Self::LEASE_SETTLE, async {
-                loop {
-                    if !matches!(
-                        *state.borrow_and_update(),
-                        sync_service::State::Running | sync_service::State::Offline
-                    ) {
-                        break;
-                    }
-                    if state.changed().await.is_err() {
-                        break;
-                    }
+        let _ = tokio::time::timeout(Self::LEASE_SETTLE, async {
+            loop {
+                if !matches!(
+                    *state.borrow_and_update(),
+                    sync_service::State::Running | sync_service::State::Offline
+                ) {
+                    break;
                 }
-            })
-            .await;
-            drop(lease);
-        }
+                if state.changed().await.is_err() {
+                    break;
+                }
+            }
+        })
+        .await;
+        drop(lease);
     }
 
     /// 同步因错误停下就重启，连续出错时间隔加倍，直到被中止。在同一个会话上重启：打开着的房间继续收到更新，不用
