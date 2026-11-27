@@ -561,7 +561,7 @@ extension View {
 
 }
 
-private struct WontonCanvas: ViewModifier {
+struct WontonCanvas: ViewModifier {
     @Environment(\.wontonColors) private var colors
 
     func body(content: Content) -> some View {

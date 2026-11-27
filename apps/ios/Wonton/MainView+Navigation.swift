@@ -31,7 +31,7 @@ extension MainView {
         }
     }
 
-    /// 设置是主界面上唯一的整屏盖子，下面的层（网格、插件页）都不是盖子，直接弹；关掉设置回到原来那一层。
+    /// 设置是主界面上唯一的盖子（系统 sheet），下面的层（网格、插件页）都不是盖子，直接弹；关掉设置回到原来那一层。
     func showServerRoute(_ route: SettingsRoute) {
         onboardingGateway = nil
         settings.openServer(route)

@@ -11,6 +11,7 @@ struct SettingsTab: View {
     let open: (PluginEntry) -> Void
     let checkInstalled: () -> Void
     let push: PushModel
+    /// 在主界面盖上来的系统 sheet 里：标题居中，关闭在右上角。
     var isModal = false
     var isActive = true
     @Environment(\.dismiss) private var dismiss
@@ -36,7 +37,7 @@ struct SettingsTab: View {
     private var settingsRoot: some View {
         if isModal {
             settingsContent
-                .wontonModalScreen(TabText.settings, usesSystemToolbar: true)
+                .wontonSheetScreen(TabText.settings)
         } else {
             settingsContent
                 .wontonRootScreen(TabText.settings, hasActions: false) { EmptyView() }
