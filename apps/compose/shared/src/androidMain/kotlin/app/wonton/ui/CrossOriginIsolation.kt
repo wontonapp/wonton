@@ -54,12 +54,12 @@ private const val KEEP_ALIVE_SERVICE = "app.wonton.android.browser.BrowserKeepAl
 
 /**
  * 要跨源隔离的插件页（`TabPage.opensInBrowser`，ADR-0033）：Android WebView 给不了，App 里不加载。
- * [autoOpen] 时进来就交给浏览器一次。开过之后这一页讲明它已交给浏览器，并给回聊天和再打开一次，
+ * 进来就交给浏览器一次。开过之后这一页讲明它已交给浏览器，并给回聊天和再打开一次，
  * 从浏览器（HOME 再点图标、关掉标签）回来不会停在无出路的页面上；页面关掉重开是新的交接，才再自动开一次。
  */
 @Composable
 internal fun BrowserPageStatus(
-    page: TabPage, core: ClientCore, autoOpen: Boolean, attempted: MutableState<Boolean>,
+    page: TabPage, core: ClientCore, attempted: MutableState<Boolean>,
     allowed: Boolean, onBackToChat: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -70,8 +70,8 @@ internal fun BrowserPageStatus(
         problem = openPluginInBrowser(context, core, url)
         if (problem == null) Toast.makeText(context, R.string.tab_browser_return_hint, Toast.LENGTH_LONG).show()
     }
-    LaunchedEffect(url, page.reload, autoOpen, allowed) {
-        if (autoOpen && allowed && !attempted.value) open()
+    LaunchedEffect(url, page.reload, allowed) {
+        if (allowed && !attempted.value) open()
     }
     problem?.let {
         ProblemView(it, onRetry = open)

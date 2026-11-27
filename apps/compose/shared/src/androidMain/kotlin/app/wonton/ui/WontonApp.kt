@@ -14,13 +14,11 @@ import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.graphics.graphicsLayer
 import app.wonton.ui.design.WontonEdgeToEdgeScaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +45,6 @@ import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.PendingConfirmation
-import app.wonton.protocol.PanelScope
 import app.wonton.protocol.PagesViewModel
 import app.wonton.protocol.SettingsViewModel
 import app.wonton.protocol.TabRef
@@ -104,7 +101,7 @@ internal fun ServerApp(
                 AddServerPairing(plugins, home)
             } else OnboardingHost(plugins, home, chatView, navigation::finishOnboarding) {
                 AdaptiveChatLayout(
-                    list = { ExpandedChatPane(navigation, chatView, home, appearance) },
+                    list = { ExpandedChatPane(navigation, chatView) },
                     enabled = home.status != HomeStatus.NotConfigured,
                 ) {
                     AppContent(navigation, home, settings, appearance, chatView)
@@ -152,19 +149,10 @@ private fun AppContent(
         draft.text = text
         pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
     }
-    // 面板只在聊天页和房间里；拉开时左边缘归面板（A 块的手势用来关它）。
-    val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
-    val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay &&
+    val chatShown = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay &&
         !view.showsApps && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
-    val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
-        rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope,
-            nav.pages)
-    } else null
-    if (panel != null && panel.scope == PanelScope.Main) {
-        SideEffect { panel.feed(view.panel, view.panelSelected) }
-    }
     // 只在聊天的根页面响应左边缘右滑（开抽屉）：进了房间、页面或盖了别的层，左边缘是系统的返回手势。
-    val edgeSwipe = !expanded && panelActive && nav.chat.openRoom == null && panel?.visible != true
+    val edgeSwipe = !expanded && chatShown && nav.chat.openRoom == null
     BackRootExit(nav, view)
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
         WithPendingCards(cards, pluginShown && !nav.settingsOverlay, nav::openCardTarget) { bannerTop ->
@@ -202,22 +190,9 @@ private fun AppContent(
                     }
                 }
             }
-            CompositionLocalProvider(LocalChatPanel provides panel) {
-                // 面板可用性变化只改变叠层与平移，不搬移带有待处理 LazyList 操作的主页面。
-                if (panel != null) {
-                    ChatPanelHost(panel, pages, home, appearance, onDraft = onDraft, onDetails = nav::detail)
-                }
-                Box(Modifier.fillMaxSize().graphicsLayer {
-                    translationY = (panel?.shiftPx ?: 0f) * (panel?.sign ?: 1f)
-                }) {
-                    page()
-                    if (panel?.level == PanelLevel.PEEK) ChatPanelStrip(panel)
-                }
-                if (panel != null) ChatPanelOverlay(panel)
-            }
+            page()
         }
     }
-    if (panel != null && panel.editing) ChatPanelEditor(panel, pages) { panel.editing = false }
     BackHandler(enabled = showsSidebar && !expanded) { showsSidebar = false }
     TabNotices(pages)
 }

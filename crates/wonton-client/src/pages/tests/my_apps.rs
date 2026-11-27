@@ -103,8 +103,7 @@ async fn account_preferences_override_defaults_before_or_after_the_first_plugin_
                     },
                     {"app": {"type": "plugin", "plugin_id": "app.shared"}}
                 ],
-                "auto_add": true,
-                "panel": []
+                "auto_add": true
             })
             .as_object()
             .unwrap()
@@ -209,8 +208,7 @@ async fn synchronized_empty_list_and_auto_add_opt_out_are_not_reseeded() {
         let content = LayoutContent(
             serde_json::json!({
                 "my_apps": [],
-                "auto_add": auto_add,
-                "panel": []
+                "auto_add": auto_add
             })
             .as_object()
             .unwrap()
@@ -273,19 +271,11 @@ async fn link_plugins_open_in_the_system_browser_from_my_apps() {
         }
     );
 
-    // 面板候选里没有它：外部网页没有页面可嵌进面板。
+    // 移除后能从候选再加回来，加出来的行还是外部浏览器。
     let link_tab = TabRef::Plugin {
         plugin_id: "app.link".to_owned(),
         page: None,
     };
-    assert!(
-        rig.view()
-            .panel_candidates
-            .iter()
-            .all(|candidate| candidate.tab != link_tab)
-    );
-
-    // 移除后能从候选再加回来，加出来的行还是外部浏览器。
     rig.tabs
         .dispatch(PageAction::RemoveMyApp {
             app: plugin_app("app.link"),

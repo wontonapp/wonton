@@ -13,7 +13,7 @@ extension MainView {
                                      navigate: navigate, appsOnly: true)
                             .frame(maxHeight: 320)
                     }
-                    chatListPanel(listOnly: true)
+                    ChatListView(model: chat, plugins: plugins, listOnly: true)
                 }
                 .clipped()
                 .accessibilityIdentifier("wide-screen-list")

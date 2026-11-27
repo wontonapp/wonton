@@ -43,12 +43,12 @@ impl ChatLink {
 
     /// 每份订阅钉住所需的房间；取消或释放不影响其他订阅。
     ///
-    /// `room_view` 是 tabs 合成的房间面板视图（面板页、上次看的那页、入口有没有被盖住），每批时间线增量
+    /// `room_view` 是 tabs 合成的房间视图（顶栏的 widget 入口），每批时间线增量
     /// 都带上当前值；变了也发一批（增量为空）。
     pub(crate) async fn open_timeline(
         self: &Arc<Self>,
         opening: target::TimelineOpening,
-        room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
+        room_view: watch::Receiver<Option<Arc<crate::pages::RoomView>>>,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
         let key = opening.key.clone();
         let _opening = self.opening.lock().await;

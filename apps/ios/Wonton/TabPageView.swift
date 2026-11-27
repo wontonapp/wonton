@@ -1,8 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// 整页的插件网页：网页框从状态栏下沿开始，顶上不放壳的控件，出口是左边缘右滑（ADR-0095）；
-/// 聊天页下拉面板里的那份用 `panel` 传布局。
+/// 整页的插件网页：网页框从状态栏下沿开始，顶上不放壳的控件，出口是左边缘右滑（ADR-0095）。
 struct TabPageView: View {
     let pages: PagesModel
     let home: HomeModel
@@ -18,15 +17,8 @@ struct TabPageView: View {
     let pendingCards: [PendingConfirmation]
     let openCardRoom: (String?) -> Void
     private let close: (() -> Void)?
-    /// 面板里的那一份（ADR-0052）：整页大小、右上角胶囊、退出回聊天页。
-    private let panel: TabPanelMode?
-    private let remove: (() -> Void)?
-    /// 面板只留当前页和左右各一页（ADR-0052）：不在窗口里的释放 WebView，回来了重新建。
-    private let keepAlive: Bool
     @State private var session: TabWebSession
     @State private var showsDetails = false
-    @State private var isVisible = false
-    @State private var seenReady = false
     @State private var disclosedURL: String?
     @State private var disclosedProxy: ProxySettings?
     @State private var showsExitHint = !PageExitHintMemory.current.seen
@@ -42,8 +34,7 @@ struct TabPageView: View {
         tab: TabRef, placed: PlacedTab, store: TabWebViewStore, page: TabPage,
         draft: @escaping (String) -> Void, open: @escaping (PluginEntry) -> Void,
         pendingCards: [PendingConfirmation], openCardRoom: @escaping (String?) -> Void,
-        close: (() -> Void)? = nil, panel: TabPanelMode? = nil, remove: (() -> Void)? = nil,
-        keepAlive: Bool = true
+        close: (() -> Void)? = nil
     ) {
         self.pages = pages
         self.home = home
@@ -57,9 +48,6 @@ struct TabPageView: View {
         self.pendingCards = pendingCards
         self.openCardRoom = openCardRoom
         self.close = close
-        self.panel = panel
-        self.remove = remove
-        self.keepAlive = keepAlive
         self.placed = placed
         self.store = store
         _session = State(initialValue: store.session(for: placed, core: pages.core))
@@ -71,19 +59,11 @@ struct TabPageView: View {
         // 两边各让一次：网页只剩一条，noVNC 这类按窗口缩放的页面跟着缩，缩放动画里画面被拉成竖条（iOS 26.5 实测）。
         .ignoresSafeArea(.keyboard)
         .environment(\.wontonBarStatus, pageStatus)
-        .onChange(of: session.ready) { notifySeen() }
-        .onChange(of: panel?.visible) { _, visible in
-            if visible == true { seenReady = false; notifySeen() }
-        }
         .onChange(of: scenePhase) { _, phase in
             // 第一版离开通话页就挂断（ADR-0096 第 3 节）：App 退到后台，widget 页跟着关。
             if phase == .background, tab.isWidget { closePage() }
         }
-        .onAppear { notifySeen(); isVisible = true }
-        .onDisappear {
-            isVisible = false
-            if panel == nil { takeover?.end() }
-        }
+        .onDisappear { takeover?.end() }
         .sheet(isPresented: $showsDetails) {
             if case let .bot(bot, _) = tab {
                 NavigationStack {
@@ -126,14 +106,14 @@ struct TabPageView: View {
                     if let webView = session.webView, sourceAvailable {
                         let top = framedTop(safe: safe)
                         if top > 0 { PageTopStrip(color: session.ready ? session.topColor : nil, height: top) }
-                        TabWebView(webView: webView, obscured: obscured(safe: safe))
+                        TabWebView(webView: webView)
                             .id(ObjectIdentifier(webView))
                             .padding(.top, top)
                             .ignoresSafeArea(.container)
                     }
                     TabPageStateView(
                         page: page, session: session, connected: connected,
-                        shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
+                        shareProblem: plugins.viewModel.sharedProblem(for: tab),
                         details: { showsDetails = true }, remove: closePage
                     )
                     .ignoresSafeArea(.container)
@@ -150,20 +130,10 @@ struct TabPageView: View {
                 }
             }
             .background { Color(colors.canvas).ignoresSafeArea(.container) }
-            .background {
-                if let panel {
-                    PanelPagePull(
-                        enabled: panel.pagePull && isVisible, webView: session.webView, edge: panel.pageEdge,
-                        zone: PagePullZone(obscured: obscured(safe: safe)),
-                        changed: panel.pageChanged, ended: panel.pageEnded, cancelled: panel.pageCancelled
-                    )
-                }
-            }
             .task(id: inputs) { updatePermittedSession(inputs) }
             .onChange(of: blocksBotPage) { updatePermittedSession(inputs) }
             .onChange(of: requiresDisclosure) { updatePermittedSession(inputs) }
-            .onChange(of: keepAlive) { _, keep in keepSessionAlive(inputs, when: keep) }
-            .task(id: store.generation) { keepSessionAlive(inputs, when: keepAlive) }
+            .task(id: store.generation) { reviveIfReleased(inputs) }
         }
     }
 
@@ -178,12 +148,10 @@ struct TabPageView: View {
                 TabPageCapsule(
                     page: page, tab: tab, placed: placed, pages: pages, session: session, takeover: takeover,
                     details: { showsDetails = true },
-                    shown: capsuleAllowed, panel: panel,
                     close: close ?? { pages.send(.pages(action: .closePage)) },
                     closePage: closePage
                 )
-                // 面板里按网页框的顶边放：房间的面板第 1 级从屏幕中间开始，那里没有状态栏要让。
-                .padding(.top, panel?.insetTop ?? safe.top)
+                .padding(.top, safe.top)
                 .padding(side)
             } else {
                 // 状态栏那一条空着，下面几条从它的下沿排起。
@@ -192,7 +160,7 @@ struct TabPageView: View {
                     PageStatusLine().padding(.top, WontonTheme.spacing.s8).padding(side)
                 }
             }
-            if panel == nil, !pendingCards.isEmpty {
+            if !pendingCards.isEmpty {
                 PendingCardBanner(cards: pendingCards, open: openCardRoom)
             }
             if let takeover { TakeoverNotice(takeover: takeover) }
@@ -211,24 +179,12 @@ struct TabPageView: View {
     }
 
     private func closePage() {
-        if let remove {
-            remove()
-        } else if let close {
+        if let close {
             close()
         } else {
             pages.send(.pages(action: .closePage))
         }
     }
-
-    /// 面板拉开、翻到这一页只发一次“被看到了”，重新翻回来再发。
-    private func notifySeen() {
-        guard panel?.visible == true, session.ready, !seenReady else { return }
-        seenReady = true
-        session.seen()
-    }
-
-    /// 面板拉开着就有胶囊，两级都是（ADR-0052）：第 1 级只靠点露出的那条聊天页收回时，页面出错或空白就找不到出口。
-    private var capsuleAllowed: Bool { panel?.open ?? true }
 
     private var connected: Bool {
         if case .sharedApp = tab { return sourceProxy != nil }
@@ -345,10 +301,9 @@ private extension TabPageView {
         return PageTakeover(pluginId: pluginId, current: plugins.viewModel.takeover, send: plugins.send)
     }
 
-    /// 胶囊只留给三处：聊天页的下拉面板（ADR-0052）；公网网页，来源域名是来源提示，不能省；内容窗口，
+    /// 胶囊只留给两处：公网网页，来源域名是来源提示，不能省；内容窗口，
     /// 那里没有导航栈的左边缘右滑，关闭只能靠它。别的整页不放：页面自己固定在顶上的按钮会被它压住。
     private var hasCapsule: Bool {
-        if panel != nil { return true }
         if case .content = placed { return true }
         if case .url = tab {
             #if DEBUG
@@ -361,35 +316,26 @@ private extension TabPageView {
 
     private var hasStatusLine: Bool { pageStatus.line != nil || pageStatus.subtitle != nil }
 
-    /// 网页被浮在上面的东西挡住的上下两条：只有面板里的页面有，照面板的布局让（ADR-0052）。
-    /// 整页的网页框自己让开顶上那一条（`framedTop`），没有被挡住的。
-    private func obscured(safe: EdgeInsets) -> UIEdgeInsets {
-        guard let panel else { return .zero }
-        return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
-    }
-
     /// 整页的网页框顶边到屏幕顶的距离：状态栏，有胶囊的再加胶囊那一行。让出来的这一条由 `PageTopStrip`
     /// 涂页面的颜色。不用 `obscuredContentInsets` 把网页铺到屏幕顶：现成应用固定在顶上的按钮会顶进状态栏、
     /// 压在胶囊底下，滚动回弹时还会被藏住；按钮点得到比背景铺到顶要紧。
     private func framedTop(safe: EdgeInsets) -> CGFloat {
-        guard panel == nil else { return 0 }
-        return safe.top + (hasCapsule ? TabPageCapsule.rowHeight : 0)
+        safe.top + (hasCapsule ? TabPageCapsule.rowHeight : 0)
     }
 
     /// 整页的顶上一条壳已经替页面让开了（`framedTop`），桥的 `--wonton-inset-top` 和
     /// `safeAreaInsets.top` 报 0：照实给的话，按桥适配过的页面会再让一次。
     private func inputs(safe: EdgeInsets) -> TabWebInputs {
-        let bottom = panel?.insetBottom ?? 0
-        return TabWebInputs(
+        TabWebInputs(
             page: page, proxy: sourceProxy, connected: connected,
             appearance: appearance.viewModel,
             environment: TabEnvironment(
                 locale: AppLanguage.current,
                 timeZone: TimeZone.current.identifier, platform: .ios, dark: colorScheme == .dark,
-                insetTop: Double(panel?.insetTop ?? 0),
-                insetBottom: Double(bottom + (panel == nil ? safe.bottom : 0)),
+                insetTop: 0,
+                insetBottom: Double(safe.bottom),
                 safeArea: TabSafeArea(
-                    top: Double(panel == nil ? 0 : safe.top), right: Double(safe.trailing),
+                    top: 0, right: Double(safe.trailing),
                     bottom: Double(safe.bottom), left: Double(safe.leading)
                 )
             ), textScale: textScale
@@ -397,9 +343,8 @@ private extension TabPageView {
     }
 
     /// 会话被释放过（`TabWebViewStore.retain` 放掉的）：重新要一份并加载。
-    /// 面板只留当前页和左右各一页（ADR-0052）。
-    private func keepSessionAlive(_ inputs: TabWebInputs, when keep: Bool) {
-        if keep, session.webView == nil { revive(inputs) }
+    private func reviveIfReleased(_ inputs: TabWebInputs) {
+        if session.webView == nil { revive(inputs) }
     }
 
     private func revive(_ inputs: TabWebInputs) {

@@ -1,4 +1,4 @@
-@file:Suppress("TooManyFunctions") // 栈里的页和面板页共用的网页、桥、状态都集中在这里。
+@file:Suppress("TooManyFunctions") // 栈里的页共用的网页、桥、状态都集中在这里。
 package app.wonton.ui
 
 import android.content.ActivityNotFoundException
@@ -231,12 +231,11 @@ internal fun pageTakeover(tab: TabRef, pages: PagesState, active: Boolean): Page
     return takeover
 }
 
-/** 一份网页实例的壳内状态：控制器、胶囊菜单、加载标记。[place] 区分栈里的和面板里的同一页面。 */
+/** 一份网页实例的壳内状态：控制器、胶囊菜单、加载标记。[place] 区分栈里的和内容窗口里的同一页面。 */
 internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
     val tab: TabRef get() = when (place) {
         is PlacedTab.Page -> place.tab
         is PlacedTab.Content -> place.tab
-        is PlacedTab.Panel -> place.tab
     }
     val controller = PluginWebViewController()
     /** 网页要摄像头/麦克风时的处置；接在控制器上，页面销毁跟着失效。 */

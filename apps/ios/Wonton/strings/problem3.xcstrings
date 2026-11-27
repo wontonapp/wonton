@@ -492,56 +492,6 @@
         "ja": { "stringUnit": { "state": "translated", "value": "このデバイスのページ設定を読み込めません" } }
       }
     },
-    "problem.pagesAction.nextStep": {
-      "comment": "Next step when a page operation is invalid or its target is missing.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Check Details and try the action again." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请查看详情后重新操作。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "請查看詳細資訊後再重新操作。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "詳細を確認してから、もう一度操作してください。" } }
-      }
-    },
-    "problem.pagesResponse.title": {
-      "comment": "Page data returned by the home server cannot be parsed.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The page data from your home server couldn't be understood" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "家里服务器返回的页面数据无法识别" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "無法識別家用伺服器傳回的頁面資料" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "自宅サーバからのページデータを認識できません" } }
-      }
-    },
-    "problem.pagesResponse.nextStep": {
-      "comment": "Next step for an invalid response when reading bot-pinned pages.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Wonton will try again. If the problem continues, check Details." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "稍后会自动重试；如果还是不行，请查看详情。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "稍後會自動重試；如果問題持續，請查看詳細資訊。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "自動的に再試行します。問題が続く場合は詳細を確認してください。" } }
-      }
-    },
-    "problem.pagesProtocol.title": {
-      "comment": "Communication with the home server encountered a protocol error.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "There was a problem communicating with your home server" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "与家里的服务器通信时出了问题" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "與家用伺服器通訊時發生問題" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "自宅サーバとの通信でエラーが発生しました" } }
-      }
-    },
-    "problem.pagesProtocol.nextStep": {
-      "comment": "Next step for a tunnel protocol error during a page operation.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Check for app and server updates. If the problem continues, check Details." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检查 App 和服务器是否有更新；如果还是不行，请查看详情。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "請檢查雲吞和伺服器是否有更新；如果問題持續，請查看詳細資訊。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "アプリとサーバの更新を確認し、問題が続く場合は詳細を確認してください。" } }
-      }
-    },
     "problem.serverNotPaired.nextStep": {
       "comment": "What to do when the other server isn't paired: pair it first.",
       "extractionState": "manual",

@@ -73,23 +73,26 @@ async fn forgetting_the_session_rejects_a_pending_room_open() {
 }
 
 #[tokio::test]
-async fn a_timeline_does_not_receive_another_rooms_panel() {
+async fn a_timeline_does_not_receive_another_rooms_widgets() {
     let (chat, _dir) = rig();
     let room: OwnedRoomId = "!room:example.com".parse().unwrap();
     let other: OwnedRoomId = "!other:example.com".parse().unwrap();
-    let selected = wonton_protocol::TabRef::Url {
-        url: "https://example.com/report".to_owned(),
+    let widget = wonton_protocol::RoomWidget {
+        tab: wonton_protocol::TabRef::Url {
+            url: "https://example.com/call".to_owned(),
+        },
+        title: "通话".to_owned(),
+        icon: None,
+        entry: wonton_protocol::WidgetEntry::VideoCall,
     };
-    let panel = |room_id| {
-        Some(Arc::new(crate::pages::RoomPanelView {
+    let view = |room_id| {
+        Some(Arc::new(crate::pages::RoomView {
             room_id,
-            panel: Vec::new(),
-            selected: Some(selected.clone()),
-            widgets: Vec::new(),
+            widgets: vec![widget.clone()],
         }))
     };
     let (sender, mut updates) = mpsc::unbounded_channel();
-    let room_view = watch::Sender::new(panel(other));
+    let room_view = watch::Sender::new(view(other));
     let outbox = Outbox::new(
         sender,
         Arc::default(),
@@ -112,9 +115,9 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
         )
         .unwrap();
     let update = updates.try_recv().unwrap();
-    assert_eq!(update.panel_selected, None);
+    assert!(update.widgets.is_empty());
 
-    room_view.send_replace(panel(room));
+    room_view.send_replace(view(room));
     outbox
         .send(
             &Vector::new(),
@@ -128,7 +131,7 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
         )
         .unwrap();
     let update = updates.try_recv().unwrap();
-    assert_eq!(update.panel_selected, Some(selected));
+    assert_eq!(update.widgets, vec![widget]);
 }
 
 /// 受控核心：数请求、按到达次序回不同的 Ready，第一笔可卡在响应前。

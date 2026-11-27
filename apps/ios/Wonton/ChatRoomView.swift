@@ -32,9 +32,6 @@ struct ChatRoomView: View {
     @State var jump = TimelineJumpState()
     /// 输入框上的命令列表开着（ADR-0109 第 7 节）：右下角的“向下”让开，不和它抢地方。
     @State private var commandMenuOpen = false
-    /// 资料页里点了“打开面板”：每点一次加一，面板宿主跟着打开（ADR-0052）。
-    @State private var panelOpenRequests = 0
-    @Environment(\.panelDeps) private var panelDeps
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(PagesModel.self) private var pages
     @Environment(\.wontonContentRoot) private var isContentRoot
@@ -56,30 +53,24 @@ struct ChatRoomView: View {
         if threadRoot == nil {
             // 旁聊页全屏盖在这条主对话上（ADR-0093）：盖层的机制在 SideChatCover。
             SideChatCover(model: model, plugins: plugins, roomId: roomId, title: title) {
-                RoomPanelHost(
-                    roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
-                    openRequest: panelOpenRequests
-                ) {
-                    roomContent
-                    #if DEBUG
-                        .overlay(alignment: .topLeading) {
-                            ScrollDebug(
-                                pin: pin, keyboard: isKeyboardVisible,
-                                overlayBottom: overlayBottom, composerHeight: composerHeight,
-                                viewport: String(describing: timeline.viewport),
-                                extra: "sub=\(timeline.debugSubscribes) up=\(timeline.debugUpdates)"
-                                    + " n=\(timeline.items.count)"
-                                    + " end=\(timeline.debugEnded) closed=\(model.debugClosed)",
-                                flashItem: jump.flash?.itemId,
-                                flashes: jump.flashes,
-                                lastFlash: jump.lastFlash
-                            )
-                        }
-                    #endif
-                }
+                roomContent
+                #if DEBUG
+                    .overlay(alignment: .topLeading) {
+                        ScrollDebug(
+                            pin: pin, keyboard: isKeyboardVisible,
+                            overlayBottom: overlayBottom, composerHeight: composerHeight,
+                            viewport: String(describing: timeline.viewport),
+                            extra: "sub=\(timeline.debugSubscribes) up=\(timeline.debugUpdates)"
+                                + " n=\(timeline.items.count)"
+                                + " end=\(timeline.debugEnded) closed=\(model.debugClosed)",
+                            flashItem: jump.flash?.itemId,
+                            flashes: jump.flashes,
+                            lastFlash: jump.lastFlash
+                        )
+                    }
+                #endif
             }
         } else {
-            // 旁聊页没有房间的面板（ADR-0093）：不挂面板宿主，也没有上推入口。
             roomContent
         }
     }
@@ -144,7 +135,7 @@ private extension ChatRoomView {
         .forwardSheet(item: $forwarding, model: model, plugins: plugins, from: target)
         .navigationDestination(isPresented: $showsBotProfile) {
             if let profileBot {
-                BotProfileView(chat: model, plugins: plugins, botRef: profileBot, openPanel: openPanelFromProfile)
+                BotProfileView(chat: model, plugins: plugins, botRef: profileBot)
             }
         }
         .wontonDialog(
@@ -173,7 +164,6 @@ private extension ChatRoomView {
             sideChatTitle: threadRoot == nil ? nil : sideChatBarTitle,
             close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId, why: "bar") }
         ) {
-            // 面板跟着主对话（ADR-0093）：旁聊页没有房间的面板，也没有这里的按钮。
             // 房间里装着的 widget（通话）：点了全屏打开，关掉回到这里（ADR-0096）。旁聊页没有。
             if threadRoot == nil, !timeline.widgets.isEmpty {
                 RoomCallEntry(widgets: timeline.widgets, active: timeline.callActive) { pages.open($0.tab) }
@@ -613,15 +603,6 @@ private extension ChatRoomView {
     var profileAction: (() -> Void)? {
         guard let bot else { return nil }
         return { openProfile(bot.bot) }
-    }
-
-    /// 房间面板的入口在 Bot 资料页（ADR-0052）：先退回房间，再让面板宿主打开。旁聊页和没有面板的地方不给。
-    var openPanelFromProfile: (() -> Void)? {
-        guard threadRoot == nil, panelDeps != nil else { return nil }
-        return {
-            showsBotProfile = false
-            panelOpenRequests += 1
-        }
     }
 
     func openProfile(_ bot: BotRef) {
