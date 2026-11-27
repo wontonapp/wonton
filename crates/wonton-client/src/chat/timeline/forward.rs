@@ -71,7 +71,7 @@ pub(super) async fn forward(
     previews: Previews,
     sender: &Outbox,
     scrolled: &mut watch::Receiver<TimelineScroll>,
-    mut room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
+    mut room_view: watch::Receiver<Option<Arc<crate::pages::RoomView>>>,
     mut chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     mut confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     support: &Support,
@@ -194,7 +194,7 @@ pub(super) async fn forward(
                         if changed.is_err() {
                             return;
                         }
-                        // 面板、红点或 widget 入口变了：增量是空的，壳只更新那几个字段。
+                        // widget 入口变了：增量是空的，壳只更新那几个字段。
                         Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                     }
                     changed = plugin_changes.changed() => {

@@ -488,7 +488,7 @@ impl Bus {
         }
     }
 
-    /// 以 Bot 的身份查房间成员：Bot 和收件人都已加入才算。核心临时代 Bot 登录一台设备，查完退出（同 Bot 钉页的卡片）。
+    /// 以 Bot 的身份查房间成员：Bot 和收件人都已加入才算。核心临时代 Bot 登录一台设备，查完退出。
     async fn both_joined(
         &self,
         bot_user: &str,

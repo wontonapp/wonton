@@ -21,10 +21,6 @@ final class TimelineModel {
     private(set) var debugSubscribes = 0
     private(set) var debugUpdates = 0
     private(set) var debugEnded = ""
-    /// 房间面板里的页面（ADR-0052）：列表为空时壳画大加号。每一批都带当前值。
-    private(set) var panel: [PanelItem] = []
-    /// 房间面板上次看的那一页（本机记住，不同步）。
-    private(set) var panelSelected: TabRef?
     /// 这条时间线是旁聊时给标题和状态（ADR-0093），主时间线为空。
     private(set) var sideChat: SideChatCard?
     /// 顶栏的 widget 入口和房间里有没有人在通话（ADR-0096）。
@@ -121,8 +117,6 @@ final class TimelineModel {
         backPagination = update.backPagination
         confirmations = update.confirmations
         viewport = update.viewport
-        panel = update.panel
-        panelSelected = update.panelSelected
         notice = update.keyNotice
         sideChat = update.sideChat
         widgets = update.widgets

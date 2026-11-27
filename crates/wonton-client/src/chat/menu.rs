@@ -182,13 +182,13 @@ fn is_own_message(item: &TimelineItem) -> bool {
     matches!(&item.content, TimelineContent::Message { message } if message.is_own)
 }
 
-/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）、加密入口、
+/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上加密入口、
 /// 显示在这个房间的确认卡片（ADR-0016），以及顶栏的 widget 入口和有没有人在通话（ADR-0096）、正在输入和
 /// 跳转的进展（ADR-0109）。
 pub(super) struct Outbox {
     sender: mpsc::UnboundedSender<TimelineUpdate>,
     menus: Arc<Mutex<Menus>>,
-    room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
+    room_view: watch::Receiver<Option<Arc<crate::pages::RoomView>>>,
     chat: watch::Receiver<ChatViewModel>,
     room_id: OwnedRoomId,
     confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
@@ -205,7 +205,7 @@ impl Outbox {
     pub(super) fn new(
         sender: mpsc::UnboundedSender<TimelineUpdate>,
         menus: Arc<Mutex<Menus>>,
-        room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
+        room_view: watch::Receiver<Option<Arc<crate::pages::RoomView>>>,
         chat: watch::Receiver<ChatViewModel>,
         room_id: OwnedRoomId,
         confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
@@ -280,14 +280,9 @@ impl Outbox {
             .borrow()
             .clone()
             .filter(|view| view.room_id == self.room_id);
-        let (panel, panel_selected, widgets) = match room_view {
-            Some(view) => (
-                view.panel.clone(),
-                view.selected.clone(),
-                view.widgets.clone(),
-            ),
-            None => (Vec::new(), None, Vec::new()),
-        };
+        let widgets = room_view
+            .map(|view| view.widgets.clone())
+            .unwrap_or_default();
         let key_notice = self.key_notice(entries);
         let confirmations = self.confirmations();
         let (commands, omitted) = self.live.tables.values();
@@ -299,8 +294,6 @@ impl Outbox {
                 viewport,
                 scroll_to_bottom,
                 anchor,
-                panel,
-                panel_selected,
                 key_notice,
                 confirmations,
                 side_chat: lock(&self.side_chat).clone(),

@@ -28,7 +28,6 @@ PREFIXES: Dict[str, str] = {
     "botprofile": "botProfile",
     "transfer": "transfer",
     "composer": "composer",
-    "panel": "panel",
     "confirmation": "chat",
     "confirmationcard": "confirmationCard",
     "confirmations": "confirmations",
@@ -146,7 +145,7 @@ PARTS: Dict[str, int] = {
 GROUP_OF: Dict[str, str] = {
     prefix: group
     for group, prefixes in {
-        "chat": "chat chatbackup chatstatus timeline message room bot botprofile transfer composer panel confirmation confirmationcard confirmations side agent agentrun",
+        "chat": "chat chatbackup chatstatus timeline message room bot botprofile transfer composer confirmation confirmationcard confirmations side agent agentrun",
         "onboarding": "onboarding pairing joining install home homestatus launcher",
         "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo preview secret sidebar sessions scope takeover port mapping portmapping",
         "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff matrixlogin",

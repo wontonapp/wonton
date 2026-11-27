@@ -114,7 +114,7 @@ async fn chat_is_idle_open_page_polls_and_background_pauses_until_foreground() {
 }
 
 #[tokio::test]
-async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redial() {
+async fn an_open_page_polls_but_a_disconnected_page_does_not_request_or_redial() {
     crate::chat::support::init_test_logging();
     let rig = Rig::new().await;
     let home = FakeHome::start(vec![rig.device()]).await;
@@ -138,21 +138,12 @@ async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redi
     .await;
     let pinned = tab(&plugin.id, Some("home"));
     wait_my_app(&rig, &pinned).await;
-    // 面板里再放一份入口（网址入口那一页）：栈里的和面板里的各自计数。
-    let panel = tab(&plugin.id, None);
-    rig.app
-        .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::AddPanelPage {
-                scope: PanelScope::Main,
-                tab: panel.clone(),
-            },
-        })
-        .unwrap();
+    let root = tab(&plugin.id, None);
     enter(
         &rig,
         &pinned,
         &mut plugin,
-        "panel-entered",
+        "entered",
         Action::Pages {
             action: wonton_protocol::PageAction::OpenPage {
                 tab: pinned.clone(),
@@ -182,7 +173,7 @@ async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redi
     home.allowed.allow(rig.device());
     rig.app
         .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::OpenPage { tab: panel },
+            action: wonton_protocol::PageAction::OpenPage { tab: root },
         })
         .unwrap();
     quiet(&rig, true).await;

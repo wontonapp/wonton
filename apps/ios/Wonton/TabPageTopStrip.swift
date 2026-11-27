@@ -40,7 +40,6 @@ extension TabWebSession {
 
     /// 取色脚本给谁注入：让出顶条的整页和内容窗口，公网网页除外（它没有注入脚本，ADR-0052）。
     var reportsTopColor: Bool {
-        if case .panel = placed { return false }
         if case .url = tab {
             #if DEBUG
             return Self.urlAsAppPage

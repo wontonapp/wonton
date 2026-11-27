@@ -76,7 +76,7 @@ struct ChatListView: View {
                         .padding(.bottom, WontonTheme.spacing.s12)
                 }
             }
-            .wontonRootScreen(TabText.chat, hasActions: true) { PanelEntryButton() }
+            .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
             .task { await model.confirmations.observe() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
             .environment(\.goToInstalledApps, { pages.open(.apps) })

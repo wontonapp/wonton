@@ -2,26 +2,6 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "problem.pagesForbidden.nextStep": {
-      "comment": "Next step when the server refuses a page operation for lack of permission.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Check your permissions and try again." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "检查权限后再试。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "請檢查權限後再試一次。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "権限を確認して、もう一度お試しください。" } }
-      }
-    },
-    "problem.pagesNotFound.title": {
-      "comment": "A page requested for an operation no longer exists on the server.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The requested page couldn't be found" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "没找到要操作的页面" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "找不到要操作的頁面" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "操作するページが見つかりません" } }
-      }
-    },
     "problem.appearance.title": {
       "comment": "Problem title when the appearance settings couldn't be saved on the home server.",
       "extractionState": "manual",

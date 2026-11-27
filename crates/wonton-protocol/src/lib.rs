@@ -40,6 +40,7 @@ pub mod inbox;
 pub mod inbox_request;
 pub mod inbox_validate;
 mod lan;
+mod layout;
 mod link;
 mod link_preview;
 pub mod manifest;
@@ -50,7 +51,6 @@ mod message_layout;
 mod onboarding;
 mod owner;
 mod pages;
-mod panel;
 mod peers;
 mod personal_data;
 mod plugin;
@@ -229,6 +229,10 @@ pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,
     LanProblem, LanProtocol, LanSettings,
 };
+pub use layout::{
+    LAYOUT_EVENT, LayoutSettings, MCP_APP_CALLS_PATH, MCP_APP_MESSAGE_PATH, MCP_APP_READ_PATH,
+    MCP_APP_TOOLS_PATH, PlacedTab, mcp_app_call_path, mcp_app_host_path,
+};
 pub use link::AppLink;
 pub use link_preview::{
     LINK_PREVIEW_PATH, LinkPreview, LinkPreviewCard, LinkPreviewCardImage, LinkPreviewFailure,
@@ -256,13 +260,6 @@ pub use pages::{
     CandidatePlugin, KEEP_ALIVE_PAGES, MyAppEntry, MyAppRef, OpenPage, PagesFailure, PagesProblem,
     PagesViewModel, PluginTab, TabCandidate, TabIcon, TabLayout, TabLoadFailure, TabMediaPrompt,
     TabPage, TabRef, TabState,
-};
-pub use panel::{
-    BOT_PANEL_PINS_PATH, BotPanelPin, BotPanelPins, BotPinConsent, BotPinOwner, LAYOUT_EVENT,
-    LayoutSettings, MAX_PANEL_PAGES, MCP_APP_CALLS_PATH, MCP_APP_MESSAGE_PATH, MCP_APP_READ_PATH,
-    MCP_APP_TOOLS_PATH, PanelEntry, PanelItem, PanelScope, PanelSource, PinTarget, PlacedTab,
-    ROOM_PANEL_EVENT, RoomPanel, bot_panel_consent_path, bot_panel_pin_path,
-    bot_panel_pin_seen_path, mcp_app_call_path, mcp_app_host_path,
 };
 pub use peers::{
     PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRequestRow,

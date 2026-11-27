@@ -48,7 +48,7 @@ struct MyAppsSettingsView: View {
                         pages.send(.pages(action: .removeMyApp(app: appRef)))
                     }
                 }
-                if !pages.viewModel.myAppCandidates.isEmpty, editMode?.wrappedValue != .active {
+                if editMode?.wrappedValue != .active {
                     Button(String(localized: .myappAddMore)) { showsCandidates = true }
                 }
             }
@@ -122,11 +122,12 @@ struct MyAppsSettingsView: View {
     }
 }
 
-/// 还没加进“我的应用”的页面，逐行加进去。
+/// 还没加进“我的应用”的页面，逐行加进去；最后一行填网址加公网网页或插件里的某一页。
 private struct MyAppCandidates: View {
     @Environment(PagesModel.self) private var pages
     @Environment(PluginsModel.self) private var plugins
     @Environment(\.wontonColors) private var colors
+    @State private var url = ""
 
     var body: some View {
         List {
@@ -148,6 +149,18 @@ private struct MyAppCandidates: View {
                 }
                 .foregroundStyle(.primary)
             }
+            Section {
+                HStack(spacing: WontonTheme.spacing.s8) {
+                    TextField("https://", text: $url)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .onSubmit(addURL)
+                    Button(String(localized: .myappAddUrl), action: addURL)
+                        .buttonStyle(WontonSmallButtonStyle())
+                        .disabled(url.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
             if let problem = pages.viewModel.problem {
                 Section {
                     ProblemNotice(problem: problem.problem)
@@ -155,6 +168,14 @@ private struct MyAppCandidates: View {
             }
         }
         .scrollContentBackground(.hidden)
+    }
+
+    /// 网址对不对由核心判断（只收 https、Bot 的网页不收），不对的原因出在下面的问题里。
+    private func addURL() {
+        let value = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        pages.send(.pages(action: .addMyAppUrl(url: value, title: nil)))
+        url = ""
     }
 }
 

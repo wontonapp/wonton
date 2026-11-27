@@ -231,24 +231,7 @@ async fn configuration_failure_and_recovery_preserve_content_and_room_views() {
     let content = rig.tabs.subscribe_content_page(page_tab()).unwrap();
     rig.open(page_tab());
     let room: OwnedRoomId = "!content:home.example".parse().unwrap();
-    let room_tab = url_tab("https://example.com/room");
-    rig.open_room(
-        &room,
-        RoomPanel {
-            pages: vec![PanelEntry {
-                tab: room_tab.clone(),
-                title: None,
-            }],
-        },
-    );
-    rig.tabs
-        .dispatch(PageAction::SelectPanelPage {
-            scope: PanelScope::Room {
-                room_id: room.to_string(),
-            },
-            tab: room_tab,
-        })
-        .unwrap();
+    let _room = rig.tabs.subscribe_room_view(room.as_str()).unwrap();
     let stack = rig.view().stack;
     let content_page = content.page();
     let room_view = rig.tabs.room_view(room.as_str()).unwrap();

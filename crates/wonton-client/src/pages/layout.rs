@@ -2,8 +2,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{
-    CoreError, LayoutSettings, MAX_PANEL_PAGES, MyAppEntry, MyAppRef, PagesFailure, PanelEntry,
-    TabIcon, TabLayout, TabRef,
+    CoreError, LayoutSettings, MyAppEntry, MyAppRef, PagesFailure, TabIcon, TabLayout, TabRef,
 };
 
 use super::{entry_plugin_id, invalid};
@@ -22,9 +21,6 @@ pub(super) struct LayoutFile {
     /// 新装的应用自动加到末尾。
     #[serde(default = "auto_add_default")]
     pub(super) auto_add: bool,
-    /// 主聊天页下拉面板里的页面，按显示顺序（ADR-0052）。
-    #[serde(default)]
-    pub(super) panel: Vec<PanelEntry>,
 }
 
 #[derive(Clone)]
@@ -34,7 +30,7 @@ pub(super) struct LayoutReadError {
 }
 
 impl LayoutFile {
-    /// 账号数据里的一份：我的应用和主面板。本机文件里多出来的缓存（页面标题图标）不进账号数据。
+    /// 账号数据里的一份：我的应用。本机文件里多出来的缓存（页面标题图标）不进账号数据。
     pub(super) fn layout(&self) -> LayoutSettings {
         LayoutSettings {
             my_apps: self
@@ -46,7 +42,6 @@ impl LayoutFile {
                 })
                 .collect(),
             auto_add: self.auto_add,
-            panel: self.panel.clone(),
         }
     }
 
@@ -156,37 +151,15 @@ fn validate_file(file: &LayoutFile) -> Result<(), String> {
             check_url(tab)?;
         }
     }
-    validate_panel(&file.panel, MAX_PANEL_PAGES)?;
     Ok(())
 }
 
-/// 我的应用和面板共用的配置规矩：不超上限、没有重页。账号数据也用这份。
-pub(super) fn validate_panel(panel: &[PanelEntry], max: usize) -> Result<(), String> {
-    if panel.len() > max {
-        return Err(l10n!(
-            CATALOG,
-            language(),
-            "panel-config-too-many",
-            count = max
-        ));
-    }
-    let mut seen = Vec::new();
-    for entry in panel {
-        if seen.contains(&entry.tab) {
-            return Err(l10n!(CATALOG, language(), "panel-config-duplicate"));
-        }
-        seen.push(entry.tab.clone());
-        check_url(&entry.tab)?;
-    }
-    Ok(())
-}
-
-/// 存下来的公网网页也只收 `https://`（ADR-0052），本机文件和账号数据都查。
+/// 存下来的公网网页也只收 `https://`，本机文件和账号数据都查。
 fn check_url(tab: &TabRef) -> Result<(), String> {
     if let TabRef::Url { url } = tab
         && !is_https_url(url)
     {
-        return Err(l10n!(CATALOG, language(), "panel-pin-not-https"));
+        return Err(l10n!(CATALOG, language(), "page-not-https"));
     }
     Ok(())
 }
@@ -197,7 +170,6 @@ pub(super) fn default_file(server_id: Option<String>) -> LayoutFile {
         my_apps: Vec::new(),
         my_apps_initialized: false,
         auto_add: true,
-        panel: Vec::new(),
     }
 }
 
@@ -210,7 +182,6 @@ pub(super) fn normalize_for_server(file: &mut LayoutFile, server_id: Option<Stri
         // 插件和插件里的页面绑在上一台服务器上；公网网页和服务器无关，留着。
         file.my_apps
             .retain(|entry| entry_plugin_id(entry).is_none());
-        file.panel.clear();
     }
     file.server_id = Some(server_id);
 }
@@ -251,23 +222,21 @@ pub(super) fn adopt_layout(file: &mut LayoutFile, settings: LayoutSettings) -> R
             page,
         });
     }
-    validate_panel(&settings.panel, MAX_PANEL_PAGES)?;
     *file = LayoutFile {
         server_id: file.server_id.clone(),
         my_apps,
         my_apps_initialized: true,
         auto_add: settings.auto_add,
-        panel: settings.panel,
     };
     Ok(())
 }
 
-/// 把本机的配置写进账号数据的原文：只换认识的三块，别的键（更新版 App 存的）原样留下。
+/// 把本机的配置写进账号数据的原文：只换认识的两块，别的键（更新版 App 存的）原样留下。
 pub(super) fn overwrite_layout(
     raw: &mut serde_json::Map<String, serde_json::Value>,
     settings: &LayoutSettings,
 ) {
-    for key in ["my_apps", "auto_add", "panel"] {
+    for key in ["my_apps", "auto_add"] {
         raw.remove(key);
     }
     let value =
@@ -355,7 +324,7 @@ fn check_page_tab(
     match tab {
         TabRef::Url { url } => {
             if !is_https_url(url) {
-                return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
+                return Err(invalid(&l10n!(CATALOG, language(), "page-not-https")));
             }
             Ok(())
         }

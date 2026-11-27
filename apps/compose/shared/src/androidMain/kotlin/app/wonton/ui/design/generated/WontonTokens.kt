@@ -108,7 +108,6 @@ object WontonGesture {
     val dragSlop = 8f
     val edgeWidth = 24f
     val timeReveal = 64f
-    val pageEdgeZone = 48f
     val replyTrigger = 64f
     val replyMax = 88f
 }
