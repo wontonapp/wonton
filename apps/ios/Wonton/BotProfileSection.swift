@@ -21,6 +21,8 @@ struct BotProfileSection: View {
     @State private var processingProgress = 0.0
     /// 选取和转码在壳里，失败不经过核心，就地显示。
     @State private var localProblem: Problem?
+    /// 危险模式的开头由本地先翻，核心回来再覆盖；失败下一次刷新会回退。
+    @State private var dangerOn: Bool?
     @Environment(\.wontonColors) private var colors
 
     private enum PendingEdit: Equatable {
@@ -50,6 +52,27 @@ struct BotProfileSection: View {
                         )
                         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                             nameRow(bot, isBusy: isBusy(bot))
+                            if let danger = bot.danger {
+                                if danger.canToggle {
+                                    Toggle(String(localized: .Family.familyDangerMode),
+                                           isOn: Binding(
+                                               get: { dangerOn ?? danger.enabled },
+                                               set: { on in
+                                                   dangerOn = on
+                                                   Task {
+                                                       try? await plugins.core.setToolDanger(
+                                                           id: bot.bot.pluginId,
+                                                           caller: "\(bot.bot.pluginId)/\(bot.bot.bot)",
+                                                           enabled: on
+                                                       )
+                                                   }
+                                               }
+                                           ))
+                                        .tint(Color(colors.danger))
+                                } else if danger.enabled {
+                                    Tag(text: String(localized: .Family.familyDangerMode), tint: colors.danger)
+                                }
+                            }
                             staticRow(bot, isBusy: isBusy(bot))
                         }
                     }

@@ -59,6 +59,8 @@ import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
 import java.io.IOException
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 
 /** 这个 Bot 的应用的图标（兜底用）；Bot 资料里没设头像时显示它。 */
@@ -77,6 +79,7 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
     }
     DetailSection(stringResource(R.string.bot_profile_title)) {
         var editingName by remember { mutableStateOf(false) }
+        var dangerOn by remember(bot.userId) { mutableStateOf(bot.danger?.enabled == true) }
         var nameDraft by remember { mutableStateOf(bot.name) }
         var localProblem by remember { mutableStateOf<Problem?>(null) }
         var transcoding by remember { mutableStateOf(false) }
@@ -136,6 +139,15 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
                 editingName = false
             },
             onCancelName = { editingName = false },
+            dangerOn = dangerOn,
+            onToggleDanger = { on ->
+                dangerOn = on
+                scope.launch {
+                    runCatching {
+                        plugins.core.setToolDanger(bot.bot.pluginId, "${bot.bot.pluginId}/${bot.bot.bot}", on)
+                    }
+                }
+            },
             onPickStatic = { pickStatic.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) },
             onRemoveStatic = { send(Action.Bot(BotAction.ClearBotAvatar(bot.bot.pluginId, null)) ) },
         )
@@ -186,6 +198,8 @@ private fun ProfileHeader(
     onCancelName: () -> Unit,
     onPickStatic: () -> Unit,
     onRemoveStatic: () -> Unit,
+    onToggleDanger: (Boolean) -> Unit,
+    dangerOn: Boolean,
 ) {
     Row(
         Modifier.fillMaxWidth(),
@@ -208,7 +222,7 @@ private fun ProfileHeader(
                     WontonSmallButton(stringResource(R.string.common_cancel), onCancelName)
                 }
             } else {
-                NameLine(bot, busy, onEditName)
+                NameLine(bot, busy, dangerOn, onToggleDanger, onEditName)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 WontonSmallButton(stringResource(R.string.bot_avatar_choose), onPickStatic, enabled = !busy)
@@ -224,7 +238,13 @@ private fun ProfileHeader(
 
 /** 名字点进去编辑；保存时核心会 trim、查规则，不行的原因进 [BotView.problem]。 */
 @Composable
-private fun NameLine(bot: BotView, busy: Boolean, onEditName: () -> Unit) {
+private fun NameLine(
+    bot: BotView,
+    busy: Boolean,
+    dangerOn: Boolean,
+    onToggleDanger: (Boolean) -> Unit,
+    onEditName: () -> Unit,
+) {
     Row(
         Modifier.clickable(enabled = !busy, role = Role.Button, onClick = onEditName),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
@@ -238,6 +258,21 @@ private fun NameLine(bot: BotView, busy: Boolean, onEditName: () -> Unit) {
             modifier = Modifier.size(WontonTheme.size.iconTiny),
             tint = WontonTheme.colors.textSecondary.toColor(),
         )
+        if (bot.danger?.canToggle == true) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            ) {
+                Text(
+                    stringResource(R.string.family_dangerMode),
+                    style = WontonTheme.typography.caption,
+                    color = WontonTheme.colors.danger.toColor(),
+                )
+                Switch(checked = dangerOn, onCheckedChange = onToggleDanger)
+            }
+        } else if (bot.danger?.enabled == true) {
+            Tag(stringResource(R.string.family_dangerMode), WontonTheme.colors.danger)
+        }
         if (bot.saving) CircularProgressIndicator(Modifier.size(WontonTheme.size.iconTiny))
     }
 }

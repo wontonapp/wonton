@@ -145,6 +145,9 @@ impl PluginManager {
             notices.extend(self.oom_notices(id, langs));
         }
         InstalledPlugin {
+            bot_danger_can_toggle: false,
+            bot_shared: false,
+            bot_danger: false,
             chat: manifest
                 .filter(|m| super::super::bots::is_bot(m))
                 .map(|m| PluginChat {

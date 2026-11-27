@@ -7,6 +7,12 @@ enum UITestSidebar {
         NSPredicate(format: "label IN %@", ["Sidebar", "侧边栏", "側邊欄", "サイドバー"])
     }
 
+    /// 按标签找按钮；给 onboarding 的往下/跳过之类用。
+    static func button(_ labels: [String], app: XCUIApplication) -> XCUIElement? {
+        let element = app.buttons.matching(NSPredicate(format: "label IN %@", labels)).firstMatch
+        return element.exists ? element : nil
+    }
+
     /// 主界面到了：侧边栏按钮存在（配对后只有聊天一个入口，没有别的标签可等）。
     @discardableResult
     static func waitForMain(_ app: XCUIApplication, timeout: TimeInterval) -> Bool {

@@ -214,6 +214,7 @@ async fn the_list_and_single_card_belong_to_the_recipient() {
     let family = TunnelPeer(SecretKey::generate().public());
     home.members
         .invite(crate::members::MemberRecord {
+            invited_by: None,
             username: "mia".to_owned(),
             user_id: "@mia:test".to_owned(),
             display_name: "Mia".to_owned(),

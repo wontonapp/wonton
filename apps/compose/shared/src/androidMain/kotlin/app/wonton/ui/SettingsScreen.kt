@@ -94,6 +94,8 @@ fun SettingsPage(
         }
         SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
         SettingsSubpage.FRIENDS -> FriendsPage(core, back)
+        SettingsSubpage.MEMBERS -> MembersPage(core, back) { onSubpage(SettingsSubpage.ROLES) }
+        SettingsSubpage.ROLES -> RolesPage(core, plugins, back)
         SettingsSubpage.MAIN -> WontonScreen(bar = {
             val title = stringResource(R.string.tab_settings)
             if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
@@ -154,6 +156,13 @@ private fun SettingsEntryRow(
             showsForward = true, onClick = { onSubpage(SettingsSubpage.PEERS) },
         )
         // 好友（ADR-0051）；核心只在列表取到过时给这一项，请求数做角标。
+        is SettingsEntry.Members -> WontonRow(
+            stringResource(R.string.family_membersTitle),
+            entry.count.toString(),
+            showsForward = true,
+            badgeCount = entry.requests.toInt(),
+            onClick = { onSubpage(SettingsSubpage.MEMBERS) },
+        )
         is SettingsEntry.Friends -> WontonRow(
             stringResource(R.string.friends_title),
             entry.count.toString(),

@@ -26,9 +26,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import app.wonton.protocol.BotView
+import app.wonton.protocol.CardAudience
+import app.wonton.protocol.ConfirmationCard
 import app.wonton.protocol.ConfirmationRequester
-import androidx.compose.ui.unit.dp
 import app.wonton.protocol.ConfirmationState
+import androidx.compose.ui.unit.dp
 import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.Action
 import app.wonton.ui.design.WontonTheme
@@ -215,4 +217,23 @@ private fun rowLine(view: ConfirmationView): String? = when (val state = view.ca
         ?: stringResource(R.string.confirmations_state_uncertain)
     ConfirmationState.Rejected -> stringResource(R.string.confirmation_card_rejected)
     ConfirmationState.Expired -> stringResource(R.string.confirmation_card_expired)
+}
+
+/** 替谁办事、在等哪个管理员、谁处理过了；只有发给管理员的卡片才有这几行。 */
+@Composable
+internal fun AdministratorLines(card: ConfirmationCard) {
+    card.onBehalf?.let { behalf ->
+        Text(
+            stringResource(R.string.family_cardOnBehalf, behalf.displayName),
+            style = WontonTheme.typography.supporting,
+        )
+    }
+    if (card.audience == CardAudience.ADMINS && card.state == ConfirmationState.Pending &&
+        card.answeredBy == null
+    ) {
+        Text(
+            stringResource(R.string.family_cardWaitingAdmins),
+            style = WontonTheme.typography.supporting,
+        )
+    }
 }

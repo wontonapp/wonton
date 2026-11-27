@@ -56,6 +56,9 @@ enum SettingsRoute: Hashable {
     case pairing
     case peers
     case friends
+    /// 设置里的“成员”（ADR-0088）。只有能管成员的设备能进；里面还有只有主人能进的角色页。
+    case family
+    case familyRoles
     case egress
     case registryMirror
     case coreUpgrade

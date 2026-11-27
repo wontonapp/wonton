@@ -75,6 +75,7 @@ impl Rig {
         );
         home.members
             .invite(MemberRecord {
+                invited_by: None,
                 role_id: "admin".into(),
                 ..MemberRecord::for_test("mia")
             })

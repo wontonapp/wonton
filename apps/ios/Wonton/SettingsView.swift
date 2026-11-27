@@ -67,6 +67,8 @@ struct SettingsTab: View {
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .friends: FriendsView(core: chat.core)
+        case .family: MembersView(core: chat.core, plugins: plugins)
+        case .familyRoles: RolesView(core: chat.core, plugins: plugins)
         case .egress: EgressSettingsView(model: plugins)
         case .registryMirror: RegistryMirrorSettingsView(model: plugins)
         case .coreUpgrade: CoreUpgradeView(model: plugins)
@@ -157,6 +159,15 @@ struct SettingsView: View {
             }
         case .myApps:
             NavigationLink(value: SettingsRoute.myApps) { WontonRow(title: TabText.myApps, showsForward: true) }
+        case let .members(count, requests):
+            NavigationLink(value: SettingsRoute.family) {
+                WontonRow(
+                    title: String(localized: .Family.familyMembersTitle),
+                    value: String(count),
+                    badgeText: requests > 0 ? String(requests) : nil,
+                    showsForward: true
+                )
+            }
         case let .notifications(_, pushStatus, _):
             NavigationLink(value: SettingsRoute.notifications) {
                 WontonRow(
@@ -190,8 +201,7 @@ struct SettingsView: View {
                     showsForward: true
                 )
             }
-        // 成员页由成员那一张卡补上，入口先不画。
-        case .members, .matrixAccount, .matrixDevices, .addWontonServer, .other:
+        case .matrixAccount, .matrixDevices, .addWontonServer, .other:
             EmptyView()
         }
     }

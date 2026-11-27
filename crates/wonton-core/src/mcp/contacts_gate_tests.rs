@@ -34,6 +34,7 @@ async fn home(net: &Arc<Net>) -> (Setup, Server) {
     for username in ["alice", "carol", "dave"] {
         s.members
             .invite(crate::members::MemberRecord {
+                invited_by: None,
                 role_id: "admin".into(),
                 ..crate::members::MemberRecord::for_test(username)
             })

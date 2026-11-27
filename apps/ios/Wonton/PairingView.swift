@@ -20,6 +20,8 @@ struct PairingView: View {
     @State private var scanConsumed = false
     @FocusState private var isEditingCode: Bool
     @State private var showsMatrixLogin = false
+    /// 加入页点了“不加入”：这次会话里落回表单，码还填着。
+    @State private var declinedJoining = false
     @Environment(\.wontonColors) private var colors
     @Environment(\.dynamicTypeSize) private var typeSize
 
@@ -53,7 +55,7 @@ struct PairingView: View {
                             .accessibilityIdentifier("pairing-refusal")
                         scanAgainButton
                     }
-                } else if showsProgress, let pairing = model.viewModel.pairing {
+                } else if !declinedJoining, showsProgress, let pairing = model.viewModel.pairing {
                     PairingProgress(
                         status: pairing,
                         recognized: scanConsumed,
@@ -201,10 +203,10 @@ struct PairingView: View {
         return false
     }
 
-    /// 只有正在配对和失败整块换成进展面；等批准和已配上都落回表单，码还在，再点一次即可。
+    /// 只有正在配对、失败和等批准整块换成进展面；点了“不加入”后落回表单，码还在。
     private var showsProgress: Bool {
         switch model.viewModel.pairing {
-        case .inProgress?, .failed?: true
+        case .inProgress?, .failed?, .joinPending?: true
         default: false
         }
     }
@@ -225,6 +227,7 @@ struct PairingView: View {
         refusal = nil
         scanConsumed = false
         scannerProblem = nil
+        declinedJoining = false
         model.pairingCode = ""
         model.dismissPairingFailure()
     }
@@ -255,6 +258,7 @@ struct PairingView: View {
 
     private func pair(_ code: String) {
         guard !isPairing else { return }
+        declinedJoining = false
         // 先收起键盘，避免挡住进展或失败后的操作。
         isEditingCode = false
         refusal = model.pair(code: code, deviceName: deviceName)
@@ -428,9 +432,11 @@ private struct PairingProgress: View {
                 }
             }
             .accessibilityIdentifier("pairing-connecting")
-        // 加入别人家的码在等批准：外层只在进行中和失败时用这一块，等批准落回表单，码还在，再点一次。
-        case .joinPending:
-            EmptyView()
+        // 加入别人家的码在等批准：给被邀请的人看角色能做什么，自动再看一眼；不加入就回表单。
+        case let .joinPending(role, invitedBy):
+            JoinInviteView(role: role, invitedBy: invitedBy, retry: retry) {
+                scanAgain()
+            }
         case let .failed(reason, message, diagnostic):
             WontonNotice(
                 icon: .warning,

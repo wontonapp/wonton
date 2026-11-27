@@ -56,11 +56,13 @@ internal const val PASTED_CODE_LINES = 5
 
 /** 壳的显示门槛（毫秒）：等了这么久还没好，配对页就补“还在连接”和取消；时间本身来自核心的进展。 */
 private const val SLOW_AFTER_MS = 5_000uL
+private const val JOINING_RETRY_MS = 4_000L
 
 /**
  * 扫码配对：扫家里服务器状态页上（或服务器上 `wonton-core pair` 打出）的二维码，也可以粘贴码的文字。
  * 进展和结果只来自核心的 [pairing]（`HomeViewModel.pairing`）；配上后调用 [onPaired]。
  */
+@Suppress("CyclomaticComplexMethod")
 @Composable
 fun PairingScreen(
     core: ClientCore,
@@ -125,6 +127,14 @@ fun PairingScreen(
     }
     BackHandler(onBack = leave)
     val failed = status as? PairingStatus.Failed
+    val joining = status as? PairingStatus.JoinPending
+    // 等批时几秒重交一次同一个码：管理员同意后直接配上。
+    LaunchedEffect(joining, lastCode) {
+        val code = lastCode ?: return@LaunchedEffect
+        if (joining == null) return@LaunchedEffect
+        kotlinx.coroutines.delay(JOINING_RETRY_MS)
+        pair(code)
+    }
     if (failed != null) {
         PairingFailureNotice(
             failed,
@@ -134,6 +144,8 @@ fun PairingScreen(
             modifier = modifier.verticalScroll(rememberScrollState())
                 .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         )
+    } else if (joining != null) {
+        JoinInviteScreen(joining.role, onAccept = lastCode?.let { code -> { pair(code) } }, onDecline = scanAgain)
     } else {
         Column(
             modifier.verticalScroll(rememberScrollState())

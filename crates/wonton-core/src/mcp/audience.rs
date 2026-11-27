@@ -307,6 +307,41 @@ impl Bus {
             .unwrap_or_default()
     }
 
+    /// 把 `acted_by` 的原串换成卡片上的“替谁”：家人经成员记录换成显示名，换成“替某某”；
+    /// 主人令牌自己办的不写行。换不出来时保留原串，至少不丢是谁。
+    fn with_requester_line(
+        &self,
+        mut draft: Draft,
+        raw: &str,
+    ) -> (Draft, Option<wonton_protocol::OnBehalfView>) {
+        if raw == "owner_token" {
+            return (draft, None);
+        }
+        let username = raw.split_once("/device:").map(|(username, _)| username);
+        let on_behalf = username.and_then(|username| {
+            let people = self.people.get()?;
+            let member = people
+                .members
+                .list()
+                .into_iter()
+                .find(|member| member.username == username)?;
+            Some(wonton_protocol::OnBehalfView {
+                user_id: member.user_id,
+                display_name: member.display_name,
+            })
+        });
+        if on_behalf.is_none() {
+            draft.lines.insert(
+                0,
+                wonton_protocol::CardLine {
+                    text: raw.to_owned(),
+                    emphasis: false,
+                },
+            );
+        }
+        (draft, on_behalf)
+    }
+
     /// Requests an approval from the administrators present when the card is created.
     pub async fn ask_plugin_admin(
         &self,
@@ -315,16 +350,10 @@ impl Bus {
     ) -> Result<Ticket, Refusal> {
         let caller = crate::plugin::PluginId::parse("app.wonton.core")
             .expect("core plugin identifier is valid");
-        let mut draft = draft;
-        draft.lines.insert(
-            0,
-            wonton_protocol::CardLine {
-                text: requester,
-                emphasis: false,
-            },
-        );
+        let (draft, on_behalf) = self.with_requester_line(draft, &requester);
         let audience = Audience {
             recipients: Recipients::Admins(self.plugin_admins()),
+            on_behalf,
             ..Audience::default()
         };
         self.confirmations.ask_as(&caller, draft, audience).await
@@ -333,20 +362,15 @@ impl Bus {
     pub(crate) async fn ask_plugin_admin_twice(
         &self,
         requester: String,
-        mut first: Draft,
+        first: Draft,
         second: Draft,
     ) -> Result<(Ticket, Ticket), Refusal> {
         let caller = crate::plugin::PluginId::parse("app.wonton.core")
             .expect("core plugin identifier is valid");
-        first.lines.insert(
-            0,
-            wonton_protocol::CardLine {
-                text: requester,
-                emphasis: false,
-            },
-        );
+        let (mut first, on_behalf) = self.with_requester_line(first, &requester);
         let audience = Audience {
             recipients: Recipients::Admins(self.plugin_admins()),
+            on_behalf,
             ..Audience::default()
         };
         let first = self
@@ -367,6 +391,26 @@ impl Bus {
                 Err(refusal)
             }
         }
+    }
+
+    /// 这个 Bot 替谁办事：有归属家人的 Bot 换成那个人的显示名，主人和全家共享的 Bot 不写。
+    fn on_behalf_of(&self, keeper: &BotKeeper) -> Option<wonton_protocol::OnBehalfView> {
+        let BotKeeper::User { username } = keeper else {
+            return None;
+        };
+        if username == self.plugins.owner_name() {
+            return None;
+        }
+        let people = self.people.get()?;
+        let member = people
+            .members
+            .list()
+            .into_iter()
+            .find(|member| &member.username == username)?;
+        Some(wonton_protocol::OnBehalfView {
+            user_id: member.user_id,
+            display_name: member.display_name,
+        })
     }
 
     /// 卡片的文字用谁的语言（ADR-0043）：发给管理员的（会删工具的、安装的）按主人的语言，其余发给谁按谁的。
@@ -393,7 +437,7 @@ impl Bus {
             let account = self.plugins.bot_account(&caller.id, &bot.bot)?;
             Some((bot, account))
         });
-        let (requester, origin) = match bot {
+        let (requester, origin, on_behalf) = match bot {
             Some((identity, account)) => {
                 let shares_home = self.home_room_is_theirs(&identity.keeper, recipient.as_deref());
                 let origin = self
@@ -406,18 +450,21 @@ impl Bus {
                     },
                     user_id: account.user_id,
                 };
-                (requester, origin)
+                let on_behalf = self.on_behalf_of(&identity.keeper);
+                (requester, origin, on_behalf)
             }
             None => (
                 ConfirmationRequester::Plugin {
                     plugin_id: caller.id.to_string(),
                 },
                 None,
+                None,
             ),
         };
         Audience {
             recipients,
             requester: Some(requester),
+            on_behalf,
             origin,
             category: None,
         }

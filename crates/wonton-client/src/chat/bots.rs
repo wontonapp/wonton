@@ -604,6 +604,14 @@ impl Bots {
                     })
                     .cloned()
                     .unwrap_or_else(|| BotView {
+                        shared: plugin.bot_shared,
+                        danger: (plugin.bot_danger || plugin.bot_danger_can_toggle).then_some(
+                            wonton_protocol::DangerModeView {
+                                enabled: plugin.bot_danger,
+                                can_toggle: plugin.bot_danger_can_toggle,
+                                reason: None,
+                            },
+                        ),
                         chat: Default::default(),
                         user_id: user.clone(),
                         availability: Default::default(),
@@ -713,6 +721,16 @@ impl Bots {
             .find(|bot| bot.bot == key && bot.user_id == facts.user_id)
             .cloned()
             .unwrap_or_else(|| BotView {
+                shared: plugin.is_some_and(|plugin| plugin.bot_shared),
+                danger: plugin.and_then(|plugin| {
+                    (plugin.bot_danger || plugin.bot_danger_can_toggle).then_some(
+                        wonton_protocol::DangerModeView {
+                            enabled: plugin.bot_danger,
+                            can_toggle: plugin.bot_danger_can_toggle,
+                            reason: None,
+                        },
+                    )
+                }),
                 chat: Default::default(),
                 user_id: facts.user_id.clone(),
                 availability: Default::default(),
@@ -953,6 +971,8 @@ mod tests {
 
     fn view(activity: Option<BotActivity>, states: &[(&str, BotActivity)]) -> BotView {
         BotView {
+            shared: false,
+            danger: None,
             chat: Default::default(),
             availability: Default::default(),
             user_id: "@bot:home".into(),
