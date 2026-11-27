@@ -207,6 +207,14 @@ async fn adding_to_the_bar_checks_duplicates_the_limit_and_moves() {
     }));
     assert!(rig.app.pages().bar.full);
 
+    // 普通刷新（每次 recompute 都跑卸载清理）不抹掉满的标记。
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
+    assert!(rig.app.pages().bar.full);
+
     // 加成功了才清 full。
     rig.app
         .dispatch(Action::Pages {
