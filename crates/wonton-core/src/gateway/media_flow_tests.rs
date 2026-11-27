@@ -190,11 +190,19 @@ async fn a_named_source_is_checked_at_creation_and_kept_on_retry() {
         (status, failure["code"].as_str()),
         (StatusCode::UNPROCESSABLE_ENTITY, Some("source_required"))
     );
-    // 点名一家不存在的：建任务时就拒，不等第一片。
+    // 点名一家不存在的：建任务时就拒，不等第一片。下载的来源和条目自己写的不一样，也拒，不静默挑一个。
     let (status, failure) = create(&f, upload(10, Some("app.example.nothing"))).await;
     assert_eq!(
         (status, failure["code"].as_str()),
         (StatusCode::SERVICE_UNAVAILABLE, Some("plugin_unavailable"))
+    );
+    let mut mismatched = download();
+    mismatched["target"]["value"]["source"] = json!(super::media_tests::PROVIDER);
+    mismatched["options"]["source"] = json!(MUSIC);
+    let (status, failure) = create(&f, mismatched).await;
+    assert_eq!(
+        (status, failure["code"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("protocol"))
     );
     // 点名音乐那家：上传发给它；失败后重试，新任务还是发给它。
     let (status, named) = create(&f, upload(10, Some(MUSIC))).await;
@@ -257,6 +265,20 @@ async fn queue_changes_reach_the_provider_of_the_playing_session() {
     f.start_session().await;
     enqueue(&f, item("v3", "video", None)).await;
     assert_eq!(f.hits("PUT /playback/up-1/queue"), 1);
+    // 入队的条目由核心填来源；这家放不了的种类入不了队。
+    let (_, queue) = f
+        .json(Method::GET, "/_wonton/api/media/queue", Value::Null)
+        .await;
+    assert_eq!(queue["entries"][0]["source"], super::media_tests::PROVIDER);
+    let change = json!({"revision": queue["revision"],
+                        "op": {"op": "enqueue", "value": {"at": null, "item": item("t9", "audio", None)}}});
+    let (status, failure) = f
+        .json(Method::POST, "/_wonton/api/media/queue", change)
+        .await;
+    assert_eq!(
+        (status, failure["code"].as_str()),
+        (StatusCode::SERVICE_UNAVAILABLE, Some("plugin_unavailable"))
+    );
 }
 
 #[tokio::test]

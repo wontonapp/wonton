@@ -72,7 +72,7 @@ pub(super) async fn create(
                 unit: ProgressUnit::Bytes,
             },
         };
-        let task = MediaTask {
+        let mut task = MediaTask {
             id: new_task_id(),
             kind: create.kind,
             person,
@@ -92,25 +92,7 @@ pub(super) async fn create(
                 "这一版核心不认识这种任务",
             ));
         }
-        // 上传点了名：先按选提供方的规则核一遍（在不在跑、这个人能不能用、能不能上传），过了再记下，
-        // 不等第一片才被提供方拒。
-        let source = match (&task.target, &create.options.source) {
-            (TaskTarget::Upload(_), Some(source)) => Some(
-                caller
-                    .media
-                    .providers
-                    .route(
-                        &task.person,
-                        caller.allowed(&gateway),
-                        &MediaOperation::Upload,
-                        None,
-                        Some(source),
-                    )
-                    .await?
-                    .provider,
-            ),
-            _ => None,
-        };
+        let source = named_source(&gateway, &caller, &mut task, create.options.source).await?;
         let store = &caller.media.store;
         store.create_task(&task).map_err(|e| service_failure(&e))?;
         if let Some(source) = source {
@@ -125,6 +107,51 @@ pub(super) async fn create(
         Ok(task) => (StatusCode::CREATED, Json(task)).into_response(),
         Err(failure) => reply(&failure),
     }
+}
+
+/// 点了名的来源（上传的 `options.source`、下载条目的 `source`）先按选提供方的规则核一遍：在不在跑、这个人
+/// 能不能用、能不能做这件事，过了才记下，不等第一片才被提供方拒。下载的来源以条目为准，`options.source`
+/// 只在条目没写时补上，两边写得不一样回 `protocol`，不静默挑一个。
+async fn named_source(
+    gateway: &Gateway,
+    caller: &Caller,
+    task: &mut MediaTask,
+    option: Option<String>,
+) -> Reply<Option<String>> {
+    let named = match &mut task.target {
+        TaskTarget::Upload(_) => option.map(|source| (MediaOperation::Upload, None, source)),
+        TaskTarget::Download(item) => {
+            match (&item.source, option) {
+                (Some(own), Some(other)) if *own != other => {
+                    return Err(failure(
+                        MediaFailureCode::Protocol,
+                        "下载的来源以条目的 source 为准，options.source 和它不一样",
+                    ));
+                }
+                (None, Some(other)) => item.source = Some(other),
+                _ => {}
+            }
+            item.source
+                .clone()
+                .map(|source| (MediaOperation::Download, Some(item.kind.clone()), source))
+        }
+        TaskTarget::Other(_) => None,
+    };
+    let Some((operation, kind, source)) = named else {
+        return Ok(None);
+    };
+    let route = caller
+        .media
+        .providers
+        .route(
+            &task.person,
+            caller.allowed(gateway),
+            &operation,
+            kind.as_ref(),
+            Some(&source),
+        )
+        .await?;
+    Ok(Some(route.provider))
 }
 
 pub(super) async fn list(

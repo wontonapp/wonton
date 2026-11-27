@@ -543,7 +543,7 @@ async fn only_the_paired_device_itself_gets_in() {
 async fn a_queue_change_from_an_old_revision_gets_409_and_the_current_queue() {
     let f = fixture().await;
     let item = json!({
-        "id": "t1", "kind": "audio", "title": "夜曲", "artist": null, "album": null,
+        "id": "t1", "kind": "video", "title": "夜曲", "artist": null, "album": null,
         "artwork_url": null, "duration_ms": null, "series": null, "index": null,
         "played": false, "starred": false,
     });

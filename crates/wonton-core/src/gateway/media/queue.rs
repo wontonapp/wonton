@@ -12,7 +12,7 @@ use wonton_protocol::media::api::QueueChange;
 use wonton_protocol::media::provider::QueueSnapshot;
 use wonton_protocol::media::{MediaFailure, MediaFailureCode, MediaItemRef, Queue, QueueOp};
 
-use super::sessions::session_route;
+use super::sessions::{item_route, session_route};
 use super::{Caller, reply, service_failure};
 use crate::gateway::Gateway;
 use crate::media::session_service::QueueChanged;
@@ -33,13 +33,21 @@ pub(super) async fn change(
     Extension(caller): Extension<Caller>,
     body: Bytes,
 ) -> Response {
-    let change: QueueChange = match serde_json::from_slice(&body) {
+    let mut change: QueueChange = match serde_json::from_slice(&body) {
         Ok(change) => change,
         Err(e) => {
             let message = format!("请求体不是约定的形状：{e}");
             return reply(&failure(MediaFailureCode::Protocol, message));
         }
     };
+    // 入队的条目由核心填来源，客户端写的只当点名：按选提供方的规则定下这一项以后从哪家放，
+    // 点名的那家用不了、做不了就在这里拒。
+    if let QueueOp::Enqueue { item, .. } = &mut change.op {
+        match item_route(&gateway, &caller, &caller.person, item).await {
+            Ok(route) => item.source = Some(route.provider),
+            Err(failure) => return reply(&failure),
+        }
+    }
     let read_only = matches!(change.op, QueueOp::Read);
     let changed = caller
         .media
