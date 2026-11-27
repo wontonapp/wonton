@@ -3,7 +3,7 @@
 
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use http_body_util::Full;
 use hyper::body::{Bytes, Incoming};
@@ -460,12 +460,35 @@ pub(super) fn detail(id: &str) -> VideoDetail {
     }
 }
 
-/// 三部片子在“这台手机上”：一部下到一半，一部下完（路径是假的，点播放会放不了），一部空间不够没下成。
+/// 假数据里删掉了的离线副本。
+static REMOVED: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+pub(super) fn remove_offline(id: &str) {
+    REMOVED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .push(id.to_owned());
+}
+
+/// 四部片子在“这台手机上”：一部下到一半，一部暂停了，一部下完（路径是假的，点播放会放不了），一部空间不够
+/// 没下成。删掉的不再有。
 pub(super) fn offline(id: &str) -> Option<OfflineState> {
+    if REMOVED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .any(|removed| removed == id)
+    {
+        return None;
+    }
     match id {
         "m2" => Some(OfflineState::Downloading {
             done: 7_700_000_000,
             total: Some(18_400_000_000),
+        }),
+        "m3" => Some(OfflineState::Paused {
+            done: 2_100_000_000,
+            total: Some(9_800_000_000),
         }),
         "m4" => Some(OfflineState::Ready {
             path: "/ui-fake/m4.mkv".into(),

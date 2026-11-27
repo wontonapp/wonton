@@ -1,3 +1,6 @@
+# Detail when resuming an offline download that the server hasn't marked as paused.
+video-download-not-paused = There's no paused download of this to resume.
+
 # Detail when the server's playback reply has no plan.
 video-plan-missing = The server's playback reply has no playback plan.
 

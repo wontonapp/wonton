@@ -295,8 +295,12 @@ impl MediaLink {
         self.downloads.remove(item_id)
     }
 
-    /// 核心说失败了的下载再来一次：核心开新任务，旧任务的半截归它，这台设备接着下。
-    pub(crate) async fn retry_download(&self, item_id: &str) -> Result<MediaTask, MediaFailure> {
+    /// 核心说失败了的下载再来一次：核心开新任务，旧任务的半截归它，这台设备接着下。已经有一次重试在路上时
+    /// 什么也不做（连点两下只开一个任务）。
+    pub(crate) async fn retry_download(&self, item_id: &str) -> Result<(), MediaFailure> {
+        let Some(_retrying) = self.downloads.begin_retry(item_id) else {
+            return Ok(());
+        };
         let old = self.downloads.failed_task(item_id).ok_or_else(|| {
             failure(
                 MediaFailureCode::Protocol,
@@ -312,8 +316,25 @@ impl MediaLink {
             .await?;
         self.downloads.adopt(old, task.id)?;
         self.run_downloads(&api, std::slice::from_ref(&task));
-        self.update(|local| local.put_task(task.clone()));
-        Ok(task)
+        self.update(|local| local.put_task(task));
+        Ok(())
+    }
+
+    /// 核心说暂停了的下载接着下：叫核心恢复，再按任务表对齐（核心改回排队，这台设备就接着下）。
+    pub(crate) async fn resume_download(&self, item_id: &str) -> Result<(), MediaFailure> {
+        let task = self.downloads.paused_task(item_id).ok_or_else(|| {
+            failure(
+                MediaFailureCode::Protocol,
+                crate::l10n::text("video-download-not-paused", &[]),
+            )
+        })?;
+        self.api()?
+            .post_empty(
+                &task_action_path(task, TaskAction::Resume),
+                &serde_json::json!({}),
+            )
+            .await?;
+        self.sync().await
     }
 
     /// 本机回环前缀：播放器、后台传输连 `{前缀}/sessions/{id}/stream` 这样的地址。
