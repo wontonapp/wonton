@@ -27,14 +27,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -53,6 +51,8 @@ import app.wonton.protocol.TrackRow
 import app.wonton.ui.Problem
 import app.wonton.ui.ProblemRow
 import app.wonton.ui.R
+import app.wonton.ui.design.Icon
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.design.wontonContentPaddingValues
@@ -210,7 +210,7 @@ private fun LazyListScope.albumShelf(key: String, title: Int, albums: List<Album
 /** 几类入口：一行一类。 */
 @Composable
 private fun MusicCategories() {
-    val entries: List<Triple<Int, ImageVector, MusicPage>> = listOf(
+    val entries: List<Triple<Int, WontonGlyph, MusicPage>> = listOf(
         Triple(R.string.music_playlists, WontonIcon.List, MusicPage.Playlists),
         Triple(R.string.music_artists, WontonIcon.Person, MusicPage.Artists),
         Triple(R.string.music_albums, WontonIcon.ImageFill, MusicPage.Albums(AlbumSort.NAME)),
@@ -232,7 +232,7 @@ private fun MusicCategories() {
 }
 
 @Composable
-private fun MusicCategoryRow(title: String, icon: ImageVector, page: MusicPage) {
+private fun MusicCategoryRow(title: String, icon: WontonGlyph, page: MusicPage) {
     val music = LocalMusic.current
     val colors = WontonTheme.colors
     Row(

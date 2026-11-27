@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,6 +25,7 @@ import androidx.compose.ui.semantics.Role
 import app.wonton.protocol.AlbumSort
 import app.wonton.protocol.MusicPage
 import app.wonton.ui.R
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
