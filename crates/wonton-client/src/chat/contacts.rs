@@ -34,6 +34,7 @@ impl ChatLink {
 
 /// 把核心给的可用性、本人 Bot 和私聊过的人合成联系人表：能用的在前，不能用的带原因留在表里，
 /// 按名字和用户 ID 去重。本人 Bot 已经在可达清单里时不重复。
+#[allow(clippy::too_many_lines)]
 pub(crate) fn assemble(
     bots: &[BotView],
     shared: Option<&[SharedBot]>,
@@ -81,7 +82,7 @@ pub(crate) fn assemble(
                 side_chat_room_id: row
                     .user_id
                     .as_deref()
-                    .and_then(|user_id| side_chat_room(user_id)),
+                    .and_then(side_chat_room),
                 user_id: row.user_id.clone().unwrap_or_default(),
                 name,
                 bot: Some(row.bot.clone()),
