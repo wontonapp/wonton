@@ -81,9 +81,10 @@ struct SideChatCover<Main: View>: View {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
+            // 先关模型里的旁聊再收盖子：旁聊页 `onDisappear` 看到旁聊还开着会补记一次 `gone`。
+            model.closeSideChat(in: roomId, why: "edge")
             peeking = false
             shown = nil
-            model.closeSideChat(in: roomId, why: "edge")
         }
     }
 

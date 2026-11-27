@@ -14,6 +14,9 @@ final class EdgeDismiss {
     /// 拖完：不带动画地收掉盖子，把 SwiftUI 里的状态对上。
     let close: () -> Void
     private var scene: EdgePopScene?
+    private weak var cover: UIViewController?
+    /// 拖完到盖子真正收掉之间挡着的那张快照（`EdgePopScene.handBackUnder`）。
+    private var still: UIView?
 
     init(peek: @escaping (Bool) -> Void, close: @escaping () -> Void) {
         self.peek = peek
@@ -38,6 +41,7 @@ final class EdgeDismiss {
         let scene = EdgePopScene(container: container, from: cover.view, under: under, underFrame: container.bounds)
         scene.animator.pauseAnimation()
         self.scene = scene
+        self.cover = cover
     }
 
     func update(_ progress: CGFloat) {
@@ -57,14 +61,38 @@ final class EdgeDismiss {
     private func ended(_ finished: Bool) {
         guard let scene else { return }
         self.scene = nil
+        // 拖动途中盖子被别处收掉了（旁聊结束、离开房间）：下面那页 UIKit 已经放回去，只拿掉自己加的东西。
+        guard let cover, cover.presentingViewController != nil, !cover.isBeingDismissed else {
+            scene.cleanUp(showingFrom: true)
+            peek(false)
+            return
+        }
         scene.cleanUp(showingFrom: !finished)
         if finished {
-            scene.handBackUnder()
+            still = scene.handBackUnder()
             close()
+            // 盖子收掉时 `coverLeft` 会拿掉快照；万一没收掉，也别让它一直挡着。
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.dropStill() }
         } else {
             scene.restoreUnder()
             peek(false)
         }
+    }
+
+    /// 盖子离开了屏幕（收掉，或者盖子里又推进了一页）：拖着的场景和挡着的快照都收掉。
+    func coverLeft() {
+        dropStill()
+        guard let scene else { return }
+        self.scene = nil
+        scene.animator.stopAnimation(true)
+        scene.cleanUp(showingFrom: true)
+        scene.restoreUnder()
+        peek(false)
+    }
+
+    private func dropStill() {
+        still?.removeFromSuperview()
+        still = nil
     }
 }
 
@@ -105,6 +133,11 @@ private struct EdgeDismissHook: UIViewControllerRepresentable {
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated)
             attach()
+        }
+
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            dismiss.coverLeft()
         }
 
         /// SwiftUI 不一定把它挂成子控制器，`navigationController` 取不到时顺着响应链找。
