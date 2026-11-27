@@ -89,6 +89,9 @@ pub struct MemberRecord {
     pub user_id: String,
     /// 邀请时主人填的，家人加入后由他自己改。
     pub display_name: String,
+    /// 谁邀请的（显示名）；测试造的记录或还没有时为空。
+    #[serde(default)]
+    pub invited_by: Option<String>,
     /// 家人自己填；没填时没有。填过以后只能改，不能清空（规则同 ADR-0030）。
     #[serde(default)]
     pub email: Option<String>,
@@ -118,6 +121,7 @@ impl MemberRecord {
             username: username.to_owned(),
             user_id: format!("@{username}:test"),
             display_name: username.to_owned(),
+            invited_by: None,
             email: None,
             status: MemberStatus::Invited,
             role_id: default_role_id(),

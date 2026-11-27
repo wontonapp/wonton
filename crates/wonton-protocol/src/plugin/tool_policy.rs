@@ -11,6 +11,9 @@ pub struct ToolPolicyView {
     pub tools_error: Option<String>,
     /// 各个 Bot 调这个插件是否始终允许。
     pub always: Vec<BotSwitch>,
+    /// 各个 Bot 的危险模式开关（ADR-0091）。
+    #[serde(default)]
+    pub danger: Vec<BotSwitch>,
     /// 这个插件自己的 Bot 调所有插件是否一律允许；插件没有 Bot 时为空。
     pub allow_all: Vec<BotSwitch>,
     /// 生效中的放行时段：到期前这些 Bot 调这个插件不发卡片。

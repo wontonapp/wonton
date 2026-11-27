@@ -278,7 +278,10 @@ impl Pairing {
             Ok(JoinCheck::Paired) => PairResponse::Paired,
             Ok(JoinCheck::Rejected) => joining(JoinOutcome::Rejected),
             Ok(JoinCheck::CodeUsed) => joining(JoinOutcome::CodeUsed),
-            Ok(JoinCheck::Pending(role_id)) => {
+            Ok(JoinCheck::Pending {
+                role_id,
+                invited_by,
+            }) => {
                 let role = self
                     .roles
                     .read()
@@ -288,6 +291,7 @@ impl Pairing {
                 match role {
                     Some(role) => PairResponse::Joining {
                         outcome: JoinOutcome::Pending,
+                        invited_by,
                         role: Some(RoleDef {
                             id: role.id,
                             name: role.name,
@@ -346,6 +350,7 @@ fn joining(outcome: JoinOutcome) -> PairResponse {
     PairResponse::Joining {
         outcome,
         role: None,
+        invited_by: None,
     }
 }
 

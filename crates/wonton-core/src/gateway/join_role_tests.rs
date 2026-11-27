@@ -1,7 +1,7 @@
 use hyper::{Method, StatusCode};
 use iroh::SecretKey;
 use serde_json::{Value, json};
-use wonton_protocol::{JoinOutcome, MemberStatus, RoleTemplate};
+use wonton_protocol::{JoinAbilityState, JoinOutcome, MemberStatus, PermissionItem, RoleTemplate};
 use wonton_tunnel::pair::{PairResponse, pair};
 
 use super::fakes::loopback_endpoint;
@@ -19,6 +19,7 @@ async fn changing_an_invited_members_role_updates_the_request_and_the_invitees_v
     let endpoint = loopback_endpoint(SecretKey::generate()).await;
     let first = pair(&endpoint, &code, "Guest phone").await.unwrap();
     let PairResponse::Joining {
+        invited_by: _,
         outcome: JoinOutcome::Pending,
         role: Some(role),
     } = first
@@ -27,6 +28,13 @@ async fn changing_an_invited_members_role_updates_the_request_and_the_invitees_v
     };
     assert_eq!(role.id, "child");
     assert_eq!(role.people, 1);
+    let install = role
+        .permissions
+        .abilities()
+        .into_iter()
+        .find(|ability| ability.item == PermissionItem::InstallApps)
+        .expect("加入页要带装应用这一项");
+    assert_eq!(install.state, JoinAbilityState::NeedsAdmin);
     let id = home.members.join_requests()[0].id.clone();
     let (status, _) = owner_call(
         &home,
@@ -42,6 +50,7 @@ async fn changing_an_invited_members_role_updates_the_request_and_the_invitees_v
     assert_eq!(pending[0].role_id, "friend");
     let changed = pair(&endpoint, &code, "Retry").await.unwrap();
     let PairResponse::Joining {
+        invited_by: _,
         outcome: JoinOutcome::Pending,
         role: Some(role),
     } = changed

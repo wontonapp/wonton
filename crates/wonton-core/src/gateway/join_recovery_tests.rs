@@ -23,6 +23,7 @@ async fn interrupted_approval_cannot_use_a_device_before_the_request_is_approved
     assert!(matches!(
         pair(&endpoint, &code, "Guest phone").await.unwrap(),
         PairResponse::Joining {
+            invited_by: _,
             outcome: JoinOutcome::Pending,
             ..
         }

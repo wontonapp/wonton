@@ -591,6 +591,7 @@ async fn confirm_main(
     });
     // 主面板是主人的：卡片发给主人。
     let audience = super::Audience {
+        on_behalf: None,
         recipients: super::Recipients::Keeper(None),
         requester: Some(requester),
         origin,
