@@ -23,6 +23,7 @@ use super::clients_api::{failure, no_store, unavailable};
 use crate::entry_access::EntryAdmin;
 use crate::entry_settings::EntrySettings;
 use crate::l10n;
+use crate::plugin::languages::Languages;
 
 pub fn routes() -> axum::Router<Arc<Gateway>> {
     axum::Router::new()
@@ -35,7 +36,7 @@ async fn status(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Resp
     let Some(entry) = &gateway.entry else {
         return unavailable(&langs);
     };
-    no_store(Json(view(&gateway, entry, None).await).into_response())
+    no_store(Json(view(&gateway, entry, None, &langs).await).into_response())
 }
 
 /// `PUT`：改总开关，回新的状态。同一个值重复下发不动入口。
@@ -48,7 +49,7 @@ async fn switch(
     let Some(entry) = &gateway.entry else {
         return unavailable(&langs);
     };
-    let gates = match entry.apply(request.enabled).await {
+    let gates = match entry.apply(request.enabled, &langs).await {
         Ok(gates) => gates,
         Err(error) => {
             return failure(
@@ -61,25 +62,40 @@ async fn switch(
             );
         }
     };
-    no_store(Json(view(&gateway, entry, Some(gates)).await).into_response())
+    no_store(Json(view(&gateway, entry, Some(gates), &langs).await).into_response())
 }
 
 async fn view(
     gateway: &Gateway,
     entry: &EntryAdmin,
     applied: Option<PublicSwitchState>,
+    langs: &Languages,
 ) -> ClientsStatus {
     let settings = entry.settings().ok().flatten();
+    // “不要名字”的装法没有入口设置文件：主人在 App 里配的自己的域名（`entry/domain.json`）就是入口和公网名。
+    let stored = match &settings {
+        Some(_) => None,
+        None => crate::clients::domain::stored_suffix(entry.install_dir())
+            .ok()
+            .flatten(),
+    };
     let enabled = entry.access.enabled();
     let gates = match applied {
         Some(gates) => gates,
-        None => gates(entry, enabled).await,
+        None => gates(entry, enabled, langs).await,
     };
-    let ingress = ingress(entry.install_dir(), settings.as_ref());
+    // 有设置文件时公网名是家名服务的名字；没有设置文件时配的域名本身就是公网名。
+    let public_name = match &settings {
+        Some(_) => gateway.matrix.as_ref().is_some_and(|matrix| {
+            !crate::matrix::federation_config::is_private(matrix.server_name())
+        }),
+        None => stored.is_some(),
+    };
+    let ingress = ingress(entry.install_dir(), settings.as_ref(), stored.as_deref());
     ClientsStatus {
         core_in_container: entry.core_in_container(),
         domain: domain(gateway).await,
-        public_reach: reach(gateway, enabled, settings.as_ref(), &gates),
+        public_reach: reach(enabled, public_name, &gates),
         ingress,
         public_access: PublicAccess { enabled },
         gates,
@@ -118,8 +134,13 @@ async fn domain(gateway: &Gateway) -> DomainSettings {
     }
 }
 
-/// 公网怎么进来：家名注册用 frpc（地址和令牌在 `frpc.json`），否则是路由器转发的发布端口。
-fn ingress(install_dir: &Path, settings: Option<&EntrySettings>) -> IngressSettings {
+/// 公网怎么进来：家名注册用 frpc（地址和令牌在 `frpc.json`）；没有注册但配了域名就是路由器转发的发布端口，
+/// 域名来自设置文件（有设置文件时）或 App 里配的自己的域名（没有设置文件时）。
+fn ingress(
+    install_dir: &Path,
+    settings: Option<&EntrySettings>,
+    stored: Option<&str>,
+) -> IngressSettings {
     let mut ingress = IngressSettings {
         kind: None,
         port: None,
@@ -129,11 +150,8 @@ fn ingress(install_dir: &Path, settings: Option<&EntrySettings>) -> IngressSetti
         ca_pem: None,
         token_set: false,
     };
-    let Some(settings) = settings else {
-        return ingress;
-    };
     let entry = install_dir.join("entry");
-    if settings.registration.is_some() {
+    if settings.is_some_and(|settings| settings.registration.is_some()) {
         ingress.kind = Some(IngressKind::OwnFrps);
         if let Ok(text) = std::fs::read_to_string(entry.join("frpc.json"))
             && let Ok(config) = serde_json::from_str::<serde_json::Value>(&text)
@@ -148,7 +166,7 @@ fn ingress(install_dir: &Path, settings: Option<&EntrySettings>) -> IngressSetti
             ingress.token_set = config["metadatas"]["token"].as_str().is_some();
         }
         ingress.ca_pem = std::fs::read_to_string(entry.join("relay-ca.pem")).ok();
-    } else {
+    } else if settings.is_some() || stored.is_some() {
         ingress.kind = Some(IngressKind::RouterForward);
         ingress.port = std::env::var("WONTON_ENTRY_PORT")
             .ok()
@@ -158,7 +176,7 @@ fn ingress(install_dir: &Path, settings: Option<&EntrySettings>) -> IngressSetti
     ingress
 }
 
-async fn gates(entry: &EntryAdmin, enabled: bool) -> PublicSwitchState {
+async fn gates(entry: &EntryAdmin, enabled: bool, langs: &Languages) -> PublicSwitchState {
     let Some(containers) = entry.containers() else {
         return PublicSwitchState {
             connector: GateState::Unknown,
@@ -169,7 +187,7 @@ async fn gates(entry: &EntryAdmin, enabled: bool) -> PublicSwitchState {
     let connector = match containers.connector_running().await {
         Ok(running) if running == enabled => GateState::Done,
         Ok(_) => GateState::Failed {
-            detail: "连接器容器和开关不一致".to_owned(),
+            detail: l10n::text(langs, "clients-gate-connector-mismatch", &[]),
         },
         Err(error) => GateState::Failed {
             detail: error.to_string(),
@@ -178,7 +196,7 @@ async fn gates(entry: &EntryAdmin, enabled: bool) -> PublicSwitchState {
     let crt_list = match containers.public_crt_list_empty() {
         Ok(empty) if empty != enabled => GateState::Done,
         Ok(_) => GateState::Failed {
-            detail: "公网证书列表和开关不一致".to_owned(),
+            detail: l10n::text(langs, "clients-gate-public-list-mismatch", &[]),
         },
         Err(error) => GateState::Failed {
             detail: error.to_string(),
@@ -191,20 +209,12 @@ async fn gates(entry: &EntryAdmin, enabled: bool) -> PublicSwitchState {
     }
 }
 
-fn reach(
-    gateway: &Gateway,
-    enabled: bool,
-    settings: Option<&EntrySettings>,
-    gates: &PublicSwitchState,
-) -> PublicReach {
+/// 有公网名才有公网可达性：有设置文件时看家名服务的名字，没有设置文件时看 App 里配的域名。
+fn reach(enabled: bool, public_name: bool, gates: &PublicSwitchState) -> PublicReach {
     if !enabled {
         return PublicReach::PublicAccessOff;
     }
-    let public_name = gateway
-        .matrix
-        .as_ref()
-        .is_some_and(|matrix| !crate::matrix::federation_config::is_private(matrix.server_name()));
-    if settings.is_none() || !public_name {
+    if !public_name {
         return PublicReach::NoDomain;
     }
     if matches!(gates.connector, GateState::Failed { .. }) {

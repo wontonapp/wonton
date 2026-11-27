@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use hyper::{Method, StatusCode};
 use tower::ServiceExt;
-use wonton_protocol::{ClientsStatus, GateState, PublicAccess, PublicReach};
+use wonton_protocol::{ClientsStatus, GateState, IngressKind, PublicAccess, PublicReach};
 
 use super::clients_api;
 use super::tests::{Harness, TOKEN};
@@ -33,12 +33,25 @@ async fn home() -> Home {
 }
 
 async fn call(home: &Home, method: Method, path: &str, body: Option<&str>) -> (StatusCode, String) {
+    call_lang(home, method, path, body, None).await
+}
+
+async fn call_lang(
+    home: &Home,
+    method: Method,
+    path: &str,
+    body: Option<&str>,
+    lang: Option<&str>,
+) -> (StatusCode, String) {
     let mut request = axum::extract::Request::builder()
         .method(method)
         .uri(path)
         .header("authorization", format!("Bearer {TOKEN}"))
         .header("x-wonton-clients", "1")
         .header("host", "core.homes.test");
+    if let Some(lang) = lang {
+        request = request.header("accept-language", lang);
+    }
     if body.is_some() {
         request = request.header("content-type", "application/json");
     }
@@ -118,4 +131,71 @@ async fn a_core_without_entry_admin_reports_core_not_in_container() {
     let (status, body) = call(&home, Method::GET, "/_wonton/clients/status", None).await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(body.contains("core_not_in_container"));
+}
+
+/// 状态里的失败原因按 App 的语言写（协议在 `GateState::Failed.detail` 上要求），不是固定中文。
+#[tokio::test]
+async fn failed_gate_details_follow_the_app_language() {
+    let english = home().await;
+    let (status, body) = call_lang(
+        &english,
+        Method::PUT,
+        "/_wonton/clients/public-access",
+        Some("{\"enabled\":true}"),
+        Some("en"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let view: ClientsStatus = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        view.gates.connector,
+        GateState::Failed {
+            detail: "The core isn't running in a container, so the connector can't start"
+                .to_owned()
+        }
+    );
+    assert_eq!(
+        view.gates.crt_list,
+        GateState::Failed {
+            detail: "The core isn't running in a container, so there's no entry container"
+                .to_owned()
+        }
+    );
+
+    // 中文请求还是中文。
+    let chinese = home().await;
+    let (status, body) = call_lang(
+        &chinese,
+        Method::PUT,
+        "/_wonton/clients/public-access",
+        Some("{\"enabled\":true}"),
+        Some("zh-Hans"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let view: ClientsStatus = serde_json::from_str(&body).unwrap();
+    assert_eq!(
+        view.gates.connector,
+        GateState::Failed {
+            detail: "核心没跑在容器里，连接器起不来".to_owned()
+        }
+    );
+}
+
+/// 没有入口设置文件、只有 App 里配的域名：状态要报出路由器转发的入口和有域名，不能当成没入口。
+#[tokio::test]
+async fn ingress_and_reach_fall_back_to_the_app_domain_without_a_settings_file() {
+    let home = home().await;
+    std::fs::create_dir_all(home.h.data_dir.join("entry")).unwrap();
+    std::fs::write(
+        home.h.data_dir.join("entry/domain.json"),
+        r#"{"suffix":"home.example.test"}"#,
+    )
+    .unwrap();
+    home.access.save(PublicAccess { enabled: true }).unwrap();
+    let (status, body) = call(&home, Method::GET, "/_wonton/clients/status", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let view: ClientsStatus = serde_json::from_str(&body).unwrap();
+    assert_eq!(view.ingress.kind, Some(IngressKind::RouterForward));
+    assert_eq!(view.public_reach, PublicReach::Unknown);
 }

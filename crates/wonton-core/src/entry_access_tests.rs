@@ -3,6 +3,7 @@
 use std::os::unix::fs::PermissionsExt;
 
 use super::EntryAccess;
+use crate::plugin::languages::Languages;
 
 fn path(dir: &std::path::Path) -> std::path::PathBuf {
     dir.join("core/entry-access.json")
@@ -68,7 +69,7 @@ async fn admin_without_containers_reports_failed_gates_and_skips_unchanged_value
     let dir = tempfile::tempdir().unwrap();
     let access = std::sync::Arc::new(EntryAccess::open(path(dir.path())).unwrap());
     let admin = super::EntryAdmin::new(access.clone(), None, dir.path().to_owned());
-    let gates = admin.apply(true).await.unwrap();
+    let gates = admin.apply(true, &Languages::default()).await.unwrap();
     assert!(matches!(
         gates.connector,
         wonton_protocol::GateState::Failed { .. }
@@ -76,5 +77,8 @@ async fn admin_without_containers_reports_failed_gates_and_skips_unchanged_value
     assert_eq!(gates.core, wonton_protocol::GateState::Done);
     assert!(access.enabled());
     // 同一个值再下发：不再走闸门，结果还是上一次的。
-    assert_eq!(admin.apply(true).await.unwrap(), gates);
+    assert_eq!(
+        admin.apply(true, &Languages::default()).await.unwrap(),
+        gates
+    );
 }

@@ -13,6 +13,8 @@ use wonton_protocol::{GateState, PublicAccess, PublicSwitchState};
 
 use crate::entry_containers::EntryContainers;
 use crate::entry_settings::EntrySettings;
+use crate::l10n;
+use crate::plugin::languages::Languages;
 use crate::plugin::store::{StoreError, create_private_dir, read_json, write_json};
 
 /// 当前开关和上一次执行闸门的结果。写入串行，读不阻塞。
@@ -131,7 +133,13 @@ impl EntryAdmin {
     }
 
     /// 下发开关：同一个值重复下发不动入口。先写盘，再逐道闸门做，结果记下来。
-    pub async fn apply(&self, enabled: bool) -> Result<PublicSwitchState, StoreError> {
+    ///
+    /// 闸门的失败原因按 App 的语言写（`langs`），动态的 Docker 错误原样附在后面。
+    pub async fn apply(
+        &self,
+        enabled: bool,
+        langs: &Languages,
+    ) -> Result<PublicSwitchState, StoreError> {
         let _guard = self.access.apply_lock().await;
         if self.access.enabled() == enabled {
             return Ok(self.access.gates());
@@ -141,7 +149,7 @@ impl EntryAdmin {
         let gates = match (&self.containers, settings) {
             (Some(containers), Ok(settings)) => {
                 containers
-                    .apply_public_access(settings.as_ref(), enabled)
+                    .apply_public_access(settings.as_ref(), enabled, langs)
                     .await
             }
             (Some(containers), Err(error)) => {
@@ -150,10 +158,10 @@ impl EntryAdmin {
             }
             (None, Ok(_)) | (None, Err(_)) => PublicSwitchState {
                 connector: GateState::Failed {
-                    detail: "核心没跑在容器里，连接器起不来".to_owned(),
+                    detail: l10n::text(langs, "clients-gate-core-not-in-container-connector", &[]),
                 },
                 crt_list: GateState::Failed {
-                    detail: "核心没跑在容器里，入口容器不在".to_owned(),
+                    detail: l10n::text(langs, "clients-gate-core-not-in-container-entry", &[]),
                 },
                 core: GateState::Done,
             },

@@ -182,6 +182,16 @@ clients-credentials-failed = 应用里的命令失败：{ $error }
 gateway-entry-credentials-not-issued = 应用还没有密码，入口先不开
 clients-domain-read-failed = 域名设置读不了：{ $error }
 clients-public-access-save-failed = 公网访问开关保存不了：{ $error }
+# 公网访问开关的各道闸门：哪道没做成，就按道写哪道（ADR-0090）。
+clients-gate-core-not-in-container-connector = 核心没跑在容器里，连接器起不来
+clients-gate-core-not-in-container-entry = 核心没跑在容器里，入口容器不在
+clients-gate-connector-still-running = 连接器还开着
+clients-gate-connector-not-running = 连接器没起来
+clients-gate-public-list-still-empty = 公网证书列表还是空的
+clients-gate-public-list-not-cleared = 公网证书列表没清空
+clients-gate-entry-not-reloaded = 入口没有重读配置：{ $error }
+clients-gate-connector-mismatch = 连接器容器和开关不一致
+clients-gate-public-list-mismatch = 公网证书列表和开关不一致
 gateway-chains-disabled = 家里的服务器没有启用调用链账本
 
 # agent_acp 的转发（ADR-0061 第 5 块）：建连时的拒绝和逐帧转发里的错误，按类别回给使用方。

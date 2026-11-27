@@ -160,6 +160,14 @@ impl Home {
         )
         .with_lan_forward_available(true)
         .with_reload_addr(reload_addr);
+        let access = Arc::new(
+            crate::entry_access::EntryAccess::open(install.join("core/entry-access.json")).unwrap(),
+        );
+        let entry = Arc::new(crate::entry_access::EntryAdmin::new(
+            access,
+            Some(Arc::new(entry)),
+            install.clone(),
+        ));
         let gateway = gateway(&h)
             .with_clients(Some(domain))
             .with_entry(Some(entry))

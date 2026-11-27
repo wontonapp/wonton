@@ -182,6 +182,16 @@ clients-credentials-failed = アプリ内のコマンドが失敗しました：
 gateway-entry-credentials-not-issued = アプリのパスワードがまだないため、入口は閉じたままです
 clients-domain-read-failed = ドメイン設定を読めませんでした：{ $error }
 clients-public-access-save-failed = 外部アクセスのスイッチを保存できませんでした：{ $error }
+# 外部アクセスのスイッチの各ゲート：できなかったことをゲートごとに書く（ADR-0090）。
+clients-gate-core-not-in-container-connector = コアがコンテナで動いていないため、コネクターを起動できません
+clients-gate-core-not-in-container-entry = コアがコンテナで動いていないため、入口コンテナがありません
+clients-gate-connector-still-running = コネクターがまだ動いています
+clients-gate-connector-not-running = コネクターが起動していません
+clients-gate-public-list-still-empty = 公開証明書リストがまだ空です
+clients-gate-public-list-not-cleared = 公開証明書リストが空になっていません
+clients-gate-entry-not-reloaded = 入口が設定を読み直していません：{ $error }
+clients-gate-connector-mismatch = コネクターのコンテナがスイッチと一致しません
+clients-gate-public-list-mismatch = 公開証明書リストがスイッチと一致しません
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
 
 # agent_acp の転送（ADR-0061 第 5 ブロック）：接続時の拒否とフレームごとのエラーを、種別付きで利用者に返す。

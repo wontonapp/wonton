@@ -182,6 +182,16 @@ clients-credentials-failed = The command in the app failed: { $error }
 gateway-entry-credentials-not-issued = The app has no password yet, so its entry stays closed
 clients-domain-read-failed = Couldn't read the domain settings: { $error }
 clients-public-access-save-failed = Couldn't save the public access switch: { $error }
+# The public access switch's gates: what didn't get done, per gate (ADR-0090).
+clients-gate-core-not-in-container-connector = The core isn't running in a container, so the connector can't start
+clients-gate-core-not-in-container-entry = The core isn't running in a container, so there's no entry container
+clients-gate-connector-still-running = The connector is still running
+clients-gate-connector-not-running = The connector didn't start
+clients-gate-public-list-still-empty = The public certificate list is still empty
+clients-gate-public-list-not-cleared = The public certificate list wasn't cleared
+clients-gate-entry-not-reloaded = The entry didn't reload its configuration: { $error }
+clients-gate-connector-mismatch = The connector container doesn't match the switch
+clients-gate-public-list-mismatch = The public certificate list doesn't match the switch
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
 
 # agent_acp forwarding (ADR-0061, block 5): connect-time refusals and per-frame errors, returned to the consumer by category.

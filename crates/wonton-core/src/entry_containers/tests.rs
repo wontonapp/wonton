@@ -18,6 +18,7 @@ use crate::entry_haproxy::CONNECTOR_ADDRESS;
 use crate::entry_runtime::FRPC_IMAGE;
 use crate::entry_settings::EntrySettings;
 use crate::plugin::fake_docker::FakeDocker;
+use crate::plugin::languages::Languages;
 use crate::plugin::names::Instance;
 
 const CORE: &str = "wonton-core";
@@ -1189,7 +1190,7 @@ async fn switch_off_removes_the_connector_and_empties_the_public_list() {
     let reloads = rig.reloads();
     let states = rig
         .containers
-        .apply_public_access(Some(&settings()), false)
+        .apply_public_access(Some(&settings()), false, &Languages::default())
         .await;
     assert_eq!(states.connector, GateState::Done);
     assert!(states.crt_list == GateState::Done, "{states:?}");
@@ -1214,11 +1215,11 @@ async fn switch_on_restores_the_connector_and_the_public_list() {
     let rig = Rig::new().await;
     rig.reconcile(Some(&settings())).await.unwrap();
     rig.containers
-        .apply_public_access(Some(&settings()), false)
+        .apply_public_access(Some(&settings()), false, &Languages::default())
         .await;
     let states = rig
         .containers
-        .apply_public_access(Some(&settings()), true)
+        .apply_public_access(Some(&settings()), true, &Languages::default())
         .await;
     assert_eq!(states.connector, GateState::Done);
     assert!(states.crt_list == GateState::Done, "{states:?}");
@@ -1249,12 +1250,12 @@ async fn the_same_switch_value_does_not_rebuild_or_reload() {
         .unwrap();
     let containers = Arc::new(rig.containers.clone());
     let admin = crate::entry_access::EntryAdmin::new(access, Some(containers), dir);
-    admin.apply(true).await.unwrap();
-    admin.apply(false).await.unwrap();
+    admin.apply(true, &Languages::default()).await.unwrap();
+    admin.apply(false, &Languages::default()).await.unwrap();
     let creations = rig.docker.creations("wonton-entry");
     let writes = rig.docker.writes().len();
     let reloads = rig.reloads();
-    admin.apply(false).await.unwrap();
+    admin.apply(false, &Languages::default()).await.unwrap();
     assert_eq!(rig.docker.creations("wonton-entry"), creations, "不重建");
     assert_eq!(rig.docker.writes().len(), writes, "不重写入口配置");
     assert_eq!(rig.reloads(), reloads, "不重载入口");
@@ -1287,4 +1288,57 @@ async fn an_unchanged_reconcile_does_not_reload() {
     let reloads = rig.reloads();
     rig.reconcile(Some(&settings())).await.unwrap();
     assert_eq!(rig.reloads(), reloads);
+}
+
+/// 公网 crt-list 里现在列了什么。
+fn published_public_list(rig: &Rig) -> String {
+    std::fs::read_to_string(rig.dir.path().join("entry/certs/public.crt-list")).unwrap_or_default()
+}
+
+/// “不要名字”的装法没有入口设置文件，只有 App 里配的域名：总开关照样要撤/建连接器、清/写公网证书列表，
+/// 不能因为 settings 为 None 就回 Done 什么都不做（复审 1124 第 1 条）。
+#[tokio::test]
+async fn switch_without_a_settings_file_runs_the_gates() {
+    let rig = Rig::new().await;
+    app_domain(&rig, "home.example.test");
+    publish_cert(&rig, &["home.example.test"]);
+    rig.reconcile(None).await.unwrap();
+    assert!(
+        rig.docker
+            .containers()
+            .contains(&"wonton-connector".to_owned()),
+        "先按域名对账出连接器"
+    );
+
+    // 关：连接器撤掉、公网证书列表清空，两道容器闸门如实报 Done。
+    let states = rig
+        .containers
+        .apply_public_access(None, false, &Languages::default())
+        .await;
+    assert_eq!(states.connector, GateState::Done, "{states:?}");
+    assert_eq!(states.crt_list, GateState::Done, "{states:?}");
+    assert!(
+        !rig.docker
+            .containers()
+            .contains(&"wonton-connector".to_owned())
+    );
+    assert_eq!(published_public_list(&rig), "");
+
+    // 开：连接器回来、证书列表按域名恢复。
+    let states = rig
+        .containers
+        .apply_public_access(None, true, &Languages::default())
+        .await;
+    assert_eq!(states.connector, GateState::Done, "{states:?}");
+    assert_eq!(states.crt_list, GateState::Done, "{states:?}");
+    assert!(
+        rig.docker
+            .containers()
+            .contains(&"wonton-connector".to_owned())
+    );
+    assert!(
+        published_public_list(&rig).contains("home.example.test"),
+        "{}",
+        published_public_list(&rig)
+    );
 }

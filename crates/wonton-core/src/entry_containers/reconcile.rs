@@ -4,7 +4,9 @@ use super::error::config_error;
 use super::target::Target;
 use super::{CONNECTOR_COMPONENT, ENTRY_COMPONENT, EntryContainers, EntryError};
 use crate::entry_settings::EntrySettings;
+use crate::l10n;
 use crate::plugin::docker::EngineError;
+use crate::plugin::languages::Languages;
 use wonton_protocol::{GateState, PublicSwitchState};
 
 impl EntryContainers {
@@ -143,33 +145,33 @@ impl EntryContainers {
 
     /// 下发一次总开关：撤/建连接器、清空/恢复公网证书列表，并让入口重读配置。逐道如实报结果。
     ///
+    /// 没有入口设置文件（“不要名字”的装法）也有入口：名字来自 App 里配的自己的域名，照常对账。
     /// 同一个值重复下发不动入口（对账看文件内容，没变就不重写）。
+    ///
+    /// 固定原因的失败按 App 的语言写（`langs`），动态的 Docker 错误原样附在后面。
     pub async fn apply_public_access(
         &self,
         settings: Option<&EntrySettings>,
         public: bool,
+        langs: &Languages,
     ) -> PublicSwitchState {
         let _guard = self.reconcile.lock().await;
-        let Some(settings) = settings else {
-            // 没有入口设置就没有公网入口，两道容器闸门没有可做的。
-            return PublicSwitchState {
-                connector: GateState::Done,
-                crt_list: GateState::Done,
-                core: GateState::Done,
-            };
-        };
-        let changed = match self.reconcile_locked(Some(settings), public).await {
+        let changed = match self.reconcile_locked(settings, public).await {
             Ok(changed) => changed,
             Err(error) => return self.report_switch(&error.to_string()),
         };
         let connector = match self.connector_running().await {
             Ok(running) if running == public => GateState::Done,
             Ok(running) => GateState::Failed {
-                detail: if running {
-                    "连接器还开着".to_owned()
-                } else {
-                    "连接器没起来".to_owned()
-                },
+                detail: l10n::text(
+                    langs,
+                    if running {
+                        "clients-gate-connector-still-running"
+                    } else {
+                        "clients-gate-connector-not-running"
+                    },
+                    &[],
+                ),
             },
             Err(error) => GateState::Failed {
                 detail: error.to_string(),
@@ -178,11 +180,15 @@ impl EntryContainers {
         let mut crt_list = match self.public_crt_list_empty() {
             Ok(empty) if empty != public => GateState::Done,
             Ok(empty) => GateState::Failed {
-                detail: if empty {
-                    "公网证书列表还是空的".to_owned()
-                } else {
-                    "公网证书列表没清空".to_owned()
-                },
+                detail: l10n::text(
+                    langs,
+                    if empty {
+                        "clients-gate-public-list-still-empty"
+                    } else {
+                        "clients-gate-public-list-not-cleared"
+                    },
+                    &[],
+                ),
             },
             Err(error) => GateState::Failed {
                 detail: error.to_string(),
@@ -194,7 +200,11 @@ impl EntryContainers {
             && let Err(error) = self.reload(&self.reload_addr).await
         {
             crt_list = GateState::Failed {
-                detail: format!("入口没有重读配置：{error}"),
+                detail: l10n::text(
+                    langs,
+                    "clients-gate-entry-not-reloaded",
+                    &[("error", error.to_string().into())],
+                ),
             };
         }
         PublicSwitchState {
