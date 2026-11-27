@@ -1,7 +1,8 @@
 //! `media_source` 提供方契约的请求体与响应体（核心 → 提供方，ADR-0113“媒体源契约”）。
 //!
 //! 路径常量在 [`super`]；这里补字段级的形状和带编号的路径，上传的那几样在 [`super::uploads`]。编号由提供方发，可能带 `/` 之类的字符，
-//! 拼进路径前一律百分号转义；[`super::item_path`] 是早先不转义的那一个，留给只有安全字符的场合。
+//! 拼进路径前一律经 [`segment`] 转义成一个路径段（上传号、相册的编号也是）；[`super::item_path`]、[`super::items_path`]
+//! 是早先不转义的两个，留给只有安全字符的场合。
 
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
@@ -21,9 +22,14 @@ const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'~');
 
-/// 编号转义成一个路径段。
+/// 编号转义成一个路径段。`.`、`..` 虽是 unreserved，原样拼会被当成目录跳转，所以也转义：
+/// 不管提供方发什么编号，拼出来的路径都停在这一段里。
 pub fn segment(id: &str) -> String {
-    utf8_percent_encode(id, SEGMENT).to_string()
+    match id {
+        "." => "%2E".to_owned(),
+        ".." => "%2E%2E".to_owned(),
+        _ => utf8_percent_encode(id, SEGMENT).to_string(),
+    }
 }
 
 /// 种类写进查询串的值，同它的 JSON 取值。
@@ -186,6 +192,13 @@ mod tests {
         assert_eq!(playback_progress_path("s?1"), "/playback/s%3F1/progress");
         assert_eq!(playback_queue_path("s"), "/playback/s/queue");
         assert_eq!(playback_stopped_path("s"), "/playback/s/stopped");
+    }
+
+    #[test]
+    fn dot_ids_stay_one_segment() {
+        assert_eq!(item_download_path(".."), "/items/%2E%2E/download");
+        assert_eq!(playback_queue_path("."), "/playback/%2E/queue");
+        assert_eq!(segment("a..b"), "a..b");
     }
 
     #[test]
