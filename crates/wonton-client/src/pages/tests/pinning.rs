@@ -1,4 +1,4 @@
-//! 把当前页钉进“我的应用”：插件行与公网 https 页面的分类。
+//! 按网址加进“我的应用”：插件行与公网 https 页面的分类。
 
 use super::*;
 
@@ -7,7 +7,7 @@ async fn pinning_the_open_page_classifies_plugins_and_public_urls() {
     let rig = Rig::new();
     // 插件网站的入口：加进我的应用的是插件行。
     rig.tabs
-        .dispatch(PageAction::PinCurrentPage {
+        .dispatch(PageAction::AddMyAppUrl {
             url: "http://app.shared.wonton.localhost/".to_owned(),
             title: None,
         })
@@ -16,7 +16,7 @@ async fn pinning_the_open_page_classifies_plugins_and_public_urls() {
 
     // 公网网页：只收 https。
     rig.tabs
-        .dispatch(PageAction::PinCurrentPage {
+        .dispatch(PageAction::AddMyAppUrl {
             url: "https://example.com/report?day=1".to_owned(),
             title: Some("日报".to_owned()),
         })
@@ -35,10 +35,25 @@ async fn pinning_the_open_page_classifies_plugins_and_public_urls() {
 
     let http = rig
         .tabs
-        .dispatch(PageAction::PinCurrentPage {
+        .dispatch(PageAction::AddMyAppUrl {
             url: "http://example.com/".to_owned(),
             title: None,
         })
         .unwrap_err();
     assert!(matches!(http, CoreError::InvalidInput { .. }));
+}
+
+#[tokio::test]
+async fn a_typed_address_without_a_scheme_is_https() {
+    let rig = Rig::new();
+    rig.tabs
+        .dispatch(PageAction::AddMyAppUrl {
+            url: " example.org/notes ".to_owned(),
+            title: None,
+        })
+        .unwrap();
+    assert_eq!(
+        rig.last_app_tab(),
+        Some(url_tab("https://example.org/notes"))
+    );
 }

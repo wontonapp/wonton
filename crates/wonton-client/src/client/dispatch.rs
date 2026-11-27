@@ -437,7 +437,7 @@ impl ClientCore {
             | PageAction::MoveMyApp { .. }
             | PageAction::SetAutoAddApps { .. }
             | PageAction::RetryMyAppSync
-            | PageAction::PinCurrentPage { .. }
+            | PageAction::AddMyAppUrl { .. }
             | PageAction::ReloadTab { .. }
             | PageAction::DismissUninstalledTabs) => scope.pages.dispatch(action),
         }

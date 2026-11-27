@@ -464,9 +464,9 @@ pub enum PageAction {
     SetAutoAddApps { enabled: bool },
     /// 重新和账号数据对一次账（侧边栏“我的应用”过期提示的重试）。没有会话时无事可做，等重连后自动对账。
     RetryMyAppSync,
-    /// 按当前 `url` 把页面加进我的应用：插件入口下的路径作为插件页面，其他网址必须是 `https://`。
-    /// `title` 为空时核心按插件或域名补全。
-    PinCurrentPage { url: String, title: Option<String> },
+    /// 按网址把一页加进我的应用：插件网站下的地址作为插件页面，其他网址必须是 `https://`，
+    /// Bot 的网页不收。`title` 为空时核心按插件或域名补全。
+    AddMyAppUrl { url: String, title: Option<String> },
     /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份实例。
     ReloadTab { page: crate::PlacedTab },
     /// 壳报告网页加载失败。`status` 是 HTTP 状态码，没拿到响应时为空；原因由核心判断。

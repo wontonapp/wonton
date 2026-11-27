@@ -1,4 +1,4 @@
-@file:Suppress("TooManyFunctions") // 栈里的页和面板页共用的网页、桥、状态都集中在这里。
+@file:Suppress("TooManyFunctions") // 栈里的页共用的网页、桥、状态都集中在这里。
 package app.wonton.ui
 
 import android.content.ActivityNotFoundException

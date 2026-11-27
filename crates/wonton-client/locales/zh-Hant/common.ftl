@@ -156,9 +156,10 @@ app-lock-corrupt = App 鎖設定檔 { $path } 已損壞：{ $reason }
 pages-storage-problem = 我的應用存不下，下次啟動可能恢復舊狀態：{ $error }
 # 僅給主人查看產生的外掛金鑰；使用者填寫和外掛收集的金鑰絕不返回。
 plugins-owner-secret-not-listed = 這項金鑰不在已展開的清單中：{ $name }
-# 把正在看的页面加进我的应用、同步我的应用时的报错。
+# 按网址加进我的应用、同步我的应用时的报错。
 page-invalid-url = 這個網址讀不出來。
 page-not-https = 只能加 https:// 的網頁。
 page-path-outside = 這一頁不在這個 App 自己的網站裡。
 my-apps-sync-failed-read = 從伺服器讀我的應用沒有成功。
 my-apps-sync-unreadable = 伺服器上的我的應用這台裝置讀不懂，先用本機的。
+my-apps-bot-page = Bot 的網頁從聊天裡打開，不能加進我的應用。

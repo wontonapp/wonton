@@ -53,7 +53,6 @@ SharingAction.RevokePluginShare | 两壳都经 ClientCore.revoke_plugin_share �
 FileAction.UploadFile | iOS 也只有无调用方的辅助函数；聊天上传两边都走 add_file_attachment，入口两壳一起接
 
 # 固定当前插件页：Android 的导航正随 #379 去底栏重做，等它合并后照新导航一起接。
-PageAction.PinCurrentPage | Android 等 #379（去底栏的导航大改）合并后再接，先不碰导航文件
 
 # Agent 调用链（ADR-0061 第 10 节）：客户端核心已就绪，壳的界面在前端线的需求里，暂未接（任务卡 chain-client）。
 AgentChainStatus | 壳待前端线接

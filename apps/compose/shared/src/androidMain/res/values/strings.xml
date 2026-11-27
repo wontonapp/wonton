@@ -109,6 +109,8 @@
     <string name="widget_status_at">%1$s · %2$s</string>
     <string name="myapp_add">Add to My apps</string>
     <string name="myapp_add_more">Add apps</string>
+    <string name="myapp_url">Enter a URL</string>
+    <string name="myapp_url_add">Add</string>
     <string name="myapp_auto_add">Add new apps automatically</string>
     <string name="myapp_problem">Couldn\'t load or save My apps</string>
     <string name="myapp_remove">Remove from My apps</string>

@@ -7,7 +7,7 @@ async fn plugin_paths_stay_on_the_plugin_site() {
     let rig = Rig::new();
     // 插件网站里以 // 开头的路径：还是这个插件的一页，网址不跳到别的主机。
     rig.tabs
-        .dispatch(PageAction::PinCurrentPage {
+        .dispatch(PageAction::AddMyAppUrl {
             url: "http://app.shared.wonton.localhost//evil.example/login".to_owned(),
             title: None,
         })
