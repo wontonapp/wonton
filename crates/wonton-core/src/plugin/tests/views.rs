@@ -24,7 +24,8 @@ pub(super) const TAB_ICON_SELECTED: &str = r##"<svg xmlns="http://www.w3.org/200
 fn photos(icon: &str) -> PluginPackage {
     let yaml = package(
         "  web:\n    image: nginx:1.27",
-        "  icon: icon.svg\n  tags: {zh: [相册, AI], en: [Photos, AI]}\n  author: {name: Example}\n  \
+        "  icon: icon.svg\n  subtitle: {zh: 手机相册备份, en: Phone Photo Backup}\n  \
+         tags: {zh: [相册, AI], en: [Photos, AI]}\n  author: {name: Example}\n  \
          release_notes: {zh: 第一版, en: First release}\n  requirements: {memory: 2G}\n  permissions: []",
     )
     .replace("id: app.test", "id: app.photos")
@@ -51,6 +52,7 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
         panic!("{list:?}")
     };
     assert_eq!(plugin.title, "Photos");
+    assert_eq!(plugin.subtitle.as_deref(), Some("Phone Photo Backup"));
     assert_eq!(plugin.kind, PluginKind::App);
     assert_eq!(plugin.trust, PluginTrust::Local);
     assert!(plugin.removable);
@@ -69,6 +71,13 @@ async fn installed_plugins_carry_store_info_and_serve_their_icons() {
     assert_eq!(
         m.installed_detail(&id, &chinese).unwrap().tags,
         ["相册", "AI"]
+    );
+    assert_eq!(
+        m.installed_detail(&id, &chinese)
+            .unwrap()
+            .subtitle
+            .as_deref(),
+        Some("手机相册备份")
     );
     assert_eq!(
         m.installed_detail(&id, &english()).unwrap().tags,

@@ -683,6 +683,7 @@ mod tests {
             plan: "opaque-install-plan".into(),
             id: "app.photos".into(),
             title: "Photos".into(),
+            subtitle: None,
             summary: String::new(),
             license: None,
             license_url: None,

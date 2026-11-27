@@ -45,10 +45,12 @@ pub(in crate::client) fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsV
     plugins.sidebar.apps = vec![
         sidebar_app(
             super::super::ui_fake_plugin_detail::BUDGET_TITLE,
+            Some("Household Budget"),
             super::super::ui_fake_plugin_detail::BUDGET_ID,
         ),
         sidebar_app(
             super::super::ui_fake_plugin_detail::HUB_TITLE,
+            None,
             super::super::ui_fake_plugin_detail::HUB_ID,
         ),
     ];
@@ -63,11 +65,12 @@ pub(in crate::client) fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsV
     plugins
 }
 
-fn sidebar_app(title: &str, id: &str) -> SidebarApp {
+fn sidebar_app(title: &str, subtitle: Option<&str>, id: &str) -> SidebarApp {
     SidebarApp {
         plugin_id: Some(id.into()),
         tab: None,
         title: title.into(),
+        subtitle: subtitle.map(Into::into),
         open: SidebarOpen::Page {
             tab: web_app_tab(id),
         },
@@ -88,6 +91,7 @@ pub(in crate::client) fn fake_plugin(
         bot_danger_can_toggle: false,
         id: id.into(),
         title: title.into(),
+        subtitle: None,
         summary: String::new(),
         version: "1.0.0".into(),
         revision: "1".into(),

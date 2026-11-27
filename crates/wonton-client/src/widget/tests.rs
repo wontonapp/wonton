@@ -205,6 +205,7 @@ fn plugin(id: &str, web: bool) -> InstalledPlugin {
         chat: Default::default(),
         id: id.to_owned(),
         title: id.to_uppercase(),
+        subtitle: None,
         summary: String::new(),
         version: "1".to_owned(),
         revision: "1".to_owned(),

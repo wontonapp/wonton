@@ -11,6 +11,7 @@ fn plugin(status: PluginState) -> InstalledPlugin {
         bot_danger: false,
         id: "app.agent".into(),
         title: "Agent".into(),
+        subtitle: None,
         summary: String::new(),
         version: "1".into(),
         revision: "1".into(),
