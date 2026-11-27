@@ -1,16 +1,27 @@
-use std::pin::pin;
+use std::{collections::HashMap, pin::pin, sync::Arc, time::Duration};
 
 use axum::{Json, Router, http::StatusCode, routing::get};
+use futures_util::{StreamExt, stream};
 use matrix_sdk::{
     Client, SessionMeta,
     authentication::matrix::MatrixSession as SdkSession,
     config::SyncSettings,
     ruma::{api::MatrixVersion, room_id, user_id},
 };
-use matrix_sdk_ui::timeline::RoomExt;
+use matrix_sdk_ui::{
+    eyeball_im::{Vector, VectorDiff},
+    timeline::{RoomExt, TimelineItem},
+};
 use serde_json::json;
+use tokio::sync::watch;
 
-use super::*;
+use super::members::local_member_names;
+use super::timeline::{messages, named_entries};
+use crate::{
+    Message,
+    message::MemberNames,
+    timeline::{self, EntryKind, TimelineEntry},
+};
 
 const ROOM: &str = "!chat:example.org";
 const BOT: &str = "@bot:example.org";

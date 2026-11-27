@@ -113,12 +113,13 @@ pub async fn reconcile_clients(gateway: &Gateway) -> Result<(), String> {
 }
 
 /// 对账按退避间隔跑，家名和证书按小时跑；续期由 [`crate::clients::domain::Domain`] 发布证书，
-/// 入口容器在不在由对账判断（读不到设置按"不确定"，不删在跑的容器）。
+/// 入口容器在不在由对账判断（读不到设置按"不确定"，不删在跑的容器）。总开关每次对账现读。
 ///
 /// 续期不看设置文件在不在：条款、后缀和服务商的门禁在 `Domain::ready` 里，所以“不要名字”的安装
 /// （没有设置文件）每小时也照样走到续期。
 pub fn spawn(
-    containers: EntryContainers,
+    containers: Arc<EntryContainers>,
+    access: Arc<crate::entry_access::EntryAccess>,
     domain: Arc<crate::clients::domain::Domain>,
     notices: Option<Arc<NoticeRoom>>,
     gateway: Option<Arc<Gateway>>,
@@ -141,19 +142,19 @@ pub fn spawn(
                     }
                 } => {
                     if changed.is_err() { break; }
-                    if let Err(error) = reconcile_once(&containers, gateway.as_deref()).await {
+                    if let Err(error) = reconcile_once(&containers, &access, gateway.as_deref()).await {
                         tracing::warn!(%error, "插件状态变化后的入口对账失败");
                     }
                 }
                 _ = tokio::time::sleep(retry) => {
-                    retry = reconcile_entry(&containers, &notices, &mut reconciled, gateway.as_deref())
+                    retry = reconcile_entry(&containers, &access, &notices, &mut reconciled, gateway.as_deref())
                         .await
                         .unwrap_or(retry * 2)
                         .min(Duration::from_secs(RETRY_MAX));
                 }
                 _ = domain.refreshed() => {
                     // 新证书发布了：这一轮按它重写配置再重载，不用等退避间隔。
-                    if let Err(error) = reconcile_once(&containers, gateway.as_deref()).await {
+                    if let Err(error) = reconcile_once(&containers, &access, gateway.as_deref()).await {
                         tracing::warn!(%error, "签发后的入口对账失败");
                     }
                 }
@@ -183,6 +184,7 @@ pub fn spawn(
 /// 对一次账：有网关走客户端开关那套（按已发布证书写配置、再重载），没有网关就直接按设置对账。
 async fn reconcile_once(
     containers: &EntryContainers,
+    access: &crate::entry_access::EntryAccess,
     gateway: Option<&Gateway>,
 ) -> Result<(), String> {
     if let Some(gateway) = gateway {
@@ -191,7 +193,7 @@ async fn reconcile_once(
     let settings =
         EntrySettings::load(containers.install_dir()).map_err(|error| error.to_string())?;
     containers
-        .reconcile(settings.as_ref())
+        .reconcile(settings.as_ref(), access.enabled())
         .await
         .map_err(|error| error.to_string())
 }
@@ -200,11 +202,12 @@ async fn reconcile_once(
 /// 失败进入和恢复退出各发一条通知——对账持续失败时公网入口和联邦 TLS 整个不可用，主人得知道。
 async fn reconcile_entry(
     containers: &EntryContainers,
+    access: &crate::entry_access::EntryAccess,
     notices: &Option<Arc<NoticeRoom>>,
     reconciled: &mut Option<bool>,
     gateway: Option<&Gateway>,
 ) -> Option<Duration> {
-    let result = reconcile_once(containers, gateway).await;
+    let result = reconcile_once(containers, access, gateway).await;
     match result {
         Ok(()) => {
             if *reconciled == Some(false) {

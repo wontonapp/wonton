@@ -94,8 +94,15 @@ impl Gateway {
         self
     }
     #[must_use]
-    pub fn with_entry(mut self, entry: Option<crate::entry_containers::EntryContainers>) -> Self {
+    pub fn with_entry(mut self, entry: Option<Arc<crate::entry_access::EntryAdmin>>) -> Self {
         self.entry = entry;
+        self
+    }
+
+    /// 和持久开关共用同一个标志：开关一改，读这个标志的路径立刻跟着变。
+    #[must_use]
+    pub fn with_public_access_flag(mut self, flag: Arc<std::sync::atomic::AtomicBool>) -> Self {
+        self.public_access = flag;
         self
     }
 
@@ -103,6 +110,13 @@ impl Gateway {
     pub fn with_public_access(self, enabled: bool) -> Self {
         self.public_access.store(enabled, Ordering::Relaxed);
         self
+    }
+
+    /// 公网访问关着：入口监听对带 `X-Wonton-Entry: public` 的请求回 503。
+    pub(crate) fn entry_closed(&self) -> bool {
+        self.entry
+            .as_ref()
+            .is_some_and(|entry| !entry.access.enabled())
     }
 
     #[must_use]

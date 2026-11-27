@@ -46,14 +46,17 @@ pub enum Trust {
 pub struct Model {
     /// 证书的父域，如 `k3f9qzab.example.test`。标签硬拼在它前面。
     pub suffix: String,
-    /// 联邦的服务器名，进公网前端的 crt-list（公网入口关着时它也照常要能握手）。
+    /// 联邦的服务器名，进公网前端的 crt-list。
     pub federation: Option<String>,
+    /// 公网访问总开关；关着时公网前端的证书列表为空，任何 SNI 都握手不成（ADR-0090 第 2 节）。
+    pub public: bool,
     /// 生成 8449 的配对前端（已配对的云吞之间）。
     pub paired_federation: bool,
     /// 入口自检用的标签，也不算进任何插件的配额。
     pub probe_label: String,
     /// 主人打开了公网入口的插件标签。
     pub public_labels: Vec<String>,
+
     /// 主人打开了局域网入口的插件标签。
     pub lan_labels: Vec<String>,
     pub trust: Trust,
@@ -69,6 +72,7 @@ impl Model {
         Self {
             suffix: suffix.to_owned(),
             federation: Some(federation.to_owned()),
+            public: true,
             paired_federation: true,
             probe_label: labels::PROBE_LABEL.to_owned(),
             public_labels: Vec::new(),
@@ -79,8 +83,11 @@ impl Model {
         }
     }
 
-    /// 公网前端 crt-list 里的名字：联邦、探测标签、打开的公网入口。
+    /// 公网前端 crt-list 里的名字：联邦、探测标签、打开的公网入口。总开关关着时一个都没有。
     pub fn public_names(&self) -> Vec<String> {
+        if !self.public {
+            return Vec::new();
+        }
         let mut names = Vec::new();
         if let Some(federation) = &self.federation {
             names.push(federation.clone());

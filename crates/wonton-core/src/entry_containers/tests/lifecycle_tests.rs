@@ -97,7 +97,7 @@ async fn core_outside_container_reports_core_not_in_container() {
         Instance::default(),
         None,
     );
-    let error = here.reconcile(Some(&settings())).await.unwrap_err();
+    let error = here.reconcile(Some(&settings()), true).await.unwrap_err();
     assert_eq!(error.category(), "core_not_in_container");
     assert_eq!(
         error.to_string(),
@@ -105,5 +105,5 @@ async fn core_outside_container_reports_core_not_in_container() {
     );
     assert_eq!(rig.others(), Vec::<String>::new());
     // 没有设置时是空操作：开发栈没有入口设置不该每次启动都报错。
-    here.reconcile(None).await.unwrap();
+    here.reconcile(None, true).await.unwrap();
 }

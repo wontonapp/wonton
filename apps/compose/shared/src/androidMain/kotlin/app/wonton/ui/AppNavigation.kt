@@ -12,7 +12,6 @@ import app.wonton.protocol.PageAction
 import app.wonton.protocol.AppLink
 import app.wonton.protocol.BotRef
 import app.wonton.protocol.CoreException
-import app.wonton.protocol.DefaultBotVisibility
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.OnboardingStep
 import app.wonton.protocol.OnboardingViewModel
@@ -98,7 +97,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
         plugins.contacts = null
     }
 
-    fun openLink(link: AppLink, onboarding: OnboardingViewModel) {
+    fun openLink(link: AppLink) {
         resetNavigation()
         when (link) {
             is AppLink.Tab -> {
@@ -125,20 +124,10 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
             }
             AppLink.AgentChat -> {
                 pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
-                val peer = onboarding.defaultBotUserId
+                // 空一句话只解析并打开默认 Agent 的私聊，写不写由用户决定。
+                val view = pages.core.chat()
                 pages.plugins.reject(
-                    if (onboarding.defaultBotVisibility != DefaultBotVisibility.VISIBLE || peer.isNullOrEmpty()) {
-                        val reason = if (
-                            onboarding.defaultBotVisibility == DefaultBotVisibility.ABSENT && peer == null
-                        ) {
-                            R.string.problem_default_agent_absent
-                        } else {
-                            R.string.problem_default_agent_unverified
-                        }
-                        onboarding.problem?.problem ?: CoreException.NotReady(context.getString(reason)).problem
-                    } else {
-                        chat.openDirectChat(pages.core, peer, acceptInvite = true)
-                    },
+                    chat.ask.startAsk(pages.core, "", chat.ask.currentBotRoomId(view)),
                 )
             }
             // 桌面小组件、桌面搜索点进来的会话（ADR-0100）。
@@ -248,7 +237,7 @@ internal fun AppLinkEffect(request: AppLinkRequest?, navigation: AppNavigation) 
         val onboarding = onboardingWhenKnown(core)
         if (onboarding.step == OnboardingStep.FINISHED) {
             val pluginReady = pluginLinkReady(request.link, navigation.pages.plugins, navigation.context)
-            if (pluginReady && navigation.isReadyForLink()) navigation.openLink(request.link, core.onboarding())
+            if (pluginReady && navigation.isReadyForLink()) navigation.openLink(request.link)
         }
         request.consume()
     }

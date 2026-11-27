@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use crate::clients::lan_forward::LanState;
 use crate::plugin::docker::Engine;
 use crate::plugin::names::Instance;
+use wonton_protocol::{GateState, PublicSwitchState};
 
 /// 容器创建参数：镜像、命令行、只读挂载、安全选项和端点。
 mod create;
@@ -75,6 +76,8 @@ pub struct EntryContainers {
     loaded_cert: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
     /// 上一轮该重载但没成：配置或证书都可能已经不再变化，必须跨轮把这笔账留住。
     reload_pending: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// 周期对账和一次开关下发不交叉，免得两边各按一半旧状态建删。
+    reconcile: std::sync::Arc<tokio::sync::Mutex<()>>,
 }
 
 impl EntryContainers {
@@ -98,6 +101,7 @@ impl EntryContainers {
             reload_addr: ENTRY_RELOAD_ADDR.to_owned(),
             loaded_cert: std::sync::Arc::new(std::sync::Mutex::new(None)),
             reload_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            reconcile: std::sync::Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -147,6 +151,44 @@ impl EntryContainers {
         &self.data_dir
     }
 
+    /// 公网证书列表是不是空的。文件不在也是空：没有入口容器的安装本来就没有这份列表。
+    pub fn public_crt_list_empty(&self) -> std::io::Result<bool> {
+        let path = self.install_dir.join("entry/certs/public.crt-list");
+        match std::fs::read_to_string(path) {
+            Ok(text) => Ok(text.trim().is_empty()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// 连接器容器在不在跑。
+    pub async fn connector_running(&self) -> Result<bool, EntryError> {
+        self.running(CONNECTOR_COMPONENT).await
+    }
+
+    /// 某个组件的容器在不在跑。
+    async fn running(&self, component: &str) -> Result<bool, EntryError> {
+        Ok(self
+            .engine
+            .inspect_container(&self.name(component))
+            .await?
+            .and_then(|info| info.state)
+            .and_then(|state| state.running)
+            == Some(true))
+    }
+
+    /// 容器和证书列表都做不成时（设置读不了、Docker 出错）的两道闸门结果；核心那道闸门只是代码，照旧完成。
+    pub fn report_switch(&self, detail: &str) -> PublicSwitchState {
+        PublicSwitchState {
+            connector: GateState::Failed {
+                detail: detail.to_owned(),
+            },
+            crt_list: GateState::Failed {
+                detail: detail.to_owned(),
+            },
+            core: GateState::Done,
+        }
+    }
     /// 容器的名字：和插件资源一样带实例名，几套核心共用一台 Docker 时不会撞。
     fn name(&self, component: &str) -> String {
         match self.instance.name() {

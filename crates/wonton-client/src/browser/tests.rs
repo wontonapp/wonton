@@ -90,6 +90,7 @@ fn proxy_at(addr: SocketAddr, credential: &ProxyCredential) -> ProxySettings {
 
 fn chat_view(bots: Vec<wonton_protocol::BotView>) -> wonton_protocol::ChatViewModel {
     wonton_protocol::ChatViewModel {
+        ask: None,
         account: wonton_protocol::ChatAccount::SignedOut,
         sync: wonton_protocol::ChatSync::Idle,
         encryption: wonton_protocol::EncryptionStatus {

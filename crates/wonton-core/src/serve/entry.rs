@@ -38,16 +38,19 @@ pub(crate) fn open_domain(
 pub(crate) async fn start_entry_runtime(
     cfg: &Config,
     engine: &Engine,
-) -> Option<wonton_core::entry_containers::EntryContainers> {
+    access: &wonton_core::entry_access::EntryAccess,
+) -> Option<Arc<wonton_core::entry_containers::EntryContainers>> {
     let dir = cfg.install_dir.as_ref()?;
-    let containers = wonton_core::entry_containers::EntryContainers::new(
-        engine.clone(),
-        dir.clone(),
-        cfg.data_dir.clone(),
-        cfg.instance.clone(),
-        cfg.core_container.clone(),
-    )
-    .with_client_port(cfg.client_port.get());
+    let containers = Arc::new(
+        wonton_core::entry_containers::EntryContainers::new(
+            engine.clone(),
+            dir.clone(),
+            cfg.data_dir.clone(),
+            cfg.instance.clone(),
+            cfg.core_container.clone(),
+        )
+        .with_client_port(cfg.client_port.get()),
+    );
     // 读不了设置（JSON 坏、解析器非法）是"不确定"：不按"无设置"删掉在跑的入口容器，交给运行循环
     // 带退避重试。Ok(None) 不代表不要入口：“不要名字”的安装本来就没有设置文件，对账按 App 里配的
     // 域名和证书决定。
@@ -56,7 +59,10 @@ pub(crate) async fn start_entry_runtime(
             tracing::warn!(%error, "入口设置读不了，现有入口容器不动，运行循环会带退避重试");
         }
         Ok(settings) => {
-            if let Err(error) = containers.reconcile(settings.as_ref()).await {
+            if let Err(error) = containers
+                .reconcile(settings.as_ref(), access.enabled())
+                .await
+            {
                 // 入口的循环会带退避重试，这里不挡住核心启动。
                 tracing::warn!(category = error.category(), %error, "入口容器没对上");
             }

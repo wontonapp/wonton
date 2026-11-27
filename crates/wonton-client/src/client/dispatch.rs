@@ -5,13 +5,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use wonton_l10n::l10n;
 use wonton_protocol::{
     Action, AgentAction, BotAction, ChatAction, DefaultBotVisibility, DeviceNetwork, HomeAction,
-    HomeStatus, PageAction, PluginAction, PushAction, SessionAction, SettingsAction,
-    TimelineAction,
+    PageAction, PluginAction, PushAction, SessionAction, SettingsAction, TimelineAction,
 };
 
 use super::switch::PushInput;
 use super::*;
 use crate::agent_chains::actions::Effect;
+use crate::chat::ask::{AskRequest, DefaultBot};
 use crate::l10n::{CATALOG, language};
 
 /// 假数据下已经试过几次发送，`WONTON_UI_FAIL_SEND` 按它数前几次该拒。
@@ -215,31 +215,33 @@ impl ClientCore {
 
     fn chat_action(&self, scope: &Scope, action: ChatAction) -> Result<(), CoreError> {
         match action {
-            ChatAction::AskAgent { text } => {
-                if scope.home.view().status != HomeStatus::Connected {
-                    return Err(CoreError::NotReady {
-                        reason: l10n!(CATALOG, language(), "chat-default-agent-unverified"),
-                    });
-                }
+            ChatAction::AskAgent {
+                text,
+                room_id,
+                request_id,
+            } => {
                 let onboarding = scope.onboarding.view();
-                let bot = match (
-                    onboarding.default_bot_user_id,
+                let default = match (
+                    onboarding.default_bot_user_id.as_deref(),
                     onboarding.default_bot_visibility,
                 ) {
-                    (Some(bot), Some(DefaultBotVisibility::Visible)) => bot,
-                    (_, Some(DefaultBotVisibility::Absent)) => {
-                        return Err(CoreError::NotReady {
-                            reason: l10n!(CATALOG, language(), "chat-no-default-agent"),
-                        });
-                    }
-                    _ => {
-                        return Err(CoreError::NotReady {
-                            reason: l10n!(CATALOG, language(), "chat-default-agent-unverified"),
-                        });
-                    }
+                    (Some(bot), Some(DefaultBotVisibility::Visible)) => bot
+                        .parse()
+                        .map(DefaultBot::Visible)
+                        .unwrap_or(DefaultBot::Unknown),
+                    (_, Some(DefaultBotVisibility::Absent)) => DefaultBot::Absent,
+                    _ => DefaultBot::Unknown,
                 };
-                scope.chat.ask(&bot, &text)
+                scope.chat.ask(
+                    AskRequest {
+                        text,
+                        room_id,
+                        request_id,
+                    },
+                    default,
+                )
             }
+            ChatAction::DismissChatProblem => scope.chat.dispatch(ChatAction::DismissChatProblem),
             ChatAction::SkipKeyHandoff => scope.chat.skip_key_handoff(),
             action @ (ChatAction::JoinRoom { .. }
             | ChatAction::LeaveRoom { .. }
@@ -253,7 +255,6 @@ impl ClientCore {
             | ChatAction::ConfirmVerification { .. }
             | ChatAction::DenyVerification { .. }
             | ChatAction::CancelDeviceVerification { .. }
-            | ChatAction::DismissChatProblem
             | ChatAction::CheckReady
             | ChatAction::AnswerConfirmation { .. }
             | ChatAction::StopConfirmationWindow { .. }

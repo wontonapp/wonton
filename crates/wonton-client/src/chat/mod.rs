@@ -10,7 +10,7 @@
 
 mod accessors;
 mod agent_run;
-mod ask;
+pub(crate) mod ask;
 mod avatar_files;
 mod background;
 mod bot_activity;

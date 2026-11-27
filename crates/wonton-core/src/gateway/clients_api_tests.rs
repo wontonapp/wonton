@@ -111,6 +111,17 @@ impl Rig {
             h.docker.engine().await,
             None,
         );
+        let access = Arc::new(
+            crate::entry_access::EntryAccess::open(install.join("core/entry-access.json")).unwrap(),
+        );
+        access
+            .save(wonton_protocol::PublicAccess { enabled: public })
+            .unwrap();
+        let entry = Arc::new(crate::entry_access::EntryAdmin::new(
+            access,
+            Some(Arc::new(entry)),
+            install.clone(),
+        ));
         let gateway = Arc::new(
             super::Gateway::new(
                 h.gateway.public.clone(),

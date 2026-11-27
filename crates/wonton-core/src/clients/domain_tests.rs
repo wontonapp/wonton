@@ -821,7 +821,7 @@ async fn renamed_entry_rig() -> (
     .unwrap();
     app_domain(dir.path(), "old.example.test", false);
     settings(dir.path(), Some("old.example.test"));
-    entry.reconcile(None).await.unwrap();
+    entry.reconcile(None, true).await.unwrap();
     // 后缀改成父域。
     settings(dir.path(), Some("example.test"));
     app_domain(dir.path(), "example.test", true);
@@ -856,7 +856,7 @@ async fn a_published_certificate_writes_the_config_before_reloading() {
         "签发成功不该自己先重载"
     );
     // 循环收到唤醒就做这一轮：先按新证书写配置，再重载。重载那一刻看到的名字必须已经是新的。
-    entry.reconcile(None).await.unwrap();
+    entry.reconcile(None, true).await.unwrap();
     let seen = reloads.lock().expect("重载记录锁").clone();
     let last = seen.last().expect("入口没收到重载");
     let names: Vec<&str> = last.split_whitespace().collect();

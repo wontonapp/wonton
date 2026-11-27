@@ -52,6 +52,10 @@ struct MainView: View {
         .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
         .onChange(of: horizontalSizeClass) { _, _ in showsSidebar = false }
         .overlay { if chat.isOpeningChat { ProgressView() } }
+        .overlay(alignment: .bottom) {
+            AskFailureBar(model: chat)
+                .padding(.bottom, WontonTheme.size.bottomBar + WontonTheme.spacing.s12)
+        }
         #if DEBUG
         .overlay(alignment: .topLeading) { KeyHandoffTestState(model: chat) }
         #endif
@@ -108,6 +112,11 @@ struct MainView: View {
         .task { await settings.observe() }
         .environment(pages)
         .task { await navigation.push.start() }
+        .task {
+            // UI 测试不必经系统“在云吞中打开?”：直接走快捷指令同一条 askAgent。
+            guard ProcessInfo.processInfo.environment["WONTON_UI_TEST_ASK_ON_LAUNCH"] == "1" else { return }
+            try? await navigation.askAgent("")
+        }
         .environment(onboarding)
         .environment(\.panelDeps, PanelDependencies(
             pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,

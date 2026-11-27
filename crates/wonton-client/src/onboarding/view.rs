@@ -224,6 +224,7 @@ mod tests {
 
     fn chat(room_id: &str, bot: Option<&str>) -> ChatViewModel {
         ChatViewModel {
+            ask: None,
             chat_layout_default: Default::default(),
             account: ChatAccount::SignedIn {
                 user_id: "@owner:home".to_owned(),

@@ -208,6 +208,8 @@ pub struct Peers {
     names: watch::Sender<BTreeSet<String>>,
     /// 联邦转发组件的状态。还没接转发组件时，已配对的行按“正在确认”处理。
     forwarder: Mutex<Option<watch::Receiver<PeerStates>>>,
+    /// 公网访问总开关（ADR-0090）：关着时已配对的行报“公网访问已关闭”。
+    public_access: Mutex<Option<Arc<crate::entry_access::EntryAccess>>>,
     /// 主人在“Wonton”私聊里的提醒。
     notices: Option<Arc<dyn OwnerNotices>>,
     /// 主人的显示名，每次握手现取：主人改了资料，下次配对用的就是新名字。
@@ -305,6 +307,7 @@ impl Peers {
             names,
             server_allowlist,
             forwarder: Mutex::new(None),
+            public_access: Mutex::new(None),
             notices,
             owner_display_name,
             languages,
@@ -464,6 +467,11 @@ impl Peers {
         }
     }
 
+    /// 接上公网访问总开关：关着时已配对的行报公网访问已关闭（ADR-0050 的状态表）。
+    pub fn attach_public_access(&self, access: Arc<crate::entry_access::EntryAccess>) {
+        *self.public_access.lock().expect("公网开关锁中毒") = Some(access);
+    }
+
     /// 接上联邦转发组件：已配对行的状态和“最近连上”的时刻从这里来。
     ///
     /// 状态变化跟着记：连上时把时刻写进记录（持久化，重启后还在），对方拒绝本机时把记录标成“对方删了”。
@@ -595,11 +603,28 @@ impl Peers {
         let Some(states) = guard.as_ref() else {
             return PeerStatus::Checking;
         };
-        match states.borrow().get(server_name) {
+        let probe = match states.borrow().get(server_name) {
             Some(FederationStatus::Connected) => PeerStatus::Connected,
             Some(FederationStatus::Offline { .. }) => PeerStatus::Offline,
             Some(FederationStatus::RemovedByPeer) => PeerStatus::RemovedByPeer,
             None => PeerStatus::Checking,
+        };
+        // 自己的公网访问关着、而且本机有公网名字时，行如实说“公网访问已关闭”（ADR-0050 的状态表）：
+        // 私用名的安装没有公网入口，照旧报转发组件的状态；配对经 8449 的联邦仍照常工作（ADR-0090:52）。
+        let public_off = !crate::matrix::federation_config::is_private(&self.own.server_name)
+            && self
+                .public_access
+                .lock()
+                .expect("公网开关锁中毒")
+                .as_ref()
+                .is_some_and(|access| !access.enabled());
+        match probe {
+            // 还没探活过就不知道经公网还是经配对前端，保持“正在确认”。
+            PeerStatus::Checking => PeerStatus::Checking,
+            // 对方删了配对与总开关无关，照报。
+            PeerStatus::RemovedByPeer => PeerStatus::RemovedByPeer,
+            _ if public_off => PeerStatus::PublicAccessOff,
+            other => other,
         }
     }
 

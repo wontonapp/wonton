@@ -8,7 +8,7 @@ use std::net::Ipv4Addr;
 use wonton_protocol::{ClientsFailure, LanRecordState};
 
 use super::apply::{self, ApplyError};
-use crate::entry_containers::EntryContainers;
+use crate::entry_access::EntryAdmin;
 use crate::gateway::Gateway;
 pub use crate::plugin::lan::entry_address::{EntryAddress, Refusal};
 
@@ -83,7 +83,10 @@ pub(crate) async fn follow(gateway: &Gateway, picked: Result<EntryAddress, Refus
     let Some(entry) = &gateway.entry else {
         return;
     };
-    let previous = entry.lan();
+    let Some(containers) = entry.containers() else {
+        return;
+    };
+    let previous = containers.lan();
     let state = match picked {
         Err(refusal) => LanState::Refused(refusal),
         Ok(address) => {
@@ -102,7 +105,7 @@ pub(crate) async fn follow(gateway: &Gateway, picked: Result<EntryAddress, Refus
         tracing::info!(?state, "局域网入口的状态");
     }
     let moved = previous.forward() != state.forward();
-    entry.set_lan(state);
+    containers.set_lan(state);
     if moved
         && lan_open(gateway)
         && let Err(error) = apply::reconcile(gateway).await
@@ -114,10 +117,16 @@ pub(crate) async fn follow(gateway: &Gateway, picked: Result<EntryAddress, Refus
 /// 打开局域网入口前：地址要选得出，记录要当场查对。调用方持有入口的串行锁。
 pub(crate) async fn check_open(
     gateway: &Gateway,
-    entry: &EntryContainers,
+    entry: &EntryAdmin,
     suffix: &str,
 ) -> Result<(), ApplyError> {
-    let address = match entry.lan() {
+    let Some(containers) = entry.containers() else {
+        return Err(apply::error(
+            ClientsFailure::LanUnavailable,
+            "clients-switch-lan",
+        ));
+    };
+    let address = match containers.lan() {
         LanState::Unknown => {
             return Err(apply::error(
                 ClientsFailure::LanUnavailable,
@@ -129,10 +138,10 @@ pub(crate) async fn check_open(
     };
     let record = check_record(gateway, address.address).await;
     // 查的时候检测可能换了地址：只在地址还是这个时记下结果。
-    if let LanState::Selected { address: now, .. } = entry.lan()
+    if let LanState::Selected { address: now, .. } = containers.lan()
         && now == address
     {
-        entry.set_lan(LanState::Selected {
+        containers.set_lan(LanState::Selected {
             address,
             record: record.clone(),
         });
