@@ -166,8 +166,8 @@ async fn check(response: Response) -> Result<Response, MediaFailure> {
     Err(classify(status.as_u16(), tunnel.as_deref(), &body))
 }
 
-/// 没成功的回应算什么：隧道层写了错就是隧道不通；核心回了信封照信封；没有信封的按状态码分——401/403 是
-/// 权限、404/410 是东西没了、5xx 是那头出错，其余算协议对不上。原状态码进详情。
+/// 没成功的回应算什么：隧道层写了错就是隧道不通；核心回了信封照信封；没有信封的按 ADR-0113 第 9 节的表和
+/// 核心回信封时用的状态码反着分，表外的 5xx 算那头出错，其余算协议对不上。原状态码进详情。
 pub(crate) fn classify(status: u16, tunnel: Option<&str>, body: &[u8]) -> MediaFailure {
     if let Some(code) = tunnel {
         let category = if code == "unauthorized" {
@@ -179,8 +179,15 @@ pub(crate) fn classify(status: u16, tunnel: Option<&str>, body: &[u8]) -> MediaF
     }
     serde_json::from_slice::<MediaFailure>(body).unwrap_or_else(|_| {
         let code = match status {
-            401 | 403 => MediaFailureCode::PermissionDenied,
+            401 => MediaFailureCode::AuthenticationRequired,
+            403 => MediaFailureCode::PermissionDenied,
             404 | 410 => MediaFailureCode::MediaGone,
+            409 => MediaFailureCode::StaleRevision,
+            415 => MediaFailureCode::UnsupportedByDevice,
+            422 => MediaFailureCode::SourceRequired,
+            429 => MediaFailureCode::RateLimited,
+            503 => MediaFailureCode::PluginUnavailable,
+            507 => MediaFailureCode::ServerStorageFull,
             500..=599 => MediaFailureCode::UpstreamError,
             _ => MediaFailureCode::Protocol,
         };
