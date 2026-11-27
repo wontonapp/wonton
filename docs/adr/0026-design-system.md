@@ -143,13 +143,13 @@ MIT，每个图标都有线框和实心。未选中用 Regular，选中用 Fill�
 - **Tabler：** 只有约两成有实心。
 - **Material Symbols：** 观感太 Android，和两端统一的自有风格不合。
 
-Phosphor 没有专门的服务器图形，用 `hard-drives`。App 内的开源许可页列出 Phosphor 的版本和许可证。
+Phosphor 没有专门的服务器图形，用 `hard-drives`。App 内的开源许可页列出随 App 分发的图标集的版本和许可证：`scripts/generate-licenses.py` 从 `design/icons.toml` 的上游声明取。
 
 ### 图标：彩色分层用 Kubai
 
 主人 2026-11-26 看过样例页后定：图标换成 [Kubai Icons](https://icons.kubai.design/) 的彩色分层那一套（MIT），每个图标有自己的颜色，不统一成重点色；默认彩色。iOS 的玻璃和材质栏（系统工具栏、顶栏、聊天页的玻璃钮和输入栏、弹窗）里只用单色，单色仍是 Phosphor；带色实底上的图形（发起聊天的圆钮、遮罩上的关闭、插件占位图）也是单色。iOS 先做，Android 的图标不变。
 
-- **白名单：** `design/icons.toml` 每个语义名多写一个 Kubai 名和一个颜色名，颜色取同一文件的 `[palette]`。没有对应图形的语义名不写，只有单色版。
+- **白名单：** `design/icons.toml` 每个语义名多写一个 Kubai 名和一个颜色名，颜色取同一文件的 `[palette]`。没有对应图形的语义名不写，只有单色版。返回和展开箭头（`back`、`forward`）也固定用单色：展开箭头在列表里每行一个，上游的分层版带圆底，成排出现太重。
 - **上游是 0.x：** 版本和 npm tarball 的校验值钉在 `icons.toml`，用到的 SVG 原件和 LICENSE 放进 `design/kubai/`，逐个文件的 SHA-256 记在 `SHA256SUMS`，生成时核对。Phosphor 留着，既是单色版也是回滚：去掉某个语义名的 `kubai`，它就回到 Phosphor。
 - **换色在生成时做：** 用 `kubai-icons-static` 包（颜色已经展开成具体值，不含 CSS）。上游每张图的颜色都由一个主色调出来，脚本按同样的配比换成 `[palette]` 的颜色，再检查结果里只剩 CoreSVG 认得的元素和具体颜色（带 `color-mix()`、`var()` 的 SVG，Xcode 会画成纯黑）。
 - **一张图用于浅色和深色：** `[palette]` 的每个颜色对两种页面底和卡片底都要有 3:1，生成时检查。默认重点色 `#FEEBEA` 在白底上只有 1.15:1，而且用户可以换，图标不取它。

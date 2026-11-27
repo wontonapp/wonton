@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""生成 App“开源许可”页要的数据（licenses.json）：Rust crate 和 Android 依赖，各自带上许可全文。
+"""生成 App“开源许可”页要的数据（licenses.json）：Rust crate、Android 依赖和图标集，各自带上许可全文。
 
-两类数据都来自现成工具，生成物不手改：
+依赖来自现成工具，图标集来自 design/icons.toml 的上游声明，生成物不手改：
   - Rust：cargo-about 从 Cargo.lock 的依赖图取 crate 和许可文件（版本、URL、sha256 钉死在下面）。
   - Android：Gradle 的 AboutLibraries 插件在构建时收集，本脚本读它导出的 JSON。
 
@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 import urllib.request
 from pathlib import Path
 
@@ -30,6 +31,13 @@ ROOT = Path(__file__).resolve().parent.parent
 APPROVED_FILE = ROOT / "licenses" / "APPROVED"
 TEXTS = ROOT / "licenses" / "texts"
 CARGO_ABOUT_CONFIG = ROOT / "licenses" / "about.toml"
+ICONS = ROOT / "design" / "icons.toml"
+
+# 图形随 App 分发的图标集：design/icons.toml 的 [upstream.<名字>]。Android 只用 Phosphor。
+ICON_SETS = {
+    "android": ["phosphor"],
+    "ios": ["phosphor", "kubai"],
+}
 
 # cargo-about 是开发期工具，不进 App 二进制；它是 MIT OR Apache-2.0，升级时改这里并跑一遍 check-licenses.sh。
 # 发布资产按平台分开（0.9.3 没有 x86_64 darwin 的），每个钉自己的 sha256；第二段是 tar 里的目录名。
@@ -233,7 +241,29 @@ def android_components(export: Path) -> tuple[list[dict], dict[str, dict]]:
     return components, licenses
 
 
+def icon_components(platform: str, icons: Path = ICONS) -> tuple[list[dict], dict[str, dict]]:
+    """图标不是依赖，哪个工具都收不到：版本和许可取 design/icons.toml 里钉的上游。"""
+    upstreams = tomllib.loads(icons.read_text(encoding="utf-8"))["upstream"]
+    components, licenses = [], {}
+    for key in ICON_SETS[platform]:
+        upstream = upstreams[key]
+        license_id = upstream["license"]
+        licenses[license_id] = {"name": license_id, "text": standard_text(license_id)}
+        components.append(
+            {
+                "source": "icons",
+                "name": upstream["package"],
+                "version": upstream["version"],
+                "license": license_id,
+                "license_ids": [license_id],
+            }
+        )
+    return components, licenses
+
+
 RUST_SENTINELS = ["serde"]
+# 图标集和依赖走的不是同一条收集路径，各留一个哨兵。
+ICON_SENTINELS = ["@phosphor-icons/core"]
 
 
 def verify(target: Path, platform: str) -> None:
@@ -242,7 +272,7 @@ def verify(target: Path, platform: str) -> None:
     approved = set(approved_ids())
     problems = []
     names = {component["name"] for component in data["components"]}
-    sentinels = ANDROID_SENTINELS if platform == "android" else RUST_SENTINELS
+    sentinels = (ANDROID_SENTINELS if platform == "android" else RUST_SENTINELS) + ICON_SENTINELS
     problems += [f"清单里没有 {name}" for name in sentinels if name not in names]
     for component in data["components"]:
         if not component["license_ids"]:
@@ -279,6 +309,10 @@ def main() -> int:
             raise GenerateError(f"AboutLibraries 的清单里没有 {', '.join(missing)}，收集断了")
     else:
         components, licenses = rust_components(args.platform)
+    icon_parts, icon_licenses = icon_components(args.platform)
+    components += icon_parts
+    # 依赖那边已经有同一个许可的正文时用它的，不换。
+    licenses = {**icon_licenses, **licenses}
 
     components.sort(key=lambda component: (component["name"].lower(), component["version"]))
     if not components:

@@ -1,5 +1,6 @@
 # 每个语义名两套图形：phosphor 是单色线框（玻璃栏里用，也是彩色版的回滚），kubai 是彩色分层，color 取 [palette] 里的名字。
-# 没写 kubai 的只有单色版。fill 表示 Phosphor 还要实心版（选中时用）；mirror 表示从右到左时要翻转。
+# 没写 kubai 的只有单色版：back、forward 在列表里成排出现，彩色的圆底箭头太重；checks 上游没有对应图形。
+# fill 表示 Phosphor 还要实心版（选中时用）；mirror 表示从右到左时要翻转。
 [upstream.phosphor]
 package = "@phosphor-icons/core"
 version = "2.1.1"
@@ -34,7 +35,7 @@ add = { kubai = "circle-plus", color = "blue", phosphor = "plus" }
 agent = { kubai = "sparkles", color = "purple", phosphor = "sparkle", fill = true }
 apps = { kubai = "grid", color = "indigo", phosphor = "squares-four", fill = true }
 attach = { kubai = "paperclip", color = "slate", phosphor = "paperclip" }
-back = { kubai = "chevron-left", color = "slate", phosphor = "caret-left", mirror = true }
+back = { phosphor = "caret-left", mirror = true }
 blocked = { kubai = "ban", color = "red", phosphor = "prohibit" }
 cameraOff = { kubai = "camera-off", color = "slate", phosphor = "camera-slash" }
 chat = { kubai = "messages", color = "blue", phosphor = "chats-circle", fill = true }
@@ -57,7 +58,7 @@ expand = { kubai = "maximize", color = "indigo", phosphor = "corners-out" }
 eye = { kubai = "eye", color = "sky", phosphor = "eye" }
 file = { kubai = "file", color = "slate", phosphor = "file" }
 folder = { kubai = "folder", color = "amber", phosphor = "folder", fill = true }
-forward = { kubai = "chevron-right", color = "slate", phosphor = "caret-right", mirror = true }
+forward = { phosphor = "caret-right", mirror = true }
 globe = { kubai = "globe", color = "teal", phosphor = "globe", fill = true }
 help = { kubai = "circle-help", color = "sky", phosphor = "question" }
 home = { kubai = "home", color = "orange", phosphor = "house", fill = true }
