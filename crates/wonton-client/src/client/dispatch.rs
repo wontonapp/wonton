@@ -143,6 +143,7 @@ impl ClientCore {
             Action::Clients { action } => match action {
                 // 公网访问的模块还没接；接上之前如实报还没就绪，不静默当成功。
                 ClientsAction::RefreshDomain
+                | ClientsAction::CancelDomain
                 | ClientsAction::SelectDomainProvider { .. }
                 | ClientsAction::SaveDomain { .. }
                 | ClientsAction::RetryCertificate

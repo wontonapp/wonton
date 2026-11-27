@@ -401,3 +401,61 @@ async fn suffix_is_lowercased_and_dot_trimmed() {
     let body: Value = serde_json::from_str(&seen[0].body).unwrap();
     assert_eq!(body["suffix"], "example.test");
 }
+
+/// 离开页面：没保存的服务商选择丢掉，回到服务器上的值。
+#[tokio::test]
+async fn leaving_the_page_restores_the_saved_provider() {
+    let rig = Rig::new().await;
+    ready(
+        &rig,
+        domain(Some("desec"), false, true, true, CertificateState::None),
+    )
+    .await;
+    rig.app
+        .dispatch(wonton_client::Action::Clients {
+            action: ClientsAction::SelectDomainProvider {
+                code: Some("cloudflare".into()),
+            },
+        })
+        .unwrap();
+    assert_eq!(
+        rig.app.clients_domain().selected_provider.as_deref(),
+        Some("cloudflare")
+    );
+    rig.app
+        .dispatch(wonton_client::Action::Clients {
+            action: ClientsAction::CancelDomain,
+        })
+        .unwrap();
+    let view = wait_domain(&rig, |view| {
+        view.selected_provider.as_deref() == Some("desec")
+    })
+    .await;
+    assert!(!view.other_provider);
+    assert_eq!(view.credential_vars, vec!["DESEC_TOKEN".to_string()]);
+}
+
+/// 页面开着时刷新（换语言、别的设备在改）：没保存的选择不被冲掉，协议勾选跟着服务器走。
+#[tokio::test]
+async fn refresh_keeps_the_unsaved_form() {
+    let rig = Rig::new().await;
+    ready(
+        &rig,
+        domain(Some("desec"), false, true, false, CertificateState::None),
+    )
+    .await;
+    rig.app
+        .dispatch(wonton_client::Action::Clients {
+            action: ClientsAction::SelectDomainProvider { code: None },
+        })
+        .unwrap();
+    rig.app
+        .dispatch(wonton_client::Action::Clients {
+            action: ClientsAction::RefreshDomain,
+        })
+        .unwrap();
+    let view = wait_domain(&rig, |view| view.other_provider).await;
+    assert_eq!(view.state, ClientsDomainState::Ready);
+    assert!(!view.terms_accepted);
+    assert_eq!(view.selected_provider, None);
+}

@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -80,6 +81,9 @@ internal fun ClientsDomainPage(core: ClientCore, onBack: () -> Unit) {
     val send = { action: Action -> rejection = core.send(action) }
 
     LaunchedEffect(core) { send(Action.Clients(ClientsAction.RefreshDomain)) }
+    DisposableEffect(core) {
+        onDispose { core.send(Action.Clients(ClientsAction.CancelDomain)) }
+    }
     LaunchedEffect(view.suffix) { suffix = view.suffix.orEmpty() }
     LaunchedEffect(view.termsAccepted) { terms = view.termsAccepted }
     val scope = rememberCoroutineScope()

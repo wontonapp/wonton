@@ -292,6 +292,7 @@ fn clients_actions_round_trip_inside_actions() {
             enabled: false,
         },
         ClientsAction::RefreshDomain,
+        ClientsAction::CancelDomain,
         ClientsAction::SelectDomainProvider {
             code: Some("desec".into()),
         },
@@ -681,4 +682,50 @@ from_other! {
     PendingChangeKind => PendingChangeKind::Other,
     ClientsFailure => ClientsFailure::Other,
     ClientsState => ClientsState::Other,
+}
+
+/// “HTTPS 和域名”页整页往返：壳拿到的每个字段都能照原样序列化回去。
+#[test]
+fn clients_domain_view_model_round_trips() {
+    let view = ClientsDomainViewModel {
+        state: ClientsDomainState::Failed {
+            problem: ClientsProblem {
+                kind: ClientsFailure::LanUnavailable,
+                message: "no lan address".into(),
+            },
+        },
+        suffix: Some("example.test".into()),
+        suffix_editable: true,
+        providers: vec![ClientsDomainProvider {
+            code: Some("desec".into()),
+            name: "deSEC".into(),
+            recommended: true,
+            signup_url: Some("https://desec.io".into()),
+            credential_vars: vec!["DESEC_TOKEN".into()],
+        }],
+        selected_provider: Some("desec".into()),
+        other_provider: false,
+        credential_vars: vec!["DESEC_TOKEN".into()],
+        credentials_set: true,
+        terms_accepted: true,
+        certificate: ClientsDomainCertificate {
+            state: CertificateState::Expired {
+                not_after_ms: 1_700_000_000_000,
+                error: "acme: expired".into(),
+            },
+            retryable: true,
+            details: Some("acme: expired".into()),
+        },
+        caa: CaaState::Mismatch,
+        caa_record: Some("example.test. CAA 0 issue \"pebble; accounturi=x\"".into()),
+        lan_record: LanRecordState::Wrong {
+            found: "198.51.100.7".into(),
+        },
+        lan_record_name: Some("*.lan.example.test".into()),
+        lan_target: Some("192.0.2.10".into()),
+        desec: true,
+        saving: false,
+        problem: None,
+    };
+    round_trip(serde_json::to_value(&view).unwrap(), view);
 }

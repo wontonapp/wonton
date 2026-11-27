@@ -695,6 +695,8 @@ pub enum ClientsAction {
     Refresh,
     /// 取后缀、服务商和证书状态；进页面时走一次。
     RefreshDomain,
+    /// 离开页面：丢掉没保存的表单，回到服务器上现在存的值。保存中被离页时，这次保存照常提交。
+    CancelDomain,
     /// 开或关一个入口（`PUT` [`clients_entry_path`](crate::clients_entry_path)）；`kind` 是哪个入口。
     /// [`EntryKind::Other`](crate::EntryKind::Other) 拼不出路径段：照常显示这一行，但把开关置灰、不发请求。
     SetEntry {

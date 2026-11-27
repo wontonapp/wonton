@@ -44,6 +44,8 @@ pub(crate) struct ClientsDomainLink {
     saved_provider: Mutex<Option<String>>,
     /// 取到过一份设置：换了语言要重新取，“详情”是核心按 App 的语言写的。
     fetched: AtomicBool,
+    /// 上一次取回的服务商和域名（服务器上现在存的值）；表单与它不同就还在草稿里。
+    served: Mutex<Option<(Option<String>, Selection)>>,
 }
 
 /// 设置页可以依赖这一项，空 ViewModel 的 `Loading` 够用；页面开着时第一次取设置由 `RefreshDomain` 发起。
@@ -63,6 +65,7 @@ impl ClientsDomainLink {
             selected: Mutex::new(None),
             saved_provider: Mutex::new(None),
             fetched: AtomicBool::new(false),
+            served: Mutex::new(None),
         })
     }
 
@@ -88,6 +91,10 @@ impl ClientsDomainLink {
         match action {
             ClientsAction::RefreshDomain => {
                 self.refresh();
+                Ok(())
+            }
+            ClientsAction::CancelDomain => {
+                self.cancel();
                 Ok(())
             }
             ClientsAction::SelectDomainProvider { code } => {
@@ -119,6 +126,49 @@ impl ClientsDomainLink {
                 reason: "clients module is not wired yet".into(),
             }),
         }
+    }
+
+    /// 表单现在等于服务器上存的值吗（干净）；空选或两边都对不上算脏。
+    fn form_matches(&self, served_suffix: &Option<String>, served_selection: &Selection) -> bool {
+        let view = self.view.borrow();
+        let selection = match (&view.selected_provider, view.other_provider) {
+            (Some(code), false) => Selection::Preset(code.clone()),
+            (None, true) => Selection::Other,
+            _ => return false,
+        };
+        view.suffix == *served_suffix && selection == *served_selection
+    }
+
+    /// 离开页面：丢掉没保存的表单，回到服务器上现在存的值；证书、CAA 和保存进度不动。
+    fn cancel(&self) {
+        let Some((suffix, selection)) = lock(&self.served).clone() else {
+            return;
+        };
+        let (selected_provider, other_provider, desec) = match &selection {
+            Selection::Preset(code) => (Some(code.clone()), false, code == "desec"),
+            Selection::Other => (None, true, false),
+        };
+        let credential_vars = {
+            let view = self.view.borrow();
+            match &selection {
+                Selection::Preset(code) => view
+                    .providers
+                    .iter()
+                    .find(|provider| provider.code.as_ref() == Some(code))
+                    .map(|provider| provider.credential_vars.clone())
+                    .unwrap_or_default(),
+                Selection::Other => Vec::new(),
+            }
+        };
+        *lock(&self.selected) = Some(selection);
+        self.view.send_modify(|view| {
+            view.suffix = suffix;
+            view.selected_provider = selected_provider;
+            view.other_provider = other_provider;
+            view.credential_vars = credential_vars;
+            view.desec = desec;
+            view.problem = None;
+        });
     }
 
     fn refresh(self: &Arc<Self>) {
@@ -169,9 +219,23 @@ impl ClientsDomainLink {
             Ok((presets, domain)) => {
                 self.fetched.store(true, Ordering::SeqCst);
                 let selection = resolve(&presets, domain.provider.as_deref());
+                let served_suffix = domain.suffix.clone();
+                // 第一次取（还没有服务端值）总是采用服务器的；之后表单脏了才保留。
+                let dirty =
+                    lock(&self.served).is_some() && !self.form_matches(&served_suffix, &selection);
                 *lock(&self.saved_provider) = domain.provider.clone();
                 *lock(&self.selected) = Some(selection.clone());
-                let view = build(domain, presets, &selection);
+                *lock(&self.served) = Some((served_suffix, selection.clone()));
+                let mut view = build(domain, presets, &selection);
+                // 正在填的表单不被刷新冲掉；干净的表单换语言或换设备时整页跟着服务器走。
+                if dirty {
+                    let current = self.view.borrow();
+                    view.suffix = current.suffix.clone();
+                    view.selected_provider = current.selected_provider.clone();
+                    view.other_provider = current.other_provider;
+                    view.credential_vars = current.credential_vars.clone();
+                    view.desec = current.desec;
+                }
                 self.view.send_modify(|current| *current = view);
             }
             Err(failure) => self.fail_load(failure),

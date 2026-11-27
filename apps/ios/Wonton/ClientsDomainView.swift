@@ -27,6 +27,7 @@ struct ClientsDomainView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .wontonPushedScreen(String(localized: .Clients.clientsDomainTitle), usesSystemToolbar: true)
             .task { await model.observe() }
+            .onDisappear { model.cancel() }
             .onChange(of: viewModel.suffix, initial: true) { _, value in suffix = value ?? "" }
             .onChange(of: viewModel.termsAccepted, initial: true) { _, value in terms = value }
     }
@@ -169,6 +170,11 @@ final class ClientsDomainModel {
         } catch {
             rejection = error.problem
         }
+    }
+
+    /// 离开页面：丢掉没保存的表单。
+    func cancel() {
+        send(.clients(action: .cancelDomain))
     }
 
     /// 收起提示条：本机的当场拒绝和核心记的失败都清掉。

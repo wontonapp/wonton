@@ -353,9 +353,7 @@ impl Domain {
                             .suffix
                             .clone()
                             .or_else(|| previous.clone())
-                            .ok_or_else(|| {
-                                DomainError::InvalidKey("clients-domain-suffix-required")
-                            })?;
+                            .ok_or(DomainError::InvalidKey("clients-domain-suffix-required"))?;
                         if let Some(id) = suffix_problem(&suffix) {
                             return Err(DomainError::InvalidKey(id));
                         }
