@@ -1,5 +1,6 @@
 mod own_private_bot_view_tests;
 
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use super::*;
