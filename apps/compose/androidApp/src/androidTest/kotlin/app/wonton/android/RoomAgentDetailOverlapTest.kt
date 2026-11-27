@@ -30,12 +30,16 @@ class RoomAgentDetailOverlapTest : RoomTelegramCase() {
         val before = visibleFraction(index)
         check(before >= 0.5f) { "第 $index 条没先露出来，展开前后对比不算数：$before" }
 
-        // 按卡片里的文案点：旧包还没有测试标识，同一个用例能在修前修后都跑；
-        // 消息正文里也可能有“Details”，按顶栏限定。
-        compose.onAllNodes(
-            hasText(string(app.wonton.ui.R.string.common_details)) and hasAnyAncestor(hasTestTag("room-header")),
-            useUnmergedTree = true,
-        ).onFirst().performClick()
+        // 有测试标识按标识点，旧包没有就按卡片里的文案点：同一个用例能在修前修后都跑。
+        // 消息正文里也可能有“Details”，文案那套按顶栏限定。
+        if (compose.onAllNodes(hasTestTag(DETAIL_TOGGLE)).fetchSemanticsNodes().isEmpty()) {
+            compose.onAllNodes(
+                hasText(string(app.wonton.ui.R.string.common_details)) and hasAnyAncestor(hasTestTag("room-header")),
+                useUnmergedTree = true,
+            ).onFirst().performClick()
+        } else {
+            compose.onNodeWithTag(DETAIL_TOGGLE).performClick()
+        }
         compose.waitForIdle()
         compose.onNodeWithText(DETAIL_FIRST_LINE, substring = true).assertIsDisplayed()
 
@@ -84,6 +88,7 @@ class RoomAgentDetailOverlapTest : RoomTelegramCase() {
         compose.onNodeWithTag("room-timeline").fetchSemanticsNode().boundsInRoot
 
     private companion object {
+        const val DETAIL_TOGGLE = "agent-detail-toggle"
         const val DETAIL_FIRST_LINE = "连接模型服务失败"
 
         /** 一次发的三张照片里的第一张。 */

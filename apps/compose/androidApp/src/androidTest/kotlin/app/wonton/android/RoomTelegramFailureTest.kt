@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -33,7 +34,11 @@ class RoomTelegramFailureTest : RoomTelegramCase() {
         compose.onAllNodes(hasText(FAILED_REASON) and hasAnyAncestor(hasTestTag("choice-⏳")), useUnmergedTree = true)
             .assertCountEquals(0)
         compose.onNodeWithText(string(R.string.message_choice_failed)).assertIsDisplayed()
-        compose.onNodeWithText(string(R.string.common_details)).performClick()
+        // 私有 Bot 的顶栏也可能带一张卡片和它自己的“详情”，按这条消息限定。
+        compose.onAllNodes(
+            hasText(string(R.string.common_details)) and hasAnyAncestor(hasTestTag("item-ui-fake-$FAILED_CHOICE")),
+            useUnmergedTree = true,
+        ).onFirst().performClick()
         compose.onNodeWithText(FAILED_REASON).assertIsDisplayed()
         screenshot("failed-choice-open")
         // 失败的按钮还能点，点了就重发。
