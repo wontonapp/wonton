@@ -58,12 +58,18 @@ pub fn agent_model_provider_path(plugin_id: &str, bot: &str, provider: &str) -> 
 
 /// `GET`：这家的 [`ModelList`]。
 pub fn agent_model_list_path(plugin_id: &str, bot: &str, provider: &str) -> String {
-    format!("{}/models", agent_model_provider_path(plugin_id, bot, provider))
+    format!(
+        "{}/models",
+        agent_model_provider_path(plugin_id, bot, provider)
+    )
 }
 
 /// `POST` 请求体 [`StartModelLogin`]，返回 [`ModelLogin`]。
 pub fn agent_model_login_start_path(plugin_id: &str, bot: &str, provider: &str) -> String {
-    format!("{}/login", agent_model_provider_path(plugin_id, bot, provider))
+    format!(
+        "{}/login",
+        agent_model_provider_path(plugin_id, bot, provider)
+    )
 }
 
 /// `GET` 轮询，返回 [`ModelLoginState`]；`DELETE` 取消，返回 204。
@@ -425,7 +431,9 @@ pub struct ModelsOutputProblem(pub String);
 fn text(field: &str, value: &str, max: usize) -> Result<(), ModelsOutputProblem> {
     if value.trim().is_empty() || value.chars().count() > max || value.chars().any(char::is_control)
     {
-        return Err(ModelsOutputProblem(format!("{field} 为空、超长或带控制字符")));
+        return Err(ModelsOutputProblem(format!(
+            "{field} 为空、超长或带控制字符"
+        )));
     }
     Ok(())
 }
@@ -450,7 +458,9 @@ impl ModelCatalog {
             }
             for auth in &provider.auth {
                 if let ModelAuth::ApiKey {
-                    key_url, key_prefix, ..
+                    key_url,
+                    key_prefix,
+                    ..
                 } = auth
                 {
                     if key_url.as_deref().is_some_and(|url| !is_browser_url(url)) {
@@ -495,7 +505,9 @@ impl ModelLogin {
             return Err(ModelsOutputProblem("登录网址不是 https 网址".into()));
         }
         optional_text("code", self.code.as_deref())?;
-        self.interval = self.interval.clamp(MIN_LOGIN_POLL_SECS, MAX_LOGIN_POLL_SECS);
+        self.interval = self
+            .interval
+            .clamp(MIN_LOGIN_POLL_SECS, MAX_LOGIN_POLL_SECS);
         Ok(self)
     }
 }

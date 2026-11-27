@@ -52,7 +52,8 @@ mod tests {
                 command: vec!["python".into(), "/m.py".into()],
             })
         );
-        let typo = r#"{"protocol": "matrix", "models": {"service": "gateway", "command": [], "cmd": []}}"#;
+        let typo =
+            r#"{"protocol": "matrix", "models": {"service": "gateway", "command": [], "cmd": []}}"#;
         assert!(serde_json::from_str::<AgentSpec>(typo).is_err());
     }
 }
