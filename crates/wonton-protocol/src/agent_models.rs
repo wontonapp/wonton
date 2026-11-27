@@ -432,7 +432,7 @@ fn text(field: &str, value: &str, max: usize) -> Result<(), ModelsOutputProblem>
     if value.trim().is_empty() || value.chars().count() > max || value.chars().any(char::is_control)
     {
         return Err(ModelsOutputProblem(format!(
-            "{field} 为空、超长或带控制字符"
+            "{field} is empty, too long or has control characters"
         )));
     }
     Ok(())
@@ -446,7 +446,7 @@ impl ModelCatalog {
     /// 核心转给 App 之前查一遍：数量、长度、网址。不合格的整份不要，不挑着删。
     pub fn check(&self) -> Result<(), ModelsOutputProblem> {
         if self.providers.len() > MAX_MODEL_PROVIDERS {
-            return Err(ModelsOutputProblem("服务商太多".into()));
+            return Err(ModelsOutputProblem("too many providers".into()));
         }
         let mut seen = std::collections::BTreeSet::new();
         for provider in &self.providers {
@@ -454,7 +454,7 @@ impl ModelCatalog {
             text("providers.name", &provider.name, MAX_MODELS_TEXT_CHARS)?;
             optional_text("providers.account", provider.account.as_deref())?;
             if !seen.insert(provider.id.as_str()) {
-                return Err(ModelsOutputProblem(format!("服务商 {} 重复", provider.id)));
+                return Err(ModelsOutputProblem(format!("duplicate provider {}", provider.id)));
             }
             for auth in &provider.auth {
                 if let ModelAuth::ApiKey {
@@ -464,7 +464,7 @@ impl ModelCatalog {
                 } = auth
                 {
                     if key_url.as_deref().is_some_and(|url| !is_browser_url(url)) {
-                        return Err(ModelsOutputProblem("key_url 不是 https 网址".into()));
+                        return Err(ModelsOutputProblem("key_url is not an https URL".into()));
                     }
                     optional_text("key_prefix", key_prefix.as_deref())?;
                 }
@@ -487,7 +487,7 @@ impl ModelChoice {
 impl ModelList {
     pub fn check(&self) -> Result<(), ModelsOutputProblem> {
         if self.models.len() > MAX_PROVIDER_MODELS {
-            return Err(ModelsOutputProblem("模型太多".into()));
+            return Err(ModelsOutputProblem("too many models".into()));
         }
         for model in &self.models {
             text("models.id", &model.id, MAX_MODELS_TEXT_CHARS)?;
@@ -502,7 +502,7 @@ impl ModelLogin {
     pub fn checked(mut self) -> Result<Self, ModelsOutputProblem> {
         text("session", &self.session, MAX_MODELS_ID_CHARS)?;
         if !is_browser_url(&self.url) {
-            return Err(ModelsOutputProblem("登录网址不是 https 网址".into()));
+            return Err(ModelsOutputProblem("login url is not an https URL".into()));
         }
         optional_text("code", self.code.as_deref())?;
         self.interval = self
