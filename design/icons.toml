@@ -7,8 +7,7 @@ package = "@phosphor-icons/core"
 version = "2.1.1"
 license = "MIT"
 
-# Kubai 是 0.x，图形会变：版本和 tarball 的校验值钉死，用到的 SVG 原件放在 kubai/svg/。
-# 升级或加图标时运行 python3 scripts/generate-design.py --vendor-kubai <tarball>。
+# Kubai 是 0.x，图形会变：版本和 tarball 的校验值钉死，用到的 SVG 原件放在 kubai/svg/（怎么重取见 README）。
 [upstream.kubai]
 package = "kubai-icons-static"
 version = "0.15.0"

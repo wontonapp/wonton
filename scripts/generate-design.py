@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """从 design/ 生成原生令牌、图标、噪点和客户端网页令牌映射。--check 只比对，不一致时失败。
 
---vendor-kubai <tarball> 按 icons.toml 重取 design/kubai/ 里的上游原件。"""
+其余用法见 design/README.md。"""
 
 # 这个脚本不在核心产物的键里：它只改生成的界面代码，不碰 Rust 核心（见 .github/workflows/README.md 的“核心产物”）。
 
@@ -50,8 +50,9 @@ KUBAI = DESIGN / "kubai"
 ICON_BACKGROUNDS = {"light": ["#FFFFFF", "#F4F4F4"], "dark": ["#0E0E0E", "#262626"]}
 # WCAG 1.4.11 对图形的最低要求。
 ICON_MIN_CONTRAST = 3.0
-# 通道差小于它的是白、黑、灰，换色时不动。
-KUBAI_GRAY_SPREAD = 6
+# OKLab 彩度小于它的是白、黑、灰，换色时不动。按彩度不按通道差：角标的深灰底（#33363D）通道差有 10，
+# 当成主色重染后在深色页面上只剩 1.4:1。上游最淡的浅面彩度约 0.04。
+KUBAI_GRAY_CHROMA = 0.02
 # 上游的十六进制颜色是四舍五入过的，按主色混白混黑反推时留这点误差（0–255）。
 KUBAI_MIX_TOLERANCE = 2
 SVG_HEX = re.compile(r'(?<==")#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?=")')
@@ -67,13 +68,17 @@ KUBAI_WHITE = 240
 # 取值是看着 24pt 和 14pt 的渲染调的。
 KUBAI_TINT_FLOOR = 0.25
 KUBAI_TINT_SCALE = 0.4
-# 蒙版的范围照上游自己的蒙版写：比画布（-2.5 -5.5 36 36）大一圈。
 # 深色页面上浅面里混的白压到这么多：原样的浅面在黑底上太亮，比旁边的字还抢眼。
 KUBAI_DARK_WHITE = 0.8
 # 去掉底的图形绕画布中心（15.5, 12.5）放大：上游的线条是按放在圆底里画的，单独用偏小。
 KUBAI_BARE_TRANSFORM = "translate(15.5 12.5) scale(1.5) translate(-15.5 -12.5)"
+# 蒙版的范围照上游自己的蒙版写：比画布（-2.5 -5.5 36 36）大一圈。
 KUBAI_MASK_BOX = {"x": "-40", "y": "-40", "width": "111", "height": "109"}
 SVG_MATRIX = re.compile(r'values="([^"]+)"')
+SVG_PAINTS = {"fill", "stroke", "stop-color", "flood-color"}
+# 只认 name="value" 这一种写法：换色按它找颜色，别的写法（单引号、等号两边有空格）会被漏掉。
+SVG_LOOSE_ATTRIBUTE = re.compile(r"""[\w:-]\s*=\s*'|[\w:-]\s+=|=\s+["']""")
+SVG_CSS = re.compile(r"var\(|color-mix\(|calc\(|currentColor|url\((?!#)", re.I)
 SVG_PAINT = re.compile(r"#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{3}|url\(#[\w-]+\)")
 SVG_ELEMENTS = {
     "svg", "defs", "g", "path", "rect", "circle", "ellipse", "text", "linearGradient", "stop", "mask", "clipPath",
@@ -224,15 +229,12 @@ def ios_assets(icons):
         IOS / "Assets.xcassets/IconsMono/Contents.json": json_bytes(XCASSETS_INFO),
     }
     check_palette(icons["palette"])
-    sums = kubai_sums()
-    used = {f'svg/{icon["kubai"]}.svg' for icon in icons["icons"].values() if "kubai" in icon} | {"LICENSE"}
-    if used != set(sums):
-        sys.exit(f"design/kubai 里的文件和 icons.toml 用到的对不上：{sorted(used ^ set(sums))}")
+    check_kubai_files(KUBAI, kubai_used(icons))
     base = hex_rgb(icons["upstream"]["kubai"]["base"])
     for name, icon in icons["icons"].items():
         if "kubai" not in icon:
             continue
-        source = kubai_source(f'svg/{icon["kubai"]}.svg', sums).decode()
+        source = (KUBAI / f'svg/{icon["kubai"]}.svg').read_text()
         if icon.get("bare"):
             source = kubai_bare(source, icons["upstream"]["kubai"]["base"])
         color = icons["palette"][icon["color"]]
@@ -347,7 +349,7 @@ def kubai_recolor(color, base, accent, white=1):
     """上游的颜色都是从主色调出来的：多数是主色混白或混黑，深色描边是主色在 OKLab 里压暗并偏一点色相。
     前一种按同样的配比换成新主色；后一种配比对不上，在 OKLCH 里照搬亮度比、彩度比和色相差。
     white 小于 1 时混进去的白压暗这么多（深色页面上用）；纯白的细节不算混色，不受影响。"""
-    if max(color) - min(color) < KUBAI_GRAY_SPREAD:
+    if is_gray(color):
         return color
     a, b, error = mix_weights(color, base)
     if error <= KUBAI_MIX_TOLERANCE:
@@ -376,11 +378,16 @@ def kubai_recolored(svg, base, accent, white):
     return SVG_MATRIX.sub(matrix, svg)
 
 
+def is_gray(color):
+    _, a, b = oklab(color)
+    return math.hypot(a, b) < KUBAI_GRAY_CHROMA
+
+
 def is_white(value):
     if not SVG_HEX_VALUE.fullmatch(value or ""):
         return False
     color = hex_rgb(long_hex(value))
-    return max(color) - min(color) < KUBAI_GRAY_SPREAD and min(color) >= KUBAI_WHITE
+    return is_gray(color) and min(color) >= KUBAI_WHITE
 
 
 def long_hex(value):
@@ -455,8 +462,12 @@ def kubai_bare(svg, base):
     ElementTree.register_namespace("", SVG_NAMESPACE)
     root = ElementTree.fromstring(svg)
     glyph = ElementTree.Element(SVG_TAG + "g", {"transform": KUBAI_BARE_TRANSFORM})
-    for node in root.iter(SVG_TAG + "path"):
-        if node.get("d").rstrip().endswith("Z") or "mask" in node.attrib or "filter" in node.attrib:
+    # 只看画出来的图形：defs、蒙版和裁剪路径里的 path 是形状定义，不是线条。
+    visible = [node for child in root if child.tag != SVG_TAG + "defs" for node in painted(child)]
+    for node in visible:
+        if node.tag != SVG_TAG + "path" or "d" not in node.attrib:
+            continue
+        if node.get("d").rstrip().lower().endswith("z") or "mask" in node.attrib or "filter" in node.attrib:
             continue
         node.set("stroke", base)
         glyph.append(node)
@@ -505,52 +516,75 @@ def kubai_mono(name, svg, base):
 
 def check_plain_svg(name, svg):
     """CoreSVG 不认 CSS：颜色没展开成具体值的（color-mix()、var()、currentColor、style）会画成纯黑。"""
-    elements = set(re.findall(r"<([A-Za-z][\w:-]*)", svg))
-    attributes = set(re.findall(r'\s([A-Za-z][\w:-]*)="', svg))
-    paints = {
-        value
-        for value in re.findall(r'\s(?:fill|stroke|stop-color|flood-color)="([^"]*)"', svg)
-        if value != "none" and not SVG_PAINT.fullmatch(value)
-    }
-    problems = sorted(elements - SVG_ELEMENTS) + sorted(attributes - SVG_ATTRIBUTES) + sorted(paints)
+    problems = sorted(set(SVG_LOOSE_ATTRIBUTE.findall(svg)))
+    try:
+        root = ElementTree.fromstring(svg)
+    except ElementTree.ParseError as error:
+        sys.exit(f"图标 {name} 不是合法的 SVG：{error}")
+    for node in root.iter():
+        tag = node.tag.removeprefix(SVG_TAG)
+        if tag not in SVG_ELEMENTS:
+            problems.append(f"<{tag}>")
+        for attribute, value in node.attrib.items():
+            if attribute not in SVG_ATTRIBUTES:
+                problems.append(attribute)
+            elif SVG_CSS.search(value):
+                problems.append(f'{attribute}="{value}"')
+            elif attribute in SVG_PAINTS and value != "none" and not SVG_PAINT.fullmatch(value):
+                problems.append(f'{attribute}="{value}"')
     if problems:
-        sys.exit(f"彩色图标 {name} 里有 CoreSVG 画不了的内容：{problems}")
+        sys.exit(f"图标 {name} 里有 CoreSVG 画不了的内容：{sorted(set(problems))}")
 
 
-def kubai_sums():
-    lines = (KUBAI / "SHA256SUMS").read_text().splitlines()
+def kubai_sums(folder):
+    lines = (folder / "SHA256SUMS").read_text().splitlines()
     return {path: digest for digest, path in (line.split("  ", 1) for line in lines)}
 
 
-def kubai_source(path, sums):
-    content = (KUBAI / path).read_bytes()
-    if hashlib.sha256(content).hexdigest() != sums[path]:
-        sys.exit(f"design/kubai/{path} 和 SHA256SUMS 对不上：上游原件不手改")
-    return content
+def check_kubai_files(folder, used):
+    """上游原件不手改：登记的每个文件（含 LICENSE）核对哈希，目录里多出来、少了的都报错。"""
+    sums = kubai_sums(folder)
+    if used != set(sums):
+        sys.exit(f"design/kubai 里登记的文件和 icons.toml 用到的对不上：{sorted(used ^ set(sums))}")
+    present = {str(path.relative_to(folder)) for path in folder.rglob("*") if path.is_file()} - {"SHA256SUMS"}
+    if present != set(sums):
+        sys.exit(f"design/kubai 里的文件和 SHA256SUMS 登记的对不上：{sorted(present ^ set(sums))}")
+    for path, digest in sums.items():
+        if hashlib.sha256((folder / path).read_bytes()).hexdigest() != digest:
+            sys.exit(f"design/kubai/{path} 和 SHA256SUMS 对不上：上游原件不手改")
 
 
-def vendor_kubai(tarball):
-    """从校验过的 npm tarball 里取出 icons.toml 用到的 SVG 和 LICENSE，重写 design/kubai/。"""
-    icons = tomllib.loads((DESIGN / "icons.toml").read_text())
+def kubai_used(icons):
+    return {f'svg/{icon["kubai"]}.svg' for icon in icons["icons"].values() if "kubai" in icon} | {"LICENSE"}
+
+
+def vendor_kubai(tarball, icons, folder):
+    """从校验过的 npm tarball 里取出 icons.toml 用到的 SVG 和 LICENSE，重写 folder。
+    先取到临时目录，全部取到了再换：中途失败时原来的目录不动。"""
     upstream = icons["upstream"]["kubai"]
     data = Path(tarball).read_bytes()
     algorithm, expected = upstream["integrity"].split("-", 1)
     if base64.b64encode(hashlib.new(algorithm, data).digest()).decode() != expected:
         sys.exit(f"{tarball} 的校验值和 icons.toml 的 integrity 对不上")
-    wanted = sorted({f'svg/{icon["kubai"]}.svg' for icon in icons["icons"].values() if "kubai" in icon} | {"LICENSE"})
-    if KUBAI.exists():
-        shutil.rmtree(KUBAI)
-    sums = []
-    with tarfile.open(tarball) as archive:
+    wanted = sorted(kubai_used(icons))
+    with tempfile.TemporaryDirectory(dir=folder.parent) as temp, tarfile.open(tarball) as archive:
+        staged = Path(temp) / "kubai"
+        sums = []
         for path in wanted:
-            member = archive.extractfile(f"package/{path}")
+            try:
+                member = archive.extractfile(f"package/{path}")
+            except KeyError:
+                member = None
             if member is None:
                 sys.exit(f"{upstream['package']} {upstream['version']} 里没有 {path}")
             content = member.read()
-            (KUBAI / path).parent.mkdir(parents=True, exist_ok=True)
-            (KUBAI / path).write_bytes(content)
+            (staged / path).parent.mkdir(parents=True, exist_ok=True)
+            (staged / path).write_bytes(content)
             sums.append(f"{hashlib.sha256(content).hexdigest()}  {path}")
-    (KUBAI / "SHA256SUMS").write_text("\n".join(sums) + "\n")
+        (staged / "SHA256SUMS").write_text("\n".join(sums) + "\n")
+        if folder.exists():
+            shutil.rmtree(folder)
+        staged.rename(folder)
     print(f"design/kubai：{len(wanted)} 个文件")
 
 
@@ -630,7 +664,8 @@ def existing_generated_files():
 
 def main():
     if "--vendor-kubai" in sys.argv[1:]:
-        vendor_kubai(sys.argv[sys.argv.index("--vendor-kubai") + 1])
+        icons = tomllib.loads((DESIGN / "icons.toml").read_text())
+        vendor_kubai(sys.argv[sys.argv.index("--vendor-kubai") + 1], icons, KUBAI)
         return
     check = "--check" in sys.argv[1:]
     files = expected_files()

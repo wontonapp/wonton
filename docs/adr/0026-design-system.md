@@ -143,7 +143,7 @@ MIT，每个图标都有线框和实心。未选中用 Regular，选中用 Fill�
 - **Tabler：** 只有约两成有实心。
 - **Material Symbols：** 观感太 Android，和两端统一的自有风格不合。
 
-Phosphor 没有专门的服务器图形，用 `hard-drives`。App 内的开源许可页列出该平台随 App 分发的那套图标的版本和许可证：`scripts/generate-licenses.py` 从 `design/icons.toml` 的上游声明取。
+Phosphor 没有专门的服务器图形，用 `hard-drives`。App 内的开源许可页列出该平台随 App 分发的那套图标的版本和许可证：`scripts/generate-licenses.py` 从 `design/icons.toml` 的上游声明取，正文是上游的 LICENSE 原文。
 
 ### 图标：彩色分层用 Kubai
 

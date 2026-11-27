@@ -168,7 +168,7 @@ private struct OptionalIdentifier: ViewModifier {
 struct ChatGlassButton: View {
     let icon: WontonIcon
     let label: String
-    /// 主要动作（发送）给重点色，图标用页面底色。
+    /// 主要动作（发送）给重点色。
     var prominent = false
     /// 可达性树的稳定标识；只给界面测试要按它找的按钮。
     var identifier: String?

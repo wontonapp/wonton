@@ -140,21 +140,47 @@ class AndroidTest(unittest.TestCase):
 
 
 class IconsTest(unittest.TestCase):
+    def design(self, license_id: str = "MIT", text: str = "MIT License\n\nCopyright (c) 2026 Someone\n") -> Path:
+        root = Path(self.enterContext(__import__("tempfile").TemporaryDirectory()))
+        (root / "icons.toml").write_text(
+            f'[upstream.phosphor]\npackage = "x"\nversion = "1"\nlicense = "{license_id}"\n', encoding="utf-8"
+        )
+        (root / "phosphor").mkdir()
+        (root / "phosphor" / "LICENSE").write_text(text, encoding="utf-8")
+        return root
+
     def test_each_platform_lists_the_set_it_ships_at_the_pinned_version(self):
-        upstream = licenses.tomllib.loads(licenses.ICONS.read_text(encoding="utf-8"))["upstream"]
+        upstream = licenses.tomllib.loads((licenses.DESIGN / "icons.toml").read_text(encoding="utf-8"))["upstream"]
         for platform, key in (("ios", "kubai"), ("android", "phosphor")):
-            components, texts = licenses.icon_components(platform)
+            components, _ = licenses.icon_components(platform)
             self.assertEqual(
                 [(c["name"], c["version"]) for c in components],
                 [(upstream[key]["package"], upstream[key]["version"])],
             )
-            self.assertIn("Permission is hereby granted", texts[components[0]["license_ids"][0]]["text"])
 
-    def test_license_outside_approved_has_no_text(self):
-        path = Path(self.enterContext(__import__("tempfile").TemporaryDirectory())) / "icons.toml"
-        path.write_text('[upstream.phosphor]\npackage = "x"\nversion = "1"\nlicense = "Nope-1.0"\n', encoding="utf-8")
+    def test_text_is_the_upstream_license_with_its_copyright_line(self):
+        expected = {
+            "ios": "Copyright (c) 2026 Kubai087 and the Kubai Icons contributors",
+            "android": "Copyright (c) 2023 Phosphor Icons",
+        }
+        for platform, copyright_line in expected.items():
+            components, texts = licenses.icon_components(platform)
+            text = texts[components[0]["license_ids"][0]]["text"]
+            self.assertIn(copyright_line, text)
+            self.assertIn("Permission is hereby granted", text)
+
+    def test_icon_group_does_not_replace_the_shared_license_text(self):
+        components, texts = licenses.icon_components("ios")
+        self.assertNotIn("MIT", texts)
+        self.assertEqual(components[0]["license"], "MIT")
+
+    def test_license_outside_approved_fails(self):
         with self.assertRaises(licenses.GenerateError):
-            licenses.icon_components("android", path)
+            licenses.icon_components("android", self.design(license_id="Nope-1.0"))
+
+    def test_license_file_without_copyright_line_fails(self):
+        with self.assertRaises(licenses.GenerateError):
+            licenses.icon_components("android", self.design(text="MIT License\n"))
 
 
 class VerifyTest(unittest.TestCase):
@@ -169,10 +195,13 @@ class VerifyTest(unittest.TestCase):
                 {"source": "rust", "name": "serde", "version": "1", "license": "MIT", "license_ids": ["MIT"]},
                 {
                     "source": "icons", "name": "kubai-icons-static", "version": "0", "license": "MIT",
-                    "license_ids": ["MIT"],
+                    "license_ids": ["MIT (kubai-icons-static)"],
                 },
             ],
-            "licenses": {"MIT": {"name": "MIT", "text": "x" * 200}},
+            "licenses": {
+                "MIT": {"name": "MIT", "text": "x" * 200},
+                "MIT (kubai-icons-static)": {"name": "MIT (kubai-icons-static)", "text": "Copyright " + "x" * 200},
+            },
         }
         data.update(overrides)
         return data
@@ -190,6 +219,18 @@ class VerifyTest(unittest.TestCase):
         data = self.payload()
         data["licenses"]["GPL-3.0-only"] = {"name": "GPL", "text": "x" * 200}
         data["components"][0]["license_ids"] = ["MIT", "GPL-3.0-only"]
+        with self.assertRaises(licenses.GenerateError):
+            self.check(data)
+
+    def test_icon_text_without_copyright_line_fails(self):
+        data = self.payload()
+        data["licenses"]["MIT (kubai-icons-static)"]["text"] = "x" * 200
+        with self.assertRaises(licenses.GenerateError):
+            self.check(data)
+
+    def test_icon_license_outside_approved_fails(self):
+        data = self.payload()
+        data["components"][1]["license"] = "Nope-1.0"
         with self.assertRaises(licenses.GenerateError):
             self.check(data)
 

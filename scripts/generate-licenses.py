@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 APPROVED_FILE = ROOT / "licenses" / "APPROVED"
 TEXTS = ROOT / "licenses" / "texts"
 CARGO_ABOUT_CONFIG = ROOT / "licenses" / "about.toml"
-ICONS = ROOT / "design" / "icons.toml"
+DESIGN = ROOT / "design"
 
 # 图形随 App 分发的图标集：design/icons.toml 的 [upstream.<名字>]，各平台只列自己带的那一套。
 ICON_SETS = {
@@ -241,21 +241,27 @@ def android_components(export: Path) -> tuple[list[dict], dict[str, dict]]:
     return components, licenses
 
 
-def icon_components(platform: str, icons: Path = ICONS) -> tuple[list[dict], dict[str, dict]]:
-    """图标不是依赖，哪个工具都收不到：版本和许可取 design/icons.toml 里钉的上游。"""
-    upstreams = tomllib.loads(icons.read_text(encoding="utf-8"))["upstream"]
+def icon_components(platform: str, design: Path = DESIGN) -> tuple[list[dict], dict[str, dict]]:
+    """图标不是依赖，哪个工具都收不到：版本和许可取 design/icons.toml 里钉的上游。
+    每套单开一组，正文原样取上游的 LICENSE：MIT 要求带着版权行，标准全文里没有。"""
+    upstreams = tomllib.loads((design / "icons.toml").read_text(encoding="utf-8"))["upstream"]
     components, licenses = [], {}
     for key in ICON_SETS[platform]:
         upstream = upstreams[key]
-        license_id = upstream["license"]
-        licenses[license_id] = {"name": license_id, "text": standard_text(license_id)}
+        if upstream["license"] not in approved_ids():
+            raise GenerateError(f"{upstream['package']} 用了 APPROVED 之外的 {upstream['license']}")
+        text = (design / key / "LICENSE").read_text(encoding="utf-8")
+        if "Copyright" not in text:
+            raise GenerateError(f"design/{key}/LICENSE 里没有版权行")
+        group = f"{upstream['license']} ({upstream['package']})"
+        licenses[group] = {"name": group, "text": text}
         components.append(
             {
                 "source": "icons",
                 "name": upstream["package"],
                 "version": upstream["version"],
-                "license": license_id,
-                "license_ids": [license_id],
+                "license": upstream["license"],
+                "license_ids": [group],
             }
         )
     return components, licenses
@@ -278,8 +284,14 @@ def verify(target: Path, platform: str) -> None:
         if not component["license_ids"]:
             problems.append(f"{component['name']} 没有许可")
             continue
+        icons = component["source"] == "icons"
+        if icons and component["license"] not in approved:
+            problems.append(f"{component['name']} 用了 APPROVED 之外的 {component['license']}")
         for license_id in component["license_ids"]:
-            if license_id not in approved:
+            # 图标集的组名是“许可 (包名)”，许可本身上面查过；正文是上游原文，要带版权行。
+            if icons and "Copyright" not in data["licenses"].get(license_id, {}).get("text", ""):
+                problems.append(f"{component['name']} 的许可正文里没有版权行")
+            if not icons and license_id not in approved:
                 problems.append(f"{component['name']} 用了 APPROVED 之外的 {license_id}")
             if len(data["licenses"].get(license_id, {}).get("text", "").strip()) < 150:
                 problems.append(f"{license_id} 没有全文")
@@ -311,8 +323,7 @@ def main() -> int:
         components, licenses = rust_components(args.platform)
     icon_parts, icon_licenses = icon_components(args.platform)
     components += icon_parts
-    # 依赖那边已经有同一个许可的正文时用它的，不换。
-    licenses = {**icon_licenses, **licenses}
+    licenses.update(icon_licenses)
 
     components.sort(key=lambda component: (component["name"].lower(), component["version"]))
     if not components:
