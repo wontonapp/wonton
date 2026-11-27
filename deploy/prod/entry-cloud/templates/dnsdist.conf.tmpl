@@ -1,0 +1,16 @@
+-- Public authoritative front. Everything under auth.<zone> is the ACME
+-- delegation and goes to acme-dns; everything else goes to PowerDNS.
+setLocal('@LISTEN_IP@:53')
+setACL({'0.0.0.0/0', '::/0'})
+setMaxUDPOutstanding(1024)
+
+newServer({address='127.0.0.1:5300', pool='auth', checkName='@DOMAIN@.', checkType='SOA'})
+newServer({address='127.0.0.1:8053', pool='acme', checkName='auth.@DOMAIN@.', checkType='SOA'})
+
+-- PoolAction stops by default; rate-limit and ANY drops must run first.
+addAction(MaxQPSIPRule(50), DropAction())
+addAction(QTypeRule(DNSQType.ANY), DropAction())
+addAction(QNameSuffixRule('auth.@DOMAIN@.'), PoolAction('acme'))
+addAction(AllRule(), PoolAction('auth'))
+
+setSecurityPollSuffix('')

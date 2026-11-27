@@ -1,3 +1,4 @@
+use crate::store::hash;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::{env, net::Ipv4Addr, path::PathBuf};
@@ -8,6 +9,14 @@ pub struct Relay {
     pub host: String,
     pub port: u16,
     pub server_name: String,
+}
+
+/// Operator-owned frpc identity used for the public entry vhosts (push, relay,
+/// omarchy, bootstrap) that do not belong to a registered home.
+#[derive(Clone)]
+pub struct System {
+    pub domains: Vec<String>,
+    pub token_hash: String,
 }
 
 #[derive(Clone)]
@@ -26,19 +35,11 @@ pub struct Config {
     pub metrics_url: String,
     pub metrics_user: String,
     pub metrics_password: String,
+    pub system: Option<System>,
 }
 
 pub fn required(name: &str) -> Result<String> {
     env::var(name).with_context(|| format!("missing {name}"))
-}
-
-fn secret(name: &str) -> Result<String> {
-    let path = required(name)?;
-    let value = std::fs::read_to_string(path)?.trim().to_owned();
-    if value.is_empty() {
-        bail!("empty secret {name}");
-    }
-    Ok(value)
 }
 
 pub fn valid_label(label: &str) -> bool {
@@ -53,6 +54,23 @@ pub fn valid_label(label: &str) -> bool {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
+        Self::from_lookup(|name| env::var(name).ok())
+    }
+
+    /// Parse from an explicit lookup so tests do not race on process env.
+    pub fn from_lookup<F>(lookup: F) -> Result<Self>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let required = |name: &str| lookup(name).with_context(|| format!("missing {name}"));
+        let secret = |name: &str| -> Result<String> {
+            let path = required(name)?;
+            let value = std::fs::read_to_string(path)?.trim().to_owned();
+            if value.is_empty() {
+                bail!("empty secret {name}");
+            }
+            Ok(value)
+        };
         let zone = required("WONTON_HOME_ZONE")?;
         if !zone.split('.').all(valid_label) {
             bail!("invalid zone");
@@ -66,6 +84,40 @@ impl Config {
         if parsed.scheme() != "https" || parsed.query().is_some() || parsed.fragment().is_some() {
             bail!("ACME update URL must be HTTPS without query/fragment");
         }
+        let system = match (
+            lookup("WONTON_HOME_SYSTEM_TOKEN_FILE"),
+            lookup("WONTON_HOME_SYSTEM_DOMAINS"),
+        ) {
+            (None, None) => None,
+            (Some(path), Some(domains)) => {
+                let token = std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading WONTON_HOME_SYSTEM_TOKEN_FILE {path}"))?;
+                let token = token.trim();
+                if token.is_empty() {
+                    bail!("empty system token");
+                }
+                let domains: Vec<String> = domains
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|domain| !domain.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+                if domains.is_empty() {
+                    bail!("empty WONTON_HOME_SYSTEM_DOMAINS");
+                }
+                for domain in &domains {
+                    if domain.split('.').count() < 2 || !domain.split('.').all(valid_label) {
+                        bail!("invalid system domain {domain}");
+                    }
+                }
+                Some(System {
+                    domains,
+                    token_hash: hash(token.as_bytes()),
+                })
+            }
+            (Some(_), None) => bail!("WONTON_HOME_SYSTEM_DOMAINS missing"),
+            (None, Some(_)) => bail!("WONTON_HOME_SYSTEM_TOKEN_FILE missing"),
+        };
         Ok(Self {
             listen: env::var("WONTON_HOME_LISTEN").unwrap_or_else(|_| "127.0.0.1:8080".into()),
             hook_listen: env::var("WONTON_HOME_HOOK_LISTEN")
@@ -82,6 +134,7 @@ impl Config {
             acme_internal: required("WONTON_HOME_ACME_INTERNAL_URL")?,
             pdns_url: required("WONTON_HOME_PDNS_URL")?,
             pdns_key: secret("WONTON_HOME_PDNS_KEY_FILE")?,
+            system,
             issuer,
             metrics_url: required("WONTON_HOME_FRPS_METRICS_URL")?,
             metrics_user: required("WONTON_HOME_FRPS_METRICS_USER")?,

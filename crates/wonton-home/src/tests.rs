@@ -1,7 +1,7 @@
 use crate::{
     admin::{self, Command},
     auth::canonical,
-    config::{Config, Relay},
+    config::{Config, Relay, System},
     service::App,
     store::{Store, hex, now, random_token},
 };
@@ -72,6 +72,10 @@ impl Drop for Fixture {
 
 impl Fixture {
     async fn new() -> Self {
+        Self::with_system(None).await
+    }
+
+    async fn with_system(system: Option<System>) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let backend = Arc::new(Upstream::default());
         *backend.metrics.lock().await =
@@ -113,6 +117,7 @@ impl Fixture {
             metrics_url: format!("{upstream_url}/metrics"),
             metrics_user: "metrics".into(),
             metrics_password: "test-password".into(),
+            system,
         };
         let store = Store::open(config.state.clone()).unwrap();
         let app = App::new(config, store).unwrap();
@@ -490,7 +495,6 @@ async fn proxy_ownership_and_entry_quota_cannot_be_bypassed() {
     let home = response["home"].as_str().unwrap();
     let token = response["frp_token"].as_str().unwrap();
     for domain in [
-        format!("*.{home}.homes.test"),
         format!("lan.{home}.homes.test"),
         format!("x.lan.{home}.homes.test"),
         "another.homes.test".into(),
@@ -569,3 +573,179 @@ fn quota_month_uses_calendar_utc_not_fixed_thirty_day_windows() {
     assert_eq!(crate::metrics::utc_month(2678399), 1970 * 12);
     assert_eq!(crate::metrics::utc_month(2678400), 1970 * 12 + 1);
 }
+
+#[test]
+fn home_proxy_domains_accept_apex_and_one_wildcard() {
+    let d = |value: &str| json!(value);
+    assert!(crate::hooks::home_domains_ok(
+        &[d("alice.homes.test")],
+        "alice",
+        "homes.test"
+    ));
+    assert!(crate::hooks::home_domains_ok(
+        &[d("alice.homes.test"), d("*.alice.homes.test")],
+        "alice",
+        "homes.test"
+    ));
+    assert!(crate::hooks::home_domains_ok(
+        &[d("*.alice.homes.test")],
+        "alice",
+        "homes.test"
+    ));
+    assert!(!crate::hooks::home_domains_ok(
+        &[d("other.homes.test")],
+        "alice",
+        "homes.test"
+    ));
+    assert!(!crate::hooks::home_domains_ok(
+        &[d("alice.homes.test"), d("other.homes.test")],
+        "alice",
+        "homes.test"
+    ));
+    assert!(!crate::hooks::home_domains_ok(
+        &[
+            d("alice.homes.test"),
+            d("*.alice.homes.test"),
+            d("extra.homes.test")
+        ],
+        "alice",
+        "homes.test"
+    ));
+}
+
+#[tokio::test]
+async fn wildcard_proxy_still_uses_one_of_five_slots() {
+    let fixture = Fixture::new().await;
+    let response = fixture.register(&key(1), &fixture.invite().await).await;
+    let home = response["home"].as_str().unwrap();
+    let token = response["frp_token"].as_str().unwrap();
+    let proxy = |name: &str, domain: String| json!({"proxy_type":"https","proxy_name":format!("{home}.{name}"),"custom_domains":[domain]});
+    assert_eq!(
+        fixture
+            .hook(
+                "NewProxy",
+                home,
+                token,
+                proxy("wild", format!("*.{home}.homes.test"))
+            )
+            .await["reject"],
+        false
+    );
+    for n in 0..4 {
+        assert_eq!(
+            fixture
+                .hook(
+                    "NewProxy",
+                    home,
+                    token,
+                    proxy(&format!("p{n}"), format!("p{n}.{home}.homes.test")),
+                )
+                .await["reject"],
+            false
+        );
+    }
+    assert_eq!(
+        fixture
+            .hook(
+                "NewProxy",
+                home,
+                token,
+                proxy("sixth", format!("sixth.{home}.homes.test")),
+            )
+            .await["reject"],
+        true
+    );
+}
+
+#[test]
+fn config_from_env_parses_operator_system_identity() {
+    use std::collections::BTreeMap;
+    let dir = tempfile::tempdir().unwrap();
+    let token = dir.path().join("system-token");
+    std::fs::write(&token, "sys\n").unwrap();
+    let pdns_key = dir.path().join("pdns-key");
+    std::fs::write(&pdns_key, "pdns\n").unwrap();
+    let metrics = dir.path().join("metrics-password");
+    std::fs::write(&metrics, "metrics\n").unwrap();
+    let values: BTreeMap<&str, String> = [
+        ("WONTON_HOME_ZONE", "homes.test".to_owned()),
+        (
+            "WONTON_HOME_STATE",
+            dir.path().join("state.json").to_str().unwrap().to_owned(),
+        ),
+        ("WONTON_HOME_RELAY_IP", "203.0.113.10".to_owned()),
+        ("WONTON_HOME_RELAY_HOST", "relay.homes.test".to_owned()),
+        ("WONTON_HOME_RELAY_PORT", "443".to_owned()),
+        (
+            "WONTON_HOME_RELAY_SERVER_NAME",
+            "relay.homes.test".to_owned(),
+        ),
+        (
+            "WONTON_HOME_ACME_URL",
+            "https://names.homes.test/acme".to_owned(),
+        ),
+        (
+            "WONTON_HOME_ACME_INTERNAL_URL",
+            "http://127.0.0.1:8054".to_owned(),
+        ),
+        ("WONTON_HOME_PDNS_URL", "http://127.0.0.1:8084".to_owned()),
+        (
+            "WONTON_HOME_PDNS_KEY_FILE",
+            pdns_key.to_str().unwrap().to_owned(),
+        ),
+        ("WONTON_HOME_CAA_ISSUER", "letsencrypt.org".to_owned()),
+        (
+            "WONTON_HOME_FRPS_METRICS_URL",
+            "http://127.0.0.1:7500/metrics".to_owned(),
+        ),
+        ("WONTON_HOME_FRPS_METRICS_USER", "wonton".to_owned()),
+        (
+            "WONTON_HOME_FRPS_METRICS_PASSWORD_FILE",
+            metrics.to_str().unwrap().to_owned(),
+        ),
+        (
+            "WONTON_HOME_SYSTEM_TOKEN_FILE",
+            token.to_str().unwrap().to_owned(),
+        ),
+        (
+            "WONTON_HOME_SYSTEM_DOMAINS",
+            "push.homes.test,site.example".to_owned(),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let config = crate::config::Config::from_lookup(|key| values.get(key).cloned()).unwrap();
+    let system = config.system.expect("system identity parsed");
+    assert_eq!(system.domains, ["push.homes.test", "site.example"]);
+    assert!(crate::store::matches("sys", &system.token_hash));
+}
+#[test]
+fn system_frpc_template_names_are_bare_valid_labels() {
+    let text = include_str!("../../../deploy/prod/entry-cloud/templates/system-frpc.toml.tmpl");
+    let names: Vec<&str> = text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("name = \""))
+        .map(|name| name.trim_end_matches('"'))
+        .collect();
+    assert_eq!(names.len(), 9, "{names:?}");
+    assert!(names.contains(&"relay-http"), "{names:?}");
+    for name in names {
+        assert!(crate::config::valid_label(name), "{name}");
+    }
+}
+
+#[test]
+fn production_compose_carries_acme_url_caa_and_metrics_password_file() {
+    let text = include_str!("../../../deploy/prod/entry-cloud/compose.yaml");
+    assert!(text.contains("WONTON_HOME_CAA_ISSUER: letsencrypt.org"));
+    assert!(text.contains("WONTON_HOME_ACME_URL: https://${WONTON_NAMES_HOST}/acme"));
+    assert!(
+        text.contains("WONTON_HOME_FRPS_METRICS_PASSWORD_FILE: /secrets/frps-metrics-password")
+    );
+    assert!(
+        text.contains("WONTON_HOME_SYSTEM_DOMAINS: ${WONTON_HOME_SYSTEM_DOMAINS:?set in .env}")
+    );
+}
+
+#[path = "tests_system.rs"]
+mod system_tests;

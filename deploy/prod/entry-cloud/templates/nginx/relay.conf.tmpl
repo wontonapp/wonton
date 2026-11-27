@@ -1,0 +1,43 @@
+# iroh relay. WebSocket upgrade on /relay; the relay speaks plain HTTP behind
+# nginx. Long-lived connections must not hit the default 60s read timeout.
+server {
+    listen 127.0.0.1:4080 proxy_protocol;
+    server_name @RELAY_HOST@;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 127.0.0.1:4443 ssl proxy_protocol http2;
+    server_name @RELAY_HOST@;
+
+    ssl_certificate @WONTON_CERTS_DIR@/@RELAY_HOST@/fullchain.pem;
+    ssl_certificate_key @WONTON_CERTS_DIR@/@RELAY_HOST@/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    access_log /var/log/nginx/@RELAY_HOST@.access.log;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8742;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+        proxy_buffering off;
+    }
+}
