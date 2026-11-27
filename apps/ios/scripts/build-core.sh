@@ -27,7 +27,7 @@ if [ "$cargo_profile" = release ]; then
 fi
 
 # 假数据入口（cargo feature ui-fake）：Debug 默认带上（原生壳只在 Debug 里调它），Release 不带，发布包
-# 编不进去。WONTON_UI_FAKE=1/0 强制开/关，夜跑的 UI 测试显式传 1。
+# 编不进去。WONTON_UI_FAKE=1/0 强制开/关，UI 冒烟显式传 1。
 ui_fake_args=()
 case "${WONTON_UI_FAKE:-auto}" in
   1|true) ui_fake_args=(--features ui-fake) ;;
