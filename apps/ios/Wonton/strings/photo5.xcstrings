@@ -1,0 +1,66 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "photo.gifUnreadable": {
+      "comment": "Detail of the photo problem: the GIF's header is invalid. Android only.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't read this GIF"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "认不出这张 GIF"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認不出這張 GIF"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このGIFを読み込めません"
+          }
+        }
+      }
+    },
+    "photo.unencodable": {
+      "comment": "Title of the photo problem on iOS, detail on Android: the photo was decoded but couldn't be re-encoded for sending.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't convert this photo"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片转码失败"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片轉換失敗"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を変換できません"
+          }
+        }
+      }
+    }
+  }
+}

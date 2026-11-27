@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The failed photo and the reason the core gave, joined into the title. -->
+    <string name="photo_failed_at_reason">%1$s: %2$s</string>
+</resources>

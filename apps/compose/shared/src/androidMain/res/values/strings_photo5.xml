@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
+    <string name="photo_unreadable">Can\'t read this photo</string>
+</resources>

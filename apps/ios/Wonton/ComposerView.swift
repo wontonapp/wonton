@@ -246,8 +246,8 @@ private extension ComposerView {
         for (index, asset) in assets.enumerated() {
             guard let (data, type) = await PhotoLibrary.data(asset) else {
                 model.rejection = Problem(
-                    title: String(localized: .Photo.photoUnreadable),
-                    nextStep: String(localized: .Photo.photoTryAnother)
+                    title: String(localized: .Photo0.photoUnreadable),
+                    nextStep: String(localized: .Photo1.photoTryAnother)
                 )
                 continue
             }
@@ -309,7 +309,7 @@ private extension ComposerView {
     private func pasteImage(from providers: [NSItemProvider]) async {
         guard let (data, type) = await ComposerPaste.image(from: providers) else {
             model.rejection = Problem(
-                title: String(localized: .Photo.photoUnreadable), nextStep: String(localized: .Photo.photoTryAnother)
+                title: String(localized: .Photo0.photoUnreadable), nextStep: String(localized: .Photo1.photoTryAnother)
             )
             return
         }

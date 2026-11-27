@@ -14,8 +14,8 @@ enum PhotoUpload {
 
         var text: LocalizedStringResource {
             switch self {
-            case .unreadable: .Photo.photoUnreadable
-            case .unencodable: .Photo.photoUnencodable
+            case .unreadable: .Photo0.photoUnreadable
+            case .unencodable: .Photo5.photoUnencodable
             }
         }
     }
