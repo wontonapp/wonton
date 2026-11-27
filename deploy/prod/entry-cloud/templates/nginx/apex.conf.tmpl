@@ -1,5 +1,7 @@
 # Apex and www terminate here with the apex certificate lineage. The apex is
 # no longer a copy of the personal site: a minimal 404 is enough.
+# A server-level `return` runs before location matching and would hide the
+# ACME location, so every return sits inside `location /`.
 server {
     listen 127.0.0.1:4080 proxy_protocol;
     server_name @DOMAIN@ www.@DOMAIN@;
@@ -8,7 +10,9 @@ server {
         root /var/www/letsencrypt;
     }
 
-    return 301 https://$host$request_uri;
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
@@ -19,7 +23,11 @@ server {
     ssl_certificate_key @WONTON_CERTS_DIR@/@DOMAIN@/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    location /.well-known/acme-challenge/ { root /var/www/letsencrypt; }
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
 
-    return 404 "wonton\n";
+    location / {
+        return 404 "wonton\n";
+    }
 }

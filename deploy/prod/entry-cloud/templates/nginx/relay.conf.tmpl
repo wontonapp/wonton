@@ -3,7 +3,14 @@
 server {
     listen 127.0.0.1:4080 proxy_protocol;
     server_name @RELAY_HOST@;
-    return 301 https://$host$request_uri;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {

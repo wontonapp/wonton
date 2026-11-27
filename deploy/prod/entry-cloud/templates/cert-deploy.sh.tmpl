@@ -1,0 +1,14 @@
+#!/bin/sh
+# certbot deploy hook (installed into /etc/letsencrypt/renewal-hooks/deploy/ in
+# phase 2): copy a renewed lineage into the nginx-only cert dir and reload.
+# Directory hooks run next to each lineage's own renew_hook instead of
+# replacing it, and only lineages prepare.py made a placeholder for are copied.
+set -eu
+: "${RENEWED_LINEAGE:?}"
+dest="@WONTON_CERTS_DIR@/$(basename "$RENEWED_LINEAGE")"
+[ -d "$dest" ] || exit 0
+install -m 644 "$RENEWED_LINEAGE/fullchain.pem" "$dest/fullchain.pem.new"
+install -m 600 "$RENEWED_LINEAGE/privkey.pem" "$dest/privkey.pem.new"
+mv "$dest/fullchain.pem.new" "$dest/fullchain.pem"
+mv "$dest/privkey.pem.new" "$dest/privkey.pem"
+systemctl reload nginx

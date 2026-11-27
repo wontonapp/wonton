@@ -246,7 +246,7 @@ DNS 对任何标签都回答同样的结果（通配符），查不出哪个标�
 
 - frps 直接绑 443/tcp（和 80），不再由宿主 nftables 把 443 重定向到高端口；nginx 退回 `127.0.0.1:4443/4080` 并且只从本机 operator frpc 收 PROXY v2。frps 只读 ClientHello 选路，不持家证书。中断面不变。
 - 所有容器用 host 网络：frps 要看到客户端对端；dnsdist/PowerDNS 在同一个回环里按 QName 分流。代价是容器能碰宿主回环，和 ADR 里“host 网络就能摸到回环”的前提一致，靠 compose 内的进程边界挡。
-- dnsdist 不再绑 `0.0.0.0:53`：只绑 `127.0.0.1:53` 和网卡私网 IP（`WONTON_LISTEN_IP`），公网 IP 只做 NAT，发进来的包目的地址已经是私网；`0.0.0.0` 会和 systemd-resolved/dockerd 抢。安全组只开 53/tcp+udp。
+- dnsdist 不再绑 `0.0.0.0:53`：只绑网卡私网 IP（`WONTON_LISTEN_IP`，必填）。公网 IP 是云厂商的 1:1 NAT，发进来的包目的地址已经是私网；`0.0.0.0` 会和 systemd-resolved/dockerd 抢。本机查询也走私网 IP，不绑 `127.0.0.1:53`。安全组只开 53/tcp+udp。
 - pdns/dnsdist 以 root + `cap_add: NET_BIND_SERVICE` 跑：镜像的 uid 953 在 `read_only` 下打不开 sqlite socket/53；数据/配置在宿主上 root 可读，容器内不再降权。
 - PowerDNS API 绑 `127.0.0.1:8084`（家名服务同机回环），acme-dns API 绑 `127.0.0.1:8054`；不暴露公网。
 - 家名服务自己仍然非 root、只读根、`cap_drop: ALL`。

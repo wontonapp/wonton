@@ -113,7 +113,8 @@ def main() -> None:
     values = load_env(Path(args.env_file))
     values["DOMAIN"] = need(values, "WONTON_DOMAIN")
     values["PUBLIC_IP"] = need(values, "WONTON_PUBLIC_IP")
-    values["LISTEN_IP"] = values.get("WONTON_LISTEN_IP") or values["PUBLIC_IP"]
+    # The NIC address behind the cloud NAT; the public IP never reaches the socket.
+    values["LISTEN_IP"] = need(values, "WONTON_LISTEN_IP")
     for key, short in (("WONTON_PUSH_HOST", "PUSH_HOST"), ("WONTON_RELAY_HOST", "RELAY_HOST"),
                        ("WONTON_NAMES_HOST", "NAMES_HOST"), ("WONTON_OMARCHY_HOST", "OMARCHY_HOST")):
         values[short] = need(values, key)
@@ -149,6 +150,7 @@ def main() -> None:
     render(TEMPLATES / "dnsdist.conf.tmpl", root / "dnsdist/dnsdist.conf", values, 0o644)
     render(TEMPLATES / "acme-dns.cfg.tmpl", root / "acme-dns/config.cfg", values, 0o640)
     render(TEMPLATES / "bootstrap/install.sh", root / "bootstrap/install.sh", values, 0o644)
+    render(TEMPLATES / "cert-deploy.sh.tmpl", root / "scripts/cert-deploy.sh", values, 0o755)
 
     certs_dir = Path(values["WONTON_CERTS_DIR"])
     for host in (values["WONTON_PUSH_HOST"], values["WONTON_RELAY_HOST"],
