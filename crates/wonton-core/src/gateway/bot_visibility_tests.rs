@@ -332,7 +332,7 @@ async fn own_bot_and_active_contact_do_not_depend_on_open_apps() {
             },
         )
         .unwrap();
-    assert_eq!(access(&fixture, alice.clone(), &own), BotAccess::Own);
+    assert_eq!(access(&fixture, alice, &own), BotAccess::Own);
     fixture.contacts(contact_rows(
         &contacted,
         json!({"@alice:test": {"kind": "person", "state": "active", "updated_at_ms": 1}}),
