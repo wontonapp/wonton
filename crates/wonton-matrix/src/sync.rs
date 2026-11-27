@@ -5,7 +5,7 @@
 //! [`MatrixSession::keep_syncing`] 做，它分得清吊销。
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_util::{Stream, StreamExt, future, stream};
@@ -38,8 +38,12 @@ const MAX_RESTART: Duration = Duration::from_secs(30);
 const CATCH_UP_NOTICE_DELAY: Duration = Duration::from_millis(500);
 /// 起步等这么久就报一次停在哪个状态。
 const WAIT_REPORT: Duration = Duration::from_secs(5);
-/// 停同步最多等这么久：通道断掉时 `stop` 等不到应答，不能让它拖住换会话。
+/// App 进后台时停同步最多等这么久：通道断掉时 `stop` 等不到应答。
 const STOP_SYNC_TIMEOUT: Duration = Duration::from_secs(10);
+/// 挪到后台的同步停完以后，最多隔这么久看一次旧 Client 落了没有。
+const LEASE_POLL: Duration = Duration::from_secs(1);
+/// 挪到后台的同步停完以后，最多再等旧 Client 落这么久：不可取消的应答处理几秒内就完。
+const LEASE_AFTER_STOP: Duration = Duration::from_secs(10);
 
 /// 各设备最近一次起步等待的现场，见 [`last_sync_diagnostic`]。一个进程里有多台设备（测试并行跑）时按设备号分开，
 /// 免得把别人的等待当成自己的。
@@ -152,43 +156,68 @@ impl MatrixSession {
         }
     }
 
-    /// 停止同步（App 进入后台、换会话时调用）。最多等 [`STOP_SYNC_TIMEOUT`]：Sliding Sync 的内部通道断掉时
-    /// `stop` 会等不到应答，换服务器的登录就卡在这，视图还挂着“已登录”、会话却已经被收走。
+    /// 停止同步（App 进入后台时调用）。最多等 [`STOP_SYNC_TIMEOUT`]：Sliding Sync 的内部通道断掉时 `stop` 会等不到
+    /// 应答。等不到只是不再等，停同步在后台接着做完（见 [`stop_sync_within`](Self::stop_sync_within)）；它停完之前
+    /// 再 [`start_sync`](Self::start_sync) 会排在它后面。
     pub async fn stop_sync(&self) {
-        let _subscriptions = self.subscriptions.lock().await;
-        if tokio::time::timeout(STOP_SYNC_TIMEOUT, self.sync.stop())
+        if tokio::time::timeout(STOP_SYNC_TIMEOUT, self.spawn_stop())
             .await
             .is_err()
         {
-            tracing::warn!("同步服务没有在 {STOP_SYNC_TIMEOUT:?} 内停下，先放着");
+            tracing::warn!("同步服务没有在 {STOP_SYNC_TIMEOUT:?} 内停下，在后台接着停");
         }
     }
 
-    /// 放掉存储租约之前最多等这么久：等同步服务离开 `Running`/`Offline`（它可能还在把最后一条应答写进存储）。
-    /// 等不到也放，一直占着名字没有意义。
-    const LEASE_SETTLE: Duration = Duration::from_secs(60);
-
-    /// [`stop_sync`](Self::stop_sync) 超时以后调：留一份存储租约，等同步服务真离开 `Running`/`Offline` 再放。
-    ///
-    /// 超时只是把 `stop()` 的 future 丢了：SDK 自己的任务还活着（它们持有 `Client`），不受 stop 打断的只有拿到
-    /// 应答之后的处理（`handle_response` + 写存储）。名字要是跟着会话一起落，下一个 Client 就会沿用这个名字，
-    /// 旧任务写回去的东西会被当成自己写的（`store_holder` 的 #804/#1047）。多留一份租约，下一个 Client 就换新名字，
-    /// SDK 拿锁时标脏、重读。
-    pub async fn keep_store_lease_until_sync_settles(self: &Arc<Self>) {
-        let mut state = self.sync.state();
-        let lease = self.store_lease();
-        let _ = tokio::time::timeout(Self::LEASE_SETTLE, async {
-            while matches!(
-                state.get(),
-                sync_service::State::Running | sync_service::State::Offline
-            ) {
-                if state.next().await.is_none() {
-                    break;
-                }
-            }
+    /// 在任务里停同步：等它的人走了它也会停完。拿着订阅的锁，和起同步、改订阅串行。
+    fn spawn_stop(&self) -> tokio::task::JoinHandle<()> {
+        let subscriptions = self.subscriptions.clone();
+        let sync = self.sync.clone();
+        tokio::spawn(async move {
+            let _subscriptions = subscriptions.lock_owned().await;
+            sync.stop().await;
         })
-        .await;
-        drop(lease);
+    }
+
+    /// 要换会话时停同步：`grace` 内停完返回 `true`；停不完就不再等，返回 `false`，剩下的在后台接着停。
+    ///
+    /// 停不完时旧 Client 还活着、还会写存储（按 matrix-sdk / matrix-sdk-ui 0.19.1 的代码）：`SyncService::stop` 要等
+    /// supervisor 收完两条同步；加密同步每一轮先拿跨进程存储锁，拿不到就退避重试（间隔最长 60 秒），这一步停不下来；
+    /// 滑动同步收到应答以后的处理跑在 spawn 出去、不可取消的任务里，它拿着 Client，停同步返回了也可能还在写。所以停
+    /// 同步本身放在任务里，超时只是不再等它（直接取消 `SyncService::stop` 的话，停的信号可能还没发出去，旧同步就一直
+    /// 跑下去）；存储租约也交给后台：停完、旧 Client 也落了才放，最多再等 `LEASE_AFTER_STOP`。这期间同存储上新建的
+    /// Client 换一个持有者名，拿锁时把锁标脏、重读 Olm 机器（`store_holder` 的 #804）。后台只留租约、不留会话，新会话的
+    /// 请求不排在旧会话后面。
+    ///
+    /// 停完以后旧 Client 还被别的引用拿着就不再等：同步停了，它不再收应答、不再写。和期限内停完的那条路一样（租约跟着
+    /// 会话落），不为它白付 #1047 那份重读 Olm 机器的钱。
+    pub async fn stop_sync_within(&self, grace: Duration) -> bool {
+        let mut stopping = self.spawn_stop();
+        if tokio::time::timeout(grace, &mut stopping).await.is_ok() {
+            return true;
+        }
+        let lease = self
+            .store_lease
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        let client = self.client.downgrade();
+        let device = self.device_id().to_owned();
+        tokio::spawn(async move {
+            stopping.await.ok();
+            let stopped = Instant::now();
+            let mut wait = Duration::from_millis(50);
+            while client.get().is_some() && stopped.elapsed() < LEASE_AFTER_STOP {
+                tokio::time::sleep(wait).await;
+                wait = (wait * 2).min(LEASE_POLL);
+            }
+            tracing::info!(
+                device = %device,
+                released = client.get().is_none(),
+                "挪到后台的同步停完了，放掉存储租约"
+            );
+            drop(lease);
+        });
+        false
     }
 
     /// 同步因错误停下就重启，连续出错时间隔加倍，直到被中止。在同一个会话上重启：打开着的房间继续收到更新，不用

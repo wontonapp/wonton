@@ -3,7 +3,6 @@
 use wonton_client::{ChatAccount, ChatFailure};
 
 use super::accept_the_bots_invite;
-
 use super::support::{Home, OWNER, Phone};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -58,11 +57,11 @@ async fn a_matrix_login_refused_while_tuwunel_restarts_retries_by_itself() {
     );
 }
 
-/// 隧道断了又回来（代理换了地址）：旧代理上的同步只会报“连不上”，自己重启没用，得拿新代理重新登录一次。
-/// 消息照常收到，设备不变（是恢复不是新登录），也不来回重登。
+/// 隧道断了又回来：代理没了先断开、离线恢复，代理回来再用它接上（follow_home）。消息照常收到，设备不变
+/// （是恢复不是新登录），也不来回重登。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_sync_that_only_fails_because_the_proxy_is_gone_logs_in_again_with_the_new_one() {
+async fn a_tunnel_that_drops_and_comes_back_resumes_the_same_session() {
     use wonton_client::{ChatSync, MessageSummary};
 
     let dir = tempfile::tempdir().unwrap();
@@ -90,15 +89,15 @@ async fn a_sync_that_only_fails_because_the_proxy_is_gone_logs_in_again_with_the
         })
         .await;
 
-    // 隧道在新地址回来；旧代理上的同步再失败一次，就该拿新代理重新登录。
+    // 隧道回来，手机用新的本地代理恢复会话。
     home.start_tunnel().await;
-    // Bot 直连核心，不经隧道：这条消息只能靠手机重新登录、重新同步收进来。
+    // Bot 直连核心，不经隧道：这条消息只能靠手机经新代理重新同步收进来。
     bot_room
         .send_text("换了地址以后发的", &[])
         .await
         .expect("Bot 发消息");
     phone
-        .wait_chat("经新地址收到消息", |view| {
+        .wait_chat("隧道回来后收到消息", |view| {
             view.rooms
                 .iter()
                 .any(|row| {

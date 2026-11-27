@@ -47,17 +47,8 @@ struct Last {
 ///
 /// 拿到就得留着（和 Client 同寿）：丢早了，同进程并发又会撞名。
 #[must_use = "租约落掉后，同存储的下一个 Client 会以为没有别人、沿用这个名字"]
-pub struct StoreLease {
+pub(crate) struct StoreLease {
     _alive: Arc<()>,
-}
-
-impl StoreLease {
-    /// 再拿一份租约：只为把一个已经在用的名字多留一会儿（Client 落了、它的 SDK 任务还在写存储时）。
-    pub fn keep_alive(&self) -> Self {
-        Self {
-            _alive: self._alive.clone(),
-        }
-    }
 }
 
 /// 给开在 `store` 上的新 Client 取持有者名，返回的租约要和这个 Client 同寿。

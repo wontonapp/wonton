@@ -65,8 +65,6 @@ fn backoff(failures: u32) -> Duration {
 
 impl ChatLink {
     /// 登录或恢复会话，然后开始同步。
-    // 守卫、清理、换代理、失败回退都在这条路上，按顺序列着比分出去好读。
-    #[allow(clippy::too_many_lines)]
     pub(super) async fn connect(self: Arc<Self>, target: Target) {
         let generation = {
             let mut relogin = lock(&self.relogin.0);
@@ -115,12 +113,8 @@ impl ChatLink {
             Target::External => (String::new(), None),
         };
         self.retire_active(&mut active).await;
-        // 清理这会儿隧道可能又换过代理（抖动时每 1–3 秒一次）：用眼下最新的那个登录，别拿一个已经拆掉的旧地址
-        // 去 restore。走的时候还有代理、这时没了就交给 follow_home 的 `None` 分支（它会断开会话、离线恢复）。
-        let proxy = match target {
-            Target::External => proxy,
-            Target::Home(_) if self.home.view().proxy.is_none() => return,
-            _ => self.home.view().proxy.clone().or(proxy),
+        let Some(proxy) = self.proxy_after_forget(&target, &server_id, proxy) else {
+            return;
         };
         *lock(&self.signing_proxy) = proxy.clone();
         tracing::info!(server = %server_id, proxy = proxy.is_some(), "Matrix sign-in starting");
@@ -204,6 +198,27 @@ impl ChatLink {
                 ChatFailure::TransportUnavailable,
                 l10n!(CATALOG, language(), "chat-sign-in-timeout"),
             )),
+        }
+    }
+
+    /// 清旧会话最多等两秒，隧道抖动时这期间代理可能又换了：用眼下的代理登录，不拿已经拆掉的旧地址去恢复。
+    /// 代理没了或换了服务器回 `None`，这次作罢：follow_home 看到这次变化会接着处理。
+    fn proxy_after_forget(
+        &self,
+        target: &Target,
+        server_id: &str,
+        proxy: Option<ProxySettings>,
+    ) -> Option<Option<ProxySettings>> {
+        match target {
+            Target::Home(_) => {
+                let home = self.home.view();
+                match home.proxy {
+                    Some(now) if home.server_id.as_deref() == Some(server_id) => Some(Some(now)),
+                    _ => None,
+                }
+            }
+            Target::HomeOffline => Some(self.home.view().proxy.or(proxy)),
+            Target::External => Some(proxy),
         }
     }
 
