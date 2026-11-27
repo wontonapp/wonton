@@ -47,6 +47,7 @@ mod matrix_login;
 pub mod media;
 mod message_choice;
 mod message_layout;
+pub mod music;
 mod onboarding;
 mod owner;
 mod pages;
