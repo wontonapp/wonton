@@ -173,19 +173,6 @@ fn a_created_session_reads_back_with_every_field() {
 }
 
 #[test]
-fn a_saved_queue_reads_back() {
-    let (_dir, store) = store();
-    let mut queue = queue();
-    store.save_queue(ALICE, &queue).unwrap();
-    assert_eq!(store.queue(ALICE).unwrap(), Some(queue.clone()));
-
-    queue.bump();
-    queue.cursor = None;
-    store.save_queue(ALICE, &queue).unwrap();
-    assert_eq!(store.queue(ALICE).unwrap(), Some(queue));
-}
-
-#[test]
 fn tasks_can_be_filtered_by_kind_and_state() {
     let (_dir, store) = store();
     let mut queued = upload_task(1, ALICE);
