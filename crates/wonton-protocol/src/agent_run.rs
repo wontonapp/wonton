@@ -231,6 +231,12 @@ mod tests {
                 sender_name: "Hermes".into(),
                 timestamp_ms: 1_793_000_000_000,
                 unread_anchor: false,
+                trace: vec![crate::AgentToolCall {
+                    id: "call_1".into(),
+                    kind: crate::AgentToolKind::Read,
+                    title: "read_file: notes.md".into(),
+                    status: crate::AgentToolStatus::Completed,
+                }],
             },
         };
         let value = serde_json::to_value(&item).unwrap();
@@ -243,6 +249,18 @@ mod tests {
         assert_eq!(value["content"]["choices"], serde_json::json!([]));
         assert_eq!(value["content"]["sender_name"], "Hermes");
         assert_eq!(value["content"]["timestamp_ms"], 1_793_000_000_000u64);
+        assert_eq!(value["content"]["trace"][0]["kind"], "read");
+        assert_eq!(value["content"]["trace"][0]["status"], "completed");
+        // 老核心没有这个字段：壳收到的是空清单。
+        let mut old = value.clone();
+        old["content"].as_object_mut().unwrap().remove("trace");
+        match serde_json::from_value::<crate::TimelineItem>(old)
+            .unwrap()
+            .content
+        {
+            crate::TimelineContent::AgentRun { trace, .. } => assert!(trace.is_empty()),
+            other => panic!("要是 AgentRun：{other:?}"),
+        }
     }
 
     /// 契约：状态行选项带“已选、在发、失败”，和消息上的选项用同一种发送状态类型；老核心少了这两个字段时

@@ -104,6 +104,7 @@ impl BotsView {
     ) -> TimelineContent {
         TimelineContent::AgentRun {
             run: status.run.clone(),
+            trace: Vec::new(),
             state: self.visible(sender, &status.state),
             step: status.step.clone(),
             steps: status.steps,

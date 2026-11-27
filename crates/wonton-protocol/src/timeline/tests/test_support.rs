@@ -81,6 +81,12 @@ pub(super) fn sample_items() -> Vec<TimelineItem> {
                 sender_name: "Hermes".into(),
                 timestamp_ms: 1_793_000_000_000,
                 unread_anchor: false,
+                trace: vec![crate::AgentToolCall {
+                    id: "call_1".into(),
+                    kind: crate::AgentToolKind::Execute,
+                    title: "terminal: ls".into(),
+                    status: crate::AgentToolStatus::InProgress,
+                }],
             },
         ),
         item("5", TimelineContent::ReadMarker),

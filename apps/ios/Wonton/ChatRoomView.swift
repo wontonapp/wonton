@@ -746,7 +746,7 @@ private extension TimelineItem {
 
     var isBlankAgentRun: Bool {
         guard
-            case let .agentRun(_, state, _, steps, _, result, _, _, _, choices, _, _, _) = content
+            case let .agentRun(_, state, _, steps, _, result, _, _, _, choices, _, _, _, _) = content
         else { return false }
         return choices.isEmpty && AgentRunRow.isBlank(state: state, steps: steps, result: result)
     }

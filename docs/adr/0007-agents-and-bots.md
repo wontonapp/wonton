@@ -23,7 +23,7 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
     Gemini CLI、OpenCode，以及 Hermes 自带的 ACP 适配器。一个聊天房间对应一个 ACP 会话；消息、工具和权限的转法见
     [ADR-0035](0035-acp-bridge.md)。
 - **默认 Agent**：Hermes，走 Bot Mode，一个 profile 对应一个 Bot；只收发消息，不做执行轨迹和工具
-  过程展示。
+  过程展示（工具过程的显示由 [ADR-0128](0128-bot-tool-trace.md) 提议修订）。
 - **家人**：每个家人有自己的私人 Bot（独立记忆，互不可见）；主人可以建共享 Bot，拉进家庭群（[ADR-0088](0088-family-accounts.md)，不等 M2）。
 - **Bot 之间通信**：同机走 Matrix 私聊或群聊；跨机做成独立插件（Matrix 联邦走 iroh，或 A2A 协议）。
 - **权限**：

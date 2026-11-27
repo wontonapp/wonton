@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::message::TimelineMessage;
-use crate::{AgentRunChoice, AgentRunEnd, AgentRunState};
+use crate::{AgentRunChoice, AgentRunEnd, AgentRunState, AgentToolCall};
 
 /// 条目的内容。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -52,6 +52,12 @@ pub enum TimelineContent {
         #[serde(default)]
         #[cfg_attr(feature = "uniffi", uniffi(default = false))]
         unread_anchor: bool,
+        /// 这一轮调过的工具（`app.wonton.trace`，ADR-0128），按调用的先后，最多是 Bot 留的最近几项；`steps` 比它长时
+        /// 前面的截掉了。壳默认收起。一轮已经结束或显示成不确定时，还标着进行中的项核心改成
+        /// [`AgentToolStatus::Uncertain`](crate::AgentToolStatus::Uncertain)。
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default = []))]
+        trace: Vec<AgentToolCall>,
     },
     /// 一行说明，比如成员加入、离开，房间改名。文字由核心给出。
     Notice {
