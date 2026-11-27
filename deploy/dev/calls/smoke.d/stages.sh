@@ -320,48 +320,77 @@ for tier, tier_text in enumerate(raw.split(";")):
             continue
         if item == "n0":
             n0_kw = True
+            expected.append({"n0": True, "tier": tier})
             continue
         if item.startswith("!"):
             continue
         parts = urlsplit(item)
         userinfo, _, hostport = parts.netloc.rpartition("@")
-        expected.append({"url": f"{parts.scheme}://{hostport}{parts.path or '/'}", "token": unquote(userinfo) or None,
+        expected.append({"url": f"{parts.scheme}://{hostport.rstrip('.')}{parts.path or '/'}", "token": unquote(userinfo) or None,
                          "quic_port": int(parts.fragment) if parts.fragment else None, "tier": tier})
+# RELAYS 里两者都写时以 no-n0 为准，n0 关键字不再要求出现。
+if no_n0:
+    expected = [e for e in expected if not e.get("n0")]
+default = not no_n0 and not n0_kw
 data = json.load(open(path))
 problem = []
 if not no_n0 and not n0_kw:
-    print("提示：RELAYS 里既没有 n0 也没有 no-n0，按核心默认（n0 兜底）判，建议写上")
+    print("提示：RELAYS 里既没有 n0 也没有 no-n0，按核心默认（自动追加 n0 兜底）判，建议写上")
 if not isinstance(data.get("endpoint_id"), str) or len(data["endpoint_id"]) != 64:
     problem.append("接口没给 64 位 endpoint_id")
 if not data.get("direct_addrs"):
     problem.append("接口没给 direct_addrs")
-ours, n0s = [], []
+rows = []
 for entry in data.get("relays") or []:
     parts = urlsplit(entry.get("url") or "")
     hostport = parts.netloc.rpartition("@")[2]
-    row = {"url": f"{parts.scheme}://{hostport}{parts.path or '/'}", "token": entry.get("token"),
-           "quic_port": entry.get("quic_port"), "tier": entry.get("tier")}
-    is_n0 = (parts.hostname or "").rstrip(".").endswith(".iroh.link")
-    print(f"表项：{row['url']} tier={row['tier']} 令牌={'有' if row['token'] else '无'}{'（n0）' if is_n0 else ''}")
-    if is_n0:
-        n0s.append(row)
+    rows.append({"url": f"{parts.scheme}://{hostport.rstrip('.')}{parts.path or '/'}", "token": entry.get("token"),
+                 "quic_port": entry.get("quic_port"), "tier": entry.get("tier"),
+                 "n0": (parts.hostname or "").rstrip(".").endswith(".iroh.link")})
+    row = rows[-1]
+    print(f"表项：{row['url']} tier={row['tier']} 令牌={'有' if row['token'] else '无'}{'（n0）' if row['n0'] else ''}")
+def same(want, got): # n0 关键字按档位配任意 n0 项；具体 URL 按地址/令牌/档位比，RELAYS 没写 #端口就不比端口
+    if want.get("n0"):
+        return got["n0"] and (got["tier"] or 0) == (want["tier"] or 0)
+    return (got["url"] == want["url"] and got["token"] == want["token"]
+            and (got["tier"] or 0) == (want["tier"] or 0)
+            and (want["quic_port"] is None or got["quic_port"] == want["quic_port"]))
+# 逐项配对（同档内顺序不敏感）：每条 RELAYS 必须找到一条相同表项，剩下的多余表项按模式判。
+pool, matched = list(rows), []
+for want in expected:
+    for i, got in enumerate(pool):
+        if same(want, got):
+            matched.append(pool.pop(i))
+            break
+extras = [got for got in pool if got["n0"]]
+for got in pool:
+    if not got["n0"]:
+        problem.append(f"多出来的表项 {got['url']}")
+pool = matched
+if default:
+    # 核心默认在末尾追加 n0（relay_settings 默认 n0=true）：没被 RELAYS 点名的 n0 算兜底，不算多；
+    # RELAYS 里显式写的 n0 URL/关键字仍按普通表项比。
+    top = max((e["tier"] or 0) for e in expected + matched) if expected + matched else 0
+    for got in extras:
+        if (got["tier"] or 0) < top:
+            problem.append(f"n0 兜底 {got['url']} 的档位 {got['tier']} 不在最后一档")
+else:
+    for got in extras:
+        problem.append(f"多出来的表项 {got['url']}")
+    if no_n0:
+        for got in rows:
+            if got["n0"]:
+                problem.append(f"{got['url']} 是 n0，no-n0 没生效")
+left = list(pool)
+for want in expected:
+    for i, got in enumerate(left):
+        if same(want, got):
+            left.pop(i)
+            break
     else:
-        ours.append(row)
-# 不写 no-n0 时核心默认给 n0 兜底（relay_settings 默认 n0=true），多出来的 n0 不算错；
-# 写了 no-n0 才要求一条 n0 都没有。自建项本身无论哪种都要求逐项相等。
-if no_n0 and n0s:
-    problem.append(f"有 {len(n0s)} 条 n0，no-n0 没生效")
-elif n0s:
-    top = max((e["tier"] or 0) for e in ours) if ours else 0
-    for e in n0s:
-        if (e["tier"] or 0) < top:
-            problem.append(f"n0 项 {e['url']} 的档位 {e['tier']} 不在最后一档")
-key = lambda e: (e["tier"] or 0, e["url"])
-for i, (want, got) in enumerate(zip(expected, sorted(ours, key=key))):
-    if want != got:
-        problem.append(f"第 {i + 1} 项和 RELAYS 不一致：{got} != {want}")
-if len(expected) != len(ours):
-    problem.append(f"自建表项 {len(ours)} 条，RELAYS 是 {len(expected)} 条")
+        problem.append(f"少了表项 {want.get('url') or 'n0'}")
+if len(expected) != len(pool):
+    problem.append(f"表项 {len(pool)} 条，RELAYS 是 {len(expected)} 条")
 for reason in problem:
     print(f"  - {reason}")
 sys.exit(1 if problem else 0)
@@ -372,8 +401,11 @@ restore_relay_env() { # 还原 .env；原来没有就删掉，别留下只给这
     local env_file
     env_file=$(relay_env_file)
     if [[ -f $EVIDENCE/stack-env.orig ]]; then
-        cp "$EVIDENCE/stack-env.orig" "$env_file" || log "还原 $env_file 失败"
-        rm -f "$EVIDENCE/stack-env.orig"
+        if cp "$EVIDENCE/stack-env.orig" "$env_file"; then
+            rm -f "$EVIDENCE/stack-env.orig"
+        else
+            log "还原 $env_file 失败，保留 $EVIDENCE/stack-env.orig"
+        fi
     elif [[ -f $EVIDENCE/stack-env.absent ]]; then
         rm -f "$env_file" "$EVIDENCE/stack-env.absent"
     fi
