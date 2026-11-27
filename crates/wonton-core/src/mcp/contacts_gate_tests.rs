@@ -248,7 +248,6 @@ async fn a_bot_with_a_remote_contact_only_chats_until_the_contact_is_removed() {
         "wonton__list_shares",
         "wonton__view_file",
         "wonton__user_locale",
-        "wonton__pin_page",
     ] {
         let result = s.call_as(&me, tool, json!({})).await;
         assert!(refused(&result), "{tool}: {result:?}");
@@ -256,7 +255,7 @@ async fn a_bot_with_a_remote_contact_only_chats_until_the_contact_is_removed() {
     let guide = s.call_as(&me, "wonton__plugin_guide", json!({})).await;
     assert!(!failed(&guide), "{guide:?}");
     let decisions: Vec<_> = s.audit().iter().map(|l| l["decision"].clone()).collect();
-    assert_eq!(decisions.iter().filter(|d| *d == "denied").count(), 8);
+    assert_eq!(decisions.iter().filter(|d| *d == "denied").count(), 7);
 
     // 归属人删掉远端联系人：工具回来，插件照常调得通。
     a.contacts.remove(&alice, "alice", BOB).await.unwrap();

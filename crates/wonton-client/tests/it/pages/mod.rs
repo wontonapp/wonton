@@ -14,9 +14,8 @@ mod support;
 use std::time::{Duration, Instant};
 
 use wonton_client::{
-    Action, CoreError, HomeStatus, InstalledPlugin, MyAppRef, OpenPage, PagesViewModel, PanelScope,
-    PlacedTab, PluginHealth, PluginImage, PluginState, TabIcon, TabLayout, TabLoadFailure, TabRef,
-    TabState,
+    Action, CoreError, HomeStatus, InstalledPlugin, MyAppRef, OpenPage, PagesViewModel, PlacedTab,
+    PluginHealth, PluginImage, PluginState, TabIcon, TabLayout, TabLoadFailure, TabRef, TabState,
 };
 
 use crate::plugins::rig::{FakeHome, Rig, installed};

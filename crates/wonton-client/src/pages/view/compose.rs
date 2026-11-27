@@ -6,9 +6,8 @@ use wonton_protocol::{
 };
 
 use super::{
-    PagesState, StoredItem, StoredPage, bot, build_url_page, load_failed_details,
-    metadata_for_plugin, page_from_metadata, page_state, page_url, path_title, plugin_title_of,
-    stored_or_placeholder,
+    PagesState, StoredItem, StoredPage, bot, build_url_page, metadata_for_plugin,
+    page_from_metadata, page_state, page_url, path_title, plugin_title_of, stored_or_placeholder,
 };
 
 /// 还没加进我的应用的插件页，按已装插件的顺序。没有网页的插件没有页面可加。
@@ -16,7 +15,7 @@ pub(crate) fn my_app_candidates(
     state: &PagesState,
     plugins: &PluginsViewModel,
 ) -> Vec<TabCandidate> {
-    plugin_pages(plugins, true)
+    plugin_pages(plugins)
         .filter(|candidate| match &candidate.tab {
             // 插件行盖住这个插件的全部页面；只加了别的页面行时，这一页还能加。
             TabRef::Plugin { plugin_id, page: Some(_) } => {
@@ -45,15 +44,12 @@ pub(crate) fn my_app_candidates(
         .collect()
 }
 
-/// 每个能打开的插件页：声明了 `tabs` 的按页，没声明的是网页入口。没有网页的插件没有页面。
-/// `with_link`：外部网页插件（`runtime: link`）没有页面可嵌进面板，只进"我的应用"（ADR-0080）。
-pub(crate) fn plugin_pages(
-    plugins: &PluginsViewModel,
-    with_link: bool,
-) -> impl Iterator<Item = TabCandidate> + '_ {
+/// 每个能打开的插件页：声明了 `tabs` 的按页，没声明的是网页入口；外部网页插件（`runtime: link`，ADR-0080）
+/// 是它的入口。既没有网页也没有外部网页的插件没有页面。
+pub(crate) fn plugin_pages(plugins: &PluginsViewModel) -> impl Iterator<Item = TabCandidate> + '_ {
     let installed = plugins.installed.iter().flat_map(|list| &list.plugins);
     installed
-        .filter(move |plugin| plugin.web_url.is_some() || (with_link && plugin.link_url.is_some()))
+        .filter(|plugin| plugin.web_url.is_some() || plugin.link_url.is_some())
         .flat_map(|plugin| {
             let candidate = |page: Option<&wonton_protocol::PluginTab>| TabCandidate {
                 tab: TabRef::Plugin {
@@ -87,7 +83,6 @@ pub(crate) fn compose_page(
     plugin: Option<&InstalledPlugin>,
     page_id: Option<&str>,
     plugins: &PluginsViewModel,
-    pin: Option<&wonton_protocol::BotPanelPin>,
 ) -> TabPage {
     match &stored.tab {
         TabRef::Bot { .. } => return bot::build_page(state, placed, stored, plugins),
@@ -108,35 +103,24 @@ pub(crate) fn compose_page(
             });
             return page_from_metadata(state, placed, metadata, url, state_value, plugins);
         }
-        // MCP Apps 界面：宿主页由核心给，界面放在它的 iframe 里。
+        // MCP Apps 界面：核心的宿主按 Bot 钉页的 ID 取页（钉页已去掉），收件箱（ADR-0119）接手宿主之前没有能打开的地址。
         TabRef::UiResource { plugin_id, .. } => {
-            let url = pin
-                .zip(state.core_url.as_ref())
-                .and_then(|(pin, base)| {
-                    base.join(&wonton_protocol::mcp_app_host_path(&pin.id)).ok()
-                })
-                .map(|url| url.to_string());
-            let state_value = if url.is_some() {
-                match state.failures.get(placed) {
-                    Some((failure, status)) => TabState::LoadFailed {
-                        failure: *failure,
-                        status: *status,
-                        details: load_failed_details(*failure, *status),
-                    },
-                    None => TabState::Ready,
-                }
-            } else {
-                TabState::PageRemoved
-            };
             let metadata = StoredPage {
                 plugin_title: plugin_title_of(plugin_id, plugins),
-                title: pin.map(|pin| pin.title.clone()).unwrap_or_default(),
+                title: String::new(),
                 icon: TabIcon::Plugin {
                     icon: plugin.and_then(|plugin| plugin.icon.clone()),
                 },
                 layout: TabLayout::EdgeToEdge,
             };
-            return page_from_metadata(state, placed, metadata, url, state_value, plugins);
+            return page_from_metadata(
+                state,
+                placed,
+                metadata,
+                None,
+                TabState::PageRemoved,
+                plugins,
+            );
         }
         TabRef::Url { url } => return build_url_page(state, placed, stored, url, plugins),
         _ => {}

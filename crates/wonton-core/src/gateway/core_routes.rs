@@ -343,22 +343,6 @@ fn panel_routes() -> Router<Arc<Gateway>> {
             get(super::bot_activity::get),
         )
         .route(
-            wonton_protocol::BOT_PANEL_PINS_PATH,
-            get(super::panel_pins::list),
-        )
-        .route(
-            &wonton_protocol::bot_panel_pin_path("{id}"),
-            delete(super::panel_pins::remove),
-        )
-        .route(
-            &wonton_protocol::bot_panel_pin_seen_path("{id}"),
-            post(super::panel_pins::seen),
-        )
-        .route(
-            &wonton_protocol::bot_panel_consent_path("{plugin_id}", "{bot}"),
-            put(super::panel_pins::consent),
-        )
-        .route(
             &wonton_protocol::mcp_app_host_path("{pin}"),
             get(super::mcp_apps::host),
         )

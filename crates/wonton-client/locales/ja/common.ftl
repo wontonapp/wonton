@@ -159,3 +159,9 @@ app-lock-corrupt = App ロックの設定ファイル{ $path }が壊れていま
 pages-storage-problem = マイアプリを保存できませんでした。次回起動時に前の状態に戻るかもしれません：{ $error }
 # Owner-only generated plugin keys; input and collected secrets are never returned.
 plugins-owner-secret-not-listed = 開いている一覧にこのキーはありません：{ $name }
+# 把正在看的页面加进我的应用、同步我的应用时的报错。
+page-invalid-url = そのアドレスは読み取れません。
+page-not-https = 追加できるのは https:// のウェブページだけです。
+page-path-outside = そのページはアプリ自身のサイトの外です。
+my-apps-sync-failed-read = サーバーからマイアプリを読み取れませんでした。
+my-apps-sync-unreadable = サーバーのマイアプリをこの端末では読めないため、端末のものを使います。

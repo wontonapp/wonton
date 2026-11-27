@@ -435,3 +435,10 @@ private struct SidebarRow<Icon: View>: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
+
+extension WontonGesture {
+    static func commits(distance: CGFloat, velocity: CGFloat, threshold: CGFloat) -> Bool {
+        distance >= threshold || (distance >= WontonTheme.gesture.flickDistance
+            && velocity >= WontonTheme.gesture.flickVelocity)
+    }
+}

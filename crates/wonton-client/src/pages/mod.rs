@@ -14,10 +14,9 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
-    BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel, LayoutSettings,
-    MAX_PANEL_PAGES, MyAppRef, PageAction, PagesFailure, PagesProblem, PagesViewModel, PanelEntry,
-    PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel, TabIcon,
-    TabLoadFailure, TabRef,
+    BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel, LayoutSettings, MyAppRef,
+    PageAction, PagesFailure, PagesProblem, PagesViewModel, PlacedTab, PluginState,
+    PluginsViewModel, TabIcon, TabLoadFailure, TabRef,
 };
 
 use crate::home::HomeLink;
@@ -41,16 +40,13 @@ use state::*;
 
 mod view;
 use view::*;
-mod panel_view;
-use panel_view::*;
 mod reload;
 use reload::*;
 mod actions;
 mod bot;
 mod content;
-mod panel;
-mod pins;
-mod room_panels;
+mod pin;
+mod room_views;
 mod sync;
 pub(crate) mod widget;
 pub use content::ContentPageSubscription;
@@ -64,61 +60,36 @@ struct PreviousPlugin {
     revision: String,
 }
 
-#[derive(Clone, PartialEq, Eq)]
-enum PinAction {
-    Remove(String),
-    Consent {
-        plugin_id: String,
-        bot: String,
-        allowed: bool,
-    },
-}
-
 #[derive(Clone)]
 struct PagesState {
     config: LayoutFile,
     problem: Option<PagesProblem>,
     read_problem: Option<PagesProblem>,
-    action_problem: Option<(PinAction, PagesProblem)>,
     /// 打开着的页面，从底到顶；空就是根页面。
     stack: Vec<StoredItem>,
     content: HashMap<TabRef, content::ContentPage>,
     /// 配上了服务器：根页面是聊天；没配对时根是应用网格页（配对页在它上面）。
     paired: bool,
     shows_apps: bool,
-    /// 加载失败和重载计数都按页面实例记：同一页面在栈里和面板里是两份（ADR-0052）。
+    /// 加载失败和重载计数都按页面实例记：同一页面在栈里和内容窗口里是两份。
     failures: HashMap<PlacedTab, (TabLoadFailure, Option<u16>)>,
     reloads: HashMap<PlacedTab, u64>,
     uninstalled: Vec<String>,
     previous_plugins: Option<HashMap<String, PreviousPlugin>>,
     connected: bool,
-    /// 面板页要求关注（红点），翻到就清。按实例记。
-    attention: HashSet<PlacedTab>,
-    /// 主面板上次看的那一页（本机记住，不同步）。
-    panel_selected: Option<TabRef>,
-    /// 每个房间独立保留面板、选中页与入口状态。
-    rooms: HashMap<String, room_panels::RoomPanelState>,
-    /// Bot 往主面板钉的页（服务器上的，ADR-0052 的 bot 钉页）。不算进用户的面板条目。
-    bot_pins: Vec<BotPanelPin>,
-    /// 每个 Bot 的钉页同意（设置里显示和收回）。
-    bot_pin_consents: Vec<wonton_protocol::BotPinOwner>,
-    /// 核心地址：MCP Apps 的宿主页按它拼。
-    core_url: Option<Url>,
-    /// 拉 Bot 钉页失败的原因（和配置文件的 problem 分开）。
-    pins_problem: Option<PagesProblem>,
+    /// 打开着的房间的视图（widget 入口），按房间记。
+    rooms: HashMap<String, room_views::RoomViewState>,
     /// 还没答的摄像头/麦克风询问（一次只有一张，页面关掉就清）。
     media_prompt: Option<PendingMediaPrompt>,
     /// 打开的 widget 页（ADR-0096），同一时间只有一个。
     widget: Option<widget::WidgetPage>,
-    /// Bot 和它们的网页就绪状态（chat 的视图镜像过来的，ADR-0052）。
+    /// Bot 和它们的网页就绪状态（chat 的视图镜像过来的）。
     bots: Vec<BotView>,
 }
 
 pub(crate) struct PagesLink {
     runtime: Handle,
     home: watch::Receiver<HomeViewModel>,
-    /// 连家里的服务器要的地址和代理（Bot 钉页 API 用）。
-    home_link: Arc<HomeLink>,
     plugins: Arc<PluginsLink>,
     plugins_view: watch::Receiver<PluginsViewModel>,
     /// 聊天链的视图：Bot 列表和它们的网页就绪状态从这里镜像。
@@ -143,12 +114,10 @@ pub(crate) struct PagesLink {
     widgets: widget::Sessions,
 }
 
-/// 打开的房间的面板，合成给壳的：时间线订阅的每一批都带上（ADR-0052）。
+/// 打开的房间的视图，合成给壳的：时间线订阅的每一批都带上。
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct RoomPanelView {
+pub(crate) struct RoomView {
     pub(crate) room_id: OwnedRoomId,
-    pub(crate) panel: Vec<PanelItem>,
-    pub(crate) selected: Option<TabRef>,
     /// 房间顶栏的 widget 入口（ADR-0096）。
     pub(crate) widgets: Vec<wonton_protocol::RoomWidget>,
 }
@@ -189,7 +158,6 @@ impl PagesLink {
             config,
             problem,
             read_problem,
-            action_problem: None,
             stack: Vec::new(),
             content: HashMap::new(),
             paired: home_view.server_id.is_some(),
@@ -199,13 +167,7 @@ impl PagesLink {
             uninstalled: Vec::new(),
             previous_plugins: None,
             connected: matches!(home_view.status, HomeStatus::Connected),
-            attention: HashSet::new(),
-            panel_selected: None,
             rooms: HashMap::new(),
-            bot_pins: Vec::new(),
-            bot_pin_consents: Vec::new(),
-            core_url: home.core_url(),
-            pins_problem: None,
             media_prompt: None,
             widget: None,
             bots: Vec::new(),
@@ -214,7 +176,6 @@ impl PagesLink {
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home: home.subscribe(),
-            home_link: home.clone(),
             plugins_view: plugins.subscribe(),
             plugins,
             chat,
@@ -254,11 +215,6 @@ impl PagesLink {
             PageAction::RemoveMyApp { app } => self.remove_my_app(&app),
             PageAction::MoveMyApp { app, index } => self.move_my_app(&app, index),
             PageAction::SetAutoAddApps { enabled } => self.set_auto_add(enabled),
-            PageAction::SetBotPinConsent {
-                plugin_id,
-                bot,
-                allowed,
-            } => self.set_bot_consent(plugin_id, bot, allowed),
             PageAction::RetryMyAppSync => {
                 let weak = lock(&self.weak).clone();
                 if let Some(link) = weak.upgrade() {
@@ -269,60 +225,9 @@ impl PagesLink {
             PageAction::ReloadTab { page } => self.reload(page),
             PageAction::TabLoadFailed { page, status } => self.load_failed(page, status),
             PageAction::TabLoadSucceeded { page } => self.load_succeeded(page),
-            PageAction::AddPanelPage { scope, tab } => self.add_panel_page(scope, tab, None),
-            PageAction::RemovePanelPage { scope, tab } => self.remove_panel_page(scope, tab),
-            PageAction::MovePanelPage { scope, tab, index } => {
-                self.move_panel_page(scope, tab, index)
-            }
-            PageAction::SelectPanelPage { scope, tab } => self.select_panel_page(scope, tab),
-            PageAction::PinCurrentPage { url, title, to } => self.pin_current_page(&url, title, to),
+            PageAction::PinCurrentPage { url, title } => self.pin_current_page(&url, title),
             PageAction::DismissUninstalledTabs => self.dismiss_uninstalled(),
         }
-    }
-
-    /// 收回或给回一个 Bot 往主面板上钉页的同意：写服务器，成了才更新本机。
-    fn set_bot_consent(
-        &self,
-        plugin_id: String,
-        bot: String,
-        allowed: bool,
-    ) -> Result<(), CoreError> {
-        let weak = lock(&self.weak).clone();
-        self.runtime.spawn(async move {
-            let Some(link) = weak.upgrade() else { return };
-            match link.put_bot_consent(&plugin_id, &bot, allowed).await {
-                Ok(()) => {
-                    let mut state = lock(&link.state);
-                    if matches!(
-                        state.action_problem.as_ref().map(|(action, _)| action),
-                        Some(PinAction::Consent {
-                            plugin_id: current_plugin,
-                            bot: current_bot,
-                            ..
-                        }) if current_plugin == &plugin_id && current_bot == &bot
-                    ) {
-                        state.action_problem = None;
-                    }
-                    drop(state);
-                    link.recompute();
-                }
-                Err(problem) => {
-                    link.runtime_change(|state, _| {
-                        state.action_problem = Some((
-                            PinAction::Consent {
-                                plugin_id,
-                                bot,
-                                allowed,
-                            },
-                            problem,
-                        ));
-                        Ok(())
-                    })
-                    .ok();
-                }
-            }
-        });
-        Ok(())
     }
 
     fn inputs(&self) -> (PluginsViewModel, HomeViewModel, Vec<BotView>) {
@@ -405,7 +310,6 @@ impl PagesLink {
                 self.push_layout_if_ready(&state, own);
             }
         }
-        self.remove_uninstalled_room_pages(&mut state);
         // 断线时账号数据读不了：配置用本机缓存照常显示（不弹窗、不打断），只标“可能不是最新的”，
         // 重连对账成功后清（盲测 bug #8）。只在有缓存内容时标，空列表不提示。
         // 先判断再写，防止 send_replace 通知又触发 recompute 的自激循环。
@@ -416,7 +320,7 @@ impl PagesLink {
             self.sync_problem.send_replace(Some(l10n!(
                 CATALOG,
                 language(),
-                "panel-sync-failed-read"
+                "my-apps-sync-failed-read"
             )));
         }
         clear_gone_prompt(&mut state);

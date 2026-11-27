@@ -45,7 +45,7 @@ pub(crate) fn build_url_page(
         }
     } else {
         TabState::Failed {
-            reason: l10n!(CATALOG, language(), "panel-pin-not-https"),
+            reason: l10n!(CATALOG, language(), "page-not-https"),
         }
     };
     page_from_metadata(
@@ -64,7 +64,7 @@ pub(crate) fn stored_url_item(
     title: Option<String>,
 ) -> Result<StoredItem, CoreError> {
     if !is_https_url(url) {
-        return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
+        return Err(invalid(&l10n!(CATALOG, language(), "page-not-https")));
     }
     let host = url
         .parse::<Url>()

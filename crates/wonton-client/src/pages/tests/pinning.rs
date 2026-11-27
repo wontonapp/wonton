@@ -10,22 +10,15 @@ async fn pinning_the_open_page_classifies_plugins_and_public_urls() {
         .dispatch(PageAction::PinCurrentPage {
             url: "http://app.shared.wonton.localhost/".to_owned(),
             title: None,
-            to: PinTarget::MyApps,
         })
         .unwrap();
     assert_eq!(rig.my_app_titles(), vec!["old-content".to_owned()]);
-    assert_eq!(
-        panel_tabs(&rig),
-        Vec::<TabRef>::new(),
-        "面板那一组没有跟着动"
-    );
 
     // 公网网页：只收 https。
     rig.tabs
         .dispatch(PageAction::PinCurrentPage {
             url: "https://example.com/report?day=1".to_owned(),
             title: Some("日报".to_owned()),
-            to: PinTarget::MyApps,
         })
         .unwrap();
     let titles = rig.my_app_titles();
@@ -45,7 +38,6 @@ async fn pinning_the_open_page_classifies_plugins_and_public_urls() {
         .dispatch(PageAction::PinCurrentPage {
             url: "http://example.com/".to_owned(),
             title: None,
-            to: PinTarget::MyApps,
         })
         .unwrap_err();
     assert!(matches!(http, CoreError::InvalidInput { .. }));

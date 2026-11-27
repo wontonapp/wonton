@@ -41,7 +41,7 @@
 每 Bot 页面身份使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 URL，不降成
 `TabRef::Plugin` 或 `TabRef::Url`。`path: None` 打开对应 Bot 的 `BotView.web.Ready.page.url`；
 `Some(path)` 只接受该 origin 内的路径，可含查询和片段。打开沿用 `PageAction::OpenPage`，加入沿用
-`AddMyApp`、`PinCurrentPage` 和 `Panel`，`PlacedTab` 保留同一 Bot 身份和路径。
+`AddMyApp` 和 `PinCurrentPage`，`PlacedTab` 保留同一 Bot 身份和路径。
 
 实现时把聊天已有的 `BotView` watch 通道接入 `PagesLink`，Bot 网页状态变化时重算 `PagesViewModel` 的
 `TabPage`；URL 只能来自精确匹配该 `BotRef` 的 `BotView.web.Ready.page.url`，不能从 `plugin.web_url`
@@ -54,7 +54,7 @@ Bot 页沿用上述 WebView 容器、文档／消息／上下文接口、`--wont
 ## 验证
 
 `cargo test -p wonton-client --locked -- bridge_rejection:: tabs_bridge::` 覆盖 Rust 行为。
-来源、不支持的方法拒绝与面板红点在不启动后台同步的页面夹具里验证；全客户端的 HTTP 请求总数包含登录和刷新，不能用来判断桥消息有没有副作用。
+来源和不支持的方法拒绝在不启动后台同步的页面夹具里验证；全客户端的 HTTP 请求总数包含登录和刷新，不能用来判断桥消息有没有副作用。
 
 `cargo test -p wonton-client --locked --test it tabs_bridge::sdk::official_sdk_roundtrip -- --ignored --exact`
 用固定摘要的官方 Node 22 镜像跑 SDK 双平台通道。widget 页对真实 Tuwunel 的行为测试是 `cargo test -p wonton-client --test it chat::widget -- --include-ignored`，页面用固定版本的官方 matrix-widget-api。SDK 来源、许可证和驱动协议见
