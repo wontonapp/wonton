@@ -120,7 +120,7 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 
 ```
 Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPower
-                  ↘ Done | Partial | Failed{failure} | Cancelled
+   ↘ Paused / Waiting…  ↘ Done | Partial | Failed{failure} | Cancelled
 ```
 
 - `Paused{reason}` 是用户或 Agent 主动暂停，带原因（`user`、`agent`、`low_battery`…）。

@@ -102,7 +102,7 @@ impl TaskState {
 impl TryFrom<(TaskState, TaskState)> for TaskState { type Error = IllegalTransition; }
 
 // 合法转移（ADR 第 3 节状态图）：
-// Queued → Preparing | Cancelled（排队中也能直接取消）
+// Queued → Preparing | Paused | WaitingNetwork | WaitingPower | Cancelled（排队中也能暂停、等条件、直接取消）
 // Preparing → Running | Done | Partial | Failed | Cancelled
 // Running → Paused | WaitingNetwork | WaitingPower | Done | Partial | Failed | Cancelled
 // Paused | WaitingNetwork | WaitingPower → Queued | Running | Paused（换原因） | WaitingNetwork | WaitingPower | Failed | Cancelled

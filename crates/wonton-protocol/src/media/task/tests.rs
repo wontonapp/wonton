@@ -40,6 +40,9 @@ fn legal_transitions_pass() {
     let legal = [
         (queued(), preparing()),
         (queued(), TaskState::Cancelled),
+        (queued(), paused()),
+        (queued(), waiting_network()),
+        (queued(), waiting_power()),
         (preparing(), running()),
         (
             preparing(),
