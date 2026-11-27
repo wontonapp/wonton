@@ -12,8 +12,8 @@ use axum::routing::{get, post};
 use tokio::net::TcpListener;
 use url::Url;
 use wonton_protocol::media::{
-    MediaFailure, MediaFailureCode, MediaItemRef, MediaKind, MediaTask, Progress, ProgressUnit,
-    TaskId, TaskKind, TaskState, TaskTarget, new_task_id,
+    MediaFailure, MediaFailureCode, MediaItemRef, MediaKind, MediaTask, PauseReason, Progress,
+    ProgressUnit, TaskId, TaskKind, TaskState, TaskTarget, new_task_id,
 };
 
 use super::{Downloads, OfflineState, Record};
@@ -422,4 +422,71 @@ fn files_under(dir: &std::path::Path) -> usize {
             }
         })
         .sum()
+}
+
+#[tokio::test]
+async fn a_retry_that_keeps_the_task_id_keeps_the_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let downloads = Downloads::open(dir.path());
+    let (api, _core) = fake_core(Mode::Honest { etag: "\"v1\"" }).await;
+    let failed = task(
+        TaskState::Failed(MediaFailure {
+            code: MediaFailureCode::UpstreamError,
+            message: "boom".into(),
+            retry_after_secs: None,
+        }),
+        DEVICE,
+    );
+    half_done(&downloads, failed.id, 4, Some("\"v1\""));
+    downloads.reconcile(
+        &tokio::runtime::Handle::current(),
+        &api,
+        DEVICE,
+        std::slice::from_ref(&failed),
+    );
+    assert_eq!(downloads.failed_task("ep/1"), Some(failed.id));
+
+    downloads.adopt(failed.id, failed.id).unwrap();
+    assert_eq!(
+        std::fs::read(downloads.part(failed.id)).unwrap(),
+        &CONTENT[..4]
+    );
+    assert_eq!(downloads.records().len(), 1);
+    assert_eq!(downloads.failed_task("ep/1"), None);
+}
+
+#[tokio::test]
+async fn a_paused_download_shows_as_paused_and_waits_to_be_resumed() {
+    let dir = tempfile::tempdir().unwrap();
+    let downloads = Downloads::open(dir.path());
+    let (api, core) = fake_core(Mode::Honest { etag: "\"v1\"" }).await;
+    let paused = task(TaskState::Paused(PauseReason::User), DEVICE);
+    half_done(&downloads, paused.id, 4, Some("\"v1\""));
+    downloads.reconcile(
+        &tokio::runtime::Handle::current(),
+        &api,
+        DEVICE,
+        std::slice::from_ref(&paused),
+    );
+    assert_eq!(
+        downloads.offline("ep/1"),
+        Some(OfflineState::Paused {
+            done: 4,
+            total: Some(10)
+        })
+    );
+    assert_eq!(downloads.paused_task("ep/1"), Some(paused.id));
+    assert!(core.seen.lock().unwrap().ranges.is_empty());
+}
+
+#[test]
+fn a_second_retry_of_the_same_item_waits_for_the_first_to_finish() {
+    let dir = tempfile::tempdir().unwrap();
+    let downloads = Downloads::open(dir.path());
+    let first = downloads.begin_retry("ep/1");
+    assert!(first.is_some());
+    assert!(downloads.begin_retry("ep/1").is_none());
+    assert!(downloads.begin_retry("ep/2").is_some());
+    drop(first);
+    assert!(downloads.begin_retry("ep/1").is_some());
 }

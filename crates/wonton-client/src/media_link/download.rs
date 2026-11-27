@@ -9,7 +9,7 @@
 //! 服务器对齐时接着下）。每个任务一个 `<任务>.json` 记条目、ETag、总长和写完的文件名，离线播放按条目 id
 //! 从这里找文件。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -73,6 +73,8 @@ pub(crate) struct Downloads {
     dir: PathBuf,
     running: Mutex<HashMap<TaskId, AbortHandle>>,
     known: Mutex<Known>,
+    /// 在重试的条目：重试还没回来时再点一次，不再开一个任务。
+    retrying: Mutex<HashSet<String>>,
 }
 
 /// 该由这台设备接着下的状态。暂停、等网络、等电源由核心改回 `Queued` 后再下。
@@ -89,6 +91,7 @@ impl Downloads {
             dir: scope_dir.join(DIR),
             running: Mutex::new(HashMap::new()),
             known: Mutex::new(Known::default()),
+            retrying: Mutex::new(HashSet::new()),
         })
     }
 
@@ -270,9 +273,14 @@ impl Downloads {
         let partial = response.status() == StatusCode::PARTIAL_CONTENT;
         // 没要 Range 时源也可以回 206，只要从 0 起就是整份。
         let expected = resume.as_ref().map_or(0, |(have, _)| *have);
+        // 续传的 206 只在 ETag 和发出去的一样时收：服务端不理 `If-Range` 时，源换了也照 Range 回 206，
+        // 起点和总长都对得上，只有 ETag 看得出。没带或不同都当源变了，从 0 来（最坏多下一次）。
+        let same_source = resume
+            .as_ref()
+            .is_none_or(|(_, etag)| header(&response, ETAG).as_deref() == Some(etag.as_str()));
         let start = match (partial, range) {
             (false, _) => 0,
-            (true, Some((start, _))) if start == expected => start,
+            (true, Some((start, _))) if start == expected && same_source => start,
             (true, _) => return self.restart(&part, &mut record),
         };
         if start == 0 {
@@ -486,3 +494,7 @@ mod tests;
 #[cfg(test)]
 #[path = "download_edge_tests.rs"]
 mod edge_tests;
+
+#[cfg(test)]
+#[path = "download_etag_tests.rs"]
+mod etag_tests;
