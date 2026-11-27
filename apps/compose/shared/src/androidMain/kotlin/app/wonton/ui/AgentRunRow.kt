@@ -174,7 +174,12 @@ private fun StatusLine(run: TimelineContent.AgentRun, onOpenCard: (String) -> Un
         }
         if (cardId != null) {
             // 装饰：整行可点，箭头只表示能过去。
-            Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = colors.textPrimary.toColor())
+            Icon(
+                WontonIcon.Forward,
+                null,
+                Modifier.size(WontonTheme.size.iconSmall),
+                tint = colors.textPrimary.toColor(),
+            )
         }
     }
 }
