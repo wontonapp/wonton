@@ -8,6 +8,8 @@
 //!
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other`。
 
+mod paths;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -15,43 +17,11 @@ use crate::{
     RolesViewModel,
 };
 
-/// `GET`：[`Me`]。`PUT`：请求体 [`OwnerProfileUpdate`](crate::OwnerProfileUpdate)，改自己的资料，规则同 ADR-0030，返回 [`Me`]。
-pub const ME_PATH: &str = "/_wonton/api/me";
-
-/// `GET`：[`OwnPrivateBotResponse`]，只读当前人的身份来源。
-pub const MY_PRIVATE_BOT_PATH: &str = "/_wonton/api/me/private-bot";
-
-/// `GET`：[`MemberList`]。`POST`：请求体 [`MemberInvite`]，返回记成“已邀请”的 [`Member`]。要管理成员权限。
-pub const MEMBERS_PATH: &str = "/_wonton/api/members";
-
-/// `POST`：出一个归这个家人的配对码（[`MemberPairingCode`]），之前出的作废。`DELETE`：作废，不出新的。
-pub fn member_pairing_code_path(username: &str) -> String {
-    format!("{MEMBERS_PATH}/{username}/pairing-code")
-}
-
-/// `POST`：请求体 [`MemberRemoval`]，返回记成“已移除”的 [`Member`]。
-pub fn member_removal_path(username: &str) -> String {
-    format!("{MEMBERS_PATH}/{username}/remove")
-}
-
-/// 配对码的有效期。比主人加设备的码（10 分钟）长：要经分享发给不在身边的家人。
-pub const MEMBER_PAIRING_CODE_TTL_SECS: u64 = 24 * 60 * 60;
-
-/// `GET`：[`SharedBotsView`]，按当前请求人列出装着的 Bot 和能不能聊；不受 `open_apps` 过滤，不能聊的也带原因。
-/// `POST`：请求体 [`NewSharedBot`]，返回 [`BotRef`]。建共享 Bot 只有主人能用。
-pub const SHARED_BOTS_PATH: &str = "/_wonton/api/bots";
-
-/// 家庭群的状态事件类型，状态键为空。核心建群时写，App 凭它给这个房间加家庭的标记。
-pub const FAMILY_ROOM_EVENT: &str = "app.wonton.family";
-
-/// `POST`：按成员和角色记录重同步家庭群，成功回 204；失败回 503，记录已保存的操作不回滚。要管理成员权限。
-pub const FAMILY_ROOM_SYNC_PATH: &str = "/_wonton/api/members/family-room/sync";
-
-/// `POST`：按已保存的成员记录补齐家庭群、私人 Bot、私人空间和移除收尾；成功 204，失败 503。要管理成员权限。
-pub const MEMBER_SYNC_PATH: &str = "/_wonton/api/members/sync";
-
-/// 总线转给插件的 `tools/call` 在 `_meta` 里带这一项：私人 Bot 调用时是归属人的用户名，共享 Bot 不带。
-pub const TOOL_CALL_USER_META: &str = "app.wonton/user";
+pub use paths::{
+    FAMILY_ROOM_EVENT, FAMILY_ROOM_SYNC_PATH, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS,
+    MEMBER_SYNC_PATH, MEMBERS_PATH, MY_PRIVATE_BOT_PATH, SHARED_BOTS_PATH, TOOL_CALL_USER_META,
+    member_pairing_code_path, member_removal_path,
+};
 
 /// 网关拒绝请求时在此头写类别；Matrix 规则拒绝为 403，分享身份失败为 401，其他分享拒绝为 403。
 pub const GATEWAY_REFUSAL_HEADER: &str = "x-wonton-error";
