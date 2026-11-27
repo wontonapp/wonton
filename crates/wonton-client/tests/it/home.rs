@@ -1,6 +1,7 @@
 //! 和家里服务器连接的行为测试：只经由导出给原生壳的接口（`ClientCore`、`Action`、订阅）驱动。
 //! 隧道服务端、插件上游都跑在本机，只走回环地址，不依赖外网。
 
+mod identity;
 mod migration;
 mod relay_token;
 pub(crate) mod support;
@@ -23,37 +24,6 @@ use wonton_client::{
     Action, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure, HomeStatus, HomeViewModel,
     PushMethod,
 };
-
-#[tokio::test]
-async fn a_device_keeps_its_identity_and_waits_for_connection_info() {
-    let dir = tempfile::tempdir().unwrap();
-    let first = Phone::open(dir.path()).home();
-    assert_eq!(first.status, HomeStatus::NotConfigured);
-    assert!(first.proxy.is_none());
-    assert!(EndpointId::from_str(&first.device_id).is_ok(), "{first:?}");
-
-    let again = Phone::open(dir.path()).home();
-    assert_eq!(again.device_id, first.device_id, "设备身份要跨重启保持");
-}
-
-#[tokio::test]
-async fn invalid_connection_info_is_rejected_and_changes_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let before = phone.home();
-    for ticket in ["", "{}", "not json"] {
-        let result = phone.dispatch(Action::Home {
-            action: wonton_protocol::HomeAction::ConnectHome {
-                ticket: ticket.into(),
-            },
-        });
-        assert!(
-            matches!(result, Err(CoreError::InvalidInput { .. })),
-            "{ticket}"
-        );
-    }
-    assert_eq!(phone.home(), before);
-}
 
 #[tokio::test]
 async fn a_paired_device_connects_and_only_this_app_can_use_its_proxy() {
