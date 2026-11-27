@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accessibility label of the menu on a downloaded item. -->
+    <string name="video_downloaded">Downloaded</string>
+    <!-- Shown when a library or the video page has nothing in it. -->
+    <string name="video_empty">Nothing here yet</string>
+    <!-- In the facts line of a season: how many episodes. Argument: the count. -->
+    <plurals name="video_episodes">
+        <item quantity="one">%d episode</item>
+        <item quantity="other">%d episodes</item>
+    </plurals>
+    <!-- Under the download progress: downloads only continue while the app is open. -->
+    <string name="video_keep_app_open">Keep Wonton open until the download finishes.</string>
+    <!-- Accessibility label: mark as watched. -->
+    <string name="video_mark_played">Mark as Watched</string>
+    <!-- Accessibility label: mark as not watched. -->
+    <string name="video_mark_unplayed">Mark as Unwatched</string>
+    <!-- Main button on a movie or episode: start playing. -->
+    <string name="video_play">Play</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_no_service_next_step">Install or start a video plugin such as Jellyfin on your server.</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_sign_in_next_step">Ask the owner to check your access to the video plugin.</string>
+    <!-- Problem title: the video service doesn't accept this person's account. -->
+    <string name="video_problem_sign_in_title">The video service doesn\'t recognize your account</string>
+    <!-- Button that continues a paused download. -->
+    <string name="video_resume_download">Resume</string>
+    <!-- Under a person's photo. -->
+    <string name="video_role_producer">Producer</string>
+    <!-- Under a person's photo. -->
+    <string name="video_role_writer">Writer</string>
+    <!-- Button at the end of a row header that opens the full list. -->
+    <string name="video_see_all">See All</string>
+    <!-- Row of recently added movies and shows. -->
+    <string name="video_shelf_latest">Recently Added</string>
+    <!-- Title of the sort picker on the poster wall. -->
+    <string name="video_sort">Sort By</string>
+    <!-- Sort option: highest rated first. -->
+    <string name="video_sort_rating">Rating</string>
+    <!-- Sort option: newest release first. -->
+    <string name="video_sort_released">Release Date</string>
+    <!-- Title of the subtitle picker. -->
+    <string name="video_subtitles">Subtitles</string>
+    <!-- Subtitle picker option: no subtitles. -->
+    <string name="video_subtitles_off">Off</string>
+    <!-- Title of the video page. -->
+    <string name="video_title">Movies &amp; TV</string>
+    <!-- Filter toggle: show only what the person hasn't watched. -->
+    <string name="video_unplayed_only">Unwatched Only</string>
+</resources>

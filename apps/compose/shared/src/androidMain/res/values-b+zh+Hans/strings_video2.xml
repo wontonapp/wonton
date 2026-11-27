@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Header of the cast and crew row. -->
+    <string name="video_cast">演职员</string>
+    <!-- Accessibility label: download to this phone for offline watching. -->
+    <string name="video_download">下载</string>
+    <!-- Above the reason a download stopped for good, next to a retry button. -->
+    <string name="video_download_failed">下载没完成</string>
+    <!-- Genre picker option: no genre filter. -->
+    <string name="video_genre_all">全部类型</string>
+    <!-- Shown when a video search finds nothing. -->
+    <string name="video_no_results">没搜到</string>
+    <!-- Label next to the progress bar of a download someone paused. -->
+    <string name="video_paused">下载已暂停</string>
+    <!-- Name of the notification channel for video playing in the background. -->
+    <string name="video_playback_channel">视频播放</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_many_sources_next_step">请主人在设置里选一个默认的。</string>
+    <!-- Problem title: no video service is installed or it isn't running. -->
+    <string name="video_problem_no_service_title">没有可用的影视服务</string>
+    <!-- Problem title: no space left on the phone for the download. -->
+    <string name="video_problem_phone_full_title">手机空间不够</string>
+    <!-- Problem title: this phone can't play the file and the server can't convert it. -->
+    <string name="video_problem_unsupported_title">这台手机放不了这个文件</string>
+    <!-- Under a card: how much is left. Argument: a duration like “42 min”. -->
+    <string name="video_remaining">还剩 %s</string>
+    <!-- Title of the confirmation before deleting a downloaded copy. -->
+    <string name="video_remove_download_confirm">从这台手机上删除下载的副本？</string>
+    <!-- Accessibility label of the button that plays from the beginning. -->
+    <string name="video_restart">从头播放</string>
+    <!-- Under a person's photo. -->
+    <string name="video_role_director">导演</string>
+    <!-- Toolbar button and page title for searching movies and shows. -->
+    <string name="video_search">搜索</string>
+    <!-- Placeholder in the video search field. -->
+    <string name="video_search_prompt">片名、剧名、演员</string>
+    <!-- In the facts line of a show: how many seasons. Argument: the count. -->
+    <plurals name="video_seasons">
+        <item quantity="other">%d 季</item>
+    </plurals>
+    <!-- Sort option: newest added first. -->
+    <string name="video_sort_added">添加时间</string>
+    <!-- Accessibility label: remove from favorites. -->
+    <string name="video_unfavorite">取消收藏</string>
+    <!-- Label next to a paused download progress bar: it continues when the server says so. -->
+    <string name="video_waiting">等待继续下载</string>
+</resources>

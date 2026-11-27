@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Header of the cast and crew row. -->
+    <string name="video_cast">Cast &amp; Crew</string>
+    <!-- Accessibility label: download to this phone for offline watching. -->
+    <string name="video_download">Download</string>
+    <!-- Above the reason a download stopped for good, next to a retry button. -->
+    <string name="video_download_failed">Download didn\'t finish</string>
+    <!-- Genre picker option: no genre filter. -->
+    <string name="video_genre_all">All Genres</string>
+    <!-- Shown when a video search finds nothing. -->
+    <string name="video_no_results">No results</string>
+    <!-- Label next to the progress bar of a download someone paused. -->
+    <string name="video_paused">Download paused</string>
+    <!-- Name of the notification channel for video playing in the background. -->
+    <string name="video_playback_channel">Video playback</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_many_sources_next_step">Ask the owner to pick a default one in Settings.</string>
+    <!-- Problem title: no video service is installed or it isn't running. -->
+    <string name="video_problem_no_service_title">No video service is running</string>
+    <!-- Problem title: no space left on the phone for the download. -->
+    <string name="video_problem_phone_full_title">Not enough space on this phone</string>
+    <!-- Problem title: this phone can't play the file and the server can't convert it. -->
+    <string name="video_problem_unsupported_title">This phone can\'t play this file</string>
+    <!-- Under a card: how much is left. Argument: a duration like “42 min”. -->
+    <string name="video_remaining">%s left</string>
+    <!-- Title of the confirmation before deleting a downloaded copy. -->
+    <string name="video_remove_download_confirm">Remove the downloaded copy from this phone?</string>
+    <!-- Accessibility label of the button that plays from the beginning. -->
+    <string name="video_restart">Play from Beginning</string>
+    <!-- Under a person's photo. -->
+    <string name="video_role_director">Director</string>
+    <!-- Toolbar button and page title for searching movies and shows. -->
+    <string name="video_search">Search</string>
+    <!-- Placeholder in the video search field. -->
+    <string name="video_search_prompt">Movies, shows, people</string>
+    <!-- In the facts line of a show: how many seasons. Argument: the count. -->
+    <plurals name="video_seasons">
+        <item quantity="one">%d season</item>
+        <item quantity="other">%d seasons</item>
+    </plurals>
+    <!-- Sort option: newest added first. -->
+    <string name="video_sort_added">Date Added</string>
+    <!-- Accessibility label: remove from favorites. -->
+    <string name="video_unfavorite">Remove from Favorites</string>
+    <!-- Label next to a paused download progress bar: it continues when the server says so. -->
+    <string name="video_waiting">Waiting to continue</string>
+</resources>

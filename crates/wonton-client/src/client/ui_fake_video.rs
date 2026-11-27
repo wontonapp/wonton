@@ -396,7 +396,7 @@ pub(super) fn detail(id: &str) -> VideoDetail {
         name: (*name).into(),
         role: *role,
         character: character.map(Into::into),
-        photo: art(name, 240, 240),
+        photo: art(&name.replace(' ', "-"), 240, 240),
     })
     .collect();
     let series_index = SERIES

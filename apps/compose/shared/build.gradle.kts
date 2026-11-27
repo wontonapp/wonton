@@ -170,6 +170,9 @@ kotlin {
                 implementation(libs.media3.exoplayer)
                 implementation(libs.media3.transformer)
                 implementation(libs.media3.effect)
+                // Apache-2.0。影视页的播放界面（PlayerView）和转码时的 HLS 流。
+                implementation(libs.media3.ui)
+                implementation(libs.media3.exoplayer.hls)
                 // Apache-2.0。桌面小组件（ADR-0100）。
                 implementation(libs.androidx.glance.appwidget)
                 implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")

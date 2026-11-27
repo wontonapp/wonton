@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the audio track picker. -->
+    <string name="video_audio">Audio</string>
+    <!-- Label next to the download progress bar. -->
+    <string name="video_downloading">Downloading</string>
+    <!-- Accessibility label: add to favorites. -->
+    <string name="video_favorite">Favorite</string>
+    <!-- Accessibility label of the sort and filter menu button. -->
+    <string name="video_filter">Sort and Filter</string>
+    <!-- Title of the genre picker on the poster wall. -->
+    <string name="video_genre">Genre</string>
+    <!-- Dialog title when the player couldn't play. -->
+    <string name="video_playback_failed">Can\'t play this</string>
+    <!-- Problem title: the movie or episode no longer exists on the server. -->
+    <string name="video_problem_gone_title">This is no longer on the server</string>
+    <!-- Problem title: more than one video service and none is the default. -->
+    <string name="video_problem_many_sources_title">More than one video service</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_phone_full_next_step">Free up some space, then download again.</string>
+    <!-- Menu action: delete the downloaded copy from this phone. -->
+    <string name="video_remove_download">Remove Download</string>
+    <!-- Main button when the person stopped partway: continue from there. -->
+    <string name="video_resume">Resume</string>
+    <!-- Under a person's photo when no character name is known. -->
+    <string name="video_role_actor">Actor</string>
+    <!-- Under a person's photo when their role is none of the above. -->
+    <string name="video_role_other">Other</string>
+    <!-- Row of the next unwatched episode of each show in progress. -->
+    <string name="video_shelf_next_up">Next Up</string>
+    <!-- Row of movies and episodes the person stopped partway. -->
+    <string name="video_shelf_resume">Continue Watching</string>
+    <!-- Sort option: by name. -->
+    <string name="video_sort_title">Name</string>
+</resources>

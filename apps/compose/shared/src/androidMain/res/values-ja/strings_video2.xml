@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Header of the cast and crew row. -->
+    <string name="video_cast">キャストとスタッフ</string>
+    <!-- Accessibility label: download to this phone for offline watching. -->
+    <string name="video_download">ダウンロード</string>
+    <!-- Above the reason a download stopped for good, next to a retry button. -->
+    <string name="video_download_failed">ダウンロードが完了しませんでした</string>
+    <!-- Genre picker option: no genre filter. -->
+    <string name="video_genre_all">すべてのジャンル</string>
+    <!-- Shown when a video search finds nothing. -->
+    <string name="video_no_results">見つかりませんでした</string>
+    <!-- Label next to the progress bar of a download someone paused. -->
+    <string name="video_paused">ダウンロードを一時停止中</string>
+    <!-- Name of the notification channel for video playing in the background. -->
+    <string name="video_playback_channel">動画の再生</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_many_sources_next_step">オーナーに設定でデフォルトを選んでもらってください。</string>
+    <!-- Problem title: no video service is installed or it isn't running. -->
+    <string name="video_problem_no_service_title">利用できる動画サービスがありません</string>
+    <!-- Problem title: no space left on the phone for the download. -->
+    <string name="video_problem_phone_full_title">端末の空き容量が足りません</string>
+    <!-- Problem title: this phone can't play the file and the server can't convert it. -->
+    <string name="video_problem_unsupported_title">この端末ではこのファイルを再生できません</string>
+    <!-- Under a card: how much is left. Argument: a duration like “42 min”. -->
+    <string name="video_remaining">残り %s</string>
+    <!-- Title of the confirmation before deleting a downloaded copy. -->
+    <string name="video_remove_download_confirm">この端末からダウンロードしたコピーを削除しますか？</string>
+    <!-- Accessibility label of the button that plays from the beginning. -->
+    <string name="video_restart">最初から再生</string>
+    <!-- Under a person's photo. -->
+    <string name="video_role_director">監督</string>
+    <!-- Toolbar button and page title for searching movies and shows. -->
+    <string name="video_search">検索</string>
+    <!-- Placeholder in the video search field. -->
+    <string name="video_search_prompt">映画、番組、出演者</string>
+    <!-- In the facts line of a show: how many seasons. Argument: the count. -->
+    <plurals name="video_seasons">
+        <item quantity="other">%d シーズン</item>
+    </plurals>
+    <!-- Sort option: newest added first. -->
+    <string name="video_sort_added">追加日</string>
+    <!-- Accessibility label: remove from favorites. -->
+    <string name="video_unfavorite">お気に入りから削除</string>
+    <!-- Label next to a paused download progress bar: it continues when the server says so. -->
+    <string name="video_waiting">再開を待っています</string>
+</resources>
