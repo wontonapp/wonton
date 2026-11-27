@@ -90,6 +90,9 @@ run_container() {
       printf '%s\n' "$_out" >&2
       return 1
     }
+    # 占着名字的那个删不掉时先挪开：改名字只动元数据，不用等它停。
+    timeout 30 docker rm -f "$_name.stale" >/dev/null 2>&1 || true
+    timeout 30 docker rename "$_name" "$_name.stale" >/dev/null 2>&1 || true
     sleep 1
   done
   printf '%s\n' "$_out" >&2

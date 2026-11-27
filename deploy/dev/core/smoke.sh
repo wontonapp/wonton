@@ -204,7 +204,7 @@ ok "没有残留的示例插件资源"
 fi
 # 对着已有的栈跑时不拆栈，只删自己起的探针容器。
 if [[ -n "${SMOKE_ONLY:-}" ]]; then
-  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null || true; [[ -z "${host_model_key_id:-}" ]] || ( host_magpie gateway-key remove "$host_model_key_id" ) >/dev/null 2>&1 || true; docker rm -f "$browser" "$phone" "$mom_phone" "$model_relay" >/dev/null 2>&1 || true' EXIT
+  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null || true; [[ -z "${host_model_key_id:-}" ]] || ( host_magpie gateway-key remove "$host_model_key_id" ) >/dev/null 2>&1 || true; docker rm -f "$browser" "$phone" "$mom_phone" "$model_relay" "$browser.stale" "$phone.stale" "$mom_phone.stale" "$model_relay.stale" >/dev/null 2>&1 || true' EXIT
 else trap cleanup EXIT; fi
 
 if step core "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"; then
