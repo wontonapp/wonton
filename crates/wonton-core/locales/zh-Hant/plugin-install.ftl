@@ -266,7 +266,7 @@ plugin-install-prv-models-apis-path = provides.models.apis 的路徑必須以 / 
 plugin-install-prv-models-default-model = provides.models.default_model 不能為空
 plugin-install-prv-credentials-argv = provides.models.credentials.{ $field } 必須是非空的 argv，並用 { $placeholder } 指明憑證名稱
 
-# ── 代理應用程式的 Cookie 和請求標頭（proxy_auth.rs）────────────────────────
+# ── 代理應用程式的 Cookie 和請求標頭（proxy_auth/）────────────────────────
 
 plugin-install-proxy-secret-unknown = { "{{" }secret:{ $name }{ "}}" } 要引用 secrets 裡由家用伺服器產生（generate）、至少 { $min } 位元組的一項
 plugin-install-proxy-cookie-template = Cookie 的值只能用 { "{{" }secret:…{ "}}" } 和固定文字：`{ $template }`

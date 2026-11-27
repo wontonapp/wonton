@@ -267,7 +267,7 @@ plugin-install-prv-models-apis-path = Paths in provides.models.apis must start w
 plugin-install-prv-models-default-model = provides.models.default_model can't be empty
 plugin-install-prv-credentials-argv = provides.models.credentials.{ $field } must be a non-empty argv naming the credential with { $placeholder }
 
-# ── Proxy apps' cookies and headers (proxy_auth.rs) ──────────────────────────
+# ── Proxy apps' cookies and headers (proxy_auth/) ──────────────────────────
 
 plugin-install-proxy-secret-unknown = { "{{" }secret:{ $name }{ "}}" } must refer to an item in secrets that your home server generates (generate) and that is at least { $min } bytes
 plugin-install-proxy-cookie-template = A cookie value can only use { "{{" }secret:…{ "}}" } and fixed text: `{ $template }`
