@@ -46,17 +46,18 @@ impl PagesLink {
         })
     }
 
-    /// 把一行加到底栏末尾。满了或重复都如实拒，并记下“满了”给壳。
-    pub(super) fn add_bar_item(&self, app: MyAppRef) -> Result<(), CoreError> {
+    /// 往底栏末尾放一项。根页可以删出栏再加回来，应用项要在我的应用里；满了或重复都如实拒。
+    pub(super) fn add_bar_item(&self, entry: BarEntry) -> Result<(), CoreError> {
         self.config_change(|state, _plugins| {
-            if state.config.position(&app).is_none() {
+            if let BarEntry::App { app } = &entry
+                && state.config.position(app).is_none()
+            {
                 return Err(invalid(&l10n!(
                     CATALOG,
                     language(),
                     "tabs-bar-page-missing"
                 )));
             }
-            let entry = BarEntry::App { app };
             if state.config.bar.contains(&entry) {
                 return Err(invalid(&l10n!(
                     CATALOG,
@@ -145,6 +146,13 @@ impl PagesLink {
                 )));
             };
             state.config.my_apps.remove(index);
+            // 行没了，栏上那一项一起拿掉（卸载插件走同一条清理）。
+            state
+                .config
+                .bar
+                .retain(|item| item != &BarEntry::App { app: app.clone() });
+            state.bar_full = false;
+            state.settle_tab();
             Ok(())
         })
     }

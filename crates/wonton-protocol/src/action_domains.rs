@@ -492,9 +492,11 @@ pub enum PageAction {
     SelectBarItem { entry: crate::BarEntry },
     /// 主人看过了“已卸载，已从我的应用移除”的提示。
     DismissUninstalledTabs,
-    /// 把我的应用里的一行加到底栏末尾。已在栏上、或满了 [`MAX_BAR_ITEMS`](crate::MAX_BAR_ITEMS) 时返回 `InvalidInput`
+    /// 往底栏末尾放一项：根页可以删出栏再加回来，应用项要在“我的应用”里。
+    ///
+    /// 已在栏上、`App` 的行不在我的应用里、或满了 [`MAX_BAR_ITEMS`](crate::MAX_BAR_ITEMS) 时返回 `InvalidInput`
     /// 并说明原因（[`BarProblem`](crate::BarProblem)）；写成功后清掉 [`BarViewModel::full`](crate::BarViewModel::full)。
-    AddBarItem { app: crate::MyAppRef },
+    AddBarItem { entry: crate::BarEntry },
     /// 从底栏拿掉一项，内置的两项也能拿掉；栏上只剩一项时返回 `InvalidInput`（[`BarProblem::Empty`](crate::BarProblem::Empty)）。
     /// 不在栏上时也返回 `InvalidInput`。
     RemoveBarItem { entry: crate::BarEntry },

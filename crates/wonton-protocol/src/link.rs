@@ -482,6 +482,17 @@ mod tests {
         }
     }
 
+    /// `tab/app/` 里的 JSON 还要过 ID 规则：`../etc` 这种写法打开必失败。
+    #[test]
+    fn app_links_reject_ids_that_are_not_manifest_names() {
+        for encoded in [
+            "eyJ0eXBlIjoicGx1Z2luIiwicGx1Z2luX2lkIjoiLi4vZXRjIn0",
+            "eyJ0eXBlIjoicGFnZSIsInRhYiI6eyJ0eXBlIjoicGx1Z2luIiwicGx1Z2luX2lkIjoib2siLCJwYWdlIjoiLi4veCJ9fQ",
+        ] {
+            assert_eq!(AppLink::parse(&format!("wonton://tab/app/{encoded}")), None);
+        }
+    }
+
     /// 常见的房间 ID 写进链接后还认得出来，小组件和系统搜索里存的就是这个。
     #[test]
     fn a_room_link_keeps_the_usual_room_id_readable() {

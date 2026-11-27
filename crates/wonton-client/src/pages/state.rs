@@ -55,6 +55,8 @@ pub(super) fn refresh_state(
     if server_changed || state.paired != home.server_id.is_some() {
         sanitize_bar(&mut state.config.bar);
         state.settle_tab();
+        // 换服务器和配对状态变了都先回 Agent 根页，别把上一台的选择带过去。
+        state.tab = BarEntry::Agent;
     }
     if server_changed {
         if state.config.server_id.is_some() && state.config.server_id != home.server_id {
@@ -183,6 +185,7 @@ pub(super) fn update_reload_counters(
     state.connected = connected;
 }
 
+#[allow(clippy::too_many_lines)] // 一次把我的应用、栏、打开页和提示都清干净，拆开要来回传同一份状态。
 pub(super) fn remove_uninstalled(
     state: &mut PagesState,
     installed: &wonton_protocol::InstalledPlugins,
@@ -209,6 +212,7 @@ pub(super) fn remove_uninstalled(
         .config
         .bar
         .retain(|entry| !bar_plugin_id(entry).is_some_and(gone));
+    state.bar_full = false;
     // 插件卸了只拿掉那一项；用户删掉的根页不复活，栏可以暂时是空的。
     state.settle_tab();
     state.stack.retain(|item| {
@@ -277,6 +281,7 @@ pub(super) fn clear_plugin_config(state: &mut PagesState) {
         .config
         .bar
         .retain(|entry| bar_plugin_id(entry).is_none());
+    state.bar_full = false;
     // 换服务器只拿掉绑在插件上的项；用户删掉的根页不复活。
     state.settle_tab();
     state.config.panel.clear();

@@ -123,7 +123,9 @@ fn bar_actions_round_trip_through_json() {
         PageAction::SelectBarItem {
             entry: BarEntry::Apps,
         },
-        PageAction::AddBarItem { app: rss() },
+        PageAction::AddBarItem {
+            entry: BarEntry::App { app: rss() },
+        },
         PageAction::RemoveBarItem {
             entry: BarEntry::Agent,
         },

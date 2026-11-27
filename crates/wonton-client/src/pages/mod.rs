@@ -234,7 +234,7 @@ impl PagesLink {
             PageAction::AddMyAppUrl { url, title } => self.add_my_app_url(&url, title),
             PageAction::DismissUninstalledTabs => self.dismiss_uninstalled(),
             PageAction::SelectBarItem { entry } => self.select_bar_item(entry),
-            PageAction::AddBarItem { app } => self.add_bar_item(app),
+            PageAction::AddBarItem { entry } => self.add_bar_item(entry),
             PageAction::RemoveBarItem { entry } => self.remove_bar_item(&entry),
             PageAction::MoveBarItem { from, to } => self.move_bar_item(from, to),
         }

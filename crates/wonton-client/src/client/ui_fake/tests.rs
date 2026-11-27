@@ -4,11 +4,15 @@
 use std::sync::atomic::Ordering;
 
 use super::super::ClientCore;
+use super::chat::{CALL_ROOM_ID, ROOM_ID};
+use super::tabs::{CORNER_APP, web_app_tab};
+use crate::client::ui_fake_plugin_detail;
 use wonton_protocol::{
     Action, AppsAction, BarEntry, BotChatAvailability, ComposerViewModel, HomeStatus, ImageUpload,
     MAX_BAR_ITEMS, MyAppRef, OnboardingStep, PageAction, TabRef, TabState, TimelineAction,
     TimelineTarget,
 };
+
 /// 假数据塞进了各订阅、操作不落到作用域：漏填字段或写坏类型在这里就炸。
 #[test]
 fn seeded_views_are_set_and_dispatch_is_inert() {
@@ -113,6 +117,7 @@ async fn attachments_go_in_and_out_offline() {
 }
 
 /// 开页、关页照真核心的规则走：压栈、同一页只留一份并挪到栈顶、关页弹栈、根页切换清栈、底栏增删移。
+#[allow(clippy::too_many_lines)] // 一条用例把假页面的开关和底栏规则走完，拆开要重复同一套假核心。
 #[test]
 fn pages_open_and_close_like_the_real_stack() {
     let dir = std::env::temp_dir().join(format!("wonton-ui-fake-pages-{}", std::process::id()));
@@ -191,7 +196,9 @@ fn pages_open_and_close_like_the_real_stack() {
     };
     core.dispatch(Action::Pages {
         action: PageAction::AddBarItem {
-            app: budget.clone(),
+            entry: BarEntry::App {
+                app: budget.clone(),
+            },
         },
     })
     .unwrap();
@@ -199,7 +206,9 @@ fn pages_open_and_close_like_the_real_stack() {
     assert!(
         core.dispatch(Action::Pages {
             action: PageAction::AddBarItem {
-                app: budget.clone()
+                entry: BarEntry::App {
+                    app: budget.clone(),
+                },
             },
         })
         .is_err()
@@ -207,8 +216,10 @@ fn pages_open_and_close_like_the_real_stack() {
     for id in ["app.example.photos", "app.example.papers", CORNER_APP] {
         core.dispatch(Action::Pages {
             action: PageAction::AddBarItem {
-                app: MyAppRef::Page {
-                    tab: web_app_tab(id),
+                entry: BarEntry::App {
+                    app: MyAppRef::Page {
+                        tab: web_app_tab(id),
+                    },
                 },
             },
         })
@@ -218,14 +229,29 @@ fn pages_open_and_close_like_the_real_stack() {
     assert!(
         core.dispatch(Action::Pages {
             action: PageAction::AddBarItem {
-                app: MyAppRef::Plugin {
-                    plugin_id: "app.example.one-more".into(),
+                entry: BarEntry::App {
+                    app: MyAppRef::Plugin {
+                        plugin_id: "app.example.papers".into(),
+                    },
                 },
             },
         })
         .is_err()
     );
     assert!(core.pages().bar.full);
+    // 不认识的插件拒，也不改 full。
+    assert!(
+        core.dispatch(Action::Pages {
+            action: PageAction::AddBarItem {
+                entry: BarEntry::App {
+                    app: MyAppRef::Plugin {
+                        plugin_id: "app.example.one-more".into(),
+                    },
+                },
+            },
+        })
+        .is_err()
+    );
     core.dispatch(Action::Pages {
         action: PageAction::MoveBarItem { from: 0, to: 2 },
     })

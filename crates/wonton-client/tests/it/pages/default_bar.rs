@@ -183,7 +183,9 @@ async fn adding_to_the_bar_checks_duplicates_the_limit_and_moves() {
         add_my_app(&rig, url_app(id)).await;
         rig.app
             .dispatch(Action::Pages {
-                action: PageAction::AddBarItem { app: url_app(id) },
+                action: PageAction::AddBarItem {
+                    entry: BarEntry::App { app: url_app(id) },
+                },
             })
             .unwrap();
     }
@@ -191,13 +193,17 @@ async fn adding_to_the_bar_checks_duplicates_the_limit_and_moves() {
     assert!(
         rig.app
             .dispatch(Action::Pages {
-                action: PageAction::AddBarItem { app: url_app(0) },
+                action: PageAction::AddBarItem {
+                    entry: BarEntry::App { app: url_app(0) },
+                },
             })
             .is_err()
     );
     add_my_app(&rig, url_app(4)).await;
     assert_invalid(rig.app.dispatch(Action::Pages {
-        action: PageAction::AddBarItem { app: url_app(4) },
+        action: PageAction::AddBarItem {
+            entry: BarEntry::App { app: url_app(4) },
+        },
     }));
     assert!(rig.app.pages().bar.full);
 
@@ -212,7 +218,9 @@ async fn adding_to_the_bar_checks_duplicates_the_limit_and_moves() {
     assert!(!rig.app.pages().bar.full);
     rig.app
         .dispatch(Action::Pages {
-            action: PageAction::AddBarItem { app: url_app(4) },
+            action: PageAction::AddBarItem {
+                entry: BarEntry::App { app: url_app(4) },
+            },
         })
         .unwrap();
     assert!(!rig.app.pages().bar.full);
@@ -240,7 +248,9 @@ async fn removed_roots_are_still_selectable() {
     add_my_app(&rig, url_app(0)).await;
     rig.app
         .dispatch(Action::Pages {
-            action: PageAction::AddBarItem { app: url_app(0) },
+            action: PageAction::AddBarItem {
+                entry: BarEntry::App { app: url_app(0) },
+            },
         })
         .unwrap();
     for entry in [BarEntry::Agent, BarEntry::Apps] {
@@ -265,6 +275,22 @@ async fn removed_roots_are_still_selectable() {
     assert_eq!(rig.app.pages().tab, BarEntry::Apps);
     rig.app.dispatch(select(BarEntry::Agent)).unwrap();
     assert_eq!(rig.app.pages().tab, BarEntry::Agent);
+    // 根页删出栏后加得回来。
+    rig.app
+        .dispatch(Action::Pages {
+            action: PageAction::AddBarItem {
+                entry: BarEntry::Apps,
+            },
+        })
+        .unwrap();
+    assert!(
+        rig.app
+            .pages()
+            .bar
+            .items
+            .iter()
+            .any(|item| item.entry == BarEntry::Apps)
+    );
     // 应用项不在栏上时不能选。
     assert_invalid(rig.app.dispatch(select(BarEntry::App { app: url_app(1) })));
 }

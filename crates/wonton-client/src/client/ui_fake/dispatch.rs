@@ -16,6 +16,7 @@ static UI_FAKE_ASKS: AtomicUsize = AtomicUsize::new(0);
 
 impl ClientCore {
     /// 假数据下的操作：开页、关页照真核心的规则改页面栈（`pages::actions`），其余不动 ViewModel。
+    #[allow(clippy::too_many_lines)] // 假数据把真核心的各条规则摆在一处，拆开要来回传同一份视图。
     pub(in crate::client) fn dispatch_ui_fake(&self, action: PageAction) -> Result<(), CoreError> {
         let views = self.views();
         match action {
@@ -101,14 +102,22 @@ impl ClientCore {
                     Ok(())
                 }
             }
-            PageAction::AddBarItem { app } => {
+            PageAction::AddBarItem { entry } => {
                 let mut added = true;
                 views.pages.send_modify(|pages| {
-                    let known = match &app {
-                        wonton_protocol::MyAppRef::Page { tab } => fake_open(tab.clone()).is_some(),
-                        wonton_protocol::MyAppRef::Plugin { .. } => true,
+                    let known = match &entry {
+                        BarEntry::Agent | BarEntry::Apps => true,
+                        BarEntry::App {
+                            app: wonton_protocol::MyAppRef::Page { tab },
+                        } => fake_open(tab.clone()).is_some(),
+                        BarEntry::App {
+                            app: wonton_protocol::MyAppRef::Plugin { plugin_id },
+                        } => fake_open(TabRef::Plugin {
+                            plugin_id: plugin_id.clone(),
+                            page: None,
+                        })
+                        .is_some(),
                     };
-                    let entry = BarEntry::App { app };
                     if !known || pages.bar.items.iter().any(|item| item.entry == entry) {
                         added = false;
                         return;
@@ -137,9 +146,9 @@ impl ClientCore {
             PageAction::RemoveBarItem { entry } => {
                 let mut refused = false;
                 views.pages.send_modify(|pages| {
-                    if !pages.bar.items.iter().any(|item| item.entry == entry) {
-                        refused = true;
-                    } else if pages.bar.items.len() <= 1 {
+                    if !pages.bar.items.iter().any(|item| item.entry == entry)
+                        || pages.bar.items.len() <= 1
+                    {
                         refused = true;
                     } else {
                         pages.bar.items.retain(|item| item.entry != entry);

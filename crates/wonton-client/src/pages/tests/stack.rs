@@ -97,6 +97,7 @@ async fn switching_servers_discards_previous_pages_and_reload_counts() {
     assert_eq!(rig.page(&page_tab()).reload, 0);
 }
 
+#[allow(clippy::too_many_lines)] // 用例一次走完换机和插件列表先到的那条路，拆开要重复大半套装置。
 #[tokio::test]
 async fn new_list_before_pages_observes_server_change_starts_fresh() {
     let rig = Rig::new();
@@ -109,6 +110,7 @@ async fn new_list_before_pages_observes_server_change_starts_fresh() {
 
     // 两个来源都已发布，但 pages 尚未消费 home 的换机通知。
     rig.home.send_replace(home("new-server"));
+    rig.plugins.send_replace(plugins("new-content"));
     rig.select(BarEntry::Agent);
     let switched = rig.view();
     assert!(switched.stack.is_empty());

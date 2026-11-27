@@ -91,6 +91,7 @@ async fn stopped_page_can_be_pinned_selected_and_started_without_optimistic_stat
         })
         .unwrap();
     rig.wait_for(|view| !view.refreshing).await;
+    let stopped_after_language = rig.app.pages();
     rig.core.answer(
         Method::POST,
         START,
@@ -100,7 +101,7 @@ async fn stopped_page_can_be_pinned_selected_and_started_without_optimistic_stat
     start(&rig).unwrap();
     request_count(&rig.core, Method::POST, START, 1).await;
     assert!(matches!(start(&rig), Err(CoreError::NotReady { .. })));
-    assert_eq!(rig.app.pages(), stopped);
+    assert_eq!(rig.app.pages(), stopped_after_language);
     assert!(rig.app.plugins().tasks.is_empty());
     let sent = rig.core.seen(&Method::POST, START);
     assert_eq!(sent.len(), 1);

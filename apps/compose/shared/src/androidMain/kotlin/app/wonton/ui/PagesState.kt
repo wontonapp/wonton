@@ -8,6 +8,7 @@ import app.wonton.protocol.BarEntry
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.TabRef
+import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.MyAppRef
 
 /** 页面栈和“我的应用”的壳侧状态：核心算好 [`PagesViewModel`]，这里只发操作。 */
