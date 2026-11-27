@@ -229,6 +229,7 @@ pub(super) fn build_page(
     let browser =
         plugin.is_some_and(|p| crate::browser::opens_in_browser(p, crate::browser::ENGINE));
     TabPage {
+        native: None,
         opens_in_browser: own_page && browser,
         ..page
     }
@@ -255,6 +256,7 @@ pub(crate) fn page_from_metadata(
     _plugins: &PluginsViewModel,
 ) -> TabPage {
     TabPage {
+        native: None,
         title: metadata.title,
         icon: metadata.icon,
         url,

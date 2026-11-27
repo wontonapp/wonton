@@ -255,9 +255,9 @@ pub use owner::{
     check_email, check_email_change, normalized_email,
 };
 pub use pages::{
-    CandidatePlugin, KEEP_ALIVE_PAGES, MyAppEntry, MyAppRef, OpenPage, PagesFailure, PagesProblem,
-    PagesViewModel, PluginTab, TabCandidate, TabIcon, TabLayout, TabLoadFailure, TabMediaPrompt,
-    TabPage, TabRef, TabState,
+    CandidatePlugin, KEEP_ALIVE_PAGES, MyAppEntry, MyAppRef, NativePage, OpenPage, PagesFailure,
+    PagesProblem, PagesViewModel, PluginTab, TabCandidate, TabIcon, TabLayout, TabLoadFailure,
+    TabMediaPrompt, TabPage, TabRef, TabState,
 };
 pub use panel::{
     BOT_PANEL_PINS_PATH, BotPanelPin, BotPanelPins, BotPinConsent, BotPinOwner, LAYOUT_EVENT,
