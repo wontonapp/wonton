@@ -79,9 +79,11 @@ pub enum ContactApply {
         /// 核心写的原因原话，给日志和“详情”。
         detail: String,
     },
+    /// 比这个 App 新的核心给的状态；壳按“不确定”处理，别当已应用。
+    #[serde(other)]
+    Other,
 }
 
-/// [`ContactApply::Failed`] 的分类。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]

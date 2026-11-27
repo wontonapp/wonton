@@ -2,6 +2,7 @@
 //! 失败也不撤联系人行。跨机事件和后台查邀请这两条没有人等着的路也记结果。
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use wonton_protocol::{ContactApply, ContactApplyFailure, ContactError};
 
@@ -218,5 +219,41 @@ async fn a_change_from_the_peer_core_is_recorded_without_a_caller() {
     assert_eq!(
         b.contacts.last_apply(&bob),
         Some(failed(ContactApplyFailure::Upstream, "上游 500"))
+    );
+}
+
+/// 客户端等不及断了（30 秒超时）：重建照样跑完、写回执，只是这次响应看不见。
+#[tokio::test]
+async fn a_disconnected_request_does_not_cancel_the_rebuild() {
+    let net = Arc::new(Net::default());
+    let home = Server::start(&net, "a.test");
+    let alice = home.bot("alice", "alice");
+    let bob = home.bot("bob", "bob");
+    ask(&home, &alice, bot_request("@hermes-bob:a.test"))
+        .await
+        .unwrap();
+    let hold = home.effects.hold("bob");
+    let mut approve = Box::pin(home.contacts.approve(&bob, "bob", "@hermes-alice:a.test"));
+    tokio::select! {
+        _ = &mut approve => panic!("还没等到任务停住"),
+        _ = hold.reached() => {}
+    }
+    // 真的把请求 future 丢掉：等于客户端超时断开。
+    drop(approve);
+    assert_eq!(home.contacts.last_apply(&bob), None);
+
+    hold.release();
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while home.contacts.last_apply(&bob).is_none() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("后台任务要写完回执");
+    assert_eq!(home.contacts.last_apply(&bob), Some(ContactApply::Applied));
+    assert_eq!(
+        home.contacts.allowed_users("@hermes-bob:a.test"),
+        ["@hermes-alice:a.test"],
+        "记录和名单都照常落下"
     );
 }

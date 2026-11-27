@@ -69,28 +69,43 @@ impl PersonInvites for Offline {
     }
 }
 
-#[derive(Default)]
 pub(super) struct Recorded {
     pushed: Mutex<Vec<String>>,
+    receipts: Arc<crate::contacts::ApplyReceipts>,
     /// 按 Bot 名给的下一次应用结果，取一次就没了；没给的按成功。
     next: Mutex<std::collections::BTreeMap<String, ContactApply>>,
 }
 
 impl Recorded {
+    pub(super) fn new(receipts: Arc<crate::contacts::ApplyReceipts>) -> Self {
+        Self {
+            pushed: Mutex::default(),
+            receipts,
+            next: Mutex::default(),
+        }
+    }
+
     fn fail(&self, bot: &str, apply: ContactApply) {
         self.next.lock().unwrap().insert(bot.to_owned(), apply);
     }
 }
 
 impl Effects for Recorded {
-    fn allowed_users_changed<'a>(&'a self, bot: &'a BotRef) -> BoxFuture<'a, ContactApply> {
+    fn allowed_users_changed(&self, bot: &BotRef) -> tokio::sync::oneshot::Receiver<ContactApply> {
         let apply = self
             .next
             .lock()
             .unwrap()
             .remove(&bot.bot)
             .unwrap_or(ContactApply::Applied);
-        Box::pin(async move { apply })
+        let receipts = self.receipts.clone();
+        let bot = bot.clone();
+        let (done, wait) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            receipts.record(&bot, apply.clone());
+            let _ = done.send(apply);
+        });
+        wait
     }
 
     fn notify_request(&self, keeper: &str, _: ContactRequestPush) {
@@ -165,7 +180,8 @@ async fn home() -> Home {
     );
     let (tunnel, members) = loopback_tunnel_with(dir.path(), Default::default()).await;
     add_members(&members);
-    let effects = Arc::new(Recorded::default());
+    let receipts = Arc::new(crate::contacts::ApplyReceipts::default());
+    let effects = Arc::new(Recorded::new(receipts.clone()));
     let contacts = Contacts::open(
         dir.path().join("contacts.json"),
         "test",
@@ -178,6 +194,7 @@ async fn home() -> Home {
             link: Arc::new(Offline),
             invites: Arc::new(Offline),
             effects: effects.clone(),
+            receipts,
             open_federation: false,
         },
     )

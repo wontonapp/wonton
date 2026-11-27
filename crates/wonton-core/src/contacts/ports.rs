@@ -109,8 +109,8 @@ pub trait PersonInvites: Send + Sync {
 /// 失败只进回执，不撤记录——记录是准的，下次重建照记录来。
 pub trait Effects: Send + Sync {
     /// 这个 Bot 的已成立联系人变了：让运行中的服务真的换上新 `WONTON_MATRIX_ALLOWED_USERS`。
-    /// 返回运行时的结果，不把“任务已经起来”当已应用。
-    fn allowed_users_changed<'a>(&'a self, bot: &'a BotRef) -> BoxFuture<'a, ContactApply>;
+    /// 实现方把重建放到后台任务里，回一个可取消的通道；请求超时断开不影响任务，结果照写回执。
+    fn allowed_users_changed(&self, bot: &BotRef) -> tokio::sync::oneshot::Receiver<ContactApply>;
     /// 推送一条新的联系人请求给 `keeper_username` 的设备。
     fn notify_request(&self, keeper_username: &str, push: ContactRequestPush);
 }

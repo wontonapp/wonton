@@ -33,6 +33,7 @@ pub(super) async fn app_with_contact_facts(h: &Harness) -> (axum::Router, tempfi
             .unwrap(),
     );
     let owner = crate::owner::OwnerStore::for_test(&h.data_dir, &super::tests::owner());
+    let receipts = Arc::new(crate::contacts::ApplyReceipts::default());
     let contacts = Contacts::open(
         h.data_dir.join("contact-facts.json"),
         matrix.server_name(),
@@ -44,7 +45,8 @@ pub(super) async fn app_with_contact_facts(h: &Harness) -> (axum::Router, tempfi
             )),
             link: Arc::new(Offline),
             invites: Arc::new(Offline),
-            effects: Arc::new(Recorded::default()),
+            effects: Arc::new(Recorded::new(receipts.clone())),
+            receipts,
             open_federation: false,
         },
     )

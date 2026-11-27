@@ -142,7 +142,7 @@ async fn an_unreachable_docker_reports_transport_unavailable() {
     let apply = other.rebuild_for_contacts(&bot()).await;
     let (reason, detail) = match apply {
         ContactApply::Failed { reason, detail } => (reason, detail),
-        ContactApply::Applied => panic!("Docker 连不上不能报成功"),
+        ContactApply::Applied | ContactApply::Other => panic!("Docker 连不上不能报成功"),
     };
     assert_eq!(
         reason,
@@ -161,7 +161,7 @@ async fn a_service_that_does_not_come_up_reports_upstream() {
     let apply = bed.manager.rebuild_for_contacts(&bot()).await;
     let (reason, detail) = match apply {
         ContactApply::Failed { reason, detail } => (reason, detail),
-        ContactApply::Applied => panic!("起不来的服务不能报成功"),
+        ContactApply::Applied | ContactApply::Other => panic!("起不来的服务不能报成功"),
     };
     assert_eq!(reason, ContactApplyFailure::Upstream, "{detail}");
     assert!(!detail.is_empty());
@@ -180,7 +180,7 @@ async fn an_invalid_plugin_id_reports_invalid_input() {
     assert_eq!(
         match apply {
             ContactApply::Failed { reason, .. } => reason,
-            ContactApply::Applied => panic!("插件 ID 不合法不能报成功"),
+            ContactApply::Applied | ContactApply::Other => panic!("插件 ID 不合法不能报成功"),
         },
         ContactApplyFailure::InvalidInput
     );

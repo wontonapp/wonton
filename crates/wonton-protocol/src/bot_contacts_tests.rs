@@ -168,6 +168,10 @@ fn apply_results_round_trip_and_are_optional() {
         .unwrap(),
         json!({"state": "failed", "reason": "upstream", "detail": "500"})
     );
+    assert_eq!(
+        serde_json::from_value::<ContactApply>(json!({"state": "newer_core"})).unwrap(),
+        ContactApply::Other
+    );
 }
 
 /// 契约：两台核心之间的事件写法。版本不同的核心靠它互通，改写法要两边一起升级。

@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    BotContact, BotRef, ContactApply, ContactError, ContactKind, ContactState,
+    BotContact, BotRef, ContactApply, ContactApplyFailure, ContactError, ContactKind, ContactState,
     PendingContactRequest, RemoteContact,
 };
 
@@ -38,12 +38,32 @@ pub use ports::{
 pub use store::StoreError;
 use store::{Row, Stored};
 
+/// 每个 Bot 最近一次名单变更在运行时的结果（#646）。效果实现放在后台任务里，请求断开也照写；
+/// 只是运行时事实，不落盘。
+#[derive(Default)]
+pub struct ApplyReceipts(Mutex<BTreeMap<BotRef, ContactApply>>);
+
+impl ApplyReceipts {
+    pub fn record(&self, bot: &BotRef, apply: ContactApply) {
+        self.0
+            .lock()
+            .expect("应用回执锁中毒")
+            .insert(bot.clone(), apply);
+    }
+
+    pub fn last(&self, bot: &BotRef) -> Option<ContactApply> {
+        self.0.lock().expect("应用回执锁中毒").get(bot).cloned()
+    }
+}
+
 /// 联系人逻辑用到的外部接口。
 pub struct Ports {
     pub directory: Arc<dyn Directory>,
     pub link: Arc<dyn PeerLink>,
     pub invites: Arc<dyn PersonInvites>,
     pub effects: Arc<dyn Effects>,
+    /// 效果任务写回执的地方，和 [`Contacts::last_apply`] 读的是同一份。
+    pub receipts: Arc<ApplyReceipts>,
     /// 有名字模式（ADR-0051）：Tuwunel 对整个 Matrix 开放联邦，加“人”不要求对方配对；
     /// 私用名保留 ADR-0050 的配对要求。
     pub open_federation: bool,
@@ -68,8 +88,6 @@ pub struct Contacts {
     ports: Ports,
     /// 记录每变一次加一。
     changes: watch::Sender<u64>,
-    /// 每个 Bot 最近一次名单变更在运行时的结果（#646）。只是运行时事实，不落盘。
-    applies: Mutex<BTreeMap<BotRef, ContactApply>>,
 }
 
 impl std::fmt::Debug for Contacts {
@@ -104,7 +122,6 @@ impl Contacts {
             ops: tokio::sync::Mutex::new(()),
             ports,
             changes: watch::channel(0).0,
-            applies: Mutex::default(),
         }))
     }
 
@@ -214,37 +231,24 @@ impl Contacts {
             .collect()
     }
 
-    /// 名单变了：等运行时真的换上新名单，把结果留给调用方查（#646）。
-    /// 记录已经写好，失败只进回执，不撤联系人。
+    /// 名单变了：等后台的重建任务回话；结果由任务自己写进 [`ApplyReceipts`]。
+    /// 记录已经写好。这里的等待走可取消的通道，客户端超时断开不会取消重建，只是这次响应看不见回执。
     async fn apply(&self, bot: &BotRef) {
-        let apply = self.ports.effects.allowed_users_changed(bot).await;
-        match &apply {
-            ContactApply::Applied => {
-                tracing::info!(plugin = %bot.plugin_id, bot = %bot.bot, "联系人变了，Bot 的名单已更新")
-            }
-            ContactApply::Failed { reason, detail } => tracing::error!(
-                plugin = %bot.plugin_id,
-                bot = %bot.bot,
-                ?reason,
-                %detail,
-                "联系人变了，Bot 的名单没换上"
-            ),
+        if self.ports.effects.allowed_users_changed(bot).await.is_err() {
+            self.ports.receipts.record(
+                bot,
+                ContactApply::Failed {
+                    reason: ContactApplyFailure::Upstream,
+                    detail: "重建任务意外结束".into(),
+                },
+            );
         }
-        self.applies
-            .lock()
-            .expect("应用回执锁中毒")
-            .insert(bot.clone(), apply);
     }
 
     /// 这个 Bot 最近一次名单变更在运行时的结果；核心重启后从空开始。
     pub fn last_apply(&self, bot: &BotRef) -> Option<ContactApply> {
-        self.applies
-            .lock()
-            .expect("应用回执锁中毒")
-            .get(bot)
-            .cloned()
+        self.ports.receipts.last(bot)
     }
-
     fn contact(&self, user_id: &str, row: &Row) -> BotContact {
         let remote = server_of(user_id)
             .filter(|server| *server != self.own_server)
