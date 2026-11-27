@@ -122,7 +122,7 @@ fcm_hint() {
 
 # certbot 会把推送证书装到主人的通配符块上，换回主人自己的证书。没有 OWNER_DOMAIN 时跳过。
 restore_owner_cert() {
-    [[ -n $OWNER_DOMAIN ]] || return 0
+    [[ -n $OWNER_DOMAIN ]] || { echo "install: 未设 OWNER_DOMAIN，certbot 若改过主人块不会恢复" >&2; return 0; }
     local owner=/etc/nginx/sites-available/$OWNER_DOMAIN
     [[ -f $owner ]] || return 0
     sed -i "s#/etc/letsencrypt/live/$DOMAIN/#/etc/letsencrypt/live/$OWNER_DOMAIN/#g" "$owner"

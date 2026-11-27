@@ -137,7 +137,7 @@ install_vhost() {
 # certbot --nginx 按 server_name 找块时会被主人的通配符块骗到，把证书装到主人域名的块上；
 # 装完把主人块的证书路径换回去。没有 OWNER_DOMAIN 时跳过。
 restore_owner_cert() {
-    [[ -n $OWNER_DOMAIN ]] || return 0
+    [[ -n $OWNER_DOMAIN ]] || { echo "install: 未设 OWNER_DOMAIN，certbot 若改过主人块不会恢复" >&2; return 0; }
     local owner=/etc/nginx/sites-available/$OWNER_DOMAIN
     if [[ ! -f $owner ]]; then
         echo "install: 警告：找不到 $owner，没把主人的证书路径换回去；nginx -T 里核对一下" >&2

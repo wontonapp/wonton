@@ -3,6 +3,7 @@
 # 一对只经这个中继、禁直连的 iroh 端点跑 30 秒下载测吞吐，再用错令牌验证被拒。
 #
 # 依赖：docker、openssl、curl、cargo、jq。所有状态在 mktemp 目录里，退出时清理。
+# 同机串行跑：QAD 固定占 UDP 7842，先清掉残留的 e2e 容器/进程，否则 EADDRINUSE。
 # 用法：
 #   cloud/iroh-relay/test/relay-e2e.sh                 # 首次会下载官方二进制并编译上游 transfer 示例
 #   MIN_MBPS=1 cloud/iroh-relay/test/relay-e2e.sh      # 抬高吞吐门槛（默认限速 256 KiB/s ≈ 2 Mbps）
