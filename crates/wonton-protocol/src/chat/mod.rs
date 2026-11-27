@@ -5,10 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    ChatLayout, InstallProgress, PluginFailure, PluginIcon, PluginOperation, SecretString,
-    VerificationFlow,
-};
+use crate::{ChatLayout, SecretString, VerificationFlow};
 
 mod ask;
 mod contacts;
@@ -22,96 +19,6 @@ mod session;
 #[cfg(test)]
 mod tests;
 mod view;
-
-/// 聊天列表最上面的一行：有 Bot 的插件在装、在升级、装失败了。
-/// 装好、Bot 的私聊出现以后它由私聊那一行代替，不并排显示。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct BotInstallRow {
-    pub plugin_id: String,
-    /// 插件名。
-    pub title: String,
-    /// 插件图标；没有时为空，壳画占位图。
-    pub icon: Option<PluginIcon>,
-    /// 新装还是升级。卸载不会出现在这里，卸载时私聊还在。
-    pub operation: PluginOperation,
-    /// 重试时重新预览的来源，如 `github:owner/repo@v1.2.0`、`upload:sha256:…`：和
-    /// [`InstallPreview::source`](crate::InstallPreview::source) 一样交给预览接口，主人重新确认后再发
-    /// [`PluginAction::InstallPlugin`](crate::PluginAction::InstallPlugin)。不知道来源时为空，壳不给重试，引导回插件页。
-    pub source: Option<String>,
-    pub state: BotInstallState,
-}
-
-/// 安装行的情况。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum BotInstallState {
-    Running {
-        progress: InstallProgress,
-    },
-    /// 失败，插件已经回滚。`reason` 决定壳显示的类别和下一步，`message` 是默认收起的详情。
-    Failed {
-        reason: PluginFailure,
-        /// 家里的服务器写的说明，按 App 的语言。
-        message: String,
-    },
-    /// 说不清做到哪一步（连接断了、家里的服务器一直没回应）：可能还在装，看插件列表。
-    Uncertain {
-        /// 家里的服务器或客户端核心写的说明，按 App 的语言。
-        message: String,
-    },
-}
-
-/// 一张等主人回答的确认卡片。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct PendingConfirmation {
-    /// 卡片 ID。
-    pub id: String,
-    /// 卡片显示在哪个会话（[`ConfirmationCard::origin`](crate::ConfirmationCard::origin) 的房间）：点提示条进这个房间，
-    /// 主人正在这个房间时不提示。卡片没有会话时为 `None`，点了打开“等你确认”列表。
-    pub room_id: Option<String>,
-    /// 卡片的标题，如“Hermes 想安装 文件搜索”。
-    pub title: String,
-    /// 谁请主人确认，壳按它画头像。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub requester: Option<crate::ConfirmationRequester>,
-    /// 到期时间，Unix 毫秒。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = 0))]
-    pub expires_at_ms: u64,
-    /// Bot 已连续等主人回答至少一分钟；Android 可显示进行中通知。重启后重新观察，不猜任务开始时间。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
-    pub ongoing: bool,
-}
-
-/// 发起私聊时能直接选的人。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ChatContact {
-    /// Matrix 用户 ID。Bot 记录还没建出来（`BotMissing`）时为空：这时只能看见，还不能发起。
-    pub user_id: String,
-    pub name: String,
-    /// 对方是 Bot 时的精确 Bot 身份；普通人联系人为空。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub bot: Option<crate::BotRef>,
-    /// 选这个人开新旁聊时在哪个房间开（ADR-0093 §4）：和这个人已有的、有支持声明的私聊。
-    /// 为空时壳走 `StartDirectChat` 先建私聊。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub side_chat_room_id: Option<String>,
-    /// 对方是 Bot 时当前请求人的 [`BotAccess`]；普通人联系人默认 [`BotAccess::Unknown`]。
-    /// 未知时不写进 wire，旧解析端缺字段按默认值处理。
-    #[serde(default, skip_serializing_if = "is_unknown_access")]
-    pub access: crate::BotAccess,
-}
-
-fn is_unknown_access(access: &crate::BotAccess) -> bool {
-    *access == crate::BotAccess::Unknown
-}
 
 /// 本设备的 Matrix 账号。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -468,5 +375,8 @@ impl std::fmt::Debug for ImageThumbnail {
 }
 
 pub use ask::{AskFailure, AskProblem, AskReceipt, AskState};
+pub use contacts::ChatContact;
+pub use install::{BotInstallRow, BotInstallState};
 pub use own_bot::{OwnBotFailure, OwnBotProblem, OwnPrivateBotView};
+pub use pending::PendingConfirmation;
 pub use view::ChatViewModel;
