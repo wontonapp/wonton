@@ -324,3 +324,46 @@ async fn a_queued_item_from_another_source_plays_from_that_source() {
     );
     assert_eq!(f.other_hits(0, "PUT /playback/music-1/queue"), 1);
 }
+
+#[tokio::test]
+async fn a_next_whose_new_source_fails_keeps_playing_the_old_plan() {
+    let router = caps(&["playback"], &["audio"])
+        .route("/playback", post(|| async { StatusCode::BAD_GATEWAY }));
+    let broken = candidate(MUSIC, &[MediaOperation::Playback], &[MediaKind::Audio]);
+    let f = fixture_with(vec![(broken, router)]).await;
+    let (status, session) = f
+        .json(
+            Method::POST,
+            "/_wonton/api/media/sessions",
+            json!({
+                "position_ms": 0, "audio": null, "subtitle": null, "device": "", "person": "",
+                "item": item("v1", "video", Some(super::media_tests::PROVIDER)),
+                "profile": {"direct_play": ["video/mp4"], "max_bitrate": 8000000, "hdr": false,
+                            "container": ["mp4"]},
+            }),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{session}");
+    let id: wonton_protocol::media::PlaybackSessionId =
+        session["id"].as_str().unwrap().parse().unwrap();
+    enqueue(&f, item("a1", "audio", Some(MUSIC))).await;
+    enqueue(&f, item("a2", "audio", Some(MUSIC))).await;
+    let control = json!({"kind": "control", "session": id.to_string(), "ctl": "next"});
+    let path = format!("/_wonton/api/media/sessions/{id}/control");
+    let (status, _) = f.json(Method::POST, &path, control).await;
+    assert_eq!(status, StatusCode::BAD_GATEWAY);
+    // 新那家的计划没要到：提供方和计划都还是旧的，旧计划照样能放。
+    let (status, _, _) = f
+        .send(Method::GET, &session_stream_path(id), &[], Body::empty())
+        .await;
+    assert_eq!(status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(f.hits("GET /stream/v1"), 1);
+    let (_, session) = f
+        .json(
+            Method::GET,
+            &format!("/_wonton/api/media/sessions/{id}"),
+            Value::Null,
+        )
+        .await;
+    assert_eq!(session["item"]["id"], "v1");
+}

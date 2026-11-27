@@ -26,6 +26,7 @@ mod state;
 mod stop;
 mod takeover;
 
+pub use control::Step;
 pub use queue::QueueChanged;
 
 /// 真实的毫秒级 Unix 时钟，节流基准用它。

@@ -139,6 +139,52 @@ impl Store {
         Ok(true)
     }
 
+    /// 换了提供方的新计划：会话和它记的提供方一起写，计划和提供方不会各是各家的。
+    pub fn save_session_cas_on(
+        &self,
+        session: &PlaybackSession,
+        expected_version: u64,
+        provider: &str,
+    ) -> Result<bool, MediaStoreError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        if !self.session_cas(&tx, session, expected_version)? {
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE sessions SET provider = ? WHERE id = ?",
+            params![provider, session.id.to_string()],
+        )
+        .map_err(|source| self.db_error(source))?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(true)
+    }
+
+    /// 换曲落定：会话（带新计划）、队列指针、会话记的提供方一起写，两边都还是读到的那一版才写，否则都不写。
+    pub fn save_step_cas(
+        &self,
+        session: &PlaybackSession,
+        expected_version: u64,
+        queue: &Queue,
+        expected_revision: u64,
+        provider: &str,
+    ) -> Result<bool, MediaStoreError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        if !self.queue_cas(&tx, &session.person, queue, expected_revision)?
+            || !self.session_cas(&tx, session, expected_version)?
+        {
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE sessions SET provider = ? WHERE id = ?",
+            params![provider, session.id.to_string()],
+        )
+        .map_err(|source| self.db_error(source))?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(true)
+    }
+
     fn session_cas(
         &self,
         conn: &Connection,

@@ -1,6 +1,6 @@
 use wonton_protocol::media::{
-    ControlOp, IllegalTransition, PauseReason, PlaybackSession, PlaybackSessionId, Queue,
-    QueueMode, Revision, TaskState,
+    ControlOp, IllegalTransition, PauseReason, PlaybackPlan, PlaybackSession, PlaybackSessionId,
+    Queue, QueueMode, Revision, TaskState,
 };
 
 use super::state::{clamp_to_duration, is_active};
@@ -41,6 +41,58 @@ impl SessionService {
             stored = self.store.stored_session(session)?;
         }
         Err(SessionServiceError::ConcurrentChange { session })
+    }
+
+    /// 换曲的第一步：算出换到队列里哪一项，不写库。调用方拿 [`Step::session`] 向那一项的来源要到计划，再交给
+    /// [`Self::commit_step`]；要不到就什么都不写，会话还在原来那一项、按旧计划放。到头了不动回 `None`。
+    pub fn peek_step(
+        &self,
+        session: PlaybackSessionId,
+        forward: bool,
+    ) -> Result<Option<Step>, SessionServiceError> {
+        let stored = self.store.stored_session(session)?;
+        let ctl = if forward {
+            ControlOp::Next
+        } else {
+            ControlOp::Prev
+        };
+        self.ensure_active(&stored.session, &ctl)?;
+        let mut next = stored.session;
+        Ok(self
+            .step(&mut next, forward)?
+            .map(|(queue, revision)| Step {
+                session: next,
+                version: stored.version,
+                queue,
+                revision,
+            }))
+    }
+
+    /// 换曲落定：会话换到新那一项、带上计划，和队列指针、会话记的提供方一起比较写。读到之后被别处改了报
+    /// `ConcurrentChange`，调用方从 [`Self::peek_step`] 重来。
+    pub fn commit_step(
+        &self,
+        step: Step,
+        plan: PlaybackPlan,
+        provider: &str,
+    ) -> Result<PlaybackSession, SessionServiceError> {
+        let Step {
+            mut session,
+            version,
+            queue,
+            revision,
+        } = step;
+        session.plan = Some(plan);
+        if self
+            .store
+            .save_step_cas(&session, version, &queue, revision, provider)?
+        {
+            Ok(session)
+        } else {
+            Err(SessionServiceError::ConcurrentChange {
+                session: session.id,
+            })
+        }
     }
 
     fn ensure_active(
@@ -146,4 +198,13 @@ impl SessionService {
         session.plan = None;
         Ok(Some((queue, expected)))
     }
+}
+
+/// 算好还没写的一次换曲：换到的那一项（计划空着）、读到的会话版本，和改好指针的队列与读到的队列版本。
+#[derive(Debug)]
+pub struct Step {
+    pub session: PlaybackSession,
+    version: u64,
+    queue: Queue,
+    revision: Revision,
 }

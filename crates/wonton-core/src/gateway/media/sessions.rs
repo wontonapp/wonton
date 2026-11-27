@@ -14,12 +14,13 @@ use wonton_protocol::media::api::{SessionList, session_stream_path};
 use wonton_protocol::media::provider::{PlaybackProgress, PlaybackStopped};
 use wonton_protocol::media::{
     ControlOp, MediaAction, MediaFailure, MediaFailureCode, MediaItemRef, MediaOperation,
-    PlaybackRequest, PlaybackSession, PlaybackSessionId, ProviderStream, TrackKind,
+    PlaybackPlan, PlaybackRequest, PlaybackSession, PlaybackSessionId, ProviderStream, TrackKind,
 };
 
 use super::{Caller, reply, service_failure};
 use crate::gateway::Gateway;
 use crate::media::provider::ProviderRoute;
+use crate::media::session_service::SessionServiceError;
 use crate::plugin::media_source::failure;
 
 type Reply<T> = Result<T, MediaFailure>;
@@ -196,16 +197,23 @@ pub(super) async fn control(
                 ));
             }
         };
-        let replan = matches!(ctl, ControlOp::SetAudio(_) | ControlOp::SetSubtitle(_));
-        let updated = caller
-            .media
-            .sessions
-            .control(session.id, ctl.clone())
-            .map_err(|e| service_failure(&e))?;
-        let updated = if !(replan || updated.plan.is_none()) || updated.stop_reason.is_some() {
-            updated
-        } else {
-            replan_session(&gateway, &caller, &updated, &ctl).await?
+        let updated = match &ctl {
+            ControlOp::Next | ControlOp::Prev => {
+                step(&gateway, &caller, &session, matches!(ctl, ControlOp::Next)).await?
+            }
+            _ => {
+                let replan = matches!(ctl, ControlOp::SetAudio(_) | ControlOp::SetSubtitle(_));
+                let updated = caller
+                    .media
+                    .sessions
+                    .control(session.id, ctl.clone())
+                    .map_err(|e| service_failure(&e))?;
+                if !(replan || updated.plan.is_none()) || updated.stop_reason.is_some() {
+                    updated
+                } else {
+                    replan_session(&gateway, &caller, &updated, &ctl).await?
+                }
+            }
         };
         // 换曲动了队列的指针，同样推给提供方。
         if matches!(ctl, ControlOp::Next | ControlOp::Prev) {
@@ -221,14 +229,56 @@ pub(super) async fn control(
     respond(controlled.await)
 }
 
-/// 切轨、换曲后重取计划：同一个设备档、当前位置、这次选的轨。切轨问会话记下的那家；换曲按新那一项的
-/// 来源选，换了家就把会话记到新的那家，之后的流、位置、停止都发给它。取不到就报错，客户端继续用旧计划。
+/// 换曲：先算出换到哪一项、向它的来源要到计划，再把会话、队列指针、计划和提供方一起写。要不到计划就什么都
+/// 不写，会话还在原来那一项、按旧计划放。读到之后被别处改了就重来，最多三次。
+async fn step(
+    gateway: &Gateway,
+    caller: &Caller,
+    session: &PlaybackSession,
+    forward: bool,
+) -> Reply<PlaybackSession> {
+    let sessions = &caller.media.sessions;
+    for _ in 0..3 {
+        let Some(step) = sessions
+            .peek_step(session.id, forward)
+            .map_err(|e| service_failure(&e))?
+        else {
+            return Ok(session.clone());
+        };
+        let (plan, route, _) = fetch_plan(gateway, caller, &step.session, &ControlOp::Next).await?;
+        match sessions.commit_step(step, plan, &route.provider) {
+            Err(SessionServiceError::ConcurrentChange { .. }) => continue,
+            done => return done.map_err(|e| service_failure(&e)),
+        }
+    }
+    Err(service_failure(&SessionServiceError::ConcurrentChange {
+        session: session.id,
+    }))
+}
+
+/// 切轨后、或会话还没有计划时重取计划，取到再写。
 async fn replan_session(
     gateway: &Gateway,
     caller: &Caller,
     session: &PlaybackSession,
     ctl: &ControlOp,
 ) -> Reply<PlaybackSession> {
+    let (plan, route, switch) = fetch_plan(gateway, caller, session, ctl).await?;
+    caller
+        .media
+        .sessions
+        .set_plan(session.id, plan, switch.then_some(route.provider.as_str()))
+        .map_err(|e| service_failure(&e))
+}
+
+/// 向该问的那家要计划：同一个设备档、当前位置、这次选的轨。切轨问会话记下的那家；其余按这一项自己的来源选，
+/// 第三项说是不是换了家。
+async fn fetch_plan(
+    gateway: &Gateway,
+    caller: &Caller,
+    session: &PlaybackSession,
+    ctl: &ControlOp,
+) -> Reply<(PlaybackPlan, ProviderRoute, bool)> {
     let profile = caller
         .media
         .store
@@ -259,23 +309,14 @@ async fn replan_session(
         person: session.person.clone(),
         profile,
     };
-    let route = if matches!(ctl, ControlOp::SetAudio(_) | ControlOp::SetSubtitle(_)) {
-        session_route(gateway, caller, session).await?
+    let switch = !matches!(ctl, ControlOp::SetAudio(_) | ControlOp::SetSubtitle(_));
+    let route = if switch {
+        item_route(gateway, caller, &session.person, &session.item).await?
     } else {
-        let route = item_route(gateway, caller, &session.person, &session.item).await?;
-        caller
-            .media
-            .store
-            .bind_session_route(session.id, &route.provider, &request.profile)
-            .map_err(|e| service_failure(&e))?;
-        route
+        session_route(gateway, caller, session).await?
     };
     let plan = route.client.playback(&session.person, &request).await?;
-    caller
-        .media
-        .sessions
-        .set_plan(session.id, plan)
-        .map_err(|e| service_failure(&e))
+    Ok((plan, route, switch))
 }
 
 pub(super) async fn progress(
