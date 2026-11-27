@@ -4,7 +4,7 @@
 //! 一页一个订阅：壳用 [`MusicPage`] 说要哪一页，核心回 [`MusicPageView`]，页内的翻页、重试、搜索词都是
 //! [`MusicPageAction`]。收藏这类会改到别的页的动作是 [`MusicAction`]，核心改完把开着的页一起更新。
 //!
-//! 这些类型只在 App 进程里从核心交给壳，不过网络；核心和壳一起发版，所以枚举不留 `Other`。
+//! 这些类型只在 App 进程里从核心交给壳，不过网络；核心和壳一起发版，所以核心自己定的枚举不留 `Other`。`MusicFailure::Other` 例外：它装的是曲库给的、这里不认识的错误码。
 
 use serde::{Deserialize, Serialize};
 
@@ -110,7 +110,7 @@ pub struct MusicProblem {
 }
 
 /// 失败的类别（AGENTS.md：传输、权限、插件未就绪、上游、输入分开）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum MusicFailure {
@@ -124,10 +124,12 @@ pub enum MusicFailure {
     PermissionDenied,
     /// 要的专辑、歌手、歌单已经不在库里。
     NotFound,
-    /// 曲库出错（5xx 或 Subsonic 的通用错误）。
+    /// 曲库出错（5xx 或 Subsonic 的通用错误 0）。
     Upstream,
     /// 曲库回了看不懂的东西。
     Protocol,
+    /// 曲库回了一个这里不认识的错误码，原样带着（Subsonic 的 `error.code`）。
+    Other(String),
 }
 
 /// 页内的动作。
