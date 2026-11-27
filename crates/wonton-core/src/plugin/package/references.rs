@@ -147,39 +147,46 @@ impl PluginPackage {
         Ok(())
     }
 
-    /// `clients` 里的服务要在 compose 里；引用了 `WONTON_EXTERNAL_URL` 时要开得出入口。
+    /// `clients` 里的服务要在 compose 里、不能是 Bot 服务；引用了 `${WONTON_EXTERNAL_URL}` 时要开得出入口。
     fn check_clients_references(&self, langs: &Languages) -> Result<(), PackageError> {
         let clients = self.manifest.clients.as_ref();
-        let http = clients
-            .and_then(|c| c.http.as_ref())
-            .map(|http| ("clients.http.service", &http.service));
+        let http = clients.and_then(|c| c.http.as_ref());
+        let credentials = http
+            .and_then(|http| http.auth.credentials.as_ref())
+            .and_then(|credentials| credentials.service.as_ref())
+            .map(|service| ("clients.http.auth.credentials.service", service));
+        let http = http.map(|http| ("clients.http.service", &http.service));
         let tcp = clients
             .and_then(|c| c.tcp.as_ref())
             .into_iter()
             .flatten()
             .map(|entry| ("clients.tcp", &entry.service));
-        for (field, service) in http.into_iter().chain(tcp) {
-            if !self.services.contains_key(service) {
-                return Err(unknown_service_error(langs, field, service.clone()));
+        let refs: Vec<(&'static str, &String)> =
+            http.into_iter().chain(tcp).chain(credentials).collect();
+        for &(field, service) in &refs {
+            if !self.services.contains_key(service.as_str()) {
+                return Err(unknown_service_error(langs, field, service.to_string()));
             }
         }
-        if let Some((field, service)) = http
-            && self
+        // 每个 Bot 一组容器，入口转发和密码命令都认不出该用哪个。
+        for (field, service) in refs {
+            if self
                 .manifest
                 .bots
                 .iter()
                 .flat_map(|bots| &bots.services)
                 .any(|bot_service| bot_service == service)
-        {
-            return Err(service_error(
-                langs,
-                service,
-                text(
+            {
+                return Err(service_error(
                     langs,
-                    "plugin-install-pkg-ref-bot-service",
-                    &[("field", field.into())],
-                ),
-            ));
+                    service,
+                    text(
+                        langs,
+                        "plugin-install-pkg-ref-bot-service",
+                        &[("field", field.into())],
+                    ),
+                ));
+            }
         }
         crate::plugin::manifest_clients::validate_external_url(
             &self.manifest,
