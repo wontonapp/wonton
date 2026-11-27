@@ -5,7 +5,7 @@ import SwiftUI
 import WontonClient
 
 /// 一次播放：AVPlayer、系统的播放器界面和核心的会话。位置每秒交给核心（核心按节奏报给服务器），暂停、拖动后
-/// 马上报；关掉时报停在哪。放本机离线副本时没有会话，不报。
+/// 马上报；关掉时报停在哪。放本机离线副本时没开成会话就不报。
 ///
 /// 播放器界面用系统的 `AVPlayerViewController` 整屏弹出：拖动、音轨字幕菜单（HLS 和带多轨的原片由 AVKit 列）、
 /// AirPlay、画中画和关闭按钮都是它的。
@@ -25,6 +25,8 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
     private var inPictureInPicture = false
     /// 关掉以后交回 `VideoModel` 清理。
     var onClose: (() -> Void)?
+    /// 停止报完：成了是空，没报上是原因。没有会话时不调。
+    var onEnded: (@MainActor (Error?) -> Void)?
     /// 放不了：AVPlayer 不报错只是不动，看到失败就关掉播放器、把原因交出去。
     var onFailure: ((String) -> Void)?
 
@@ -40,10 +42,11 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
         prepare()
     }
 
-    init(core: ClientCore, local: URL, title: String, from position: UInt64) {
+    /// 放本机文件；`session` 是尽力开的会话，开不成为空。
+    init(core: ClientCore, local: URL, session: String?, title: String, from position: UInt64) {
         self.core = core
         self.title = title
-        session = nil
+        self.session = session
         start = position
         player = AVPlayer(url: local)
         super.init()
@@ -114,7 +117,6 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
     private func fail(_ reason: String) {
         guard !closed else { return }
         onFailure?(reason)
-        controller.dismiss(animated: true)
         close(finished: false)
     }
 
@@ -125,14 +127,19 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
         controller.canStartPictureInPictureAutomaticallyFromInline = true
         controller.delegate = self
         controller.modalPresentationStyle = .fullScreen
-        guard controller.presentingViewController == nil, let top = Self.topController() else { return }
+        guard controller.presentingViewController == nil else { return }
+        guard let top = Self.topController() else {
+            fail("No window to present the player in")
+            return
+        }
         top.present(controller, animated: true)
     }
 
+    /// 最上面的界面；正在收起的不算，弹在它上面会跟着一起没。
     private static func topController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         var top = scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController
-        while let presented = top?.presentedViewController { top = presented }
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed { top = presented }
         return top
     }
 
@@ -147,13 +154,17 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
     func playerViewControllerDidStopPictureInPicture(_ controller: AVPlayerViewController) {
         inPictureInPicture = false
         // 小窗关掉、没回到整屏：这次播放结束。
-        if self.controller.presentingViewController == nil { close(finished: false) }
+        if self.controller.presentingViewController == nil { close(finished: false, dismissing: false) }
     }
 
     func playerViewController(
         _ controller: AVPlayerViewController,
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
     ) {
+        guard !closed else {
+            completionHandler(false)
+            return
+        }
         present()
         completionHandler(true)
     }
@@ -166,15 +177,19 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
             let cancelled = context.isCancelled
             MainActor.assumeIsolated {
                 guard !cancelled, let self else { return }
-                // 点了关闭（不是收进画中画）：这次播放结束。
-                if !self.inPictureInPicture { self.close(finished: false) }
+                // 点了关闭（不是收进画中画）：这次播放结束，界面系统已经在收。
+                if !self.inPictureInPicture { self.close(finished: false, dismissing: false) }
             }
         }
     }
 
-    /// 关掉播放：停下、报停在哪，交回模型。
-    func close(finished: Bool) {
-        guard !closed else { return }
+    /// 关掉播放：停下、报停在哪、收起播放器界面（画中画的小窗也关掉），交回模型。`then` 在界面收完后调，
+    /// 换片时等它再弹新的：弹在正在收起的界面上会跟着一起没。`dismissing` 为假是系统已经在收。
+    func close(finished: Bool, dismissing: Bool = true, then done: (@MainActor @Sendable () -> Void)? = nil) {
+        guard !closed else {
+            done?()
+            return
+        }
         closed = true
         let position = positionMs
         player.pause()
@@ -183,8 +198,33 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
         observations.removeAll()
         if let session {
             let core = core
-            Task { try? await core.videoStop(session: session, positionMs: position, finished: finished) }
+            let ended = onEnded
+            Task {
+                do {
+                    try await core.videoStop(session: session, positionMs: position, finished: finished)
+                    ended?(nil)
+                } catch {
+                    ended?(error)
+                }
+            }
         }
         onClose?()
+        if inPictureInPicture {
+            // 小窗没有关掉的接口：拿掉播放器，系统就收起它。
+            inPictureInPicture = false
+            controller.player = nil
+        }
+        if dismissing, controller.presentingViewController != nil, !controller.isBeingDismissed {
+            controller.dismiss(animated: true) { done?() }
+        } else {
+            done?()
+        }
+    }
+
+    /// 关掉并等界面收完。
+    func shut() async {
+        await withCheckedContinuation { continuation in
+            close(finished: false) { continuation.resume() }
+        }
     }
 }

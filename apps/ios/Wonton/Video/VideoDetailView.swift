@@ -13,6 +13,7 @@ struct VideoDetailView: View {
     @State private var season: VideoEntry?
     @State private var episodes: VideoLoad<[VideoEntry]> = .loading
     @State private var overviewExpanded = false
+    @State private var confirmingRemove = false
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -20,7 +21,14 @@ struct VideoDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .task { await refresh() }
             .task(id: season?.id) { await loadEpisodes() }
-            .task(id: isDownloading) { await watchDownload() }
+            .task(id: isInProgress) { await watchDownload() }
+            .onChange(of: model.playbackEnded) {
+                // 放完回来：看过、接着看的位置、下一集都可能变了。原地换，不回到加载中。
+                Task {
+                    await refresh()
+                    await loadEpisodes(showLoading: false)
+                }
+            }
     }
 
     @ViewBuilder private var content: some View {
@@ -47,7 +55,14 @@ struct VideoDetailView: View {
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))
                     }
-                    if detail.entry.item != nil { VideoOfflineRow(state: offline) }
+                    if let item = detail.entry.item {
+                        VideoOfflineRow(state: offline) {
+                            Task {
+                                await model.retryDownload(item.id)
+                                offline = model.offline(item.id)
+                            }
+                        }
+                    }
                     if detail.audio.count > 1 || !detail.subtitles.isEmpty {
                         VideoTrackMenus(detail: detail, audio: $audio, subtitle: $subtitle)
                     }
@@ -138,14 +153,12 @@ struct VideoDetailView: View {
                 await model.download(item)
                 offline = model.offline(item.id)
             }
-        case .downloading:
+        case .downloading, .waiting, .failed:
+            // 进度、等待和失败（带重试）在下面那一行。
             EmptyView()
         case .ready:
             Menu {
-                Button(role: .destructive) {
-                    model.removeOffline(item.id)
-                    offline = model.offline(item.id)
-                } label: {
+                Button(role: .destructive) { confirmingRemove = true } label: {
                     Label(String(localized: .Video0.videoRemoveDownload), systemImage: "trash")
                 }
             } label: {
@@ -153,6 +166,16 @@ struct VideoDetailView: View {
             }
             .buttonStyle(WontonButtonStyle(kind: .secondary))
             .accessibilityLabel(String(localized: .Video2.videoDownloaded))
+            .confirmationDialog(
+                String(localized: .Video1.videoRemoveDownloadConfirm),
+                isPresented: $confirmingRemove,
+                titleVisibility: .visible
+            ) {
+                Button(String(localized: .Video0.videoRemoveDownload), role: .destructive) {
+                    model.removeOffline(item.id)
+                    offline = model.offline(item.id)
+                }
+            }
         }
     }
 
@@ -205,9 +228,11 @@ struct VideoDetailView: View {
             }
         }
     }
+}
 
-    // MARK: 取数据
+// MARK: 取数据
 
+extension VideoDetailView {
     private func refresh() async {
         switch await model.detail(id, source: source) {
         case let .success(detail):
@@ -229,29 +254,32 @@ struct VideoDetailView: View {
         }
     }
 
-    private func loadEpisodes() async {
+    private func loadEpisodes(showLoading: Bool = true) async {
         guard let season else { return }
-        episodes = .loading
+        if showLoading { episodes = .loading }
         switch await model.detail(season.id, source: season.source ?? source) {
         case let .success(detail): episodes = .loaded(detail.children)
-        case let .failure(error): episodes = .failed(error.videoProblem)
+        case let .failure(error):
+            if showLoading { episodes = .failed(error.videoProblem) } else { model.actionProblem = error.videoProblem }
         }
     }
 
-    private var isDownloading: Bool {
-        if case .downloading = offline { return true }
-        return false
+    /// 在下或等着接着下：状态还会自己变。
+    private var isInProgress: Bool {
+        switch offline {
+        case .downloading, .waiting: true
+        default: false
+        }
     }
 
-    /// 下载进度在客户端核里，每秒看一次，直到写完或没了。
+    /// 下载进度在客户端核里，每秒看一次，直到写完、失败或没了。
     private func watchDownload() async {
-        guard isDownloading, case let .loaded(detail) = load, let item = detail.entry.item else { return }
+        guard isInProgress, case let .loaded(detail) = load, let item = detail.entry.item else { return }
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(1))
             let state = model.offline(item.id)
             if state != offline { offline = state }
-            if case .downloading = state { continue }
-            return
+            if !isInProgress { return }
         }
     }
 }

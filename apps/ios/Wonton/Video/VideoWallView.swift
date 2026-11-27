@@ -11,6 +11,7 @@ struct VideoWallView: View {
     @State private var loadingMore = false
     @State private var moreProblem: Problem?
     @State private var genres: [String] = []
+    @State private var genresProblem: Problem?
     @State private var searchText = ""
     private let searching: Bool
     @Environment(\.wontonColors) private var colors
@@ -36,7 +37,7 @@ struct VideoWallView: View {
                 guard !Task.isCancelled else { return }
                 query.search = searchText
             }
-            .task { if !searching { genres = await model.genres(library: query.library) } }
+            .task { if !searching { await loadGenres() } }
     }
 
     @ViewBuilder private var content: some View {
@@ -99,6 +100,13 @@ struct VideoWallView: View {
                     ForEach(genres, id: \.self) { Text($0).tag(String?.some($0)) }
                 }
                 .pickerStyle(.menu)
+            } else if let genresProblem {
+                // 类型没取到：说原因，点了再取。
+                Section(String(localized: .Video0.videoGenre)) {
+                    Button { Task { await loadGenres() } } label: {
+                        Label(genresProblem.title, systemImage: "arrow.clockwise")
+                    }
+                }
             }
         } label: {
             Image(systemName: "line.3.horizontal.decrease.circle")
@@ -124,6 +132,16 @@ struct VideoWallView: View {
         }
     }
 
+    private func loadGenres() async {
+        switch await model.genres(library: query.library) {
+        case let .success(list):
+            genres = list
+            genresProblem = nil
+        case let .failure(error):
+            genresProblem = error.videoProblem
+        }
+    }
+
     private func more() async {
         guard let cursor, !loadingMore, case let .loaded(entries) = load else { return }
         loadingMore = true
@@ -132,6 +150,10 @@ struct VideoWallView: View {
         next.cursor = cursor
         let result = await model.wall(next)
         loadingMore = false
+        // 取的时候换了排序、筛选或搜索词：这一页属于旧的查询，丢掉。
+        var current = query
+        current.cursor = cursor
+        guard current == next, self.cursor == cursor else { return }
         switch result {
         case let .success(wall):
             self.cursor = wall.cursor
@@ -147,14 +169,18 @@ struct VideoWallView: View {
 private struct SearchField: ViewModifier {
     let enabled: Bool
     @Binding var text: String
+    @State private var active = false
 
     func body(content: Content) -> some View {
         if enabled {
-            content.searchable(
-                text: $text,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: String(localized: .Video0.videoSearchPrompt)
-            )
+            content
+                .searchable(
+                    text: $text,
+                    isPresented: $active,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: String(localized: .Video0.videoSearchPrompt)
+                )
+                .onAppear { active = true }
         } else {
             content
         }
