@@ -48,7 +48,7 @@ impl PagesLink {
 
     /// 往底栏末尾放一项。根页可以删出栏再加回来，应用项要在我的应用里；满了或重复都如实拒。
     pub(super) fn add_bar_item(&self, entry: BarEntry) -> Result<(), CoreError> {
-        self.config_change(|state, _plugins| {
+        self.config_change_commit_on_error(|state, _plugins| {
             if let BarEntry::App { app } = &entry
                 && state.config.position(app).is_none()
             {

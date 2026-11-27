@@ -90,6 +90,16 @@ async fn stopped_page_can_be_pinned_selected_and_started_without_optimistic_stat
             },
         })
         .unwrap();
+    // 语言生效后的重渲染是异步的：等到栏标签真的换了再拍快照。
+    rig.wait_for(|_| {
+        rig.app
+            .pages()
+            .bar
+            .items
+            .iter()
+            .any(|item| item.entry == BarEntry::Apps && item.label == "应用")
+    })
+    .await;
     rig.wait_for(|view| !view.refreshing).await;
     let stopped_after_language = rig.app.pages();
     rig.core.answer(

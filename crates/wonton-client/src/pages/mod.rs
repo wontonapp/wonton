@@ -345,6 +345,21 @@ impl PagesLink {
     where
         F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
     {
+        self.config_change_with(false, change)
+    }
+
+    /// 动作返回失败也要把改动后的展示状态发布出去的变体：只给改展示标志的动作用（`bar_full`）。
+    fn config_change_commit_on_error<F>(&self, change: F) -> Result<(), CoreError>
+    where
+        F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
+    {
+        self.config_change_with(true, change)
+    }
+
+    fn config_change_with<F>(&self, commit_on_error: bool, change: F) -> Result<(), CoreError>
+    where
+        F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
+    {
         let _writing = lock(&self.writing);
         let (plugins, home, bots) = self.inputs();
         let previous = lock(&self.state).clone();
@@ -357,7 +372,16 @@ impl PagesLink {
         }
         bot::replace_bots(&mut state, bots);
         refresh_state(&mut state, &plugins, &home);
-        change(&mut state, &plugins)?;
+        if let Err(error) = change(&mut state, &plugins) {
+            if commit_on_error {
+                ensure_stack(&mut state, &plugins);
+                let sync_stale = self.sync_problem.borrow().is_some();
+                let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
+                *lock(&self.state) = state;
+                self.publish(view, &plugins);
+            }
+            return Err(error);
+        }
         ensure_stack(&mut state, &plugins);
         if let Err(error) = persist(&self.path, &state.config) {
             let mut failed = previous;
