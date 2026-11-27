@@ -43,8 +43,8 @@
     <string name="video_subtitles">Subtitles</string>
     <!-- Subtitle picker option: no subtitles. -->
     <string name="video_subtitles_off">Off</string>
-    <!-- Title of the video page. -->
-    <string name="video_title">Movies &amp; TV</string>
     <!-- Filter toggle: show only what the person hasn't watched. -->
     <string name="video_unplayed_only">Unwatched Only</string>
+    <!-- Menu item on the video page that opens the plugin's own web page. -->
+    <string name="video_web_version">Web Version</string>
 </resources>

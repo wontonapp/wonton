@@ -29,6 +29,7 @@ mod onboarding;
 mod pages;
 mod plugins;
 mod tabs;
+mod video;
 
 /// 假房间和假插件给 `client` 其他模块的入口：再导出保持原来的 `super::ui_fake::…` 路径不变。
 pub(super) use chat::{CALL_ROOM_ID, ROOM_ID, mention_candidates};

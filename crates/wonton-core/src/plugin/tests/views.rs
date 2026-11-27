@@ -588,7 +588,7 @@ async fn invalid_icons_fail_the_preview_and_the_install() {
 
 /// 声明了 `provides.media_source.browse` 的插件，已安装列表把它带给客户端：点开进原生界面；没声明的为空。
 #[tokio::test]
-async fn installed_plugins_carry_the_declared_browse_standard() {
+async fn installed_plugins_carry_the_declared_browse_standard_and_media_operations() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
@@ -641,4 +641,18 @@ async fn installed_plugins_carry_the_declared_browse_standard() {
         Some(wonton_protocol::media::MediaBrowse::OpenSubsonic)
     );
     assert_eq!(browse("app.plain"), None);
+    let operations = |id: &str| {
+        installed
+            .plugins
+            .iter()
+            .find(|plugin| plugin.id == id)
+            .unwrap()
+            .media_operations
+            .clone()
+    };
+    assert_eq!(
+        operations("app.music"),
+        vec![wonton_protocol::media::MediaOperation::Playback]
+    );
+    assert!(operations("app.plain").is_empty());
 }

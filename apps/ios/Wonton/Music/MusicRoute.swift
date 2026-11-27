@@ -7,10 +7,11 @@ struct MusicRoute: Hashable {
     let page: MusicPage
 }
 
-/// 插件页层路径上的一项：核心页面栈里的页，或者某页里推进去的音乐页。音乐页只在壳里，跟着它前面那一页走。
+/// 插件页层路径上的一项：核心页面栈里的页，或者某页里推进去的音乐页、影视页。原生页只在壳里，跟着它前面那一页走。
 enum PageRoute: Hashable {
     case tab(TabRef)
     case music(MusicRoute)
+    case video(VideoPageRoute)
 }
 
 extension [PageRoute] {
@@ -21,7 +22,7 @@ extension [PageRoute] {
         }
     }
 
-    /// 核心的页面栈变了：每页后面推进去的音乐页跟着它留下，页没了就一起去掉。
+    /// 核心的页面栈变了：每页后面推进去的原生页跟着它留下，页没了就一起去掉。
     func aligned(to stack: [TabRef]) -> [PageRoute] {
         var followers: [TabRef: [PageRoute]] = [:]
         var owner: TabRef?
@@ -30,7 +31,7 @@ extension [PageRoute] {
             case let .tab(tab):
                 owner = tab
                 followers[tab] = []
-            case .music:
+            case .music, .video:
                 if let owner { followers[owner, default: []].append(route) }
             }
         }

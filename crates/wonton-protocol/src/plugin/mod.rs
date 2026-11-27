@@ -220,6 +220,11 @@ pub struct InstalledPlugin {
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub media_browse: Option<crate::media::MediaBrowse>,
+    /// 清单 `provides.media_source.operations`：入口页换成哪个原生界面看这里（影视看 `catalog`，ADR-0113 第 10 节）；
+    /// 不是媒体源时为空。实际能做什么仍以提供方运行时自报为准。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = []))]
+    pub media_operations: Vec<crate::media::MediaOperation>,
     /// 清单声明了 `matrix_widget`：网页能在房间里作为 Matrix widget 打开（ADR-0096）。
     #[serde(default)]
     pub matrix_widget: Option<PluginWidget>,

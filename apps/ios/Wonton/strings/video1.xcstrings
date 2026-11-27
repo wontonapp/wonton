@@ -2,36 +2,6 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "video.title": {
-      "comment": "Title of the video page.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Movies & TV"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "影视"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "影視"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "映画とTV"
-          }
-        }
-      }
-    },
     "video.search": {
       "comment": "Toolbar button and page title for searching movies and shows.",
       "extractionState": "manual",

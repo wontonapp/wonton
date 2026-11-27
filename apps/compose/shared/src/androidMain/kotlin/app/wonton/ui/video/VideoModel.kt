@@ -24,8 +24,9 @@ import app.wonton.ui.R
 /**
  * 影视页的状态：首页、海报墙、详情都由客户端核翻好（`video_*`），这里只管取、记住和把动作转回去。
  * 播放交给 [VideoPlayback]（系统播放器在自己的 Activity 和媒体服务里），停下报完由它回调。
+ * [source] 是打开的那个媒体源插件：首页、库、搜索和类型都只问它；条目自己带来源，往里点按条目的走。
  */
-class VideoModel(val core: ClientCore, private val context: Context) {
+class VideoModel(val core: ClientCore, private val context: Context, val source: String?) {
     /** 点了没成的动作（标看过、收藏、下载、起播），弹一个对话框说原因。 */
     var actionProblem by mutableStateOf<Problem?>(null)
 
@@ -38,13 +39,13 @@ class VideoModel(val core: ClientCore, private val context: Context) {
     /** 每点一次播放加一；在路上的起播回来时号对不上（又点了一次）就作废。离开详情时页面的协程取消，起播跟着取消。 */
     private var playTicket = 0
 
-    suspend fun home(): Result<VideoHome> = capture { core.videoHome(null) }
+    suspend fun home(): Result<VideoHome> = capture { core.videoHome(source) }
 
     suspend fun wall(query: VideoWallQuery): Result<VideoWall> = capture { core.videoWall(query) }
 
     suspend fun detail(id: String, source: String?): Result<VideoDetail> = capture { core.videoDetail(id, source) }
 
-    suspend fun genres(library: String?): Result<List<String>> = capture { core.videoGenres(library, null) }
+    suspend fun genres(library: String?): Result<List<String>> = capture { core.videoGenres(library, source) }
 
     /** 标看过或收藏；部分没成的也算没成，原因弹出来。成了返回真。 */
     suspend fun setPlayed(entry: VideoEntry, played: Boolean): Boolean =

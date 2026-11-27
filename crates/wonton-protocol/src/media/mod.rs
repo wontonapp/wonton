@@ -179,6 +179,7 @@ known_or_other!(MediaKind {
 /// 提供方自报能做的操作（清单 `operations` 与 `GET /_wonton/capabilities` 共用）。认不得的操作落到
 /// `Other`，安装预检忽略它。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum MediaOperation {
     Upload,
     Download,

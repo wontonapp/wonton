@@ -18,6 +18,12 @@ extension MainView {
                         }
                     case let .music(music):
                         MusicPageScreen(route: music, context: musicContext(music.pluginId))
+                    case let .video(video):
+                        VideoScreen(model: videoModel(video.pluginId), route: video.route)
+                            .videoPage(
+                                model: videoModel(video.pluginId), front: pagePath.last == route,
+                                push: videoPush(video.pluginId)
+                            )
                     }
                 }
         }
@@ -25,10 +31,18 @@ extension MainView {
     }
 
     @ViewBuilder private func pluginPage(_ entry: OpenPage) -> some View {
-        // 原生的音乐库只接就绪的入口页；启动中、已停止这些状态照旧由网页页的状态页说明。
+        // 原生的音乐库、影视库只接就绪的入口页；启动中、已停止这些状态照旧由网页页的状态页说明。
         if entry.page.native == .music, case .ready = entry.page.state, case let .plugin(pluginId, _) = entry.tab {
             MusicLibraryRoot(
                 tab: entry.tab, pluginId: pluginId, title: entry.page.title, context: musicContext(pluginId),
+                pages: pages, plugins: plugins, chat: chat, open: open
+            )
+            .id(entry.tab)
+        } else if entry.page.native == .video, case .ready = entry.page.state,
+                  case let .plugin(pluginId, _) = entry.tab {
+            VideoLibraryRoot(
+                tab: entry.tab, pluginId: pluginId, title: entry.page.title, model: videoModel(pluginId),
+                front: pagePath.last == .tab(entry.tab), push: videoPush(pluginId),
                 pages: pages, plugins: plugins, chat: chat, open: open
             )
             .id(entry.tab)
@@ -46,6 +60,14 @@ extension MainView {
                 if case .music = pagePath.last { pagePath[pagePath.count - 1] = .music(route) }
             }
         )
+    }
+
+    private func videoModel(_ pluginId: String) -> VideoModel {
+        videoModels.model(core: pages.core, pluginId: pluginId)
+    }
+
+    private func videoPush(_ pluginId: String) -> (VideoRoute) -> Void {
+        { pagePath.append(.video(VideoPageRoute(pluginId: pluginId, route: $0))) }
     }
 
     @ViewBuilder private func webPage(_ entry: OpenPage) -> some View {

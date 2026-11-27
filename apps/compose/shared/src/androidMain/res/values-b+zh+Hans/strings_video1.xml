@@ -42,8 +42,8 @@
     <string name="video_subtitles">字幕</string>
     <!-- Subtitle picker option: no subtitles. -->
     <string name="video_subtitles_off">关闭</string>
-    <!-- Title of the video page. -->
-    <string name="video_title">影视</string>
     <!-- Filter toggle: show only what the person hasn't watched. -->
     <string name="video_unplayed_only">只看没看过的</string>
+    <!-- Menu item on the video page that opens the plugin's own web page. -->
+    <string name="video_web_version">网页版</string>
 </resources>

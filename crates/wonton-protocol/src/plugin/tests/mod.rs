@@ -89,6 +89,7 @@ fn installed() -> InstalledPlugin {
         install_failure: None,
         tunnel_ports: Vec::new(),
         media_browse: None,
+        media_operations: Vec::new(),
         matrix_widget: Some(PluginWidget {
             url: "/room?widgetId=$matrix_widget_id".into(),
             entry: WidgetEntry::VideoCall,

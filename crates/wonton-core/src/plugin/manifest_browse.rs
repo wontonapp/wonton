@@ -2,7 +2,7 @@
 //! 当前这个人的身份头，客户端不拿上游账号密码。所以它只能写在 `media_source` 上，插件还要有 `sso: proxy` 的网页。
 
 use wonton_protocol::manifest::Sso;
-use wonton_protocol::media::{MEDIA_CAPABILITY, MediaBrowse};
+use wonton_protocol::media::{MEDIA_CAPABILITY, MediaBrowse, MediaOperation};
 
 use super::manifest::{Manifest, ManifestError};
 
@@ -13,6 +13,16 @@ pub(super) fn plugin_browse(manifest: &Manifest) -> Option<MediaBrowse> {
         .as_ref()
         .and_then(|p| p.capabilities.get(MEDIA_CAPABILITY))
         .and_then(|service| service.browse.clone())
+}
+
+/// 已装插件作为媒体源自报的操作，带给客户端选原生界面；不是媒体源时为空。
+pub(super) fn media_operations(manifest: &Manifest) -> Vec<MediaOperation> {
+    manifest
+        .provides
+        .as_ref()
+        .and_then(|p| p.capabilities.get(MEDIA_CAPABILITY))
+        .map(|service| service.operations.clone())
+        .unwrap_or_default()
 }
 
 pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {

@@ -14,27 +14,6 @@ enum VideoLoad<Value> {
     case failed(Problem)
 }
 
-/// 影视页：首页是库和继续看、下一集、最近添加几排；点进去是海报墙和详情。
-/// 页面之间怎么走由外面给（`videoPush`）：这里自己带一个导航栈；挂进插件页时用插件页的导航栈。
-struct VideoRoot: View {
-    @State private var model: VideoModel
-    @State private var path: [VideoRoute] = []
-
-    init(core: ClientCore) {
-        _model = State(initialValue: VideoModel(core: core))
-    }
-
-    var body: some View {
-        NavigationStack(path: $path) {
-            VideoHomeView(model: model)
-                .navigationDestination(for: VideoRoute.self) { VideoScreen(model: model, route: $0) }
-        }
-        .environment(\.videoPush, VideoPush { path.append($0) })
-        .environment(\.videoCacheScope, model.core.videoCacheScope())
-        .videoProblemDialog(model)
-    }
-}
-
 /// 首页以外的一页。
 struct VideoScreen: View {
     let model: VideoModel
@@ -73,12 +52,15 @@ struct VideoLink<Label: View>: View {
 }
 
 extension View {
-    /// 点了没成的动作弹一个对话框说原因。
-    func videoProblemDialog(_ model: VideoModel) -> some View {
-        wontonDialog(problem: model.actionProblem, isPresented: Binding(
-            get: { model.actionProblem != nil },
-            set: { if !$0 { model.actionProblem = nil } }
-        ))
+    /// 影视页里的一页：往里点推到哪、图片缓存的作用域，和点了没成的动作弹的对话框。几页叠着时只有最上面那页
+    /// （`front`）弹，同一个模型的原因不弹两遍。
+    func videoPage(model: VideoModel, front: Bool, push: @escaping (VideoRoute) -> Void) -> some View {
+        environment(\.videoPush, VideoPush(action: push))
+            .environment(\.videoCacheScope, model.core.videoCacheScope())
+            .wontonDialog(problem: model.actionProblem, isPresented: Binding(
+                get: { front && model.actionProblem != nil },
+                set: { if !$0 { model.actionProblem = nil } }
+            ))
     }
 }
 
@@ -98,10 +80,10 @@ extension VideoEntry {
 }
 
 extension VideoWallQuery {
-    static func library(_ library: VideoLibrary) -> VideoWallQuery {
+    static func library(_ library: VideoLibrary, source: String?) -> VideoWallQuery {
         VideoWallQuery(
             library: library.id, parent: nil, kind: nil, genre: nil, search: nil, sort: .title,
-            unplayedOnly: false, cursor: nil, source: nil
+            unplayedOnly: false, cursor: nil, source: source
         )
     }
 }
@@ -109,21 +91,31 @@ extension VideoWallQuery {
 /// 首页：顶上一排库，下面继续看、下一集（横版剧照），最近添加（竖版海报）。某一排没取到，顶上一条轻提示。
 struct VideoHomeView: View {
     let model: VideoModel
+    let root: VideoRootActions
     @State private var load: VideoLoad<VideoHome> = .loading
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         content
-            .navigationTitle(String(localized: .Video1.videoTitle))
+            .background(Color(colors.canvas).ignoresSafeArea())
+            .navigationTitle(root.title)
+            .navigationBarBackButtonHidden(true)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     VideoLink(route: VideoRoute.wall(VideoWallQuery(
                         library: nil, parent: nil, kind: nil, genre: nil, search: "", sort: .title,
-                        unplayedOnly: false, cursor: nil, source: nil
+                        unplayedOnly: false, cursor: nil, source: model.source
                     ), title: String(localized: .Video1.videoSearch))) {
                         Image(systemName: "magnifyingglass")
                     }
                     .accessibilityLabel(String(localized: .Video1.videoSearch))
+                    Menu {
+                        Button(String(localized: .Video0.videoWebVersion), systemImage: "globe", action: root.openWeb)
+                        Button(TabText.addToMyApps, systemImage: "plus.square.on.square", action: root.addToMyApps)
+                        Button(TabText.details, systemImage: "info.circle", action: root.details)
+                    } label: {
+                        Label(TabText.more, systemImage: "ellipsis")
+                    }
                 }
             }
             .task { if case .loading = load { await refresh() } }
@@ -167,7 +159,7 @@ struct VideoHomeView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: WontonTheme.spacing.s8) {
                 ForEach(libraries, id: \.id) { library in
-                    VideoLink(route: VideoRoute.wall(.library(library), title: library.title)) {
+                    VideoLink(route: VideoRoute.wall(.library(library, source: model.source), title: library.title)) {
                         Label(library.title, systemImage: library.kind.symbol)
                             .wontonText(WontonTheme.typography.supporting)
                             .fontWeight(.medium)

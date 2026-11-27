@@ -21,10 +21,5 @@
         <activity
             android:name=".QualityPreviewActivity"
             android:exported="true" />
-
-        <!-- 影视页接进插件页之前的走查入口。 -->
-        <activity
-            android:name=".VideoPreviewActivity"
-            android:exported="true" />
     </application>
 </manifest>

@@ -34,6 +34,7 @@ pub(in crate::client) fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsV
     ));
     installed.extend(super::super::ui_fake_failed_install::plugin());
     installed.push(super::music::plugin());
+    installed.push(super::video::plugin());
     plugins.installed = Some(InstalledPlugins {
         plugins: installed,
         upgrade_check: None,
@@ -120,6 +121,7 @@ pub(in crate::client) fn fake_plugin(
         install_failure: None,
         tunnel_ports: Vec::new(),
         media_browse: None,
+        media_operations: Vec::new(),
         matrix_widget: None,
     }
 }

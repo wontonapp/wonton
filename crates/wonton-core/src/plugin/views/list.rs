@@ -224,6 +224,9 @@ impl PluginManager {
                 },
             ),
             media_browse: manifest.and_then(super::super::manifest_browse::plugin_browse),
+            media_operations: manifest
+                .map(super::super::manifest_browse::media_operations)
+                .unwrap_or_default(),
             matrix_widget: manifest.and_then(super::super::manifest_widget::plugin_widget),
         }
     }

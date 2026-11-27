@@ -1,7 +1,7 @@
 //! 页面栈和我的应用的 ViewModel 映射。
 
 use url::Url;
-use wonton_protocol::media::MediaBrowse;
+use wonton_protocol::media::{MediaBrowse, MediaOperation};
 use wonton_protocol::{
     CoreError, InstalledPlugin, MyAppRef, NativePage, OpenPage, PagesViewModel, PlacedTab,
     PluginState, PluginsViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabIcon, TabLayout,
@@ -166,10 +166,17 @@ fn native_page(tab: &TabRef, plugin: &InstalledPlugin) -> Option<NativePage> {
     let TabRef::Plugin { page: None, .. } = tab else {
         return None;
     };
-    match plugin.media_browse {
-        Some(MediaBrowse::OpenSubsonic) => Some(NativePage::Music),
-        Some(MediaBrowse::Other(_)) | None => None,
+    if plugin.media_browse == Some(MediaBrowse::OpenSubsonic) {
+        return Some(NativePage::Music);
     }
+    // 经核心转发浏览的，按媒体源声明的操作选界面，都放这一处：影视看 `catalog`。
+    plugin
+        .media_operations
+        .iter()
+        .find_map(|operation| match operation {
+            MediaOperation::Catalog => Some(NativePage::Video),
+            _ => None,
+        })
 }
 
 /// 插件里的某一页没起名字时，拿路径的末段当标题。

@@ -32,6 +32,8 @@ struct MainView: View {
     /// 插件页层的路径：核心页面栈里的页一一对应，原生音乐页推进去的子页跟在它后面（只在壳里）；
     /// 左边缘右滑是系统的交互式返回。
     @State var pagePath: [PageRoute] = []
+    /// 影视页的模型按插件留着：入口页和推进去的页共用（`VideoModels`）。
+    @State var videoModels = VideoModels()
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,

@@ -233,6 +233,7 @@ fn plugin(id: &str, web: bool) -> InstalledPlugin {
         install_failure: None,
         tunnel_ports: Vec::new(),
         media_browse: None,
+        media_operations: Vec::new(),
         matrix_widget: None,
     }
 }

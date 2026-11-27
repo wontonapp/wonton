@@ -461,6 +461,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         install_failure: None,
         tunnel_ports: Vec::new(),
         media_browse: None,
+        media_operations: Vec::new(),
         matrix_widget: None,
     }
 }

@@ -35,8 +35,6 @@ struct WontonApp: App {
                             QualityPreviews.root
                         } else if OnboardingReviewPreview.active {
                             OnboardingReviewPreview.root(core: chat.core)
-                        } else if VideoPreview.active {
-                            VideoPreview.root(core: chat.core)
                         } else {
                             MainView(
                                 chat: chat, home: home, plugins: plugins, appearance: appearance,

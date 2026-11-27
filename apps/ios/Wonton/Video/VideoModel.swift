@@ -4,10 +4,12 @@ import Observation
 import WontonClient
 
 /// 影视页的状态：首页、海报墙、详情都由客户端核翻好（`video_*`），这里只管取、记住和把动作转回去。
+/// `source` 是打开的那个媒体源插件：首页、库、搜索和类型都只问它；条目自己带来源，往里点按条目的走。
 @MainActor
 @Observable
 final class VideoModel {
     let core: ClientCore
+    let source: String?
     /// 当前在放的（整屏或画中画）。
     private var player: VideoPlayerController?
     /// 点了没成的动作（标看过、收藏、下载、起播），弹一个对话框说原因。
@@ -18,12 +20,13 @@ final class VideoModel {
     /// 每点一次播放加一；在路上的起播回来时号对不上（又点了一次、离开了详情）就作废。
     private var playTicket = 0
 
-    init(core: ClientCore) {
+    init(core: ClientCore, source: String?) {
         self.core = core
+        self.source = source
     }
 
     func home() async -> Result<VideoHome, MediaError> {
-        await capture { try await self.core.videoHome(source: nil) }
+        await capture { try await self.core.videoHome(source: self.source) }
     }
 
     func wall(_ query: VideoWallQuery) async -> Result<VideoWall, MediaError> {
@@ -35,7 +38,7 @@ final class VideoModel {
     }
 
     func genres(library: String?) async -> Result<[String], MediaError> {
-        await capture { try await self.core.videoGenres(library: library, source: nil) }
+        await capture { try await self.core.videoGenres(library: library, source: self.source) }
     }
 
     /// 标看过或收藏；部分没成的也算没成，原因弹出来。成了返回真。

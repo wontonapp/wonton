@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +15,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -51,6 +54,7 @@ import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.design.wontonContentPaddingValues
+import app.wonton.ui.icons.More
 import app.wonton.ui.icons.Search
 import app.wonton.ui.icons.WontonIcon
 
@@ -91,20 +95,29 @@ fun wallQuery(
     sort = VideoSort.TITLE, unplayedOnly = false, cursor = null, source = source,
 )
 
+/** 影视页入口页右上角菜单里的几项：和网页的胶囊菜单一样，网页版也从这里进。 */
+class VideoRootActions(
+    val title: String,
+    val close: () -> Unit,
+    val openWeb: () -> Unit,
+    val addToMyApps: () -> Unit,
+    val details: () -> Unit,
+)
+
 /**
- * 影视页：首页是库和继续看、下一集、最近添加几排；点进去是海报墙和详情。自己带一个页面栈，返回键一层层退，
- * 退到首页再按交给 [onClose]。
+ * 点开影视库插件的那一页（`TabPage.native` 是影视，[source] 是这个插件）：首页是库和继续看、下一集、最近添加几排；
+ * 点进去是海报墙和详情。自己带一个页面栈，系统返回一层层退，退到首页再关掉插件页。
  */
 @Composable
-fun VideoRoot(core: ClientCore, onClose: () -> Unit) {
+fun VideoRoot(core: ClientCore, source: String, root: VideoRootActions, active: Boolean) {
     val context = LocalContext.current
-    val model = remember(core) { VideoModel(core, context.applicationContext) }
+    val model = remember(core, source) { VideoModel(core, context.applicationContext, source) }
     val stack = remember { mutableStateListOf<VideoRoute>() }
-    BackHandler(stack.isNotEmpty()) { stack.removeAt(stack.lastIndex) }
+    BackHandler(active) { if (stack.isEmpty()) root.close() else stack.removeAt(stack.lastIndex) }
     val push: (VideoRoute) -> Unit = { stack.add(it) }
     CompositionLocalProvider(LocalVideoCacheScope provides remember(core) { core.videoCacheScope() }) {
         when (val top = stack.lastOrNull()) {
-            null -> VideoHomeScreen(model, push, onClose)
+            null -> VideoHomeScreen(model, push, root)
             is VideoRoute.Wall -> VideoWallScreen(model, top.query, top.title, push) { stack.removeAt(stack.lastIndex) }
             is VideoRoute.Detail -> VideoDetailScreen(model, top.id, top.source, push) {
                 stack.removeAt(stack.lastIndex)
@@ -116,7 +129,7 @@ fun VideoRoot(core: ClientCore, onClose: () -> Unit) {
 
 /** 首页：顶上一排库，下面继续看、下一集（横版剧照），最近添加（竖版海报）。某一排没取到，顶上一条轻提示。 */
 @Composable
-private fun VideoHomeScreen(model: VideoModel, push: (VideoRoute) -> Unit, onClose: () -> Unit) {
+private fun VideoHomeScreen(model: VideoModel, push: (VideoRoute) -> Unit, root: VideoRootActions) {
     var load by remember { mutableStateOf<VideoLoad<VideoHome>>(VideoLoad.Loading) }
     var attempt by rememberSaveable { mutableIntStateOf(0) }
     val search = stringResource(R.string.video_search)
@@ -124,8 +137,11 @@ private fun VideoHomeScreen(model: VideoModel, push: (VideoRoute) -> Unit, onClo
         load = model.home().fold({ VideoLoad.Loaded(it) }, { VideoLoad.Failed(it.videoProblem) })
     }
     WontonScreen(bar = {
-        WontonPushedBar(stringResource(R.string.video_title), onBack = onClose) {
-            WontonIconButton(WontonIcon.Search, search, { push(VideoRoute.Wall(wallQuery(search = ""), search)) })
+        WontonPushedBar(root.title, onBack = root.close) {
+            WontonIconButton(WontonIcon.Search, search, {
+                push(VideoRoute.Wall(wallQuery(search = "", source = model.source), search))
+            })
+            VideoRootMenu(root)
         }
     }) {
         when (val current = load) {
@@ -134,13 +150,13 @@ private fun VideoHomeScreen(model: VideoModel, push: (VideoRoute) -> Unit, onClo
                 load = VideoLoad.Loading
                 attempt += 1
             }
-            is VideoLoad.Loaded -> HomeContent(current.value, push) { attempt += 1 }
+            is VideoLoad.Loaded -> HomeContent(current.value, model.source, push) { attempt += 1 }
         }
     }
 }
 
 @Composable
-private fun HomeContent(home: VideoHome, push: (VideoRoute) -> Unit, retry: () -> Unit) {
+private fun HomeContent(home: VideoHome, source: String?, push: (VideoRoute) -> Unit, retry: () -> Unit) {
     val colors = WontonTheme.colors
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -154,7 +170,7 @@ private fun HomeContent(home: VideoHome, push: (VideoRoute) -> Unit, retry: () -
                 }
             }
         }
-        if (home.libraries.isNotEmpty()) item { Libraries(home.libraries, push) }
+        if (home.libraries.isNotEmpty()) item { Libraries(home.libraries, source, push) }
         items(home.shelves, key = { it.kind.name }) { Shelf(it, push) }
         if (home.shelves.isEmpty() && home.libraries.isEmpty()) {
             item {
@@ -170,17 +186,18 @@ private fun HomeContent(home: VideoHome, push: (VideoRoute) -> Unit, retry: () -
 }
 
 @Composable
-private fun Libraries(libraries: List<VideoLibrary>, push: (VideoRoute) -> Unit) {
+private fun Libraries(libraries: List<VideoLibrary>, source: String?, push: (VideoRoute) -> Unit) {
     val colors = WontonTheme.colors
     LazyRow(
         contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
         items(libraries, key = { it.id }) { library ->
+            val wall = VideoRoute.Wall(wallQuery(library = library.id, source = source), library.title)
             Text(
                 library.title,
                 Modifier.background(colors.surfaceSubtle.toColor(), CircleShape)
-                    .clickable { push(VideoRoute.Wall(wallQuery(library = library.id), library.title)) }
+                    .clickable { push(wall) }
                     .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s8),
                 style = WontonTheme.typography.supporting.copy(fontWeight = FontWeight.Medium),
                 color = colors.textPrimary.toColor(),
@@ -203,4 +220,23 @@ private fun Shelf(shelf: VideoShelf, push: (VideoRoute) -> Unit) {
             VideoLandscapeCard(entry, LANDSCAPE_CARD) { push(entry.route) }
         }
     }
+}
+
+/** 入口页右上角的“更多”：网页版、加到我的应用、详情，和网页的胶囊菜单一样。 */
+@Composable
+private fun VideoRootMenu(root: VideoRootActions) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        WontonIconButton(WontonIcon.More, stringResource(R.string.tab_page_menu), { open = true })
+        DropdownMenu(open, { open = false }, containerColor = WontonTheme.colors.surface.toColor()) {
+            RootMenuItem(R.string.video_web_version) { open = false; root.openWeb() }
+            RootMenuItem(R.string.myapp_add) { open = false; root.addToMyApps() }
+            RootMenuItem(R.string.tab_menu_details) { open = false; root.details() }
+        }
+    }
+}
+
+@Composable
+private fun RootMenuItem(label: Int, onClick: () -> Unit) {
+    DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = onClick)
 }
