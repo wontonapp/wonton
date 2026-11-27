@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the HTTPS and domain settings page and its settings row. -->
+    <string name="clients_domain_title">HTTPS and domain</string>
+    <!-- Label of the domain field. -->
+    <string name="clients_domain_suffix">Domain</string>
+    <!-- Shown under a changeable domain: third-party apps must re-enter the address. -->
+    <string name="clients_domain_suffix_note">Third-party apps must re-enter the address after a change</string>
+    <!-- Heading of the DNS provider choice list. -->
+    <string name="clients_domain_provider">DNS provider</string>
+    <!-- Last provider row: type the lego code yourself. -->
+    <string name="clients_domain_other">Other</string>
+    <!-- Label of the lego provider code field. -->
+    <string name="clients_domain_other_code">lego provider code</string>
+    <!-- Placeholder of the free-form credentials field. -->
+    <string name="clients_domain_other_hint">One name=value per line</string>
+    <!-- Label of the credentials field. -->
+    <string name="clients_domain_credentials">Credentials</string>
+    <!-- Shown when credentials are already stored on the server; values are never read back. -->
+    <string name="clients_domain_credentials_set">Already filled in</string>
+    <!-- Link to the provider\'s sign-up page. -->
+    <string name="clients_domain_signup">Sign up</string>
+    <!-- Checkbox for the Let\'s Encrypt subscriber agreement. -->
+    <string name="clients_domain_terms">I accept the Let\'s Encrypt subscriber agreement</string>
+    <!-- Link to the Let\'s Encrypt agreement page. -->
+    <string name="clients_domain_terms_open">Read the agreement</string>
+    <!-- Heading of the certificate section. -->
+    <string name="clients_domain_certificate">Certificate</string>
+    <!-- Certificate is valid; argument is the expiry date. -->
+    <string name="clients_domain_cert_valid">Expires %1$s</string>
+    <!-- Renewal failed; the old certificate is still in use. -->
+    <string name="clients_domain_cert_renewing">Renewal failed; the old certificate is still in use</string>
+    <!-- The certificate expired; connections fail. -->
+    <string name="clients_domain_cert_expired">The certificate expired; connections fail</string>
+    <!-- A certificate is being issued. -->
+    <string name="clients_domain_cert_issuing">Issuing</string>
+    <!-- No certificate has been requested yet. -->
+    <string name="clients_domain_cert_none">No certificate yet</string>
+    <!-- Button to retry certificate issuance. -->
+    <string name="clients_domain_retry">Retry</string>
+    <!-- Heading of the CAA record section. -->
+    <string name="clients_domain_caa">CAA</string>
+    <!-- CAA record limits issuance to this home\'s account. -->
+    <string name="clients_domain_caa_bound">Bound to this home\'s account</string>
+    <!-- No CAA record; adding one is recommended. -->
+    <string name="clients_domain_caa_missing">Adding this record is recommended</string>
+    <!-- A CAA record exists but does not name this home\'s account. -->
+    <string name="clients_domain_caa_mismatch">A record exists but does not name this home\'s account</string>
+    <!-- The CAA record could not be checked. -->
+    <string name="clients_domain_caa_unknown">Can\'t check right now</string>
+    <!-- Button that copies the record line. -->
+    <string name="clients_domain_copy">Copy</string>
+    <!-- Shown after copying; the button ticks meanwhile. -->
+    <string name="clients_domain_copied">Copied</string>
+    <!-- Heading of the LAN record section. -->
+    <string name="clients_domain_lan">LAN record</string>
+    <!-- The LAN record already points to this host. -->
+    <string name="clients_domain_lan_ok">Already points to this host</string>
+    <!-- The LAN record is missing. -->
+    <string name="clients_domain_lan_missing">The record is missing</string>
+    <!-- The LAN record points elsewhere; argument is the current address. -->
+    <string name="clients_domain_lan_wrong">Currently points to %1$s</string>
+    <!-- The LAN record could not be checked. -->
+    <string name="clients_domain_lan_unknown">Can\'t check right now</string>
+    <!-- Placeholder where the line needs this host\'s LAN address. -->
+    <string name="clients_domain_lan_address">this host\'s LAN address</string>
+    <!-- Heading of the collapsed deSEC instructions. -->
+    <string name="clients_domain_desec">deSEC token</string>
+    <!-- Steps to create a deSEC token limited to the two challenge records. -->
+    <string name="clients_domain_desec_steps">Sign up at desec.io, then create a token allowed to write only the two TXT records _acme-challenge and _acme-challenge.lan.</string>
+    <!-- Generic save failure title. -->
+    <string name="clients_domain_problem_failed">Couldn\'t save</string>
+    <!-- Title when the form needs fixing; the detail says what. -->
+    <string name="clients_domain_problem_invalid">Something needs fixing</string>
+    <!-- Title when this device may not change the domain. -->
+    <string name="clients_domain_problem_unauthenticated">This device can\'t change it</string>
+    <!-- Next step for the unauthenticated case. -->
+    <string name="clients_domain_problem_unauthenticated_next">Use the owner\'s device over the tunnel and try again</string>
+    <!-- Title when the core or plugin is not ready. -->
+    <string name="clients_domain_problem_not_ready">The home server isn\'t ready</string>
+    <!-- Next step when the core or plugin is not ready. -->
+    <string name="clients_domain_problem_not_ready_next">Wait until the app or plugin is ready, then retry</string>
+    <!-- Title when the provider or relay failed. -->
+    <string name="clients_domain_problem_upstream">The provider didn\'t succeed</string>
+    <!-- Next step when the provider failed. -->
+    <string name="clients_domain_problem_upstream_next">Retry later; the details have the provider\'s own words</string>
+    <!-- Title when the LAN record is wrong. -->
+    <string name="clients_domain_problem_lan">The LAN record needs attention</string>
+    <!-- Next step when the LAN record is wrong. -->
+    <string name="clients_domain_problem_lan_next">Add or fix the record as shown</string>
+</resources>

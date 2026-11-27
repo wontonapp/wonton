@@ -65,6 +65,8 @@ pub enum SettingsEntry {
     },
     /// 明暗、字号和字体。
     Appearance,
+    /// HTTPS 和域名（ADR-0089）：服务商、证书和 CAA。只给主人。
+    ClientsDomain,
     /// App 的显示语言，壳按平台打开系统的语言设置或自己的选择器。
     Language,
     /// 其他服务器：配对过的 Matrix 服务器（ADR-0050）。只给主人。

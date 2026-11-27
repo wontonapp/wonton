@@ -2,13 +2,13 @@ use super::*;
 use iroh::SecretKey;
 use std::time::Instant;
 use wonton_tunnel::pair::{PairingSecret, SECRET_LEN};
-use wonton_tunnel::relays::Relay;
+use wonton_tunnel::relays::RelayView;
 
 fn code() -> PairingCode {
     PairingCode {
         server_id: SecretKey::from_bytes(&[7; 32]).public(),
         direct_addrs: vec!["192.0.2.10:18482".parse().unwrap()],
-        relays: vec![Relay {
+        relays: vec![RelayView {
             url: "https://relay.example.com".parse().unwrap(),
             token: None,
             quic_port: None,

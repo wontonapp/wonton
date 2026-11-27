@@ -266,7 +266,7 @@ impl HomeLink {
         if self.network == Network::Internet && !ticket.relays().is_empty() {
             spawn_tier_fallback(
                 endpoint.clone(),
-                RelayTable::from_relays(ticket.relays().to_vec()),
+                RelayTable::from_views(ticket.relays().to_vec()),
                 FALLBACK_AFTER,
                 None,
             );

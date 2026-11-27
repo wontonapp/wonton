@@ -212,7 +212,7 @@ async fn a_refusing_relay_bounds_main_and_probe_reconnects() -> anyhow::Result<(
     .unwrap();
     assert_eq!(tiered.tier_count(), 3);
     let control_table = RelayTable::parse(&format!("https://tok@{}", control_front.front)).unwrap();
-    let main = relay_endpoint(SecretKey::generate(), relay_map(single.relays(), 1)).await;
+    let main = relay_endpoint(SecretKey::generate(), relay_map(&single.views(), 1)).await;
     let _main_fallback = spawn_tier_fallback(
         main.clone(),
         single,
@@ -220,8 +220,8 @@ async fn a_refusing_relay_bounds_main_and_probe_reconnects() -> anyhow::Result<(
         Some(CaTlsConfig::insecure_skip_verify()),
     );
     let tiered_endpoint =
-        relay_endpoint(SecretKey::generate(), relay_map(tiered.relays(), 1)).await;
-    let control = relay_endpoint(SecretKey::generate(), relay_map(control_table.relays(), 1)).await;
+        relay_endpoint(SecretKey::generate(), relay_map(&tiered.views(), 1)).await;
+    let control = relay_endpoint(SecretKey::generate(), relay_map(&control_table.views(), 1)).await;
     let mut fallback = spawn_tier_fallback(
         tiered_endpoint.clone(),
         tiered,
@@ -296,12 +296,12 @@ async fn a_relay_with_a_shared_token_admits_endpoints_that_carry_it() -> anyhow:
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
     let server = TunnelServer::spawn(
-        relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await,
+        relay_endpoint(SecretKey::generate(), relay_map(&table.views(), 1)).await,
         Allowlist::new([device.public()]),
         upstream.addr,
     );
     let address = EndpointAddr::new(server.endpoint().id()).with_relay_url(url.clone());
-    let endpoint = relay_endpoint(device, relay_map(table.relays(), 1)).await;
+    let endpoint = relay_endpoint(device, relay_map(&table.views(), 1)).await;
     let phone = Phone::on(endpoint.clone(), address, ProxyAccess::Open).await;
     let response = timeout_get(&phone, "/with-token").await;
     assert_eq!(response.status, 200);
@@ -321,12 +321,12 @@ async fn a_relay_with_a_shared_token_rejects_endpoints_without_it() -> anyhow::R
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
     let server = TunnelServer::spawn(
-        relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await,
+        relay_endpoint(SecretKey::generate(), relay_map(&table.views(), 1)).await,
         Allowlist::new([device.public()]),
         upstream.addr,
     );
     let address = EndpointAddr::new(server.endpoint().id()).with_relay_url(url.clone());
-    let endpoint = relay_endpoint(device, relay_map(table.relays(), 1)).await;
+    let endpoint = relay_endpoint(device, relay_map(&table.views(), 1)).await;
     let phone = Phone::on(endpoint.clone(), address, ProxyAccess::Open).await;
     // 没带令牌：中继拒绝，请求到不了服务端。
     let response = timeout_get(&phone, "/without-token").await;
@@ -366,7 +366,7 @@ async fn relay_fallback_log_omits_url_query() -> anyhow::Result<()> {
         second.relay_url()
     ))
     .expect("synthetic relay table should parse");
-    let endpoint = relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await;
+    let endpoint = relay_endpoint(SecretKey::generate(), relay_map(&table.views(), 1)).await;
     let mut fallback = spawn_tier_fallback(endpoint.clone(), table, FALLBACK_AFTER, None);
     tokio::time::timeout(WAIT, fallback.wait_enabled_tiers(2)).await?;
     let log = logs.text();
@@ -393,7 +393,7 @@ async fn a_stopped_top_tier_falls_back_and_recovers_back() -> anyhow::Result<()>
 
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
-    let server_endpoint = relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await;
+    let server_endpoint = relay_endpoint(SecretKey::generate(), relay_map(&table.views(), 1)).await;
     let mut server_fallback = spawn_tier_fallback(
         server_endpoint.clone(),
         table.clone(),
@@ -405,7 +405,7 @@ async fn a_stopped_top_tier_falls_back_and_recovers_back() -> anyhow::Result<()>
         Allowlist::new([device.public()]),
         upstream.addr,
     );
-    let phone_endpoint = relay_endpoint(device, relay_map(table.relays(), 1)).await;
+    let phone_endpoint = relay_endpoint(device, relay_map(&table.views(), 1)).await;
     let mut phone_fallback = spawn_tier_fallback(
         phone_endpoint.clone(),
         table.clone(),
@@ -511,7 +511,7 @@ async fn a_refusing_top_tier_does_not_flap() -> anyhow::Result<()> {
 
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
-    let server_endpoint = relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await;
+    let server_endpoint = relay_endpoint(SecretKey::generate(), relay_map(&table.views(), 1)).await;
     let mut server_fallback = spawn_tier_fallback(
         server_endpoint.clone(),
         table.clone(),
@@ -523,7 +523,7 @@ async fn a_refusing_top_tier_does_not_flap() -> anyhow::Result<()> {
         Allowlist::new([device.public()]),
         upstream.addr,
     );
-    let phone_endpoint = relay_endpoint(device, relay_map(table.relays(), 1)).await;
+    let phone_endpoint = relay_endpoint(device, relay_map(&table.views(), 1)).await;
     let mut phone_fallback = spawn_tier_fallback(
         phone_endpoint.clone(),
         table.clone(),
@@ -626,7 +626,7 @@ async fn a_recovered_middle_tier_pulls_back_one_level() -> anyhow::Result<()> {
 
     let device = SecretKey::generate();
     let upstream = Upstream::spawn().await;
-    let server_endpoint = relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await;
+    let server_endpoint = relay_endpoint(SecretKey::generate(), relay_map(&table.views(), 1)).await;
     let mut server_fallback = spawn_tier_fallback(
         server_endpoint.clone(),
         table.clone(),
@@ -638,7 +638,7 @@ async fn a_recovered_middle_tier_pulls_back_one_level() -> anyhow::Result<()> {
         Allowlist::new([device.public()]),
         upstream.addr,
     );
-    let phone_endpoint = relay_endpoint(device, relay_map(table.relays(), 1)).await;
+    let phone_endpoint = relay_endpoint(device, relay_map(&table.views(), 1)).await;
     let mut phone_fallback = spawn_tier_fallback(
         phone_endpoint.clone(),
         table.clone(),
@@ -780,7 +780,7 @@ async fn dropping_the_fallback_handle_does_not_stop_the_fallback() -> anyhow::Re
     let (_map, healthy_url, healthy) = run_relay_server().await?;
     let dead: RelayUrl = "https://127.0.0.1:1/".parse().unwrap();
     let table = RelayTable::parse(&format!("{dead};{healthy_url}")).unwrap();
-    let endpoint = relay_endpoint(SecretKey::generate(), relay_map(table.tier(0), 1)).await;
+    let endpoint = relay_endpoint(SecretKey::generate(), relay_map(&table.views(), 1)).await;
     let fallback = spawn_tier_fallback(
         endpoint.clone(),
         table,

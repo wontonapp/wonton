@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="connection_relay_rejected">中継サーバーがこのスマートフォンのトークンを拒否しました</string>
     <string name="connection_updating">アップデートしています…</string>
     <string name="connection_pair_again">ペアリングし直す</string>
     <string name="connection_view">接続を表示</string>

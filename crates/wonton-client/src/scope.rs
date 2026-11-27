@@ -9,16 +9,17 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
-    FamilyViewModel, FriendsViewModel, HomeViewModel, MyAvatarProblem, OnboardingViewModel,
-    PagesViewModel, PeersViewModel, PluginsViewModel, ServersViewModel, SettingsViewModel,
-    TransfersViewModel,
+    AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ClientsDomainViewModel,
+    ConfirmationsViewModel, CoreError, FamilyViewModel, FriendsViewModel, HomeViewModel,
+    MyAvatarProblem, OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel,
+    ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
 use crate::app_lock::AppLockLink;
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
+use crate::clients::ClientsDomainLink;
 use crate::composer::{ComposerLink, uplink::LiveUplink};
 use crate::family::FamilyLink;
 use crate::files::FilesLink;
@@ -54,6 +55,7 @@ pub(crate) struct Scope {
     pub(crate) friends: Arc<FriendsLink>,
     pub(crate) family: Arc<FamilyLink>,
     pub(crate) bot_contacts: Arc<BotContactsLink>,
+    pub(crate) clients_domain: Arc<ClientsDomainLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
     /// 要跨源隔离的插件网页交给系统浏览器时用的回环入口（ADR-0033）。
@@ -83,6 +85,7 @@ pub(crate) struct Views {
     pub(crate) friends: watch::Sender<FriendsViewModel>,
     pub(crate) family: watch::Sender<FamilyViewModel>,
     pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
+    pub(crate) clients_domain: watch::Sender<ClientsDomainViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -102,6 +105,7 @@ impl Views {
             friends: scope.friends.sender(),
             family: scope.family.sender(),
             bot_contacts: scope.bot_contacts.sender(),
+            clients_domain: scope.clients_domain.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -209,11 +213,12 @@ fn chat_links(
     })
 }
 
-/// 好友、成员和设置这几条链接一起建，名字只在这里拼一次。
+/// 好友、成员、域名和设置这几条链接一起建，名字只在这里拼一次。
 type PeopleLinks = (
     Arc<PeersLink>,
     Arc<FriendsLink>,
     Arc<FamilyLink>,
+    Arc<ClientsDomainLink>,
     SettingsLink,
 );
 
@@ -247,6 +252,11 @@ fn people_links(
         plugins.clone(),
         views.map(|v| v.family.clone()),
     );
+    let clients_domain = ClientsDomainLink::new(
+        handle.clone(),
+        home.clone(),
+        views.map(|v| v.clients_domain.clone()),
+    );
     let settings = SettingsLink::new(
         handle,
         home.subscribe(),
@@ -261,7 +271,7 @@ fn people_links(
         lock_screen.subscribe(),
         views.map(|v| v.settings.clone()),
     );
-    Ok((peers, friends, family, settings))
+    Ok((peers, friends, family, clients_domain, settings))
 }
 
 impl Scope {
@@ -387,8 +397,9 @@ impl Scope {
             peers: people.0,
             friends: people.1,
             family: people.2,
+            clients_domain: people.3,
             bot_contacts,
-            settings: people.3,
+            settings: people.4,
             shared_apps,
             browser,
             #[cfg(feature = "test-hooks")]
@@ -413,6 +424,7 @@ impl Scope {
         self.onboarding.set_languages(languages.to_vec());
         self.peers.set_languages(languages.to_vec());
         self.bot_contacts.set_languages(languages.to_vec());
+        self.clients_domain.set_languages(languages.to_vec());
     }
 
     pub(crate) fn backgrounded(&self) {

@@ -1,10 +1,10 @@
 use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
     AgentChainsViewModel, AppLockViewModel, AppearanceViewModel, BotContactsViewModel,
-    ChatViewModel, ComposerViewModel, ConfirmationsViewModel, FamilyViewModel, FriendsViewModel,
-    HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel,
-    RoomAgentStop, ServersViewModel, SessionListViewModel, SettingsViewModel, TimelineTarget,
-    TransfersViewModel, WidgetSnapshot,
+    ChatViewModel, ClientsDomainViewModel, ComposerViewModel, ConfirmationsViewModel,
+    FamilyViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel,
+    PeersViewModel, PluginsViewModel, RoomAgentStop, ServersViewModel, SessionListViewModel,
+    SettingsViewModel, TimelineTarget, TransfersViewModel, WidgetSnapshot,
 };
 
 use crate::agent_chains::room_stop::{self, Attempts};
@@ -529,6 +529,33 @@ impl FamilySubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
     pub async fn next(&self) -> Option<FamilyViewModel> {
         self.updates.next(FamilyViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
+/// “HTTPS 和域名”设置页（ADR-0089）的订阅，用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct ClientsDomainSubscription {
+    updates: Updates<ClientsDomainViewModel>,
+}
+
+impl ClientsDomainSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<ClientsDomainViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl ClientsDomainSubscription {
+    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<ClientsDomainViewModel> {
+        self.updates.next(ClientsDomainViewModel::clone).await
     }
 
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。

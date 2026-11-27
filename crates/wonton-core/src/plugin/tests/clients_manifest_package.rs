@@ -81,6 +81,54 @@ fn clients_http_rejects_per_bot_shared_network_service_before_deployment() {
     assert!(error.contains("web"), "{error}");
 }
 
+const CREDENTIALS: &str = "  clients:\n    http:\n      service: web\n      port: 3000\n      auth:\n        credentials:\n          issue: [sh, /issue.sh]\n          revoke: [sh, /revoke.sh]\n          ends_sessions: true\n          service: sidecar\n";
+
+#[test]
+fn credentials_service_must_exist() {
+    let error = parse("", &format!("{}{CREDENTIALS}", head("network.clients"))).unwrap_err();
+    assert!(
+        error.contains("clients.http.auth.credentials.service"),
+        "{error}"
+    );
+    assert!(error.contains("sidecar"), "{error}");
+    parse(
+        "  sidecar:\n    image: nginx\n",
+        &format!("{}{CREDENTIALS}", head("network.clients")),
+    )
+    .unwrap();
+}
+
+#[test]
+fn clients_tcp_rejects_per_bot_service_before_deployment() {
+    let error = parse(
+        "",
+        &format!(
+            "{}  clients:\n    tcp:\n      - {{ service: web, port: 22, name: ssh }}\n  bots: {{services: [web]}}\n",
+            head("network.clients, matrix.bot")
+        ),
+    )
+    .unwrap_err();
+    assert!(error.contains("clients.tcp"), "{error}");
+    assert!(error.contains("web"), "{error}");
+}
+
+#[test]
+fn credentials_rejects_per_bot_service_before_deployment() {
+    let error = parse(
+        "  sidecar:\n    image: nginx\n",
+        &format!(
+            "{}{CREDENTIALS}  bots: {{services: [sidecar]}}\n",
+            head("network.clients, matrix.bot")
+        ),
+    )
+    .unwrap_err();
+    assert!(
+        error.contains("clients.http.auth.credentials.service"),
+        "{error}"
+    );
+    assert!(error.contains("sidecar"), "{error}");
+}
+
 #[test]
 fn clients_http_accepts_plugin_wide_shared_network_service() {
     let package = parse(

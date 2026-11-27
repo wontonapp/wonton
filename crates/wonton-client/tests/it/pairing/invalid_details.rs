@@ -4,7 +4,7 @@ use iroh::SecretKey;
 use url::Url;
 use wonton_client::{CoreError, PairingFailure, PairingStatus};
 use wonton_tunnel::pair::{PairingCode, PairingSecret, SECRET_LEN};
-use wonton_tunnel::relays::{Relay, RelayToken};
+use wonton_tunnel::relays::{RelayToken, RelayView};
 
 use super::support::{Home, Phone};
 
@@ -103,13 +103,13 @@ fn rejection_code(home: &Home) -> Rejection {
     let token = "relay+example";
     let mut code =
         PairingCode::parse(&home.code(Some(wonton_tunnel::pair::RejectReason::Expired))).unwrap();
-    code.relays.push(Relay {
+    code.relays.push(RelayView {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new(token)),
         quic_port: None,
         tier: 0,
     });
-    code.relays.push(Relay {
+    code.relays.push(RelayView {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new("30")),
         quic_port: None,
@@ -117,7 +117,7 @@ fn rejection_code(home: &Home) -> Rejection {
     });
     let query_canary = "query-canary-707";
     let query_url = format!("https://relay.example.com/?access_token={query_canary}");
-    code.relays.push(Relay {
+    code.relays.push(RelayView {
         url: query_url.parse().unwrap(),
         token: None,
         quic_port: None,
@@ -132,7 +132,7 @@ fn rejection_code(home: &Home) -> Rejection {
         ("\u{1F600}", 7),
         ("pre\u{1F600}post", 8),
     ] {
-        code.relays.push(Relay {
+        code.relays.push(RelayView {
             url: "https://relay.example.com/".parse().unwrap(),
             token: Some(RelayToken::new(token)),
             quic_port: None,
@@ -144,7 +144,7 @@ fn rejection_code(home: &Home) -> Rejection {
         ("https://relay.example.com/?access_token=query%252D707", 6),
         ("https://relay.example.com/#frag%20space-preserve707", 9),
     ] {
-        code.relays.push(Relay {
+        code.relays.push(RelayView {
             url: url.parse().unwrap(),
             token: None,
             quic_port: None,
@@ -324,7 +324,7 @@ async fn assert_decoding_over_budget() {
             1,
         ),
     ] {
-        code.relays.push(Relay {
+        code.relays.push(RelayView {
             url: url.parse().unwrap(),
             token: None,
             quic_port: None,
@@ -391,13 +391,13 @@ async fn assert_duplicate_forms() {
     let mut code =
         PairingCode::parse(&home.code(Some(wonton_tunnel::pair::RejectReason::Expired))).unwrap();
     // token 在前：query 同值需要留下自己的表单匹配。
-    code.relays.push(Relay {
+    code.relays.push(RelayView {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new("dupe space707")),
         quic_port: None,
         tier: 0,
     });
-    code.relays.push(Relay {
+    code.relays.push(RelayView {
         url: "https://relay.example.com/?access_token=dupe%20space707"
             .parse()
             .unwrap(),
@@ -406,7 +406,7 @@ async fn assert_duplicate_forms() {
         tier: 1,
     });
     // query 在前：反向顺序同样要命中。
-    code.relays.push(Relay {
+    code.relays.push(RelayView {
         url: "https://relay.example.com/?access_token=dupe2%20space707"
             .parse()
             .unwrap(),
@@ -414,7 +414,7 @@ async fn assert_duplicate_forms() {
         quic_port: None,
         tier: 2,
     });
-    code.relays.push(Relay {
+    code.relays.push(RelayView {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new("dupe2 space707")),
         quic_port: None,

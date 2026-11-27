@@ -38,6 +38,8 @@ const MAX_RESTART: Duration = Duration::from_secs(30);
 const CATCH_UP_NOTICE_DELAY: Duration = Duration::from_millis(500);
 /// 起步等这么久就报一次停在哪个状态。
 const WAIT_REPORT: Duration = Duration::from_secs(5);
+/// 停同步最多等这么久：通道断掉时 `stop` 等不到应答，不能让它拖住换会话。
+const STOP_SYNC_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// 各设备最近一次起步等待的现场，见 [`last_sync_diagnostic`]。一个进程里有多台设备（测试并行跑）时按设备号分开，
 /// 免得把别人的等待当成自己的。
@@ -150,10 +152,16 @@ impl MatrixSession {
         }
     }
 
-    /// 停止同步（App 进入后台时调用）。
+    /// 停止同步（App 进入后台、换会话时调用）。最多等 [`STOP_SYNC_TIMEOUT`]：Sliding Sync 的内部通道断掉时
+    /// `stop` 会等不到应答，换服务器的登录就卡在这，视图还挂着“已登录”、会话却已经被收走。
     pub async fn stop_sync(&self) {
         let _subscriptions = self.subscriptions.lock().await;
-        self.sync.stop().await;
+        if tokio::time::timeout(STOP_SYNC_TIMEOUT, self.sync.stop())
+            .await
+            .is_err()
+        {
+            tracing::warn!("同步服务没有在 {STOP_SYNC_TIMEOUT:?} 内停下，先放着");
+        }
     }
 
     /// 同步因错误停下就重启，连续出错时间隔加倍，直到被中止。在同一个会话上重启：打开着的房间继续收到更新，不用

@@ -177,6 +177,20 @@ Models 页选模型），不经核心。模型网关 magpie 不预装，要在�
 Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装一致；地址、来源检查和宿主开发模式见
 [ADR-0003 的“接口：推送”](../../../docs/adr/0003-matrix-and-encrypted-push.md#接口推送m0-3)。
 
+### HTTPS 和域名（本地 ACME）
+
+开发栈只能用测试 ACME。`dev.sh up` 多起三个只在开发栈里的服务：`pebble`（签发）、`challtestsrv`（记 DNS-01 的 TXT
+和 A 记录）、`httpreq`（把 lego 的 present/cleanup 转给 challtestsrv），核心的 ACME 坐标默认已指向它们，
+Pebble 的根证书由 `dev.sh up` 取到数据目录交给核心。走查“HTTPS 和域名”设置页时用 `dev.sh up` 末尾打印的
+`HTTPREQ_ENDPOINT`（服务商选“其他”），后缀填 `example.test`。
+
+局域网记录要的地址用 challtestsrv 加（它同时从 `127.0.0.1:18086` 暴露管理接口）：
+
+```bash
+curl -sS --noproxy '*' -X POST http://127.0.0.1:18086/add-a \
+  -d '{"host":"*.lan.example.test","addresses":["<这台主机的局域网地址>"]}'
+```
+
 ## 端到端冒烟
 
 核心一键升级有单独的一条（ADR-0025）：`deploy/dev/core/smoke-upgrade.sh`，在要测的主机上直接执行，用 install.sh 安装，走升级、自动回滚和手动退回，这台主机上不能有真装的云吞。

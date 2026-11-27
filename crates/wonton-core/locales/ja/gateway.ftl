@@ -192,6 +192,13 @@ clients-gate-public-list-not-cleared = 公開証明書リストが空になっ�
 clients-gate-entry-not-reloaded = 入口が設定を読み直していません：{ $error }
 clients-gate-connector-mismatch = コネクターのコンテナがスイッチと一致しません
 clients-gate-public-list-mismatch = 公開証明書リストがスイッチと一致しません
+clients-domain-terms-required = 先に Let's Encrypt の加入者契約に同意してください
+clients-domain-external-certificate = この家は自前の証明書（WONTON_ENTRY_CERTIFICATE=external）を使うので、コアは発行しません
+clients-domain-fixed-suffix = サーバー名は固定です。プロバイダーと認証情報だけ変えられます
+clients-domain-suffix-required = ドメインを入力してください
+clients-domain-suffix-invalid = 小文字の ASCII ドメインを、ワイルドカードとポートなしで入力してください
+clients-domain-suffix-ip = IP アドレスではなくドメイン名を入力してください
+clients-domain-credentials-required = 初回設定またはプロバイダー変更時は、そのプロバイダーの認証情報も入力してください
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
 
 # agent_acp の転送（ADR-0061 第 5 ブロック）：接続時の拒否とフレームごとのエラーを、種別付きで利用者に返す。

@@ -56,6 +56,7 @@ enum SettingsRoute: Hashable {
     case pairing
     case peers
     case friends
+    case clientsDomain
     case egress
     case registryMirror
     case coreUpgrade

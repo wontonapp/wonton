@@ -20,7 +20,7 @@ use wonton_protocol::{JoinOutcome, RoleDef};
 pub use client::{PAIR_TIMEOUT, pair, pair_with_timeout};
 pub use server::{PairHandler, PairProtocol};
 
-use crate::relays::Relay;
+use crate::relays::RelayView;
 
 /// 配对协议的 ALPN，和隧道的 ALPN 挂在同一个 endpoint 上。协议不兼容地变化时升级末尾的版本号。
 pub const PAIR_ALPN: &[u8] = b"wonton/pair/0";
@@ -39,7 +39,7 @@ pub const SECRET_LEN: usize = 16;
 pub struct PairingCode {
     pub server_id: EndpointId,
     /// 服务端的中继表：地址、可选准入令牌、档位（ADR-0048）。
-    pub relays: Vec<Relay>,
+    pub relays: Vec<RelayView>,
     /// 手机能直接到达的地址，例如局域网 IP 加核心发布的隧道端口。至少要有一个中继地址或直连地址：
     /// n0 的地址发现在国内靠不住（ADR-0004）。
     pub direct_addrs: Vec<SocketAddr>,
@@ -194,12 +194,12 @@ impl Fields {
                 EndpointId::from_str(id).map_err(|e| malformed("server ID", &e.to_string()))
             })?;
         let relays = match self.relays.as_deref() {
-            Some(text) => serde_json::from_str::<Vec<Relay>>(text)
+            Some(text) => serde_json::from_str::<Vec<RelayView>>(text)
                 .map_err(|e| malformed("relay table", &e.to_string()))?,
             None => Vec::new(),
         }
         .into_iter()
-        .map(crate::relays::canonical_relay)
+        .map(crate::relays::canonical_view)
         .collect::<Vec<_>>();
         for relay in &relays {
             relay
@@ -337,7 +337,7 @@ mod tests {
     fn code() -> PairingCode {
         PairingCode {
             server_id: SecretKey::generate().public(),
-            relays: vec![crate::relays::Relay {
+            relays: vec![crate::relays::RelayView {
                 url: "https://relay.example.com/".parse().unwrap(),
                 token: Some(crate::relays::RelayToken::new("tok")),
                 quic_port: None,

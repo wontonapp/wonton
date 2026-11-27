@@ -19,7 +19,7 @@ use wonton_protocol::{
     CaaState, CertificateState, CredentialEntry, DomainSettings, LanRecordState, PutDomainRequest,
 };
 
-use crate::entry_certificate::{CertificateConfig, CertificateManager, validate_domain};
+use crate::entry_certificate::{CertificateConfig, CertificateManager};
 use crate::entry_settings::{EntrySettings, parse_resolvers};
 use crate::matrix::NoticeRoom;
 use crate::plugin::docker::Engine;
@@ -66,6 +66,12 @@ impl Store {
 /// 设置项的失败，接口按类别回 400 或 409。
 #[derive(Debug, thiserror::Error)]
 pub enum DomainError {
+    /// 固定说法，值是 `gateway.ftl` 的 id，接口按 App 的语言写。
+    #[error("{0}")]
+    InvalidKey(&'static str),
+    #[error("{0}")]
+    ConflictKey(&'static str),
+    /// 动态说法（读文件、解析外部返回值失败）。
     #[error("{0}")]
     Invalid(String),
     #[error("{0}")]
@@ -268,6 +274,12 @@ impl Domain {
     pub async fn view(&self) -> Result<DomainSettings> {
         let store = self.effective()?;
         let fixed = self.fixed_suffix()?;
+        let caa = self.caa_state(&store).await;
+        // 已经限定到本机账号了就不再给建议，页面不用多显示一条。
+        let caa_record = match caa {
+            CaaState::Bound => None,
+            _ => self.caa_record(&store).await,
+        };
         Ok(DomainSettings {
             suffix: fixed.clone().or(store.suffix.clone()),
             suffix_editable: fixed.is_none(),
@@ -277,8 +289,11 @@ impl Domain {
             credentials_set: store.has_credentials(),
             terms_accepted: store.terms_accepted,
             certificate: self.certificate_state(&store),
-            caa: self.caa_state(&store).await,
+            caa,
+            caa_record,
+            // `*.lan` 的记录和目标由网关从局域网检测的同一份状态覆盖，这里先给空。
             lan_record: LanRecordState::Unknown,
+            lan_target: None,
         })
     }
 
@@ -286,9 +301,7 @@ impl Domain {
     /// 凭据为空时沿用已存的；家名服务的安装本来就不用服务商和凭据，两者也都可空。
     pub async fn save(self: &Arc<Self>, request: PutDomainRequest) -> Result<Saved, DomainError> {
         if !request.accept_terms {
-            return Err(DomainError::Invalid(
-                "先勾选 Let's Encrypt 的订户协议".into(),
-            ));
+            return Err(DomainError::InvalidKey("clients-domain-terms-required"));
         }
         let settings = EntrySettings::load(&self.install_dir).map_err(invalid)?;
         // 主人自己放了 site.pem 的安装不跑 ACME：收下设置也没人签，直接说清楚。
@@ -296,8 +309,8 @@ impl Domain {
             .as_ref()
             .is_some_and(|settings| settings.external_certificate)
         {
-            return Err(DomainError::Conflict(
-                "装的是自己的证书（WONTON_ENTRY_CERTIFICATE=external），核心不签发".into(),
+            return Err(DomainError::ConflictKey(
+                "clients-domain-external-certificate",
             ));
         }
         let registered = settings
@@ -324,9 +337,7 @@ impl Domain {
                             .as_deref()
                             .is_some_and(|value| value != fixed)
                         {
-                            return Err(DomainError::Conflict(
-                                "服务器名已经定了，后缀只能换服务商和凭据".into(),
-                            ));
+                            return Err(DomainError::ConflictKey("clients-domain-fixed-suffix"));
                         }
                         fixed.clone()
                     }
@@ -335,8 +346,10 @@ impl Domain {
                             .suffix
                             .clone()
                             .or_else(|| previous.clone())
-                            .ok_or_else(|| DomainError::Invalid("先填一个后缀".into()))?;
-                        validate_domain(&suffix).map_err(invalid)?;
+                            .ok_or(DomainError::InvalidKey("clients-domain-suffix-required"))?;
+                        if let Some(id) = suffix_problem(&suffix) {
+                            return Err(DomainError::InvalidKey(id));
+                        }
                         suffix
                     }
                 };
@@ -353,8 +366,8 @@ impl Domain {
                     && !(registered && provider.is_empty())
                     && (provider_changed || !store.has_credentials())
                 {
-                    return Err(DomainError::Invalid(
-                        "首次配置或换服务商时要一起提交这个服务商的凭据".into(),
+                    return Err(DomainError::InvalidKey(
+                        "clients-domain-credentials-required",
                     ));
                 }
                 store.suffix = Some(suffix);
@@ -374,12 +387,14 @@ impl Domain {
                 })
             })
             .await?;
+        let credentials_supplied = !credentials.is_empty();
         if saved.suffix_changed || saved.provider_changed {
             // 删准备状态要和进行中的签发互斥：签发正用着它们。
             let _serial = self.issuance.lock().await;
             self.reset_prepared();
         }
-        self.spawn_issue();
+        // 换了名字或服务商要重签；只换凭据时准备状态还在、证书也新，得强制一次去验新凭据。
+        self.spawn_issue(credentials_supplied || saved.suffix_changed || saved.provider_changed);
         Ok(saved)
     }
 
@@ -397,7 +412,7 @@ impl Domain {
     }
 
     /// 准入条件够了就排一次签发；续期循环和保存都走这里。
-    fn spawn_issue(self: &Arc<Self>) {
+    fn spawn_issue(self: &Arc<Self>, force: bool) {
         let store = match self.effective() {
             Ok(store) => store,
             Err(error) => {
@@ -414,12 +429,12 @@ impl Domain {
             return;
         }
         self.pending.fetch_add(1, Ordering::SeqCst);
-        tokio::spawn(self.clone().run_issue(store));
+        tokio::spawn(self.clone().run_issue(store, force));
     }
 
     /// 续期循环的一轮：条件不够就如实跳过，够了就排一次签发。
     pub fn renew_if_configured(self: &Arc<Self>) {
-        self.spawn_issue();
+        self.spawn_issue(false);
     }
 
     fn ready(&self, store: &Store) -> bool {
@@ -437,14 +452,18 @@ impl Domain {
         registration.is_some() || (store.provider.is_some() && store.has_credentials())
     }
 
-    async fn run_issue(self: Arc<Self>, snapshot: Store) {
+    async fn run_issue(self: Arc<Self>, snapshot: Store, force: bool) {
         let _serial = self.issuance.lock().await;
         // 排队时设置可能已经变过：拿到锁后以现状为准，快照过期就跳过——变更方自己排的
         // 任务会按新设置签。旧任务若按旧快照重新 prepare，会把新设置的准备状态和证书
         // 都写成旧的，续期从此对不上。
         match self.effective() {
             Ok(current) if current.clone().issuance_snapshot() == snapshot.issuance_snapshot() => {
-                self.issue_locked(&current).await
+                if !force && self.fresh(&current) {
+                    tracing::info!("证书还新且上次没失败，跳过重复的签发");
+                } else {
+                    self.issue_locked(&current).await;
+                }
             }
             Ok(_) => {
                 tracing::info!("签发任务排队期间设置已变更，跳过这次（按新设置另排的任务负责）");
@@ -454,6 +473,39 @@ impl Domain {
             }
         }
         self.pending.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    /// 已经发布给现在这个名字的证书还新（到期超过 30 天）、上一次没失败：
+    /// 重复点保存或另一台设备再保存一次不必重新签一张。
+    ///
+    /// 不能拿 [`Self::certificate_state`] 判：它在 `pending > 0` 时先给 `Issuing`，
+    /// 而 `run_issue` 一定是在排过队之后跑的。换过后缀时 `reset_prepared` 删掉了身份，
+    /// 旧证书虽然新也不是给这个名字的，所以要按叶证书的 SAN 再看一眼。
+    fn fresh(&self, store: &Store) -> bool {
+        let Some(suffix) = store.suffix.as_deref() else {
+            return false;
+        };
+        if store.last_error.is_some() {
+            return false;
+        }
+        let entry = self.install_dir.join("entry");
+        // 准备状态属于这次的服务商和名字：换过就删了，删了就得重签。
+        if !entry.join("prepared.json").is_file() {
+            return false;
+        }
+        let certs = entry.join("certs");
+        if !certs.join("site.key").is_file() {
+            return false;
+        }
+        let Some(not_after_ms) = self.not_after_ms() else {
+            return false;
+        };
+        if not_after_ms <= now_ms() + 30 * 24 * 60 * 60 * 1000 {
+            return false;
+        }
+        crate::entry_certificate::published_names(&certs.join("site.pem"))
+            .iter()
+            .any(|name| name == suffix)
     }
 
     /// 持有签发锁时真正跑一轮签发；结果进设置文件，失败原证书保留。
@@ -635,21 +687,24 @@ impl Domain {
         fallback.flatten()
     }
 
+    /// 当前 CA 的身份和本机账号：CAA 记录和判定都要这两样。
+    async fn caa_binding(&self, store: &Store) -> Option<(String, String)> {
+        let acme = self.acme().ok()?;
+        // 认不出当前 CA 的身份就不猜：显示 Unknown，签发路径会当场拒绝。
+        let identity = crate::entry_dns::caa_identity(&acme.directory_url)?;
+        let manager = self.manager(store).ok()?;
+        let account = manager.account_uri().ok()?;
+        Some((account, identity))
+    }
+
     async fn caa_state(&self, store: &Store) -> CaaState {
         let Some(suffix) = store.suffix.as_deref() else {
             return CaaState::Unknown;
         };
+        let Some((account, identity)) = self.caa_binding(store).await else {
+            return CaaState::Unknown;
+        };
         let Ok(acme) = self.acme() else {
-            return CaaState::Unknown;
-        };
-        // 认不出当前 CA 的身份就不猜：显示 Unknown，签发路径会当场拒绝。
-        let Some(identity) = crate::entry_dns::caa_identity(&acme.directory_url) else {
-            return CaaState::Unknown;
-        };
-        let Ok(manager) = self.manager(store) else {
-            return CaaState::Unknown;
-        };
-        let Ok(account) = manager.account_uri() else {
             return CaaState::Unknown;
         };
         let key = format!("{suffix}|{account}|{identity}");
@@ -667,6 +722,15 @@ impl Domain {
         state
     }
 
+    /// 照抄就能变成 `Bound` 的那条 `issue` 记录（RFC 8657 限定到本机账号）。
+    async fn caa_record(&self, store: &Store) -> Option<String> {
+        let suffix = store.suffix.as_deref()?;
+        let (account, identity) = self.caa_binding(store).await?;
+        Some(format!(
+            "{suffix}. CAA 0 issue \"{identity}; accounturi={account}; validationmethods=dns-01\""
+        ))
+    }
+
     async fn notify(&self, id: &str, error: &str) {
         let Some(notices) = &self.notices else {
             return;
@@ -678,6 +742,14 @@ impl Domain {
         {
             tracing::error!(%error, "入口状态通知失败");
         }
+    }
+}
+
+/// 后缀不合法时给哪条本地化说法；规则和 `validate_domain` 一致，只是按 App 的语言分。
+fn suffix_problem(suffix: &str) -> Option<&'static str> {
+    match wonton_protocol::suffix_problem(suffix)? {
+        wonton_protocol::SuffixProblem::Invalid => Some("clients-domain-suffix-invalid"),
+        wonton_protocol::SuffixProblem::Ip => Some("clients-domain-suffix-ip"),
     }
 }
 
