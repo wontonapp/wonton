@@ -295,9 +295,12 @@ fn avatar_handle(url: &str) -> Option<MediaHandle> {
 
 fn send_state(status: SendStatus) -> SendState {
     match status {
+        // 字节都交给了服务器、还在等服务器收下事件时不再给比例：界面写“已保存，等待送达”，
+        // 别把 100% 停在气泡上冒充还在传。
         SendStatus::Sending { progress } => SendState::Sending {
             progress: progress.and_then(|p| {
-                (p.total > 0).then(|| (p.current.min(p.total) as f64 / p.total as f64) as f32)
+                (p.total > 0 && p.current < p.total)
+                    .then(|| (p.current as f64 / p.total as f64) as f32)
             }),
         },
         SendStatus::Sent => SendState::Sent,
@@ -546,18 +549,19 @@ mod tests {
     }
 
     #[test]
-    fn timeline_exposes_upload_fractions_without_hiding_regressions() {
+    fn timeline_exposes_upload_fractions_until_the_bytes_are_up() {
         for (counters, expected) in [
             (None, None),
             (Some((0, 0)), None),
             (Some((8, 0)), None),
             (Some((0, 8)), Some(0.0)),
-            (Some((4, 8)), Some(0.5)),
             (Some((2, 8)), Some(0.25)),
-            (Some((8, 8)), Some(1.0)),
-            (Some((9, 8)), Some(1.0)),
-            (Some((u64::MAX, 1)), Some(1.0)),
-            (Some((u64::MAX, u64::MAX)), Some(1.0)),
+            (Some((4, 8)), Some(0.5)),
+            // 字节传完以后换“已保存，等待送达”，不再报 100%。
+            (Some((8, 8)), None),
+            (Some((9, 8)), None),
+            (Some((u64::MAX, 1)), None),
+            (Some((u64::MAX, u64::MAX)), None),
         ] {
             let item = timeline_item(
                 entry(SendStatus::Sending {
