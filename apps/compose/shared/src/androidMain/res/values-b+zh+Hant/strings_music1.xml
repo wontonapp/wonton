@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Entry and section title in the native music library: the artists. -->
+    <string name="music_artists">歌手</string>
+    <!-- Entry and section title in the native music library: all songs. -->
+    <string name="music_songs">歌曲</string>
+    <!-- Entry and page title in the native music library: what the person marked as favorite. -->
+    <string name="music_starred">收藏</string>
+    <!-- Entry and page title in the native music library: the genres. -->
+    <string name="music_genres">曲風</string>
+    <!-- Row title on the music library home: albums added most recently. -->
+    <string name="music_recently_added">最近加入</string>
+    <!-- Row title on the music library home: albums played most recently. -->
+    <string name="music_recently_played">最近播放</string>
+    <!-- Placeholder of the search field in the music library. -->
+    <string name="music_search_prompt">歌手、專輯、歌曲</string>
+    <!-- Toolbar menu on the albums page: change the order. -->
+    <string name="music_sort">排序</string>
+    <!-- Album order: most played first. -->
+    <string name="music_sort_frequent">播放最多</string>
+    <!-- Album order: by album title. -->
+    <string name="music_sort_name">專輯名稱</string>
+    <!-- Album order: by artist name. -->
+    <string name="music_sort_artist">歌手</string>
+    <!-- Album order: shuffled. -->
+    <string name="music_sort_random">隨機</string>
+    <!-- Button and menu item: mark a song, album or artist as favorite. -->
+    <string name="music_star">收藏</string>
+    <!-- Button on an album or artist page that is already a favorite; tapping it removes the favorite. -->
+    <string name="music_starred_label">已收藏</string>
+    <!-- How many albums an artist or genre has. Argument: the count. -->
+    <plurals name="music_album_count">
+        <item quantity="other">%1$d 張專輯</item>
+    </plurals>
+    <!-- How many songs an album or playlist has. Argument: the count. -->
+    <plurals name="music_song_count">
+        <item quantity="other">%1$d 首歌曲</item>
+    </plurals>
+    <!-- Section title for one disc of a multi-disc album. Argument: the disc number. -->
+    <string name="music_disc">第 %1$d 張碟片</string>
+    <!-- Problem title: the music library did not accept who this person is. -->
+    <string name="music_problem_not_signed_in_title">音樂庫沒認出你</string>
+    <!-- Next step under the not-recognized problem. -->
+    <string name="music_problem_not_signed_in_next_step">請管家裡伺服器的人看看音樂庫的帳號設定。</string>
+    <!-- Problem title: the album, artist or playlist is no longer in the library. -->
+    <string name="music_problem_not_found_title">音樂庫裡沒有這一項了</string>
+    <!-- Problem title: the music library itself returned an error. -->
+    <string name="music_problem_upstream_title">音樂庫出錯了</string>
+</resources>
