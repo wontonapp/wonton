@@ -82,6 +82,7 @@ pub use side_chat::{
     LatestSideChat, ResultLine, SIDE_CHAT_FIELD, SIDE_CHAT_RESULT_FIELD, SIDE_CHAT_SUPPORT_EVENT,
     SideChatFacts, ThreadActivity, result_line, root_marker, title_from_body,
 };
+pub use store_holder::StoreLease;
 pub use sync::{SyncStatus, last_sync_diagnostic};
 pub use timeline::{EntryKind, TimelineEntry};
 pub use verification::SelfVerification;

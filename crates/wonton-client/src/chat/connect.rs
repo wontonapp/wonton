@@ -105,20 +105,21 @@ impl ChatLink {
             }
             Target::External => (String::new(), None),
         };
-        // 等锁、过守卫的这会儿隧道可能又换过代理（抖动时每 1–3 秒一次）：用眼下最新的那个登录，别拿一个已经拆掉的
-        // 旧地址去 restore——旧地址的连接刚被掐断，restore 只会失败，再把连接号往前推一轮。
-        let proxy = match target {
-            Target::External => proxy,
-            _ => self.home.view().proxy.clone().or(proxy),
-        };
+        // 会话马上要让位（清理本身可能等 2 秒），视图先改成“正在登录”：这期间不能还挂着上一次的 SignedIn，
+        // 否则要会话的动作都回 `NotReady`、界面却显示已登录。
+        self.view
+            .send_modify(|view| view.account = ChatAccount::SigningIn);
         if let Some(old) = active.take() {
             self.forget_current().await;
             drop(old);
         }
-        // 会话刚被清掉，视图立刻改成“正在登录”：窗口里不能还挂着上一次的 SignedIn，否则要会话的动作
-        // 都回 `NotReady`、界面却显示已登录。
-        self.view
-            .send_modify(|view| view.account = ChatAccount::SigningIn);
+        // 清理这会儿隧道可能又换过代理（抖动时每 1–3 秒一次）：用眼下最新的那个登录，别拿一个已经拆掉的旧地址
+        // 去 restore。走的时候还有代理、这时没了就交给 follow_home 的 `None` 分支（它会断开会话、离线恢复）。
+        let proxy = match target {
+            Target::External => proxy,
+            Target::Home(_) if self.home.view().proxy.is_none() => return,
+            _ => self.home.view().proxy.clone().or(proxy),
+        };
         *lock(&self.signing_proxy) = proxy.clone();
         tracing::info!(server = %server_id, proxy = proxy.is_some(), "Matrix sign-in starting");
         // 账号数据跟着服务器走：断线时先留着，换服务器才清。

@@ -30,18 +30,29 @@ pub(super) async fn run(chat: Weak<ChatLink>, mut home: watch::Receiver<HomeView
         let reconnected = now_connected && !connected;
         connected = now_connected;
         if seen.as_ref() != Some(&key) {
-            seen = Some(key.clone());
             // 等隧道稳一小会儿再用最后的代理：中间的地址不各换一次会话。等不及或一直不稳就按最后看到的值走。
-            let mut latest = key.1.clone();
+            // 等待里只看不消费（`borrow`），等完重算一次 key 和连接状态：另一个变化还没被标记过，下一次循环
+            // 会照它再来一遍。
+            let (mut latest, mut latest_connected) = key.clone();
             for _ in 0..PROXY_SETTLE_ROUNDS {
                 tokio::time::sleep(PROXY_SETTLE).await;
-                let now = home.borrow_and_update().proxy.clone();
-                if now == latest {
+                let (now, now_connected) = {
+                    let view = home.borrow();
+                    (
+                        (view.server_id.clone(), view.proxy.clone()),
+                        view.status == HomeStatus::Connected,
+                    )
+                };
+                let changed = now != latest;
+                latest = now;
+                latest_connected = now_connected;
+                if !changed {
                     break;
                 }
-                latest = now;
             }
-            match latest {
+            seen = Some(latest.clone());
+            connected = latest_connected;
+            match latest.1 {
                 Some(next) => {
                     link.runtime
                         .spawn(link.clone().connect(super::connect::Target::Home(next)));

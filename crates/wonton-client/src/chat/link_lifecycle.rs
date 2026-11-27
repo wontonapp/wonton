@@ -33,19 +33,19 @@ impl ChatLink {
         });
         let session = lock(&self.session).take();
         if let Some(session) = session {
-            // 停同步要等滑动同步在途的那一次请求回来：matrix-sdk 的 sliding sync 只在两次请求之间收
-            // `SyncLoopStop`（`sliding_sync::sync` 的 select 里，请求在 `sync_once` 内不受打断）。隧道刚断、
-            // 代理已经不在了的时候，那次长轮询要等到自己超时，几十秒都有可能；而调用方这时多半正要重新登录，
-            // 等待期间 `session` 是空的，要会话的动作全吃 `NotReady`。
+            // `stop_sync` 会等 `sync_service` 的 supervisor 和两条同步任务收完。`sliding_sync::sync` 的
+            // `select!` 是 `biased` 的：`SyncLoopStop` 一到就把正在跑的 `sync_once` 连请求一起丢掉；收不了场的是
+            // 拿到应答之后的处理（`handle_response` + 写存储），隧道刚断、代理已经不在了的时候可能就是这一轮。
             //
-            // 所以只等一小会儿就放掉旧会话：Arc 一落，客户端也就走了，它在途的那次请求跟着断，服务器那边的
-            // 长轮询随之了断。把旧的留在后台停、让新登录和它并存，反而会和它的在途请求抢同一个会话（实测
-            // `a_restart_does_not_wait_for_the_dead_long_poll` 从 12s 变成 40s）。
+            // 所以只等一小会儿就放掉旧会话：Arc 一落，会话和它的 `Client` 跟着落，新登录不用排在这轮处理后面。
+            // 超时的那条路上同步服务的任务还在跑（它们自己持有 `Client`），存储租约要替名字多活一会儿，见下。
             if tokio::time::timeout(STOP_SYNC_GRACE, session.stop_sync())
                 .await
                 .is_err()
             {
                 tracing::info!(slot = %self.slot, "旧同步没停下来，直接放掉旧会话");
+                self.runtime
+                    .spawn(session.keep_store_lease_until_sync_settles());
             }
         }
     }
@@ -71,6 +71,8 @@ impl ChatLink {
                     if let SyncStatus::Failed(error) = &status
                         && failure(error) == ChatFailure::TransportUnavailable
                         && let Some(link) = chat.upgrade()
+                        // 外部 Matrix 账号走 `External`，`signing_proxy` 恒为 None，别改登家里的服务器。
+                        && !link.external
                         && let Some(proxy) = link.home.view().proxy.clone()
                         && lock(&link.signing_proxy).as_ref() != Some(&proxy)
                     {

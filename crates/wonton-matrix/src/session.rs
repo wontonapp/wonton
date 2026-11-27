@@ -170,6 +170,13 @@ pub struct MatrixSession {
     _store_lease: Option<StoreLease>,
 }
 
+impl MatrixSession {
+    /// 存储租约的又一份句柄：只为把名字多留一会儿（会话落了、它的 SDK 任务还在写存储时），不持有会话。
+    pub(crate) fn store_lease(&self) -> Option<StoreLease> {
+        self._store_lease.as_ref().map(StoreLease::keep_alive)
+    }
+}
+
 impl Drop for MatrixSession {
     fn drop(&mut self) {
         self.sending.abort();
