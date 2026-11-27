@@ -19,3 +19,5 @@ onboarding-profile-name-empty = 名字不能空白
 onboarding-profile-name-control = 名字裡不能有換行或控制字元
 
 onboarding-profile-email-cleared = 電子郵件填過以後只能修改、不能清除：需要電子郵件的 App 重建時會用到它
+
+onboarding-steps-not-assistant-step = 不在你的助手這一步
