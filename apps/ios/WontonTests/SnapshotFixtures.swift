@@ -250,6 +250,7 @@ enum SnapshotFixtures {
                     membership: .invited, preview: nil, sideChats: false, unreadCount: 0, layout: layout
                 )
             ],
+            sharedContacts: [],
             problem: nil, push: .registered, pendingConfirmations: [], settledConfirmations: [],
             backgroundNotifications: [], bots: [],
             chatLayoutDefault: ChatLayoutChoice(form: nil, textScale: nil, code: nil)
