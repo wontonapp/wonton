@@ -1,7 +1,0 @@
-# fix-973-r2：合 main 4d151ac8
-
-- 合并提交 9222249a（`git merge origin/main`）。冲突两处：`TimelineList.kt` 的 `dayMarksFor` main 已用固定 `size` 修过同一个越界，取 main；`ui_fake_timeline.rs` 用例相邻冲突两条都留。
-- 守住：#1015 的 `ForwardMessage.comment` 一次派发（`chat/mod.rs` 交 `forward_message(.., comment.as_deref())`，假时间线先落附言）、侧聊说明只跟第一张试过的照片、`SendComposer` 在 `dispatch` 先 `stop_typing`；对应单测和两条 iOS 界面用例都在。
-- 验证：`cargo test -p wonton-client --features ui-fake --lib` 460 passed；clippy（protocol/client/matrix，`-D warnings`）0 warning；fmt、冲突标记、行数、界面文字、uniffi 注释、壳对齐通过；iOS `swiftlint --strict`（235 文件）0 violation；`android-build.sh`（detekt、单元测试、assembleDebug）成功；`RoomAttachPanelTest` 10 passed。
-- 红的：`RoomEditTest#confirmReplacesTextAndShowsEdited`（确认编辑后编辑条 5 秒收不掉），合并树上连红两次；在纯 main 4d151ac8 的临时 worktree 上同样红，不是这次合并带来的。同类另两条通过。
-- 已推 `HEAD:fix-802-typing`，head 9222249a。

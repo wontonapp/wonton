@@ -52,6 +52,7 @@ const V0_13: SpecVersion = SpecVersion::new(0, 13);
 const V0_14: SpecVersion = SpecVersion::new(0, 14);
 const V0_15: SpecVersion = SpecVersion::new(0, 15);
 const V0_16: SpecVersion = SpecVersion::new(0, 16);
+const V0_17: SpecVersion = SpecVersion::new(0, 17);
 
 /// 0.6 以后才有的写法，以及从某一版起不再写的写法。新加清单字段或退役写法时在这里加一行，规范的
 /// “各版本新增的字段”同步加；漏改时 spec_floor_tests 里照规范手抄的期望清单测试会红。
@@ -123,6 +124,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_16, Added::Field(&["provides", "*", "operations"])),
     (V0_16, Added::Field(&["provides", "*", "kinds"])),
     (V0_16, Added::RetiredPermission("models")),
+    (V0_17, Added::Field(&["provides", "*", "browse"])),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。

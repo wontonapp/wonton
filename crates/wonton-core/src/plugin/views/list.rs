@@ -220,6 +220,7 @@ impl PluginManager {
                         .collect()
                 },
             ),
+            media_browse: manifest.and_then(super::super::manifest_browse::plugin_browse),
             matrix_widget: manifest.and_then(super::super::manifest_widget::plugin_widget),
         }
     }

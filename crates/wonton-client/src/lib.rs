@@ -31,6 +31,7 @@ mod app_lock;
 mod appearance;
 mod bot_contacts;
 mod browser;
+mod cache_dir;
 mod chat;
 mod client;
 mod clients;
@@ -45,6 +46,7 @@ mod link;
 mod lock_screen;
 mod logging;
 mod matrix_login;
+mod music_library;
 mod onboarding;
 mod pages;
 mod peers;
@@ -67,7 +69,7 @@ mod widget;
 pub use appearance::default_appearance;
 pub use chat::TimelineSubscription;
 pub use chat::bot_current_avatar;
-pub use client::{ClientCore, ShareInSubscription};
+pub use client::{ClientCore, MusicPageSubscription, ShareInSubscription};
 pub use device_choices::{
     DeviceChoices, SerialChoice, chosen_device_ids, device_choices, toggle_device,
     upgrade_highest_risk,

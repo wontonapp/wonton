@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::media::{MediaKind, MediaOperation};
+use crate::media::{MediaBrowse, MediaKind, MediaOperation};
 
 /// 插件给其他插件提供的能力（ADR-0053）：`models` 和 `egress_proxy` 有专用字段，其余能力（核心定义的
 /// 或第三方的）按能力名放进 [`Self::capabilities`]。
@@ -36,6 +36,9 @@ pub struct ProviderService {
     /// 自报的内容种类。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub kinds: Vec<MediaKind>,
+    /// 只写在 `media_source` 上：客户端核心还能按这个标准直接浏览库，要求插件有 `webui`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browse: Option<MediaBrowse>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +144,38 @@ mod tests {
             serde_json::json!(["upload", "transcode"])
         );
         assert_eq!(back["kinds"], serde_json::json!(["photo", "hologram"]));
+    }
+
+    #[test]
+    fn browse_roundtrips_and_unknown_standards_fall_to_other() {
+        let json = media_source(
+            r#", "operations": ["playback"], "kinds": ["audio"], "browse": "opensubsonic""#,
+        );
+        let provider: ProviderService = serde_json::from_str(&json).unwrap();
+        assert_eq!(provider.browse, Some(MediaBrowse::OpenSubsonic));
+        assert_eq!(
+            serde_json::to_value(&provider).unwrap()["browse"],
+            "opensubsonic"
+        );
+
+        let json = media_source(
+            r#", "operations": ["playback"], "kinds": ["audio"], "browse": "jellyfin""#,
+        );
+        let provider: ProviderService = serde_json::from_str(&json).unwrap();
+        assert_eq!(provider.browse, Some(MediaBrowse::Other("jellyfin".into())));
+        assert_eq!(
+            serde_json::to_value(&provider).unwrap()["browse"],
+            "jellyfin"
+        );
+
+        let provider: ProviderService = serde_json::from_str(&media_source("")).unwrap();
+        assert_eq!(provider.browse, None);
+        assert!(
+            serde_json::to_value(&provider)
+                .unwrap()
+                .get("browse")
+                .is_none()
+        );
     }
 
     #[test]

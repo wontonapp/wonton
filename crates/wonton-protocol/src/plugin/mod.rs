@@ -211,6 +211,11 @@ pub struct InstalledPlugin {
     /// `deny_unknown_fields`：新核心给端口项加字段时旧 App 照样读得懂列表。
     #[serde(default)]
     pub tunnel_ports: Vec<crate::MappedPort>,
+    /// 清单 `provides.media_source.browse`：客户端核心能直接按这个标准浏览它的库，点开进原生界面，网页放进
+    /// “更多”（ADR-0113）；没声明时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub media_browse: Option<crate::media::MediaBrowse>,
     /// 清单声明了 `matrix_widget`：网页能在房间里作为 Matrix widget 打开（ADR-0096）。
     #[serde(default)]
     pub matrix_widget: Option<PluginWidget>,

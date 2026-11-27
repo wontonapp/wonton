@@ -83,6 +83,7 @@ fn plugin() -> InstalledPlugin {
         install_progress: None,
         install_failure: None,
         tunnel_ports: Vec::new(),
+        media_browse: None,
         matrix_widget: None,
     }
 }
