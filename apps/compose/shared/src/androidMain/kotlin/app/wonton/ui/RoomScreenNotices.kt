@@ -20,6 +20,8 @@ internal fun botChatNotice(availability: BotChatAvailability?): Int? = when (ava
         BotChatUnavailable.OWNER_PRIVATE -> R.string.room_bot_other_private
         BotChatUnavailable.GRANT_NOT_ACTIVE -> R.string.room_bot_grant_revoked
         BotChatUnavailable.OTHER -> R.string.room_bot_unavailable
+        // 协议先于壳多出来的原因：旧壳先显示通用句，别让整层编不过。
+        else -> R.string.room_bot_unavailable
     }
     BotChatAvailability.Unknown -> R.string.room_bot_unknown
 }
