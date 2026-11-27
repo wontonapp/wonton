@@ -2,6 +2,7 @@
 //! 本机。真实的 tusd 和核心的行为见 `wonton-core` 的 `gateway::files_upload_tests`。
 
 mod upload;
+mod upload_resume;
 
 use std::fs::File;
 use std::os::fd::IntoRawFd;
