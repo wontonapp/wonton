@@ -4,7 +4,7 @@
 - 取代：[ADR-0007](0007-agents-and-bots.md) 的多内核接入、ACP 桥及默认安装的模型网关前置；[ADR-0035](0035-acp-bridge.md) 的自建 Matrix↔ACP 桥；[ADR-0061](0061-agent-runtime-and-frontends.md) 的多运行时、多前端、`agent_acp` 网关和跨内核委派路线。不取代 Bot 身份、核心确认和受控发送等底座约束。
 - 修订：[ADR-0008](0008-model-gateway-magpie.md)、[ADR-0055](0055-model-gateway-optional.md) 的 Magpie 系统插件与 Agent 模型入口规则；[ADR-0034](0034-onboarding-and-help.md) 的选内核、模型设置和经桥订阅登录；[ADR-0079](0079-agent-plugins-monorepo.md) 的逐家 ACP 适配；[ADR-0081](0081-local-agent-host.md) 的电脑 ACP 运行时路线；[ADR-0084](0084-agent-own-web.md) 的多内核接入前提。
 - 2026-11-19 补充（主人定，见第 6 节）：取代 [ADR-0059](0059-team-ops-plugins.md) 的编排器插件路线，并随 ACP 桥取代 [ADR-0058](0058-agent-side-sessions.md) 在桥里实现的部分；修订 [ADR-0015](0015-small-components-standard-interfaces.md) 的组件间标准接口（去掉 ACP），以及 ADR-0016、0038、0044、0053、0070、0082、0083、0088、0091、0093、0094 里由 ACP 桥或交接承担的部分和 ADR-0066 里其他官方 Agent 插件的技能挂载。
-- 2026-11-27 补充（[ADR-0129](0129-native-agent-model-setup.md)，提议）：第 4 节不变，App 经 Agent 插件声明的模型接入命令原生地列服务商、填 key、登录、选模型和测试，不另建 provider 目录或登录适配。
+- 2026-11-27 补充（[ADR-0129](0129-native-agent-model-setup.md)，主人定）：第 4 节不变，App 经 Agent 插件声明的模型接入命令原生地列服务商、填 key、登录、选模型和测试，不另建 provider 目录或登录适配。
 - 第 1 节“私人 Bot 之间保持独立容器”被 [ADR-0110](0110-one-hermes-container-per-person.md) 部分修订（提议）：同一个人的多个私人 Bot 默认共用他自己的一个 Hermes 容器，也可单独运行。
 
 ## 背景与主人原话
