@@ -140,6 +140,8 @@ impl Bots {
 #[cfg(test)]
 mod shared_rows_tests {
     use super::Local;
+    use super::*;
+    use wonton_protocol::BotRef;
 
     fn row(access: BotAccess) -> SharedBot {
         SharedBot {

@@ -4,6 +4,7 @@ use wonton_protocol::BotChatAvailability;
 use super::super::bot_activity::synthesize;
 use super::super::lock;
 use super::Bots;
+use super::Local;
 
 impl Bots {
     pub fn clear_activity(&self) {

@@ -2,6 +2,7 @@ use wonton_protocol::{BotView, ChatContact, RoomRow};
 
 use super::super::{contacts, lock};
 use super::Bots;
+use super::Local;
 
 impl Bots {
     /// Bot 列表和联系人候选在同一个视图写入里换：只看 `view.bots` 的壳不会撞上中间态。
