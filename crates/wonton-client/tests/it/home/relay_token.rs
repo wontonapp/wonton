@@ -66,8 +66,10 @@ async fn a_relay_that_rejects_the_token_is_named_and_a_good_token_connects() {
 
     // 票据不带令牌：客户端连不上中继，连接页和提示都说是令牌被拒。
     phone
-        .dispatch(Action::ConnectHome {
-            ticket: ticket(&home, json!([{"url": url, "tier": 0}])),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: ticket(&home, json!([{"url": url, "tier": 0}])),
+            },
         })
         .unwrap();
     phone
@@ -86,8 +88,10 @@ async fn a_relay_that_rejects_the_token_is_named_and_a_good_token_connects() {
 
     // 带上正确令牌重连：经中继连上，提示消失。
     phone
-        .dispatch(Action::ConnectHome {
-            ticket: ticket(&home, json!([{"url": url, "token": TOKEN, "tier": 0}])),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: ticket(&home, json!([{"url": url, "token": TOKEN, "tier": 0}])),
+            },
         })
         .unwrap();
     let view = phone

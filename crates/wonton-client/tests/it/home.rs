@@ -298,11 +298,13 @@ async fn an_invalid_reported_relay_keeps_the_saved_table() {
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
     phone
-        .dispatch(Action::ConnectHome {
-            ticket: ticket_with_relay(
-                &home,
-                serde_json::json!([{"url": "https://a.example/", "token": "tok", "tier": 0}]),
-            ),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: ticket_with_relay(
+                    &home,
+                    serde_json::json!([{"url": "https://a.example/", "token": "tok", "tier": 0}]),
+                ),
+            },
         })
         .unwrap();
     phone
@@ -336,11 +338,13 @@ async fn a_reported_relay_token_replaces_the_saved_one() {
     let home = Home::start(&[phone.device_id()]).await;
     let addr = home.server().endpoint().bound_sockets()[0];
     phone
-        .dispatch(Action::ConnectHome {
-            ticket: ticket_with_relay(
-                &home,
-                serde_json::json!([{"url": "https://a.example/", "tier": 0}]),
-            ),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: ticket_with_relay(
+                    &home,
+                    serde_json::json!([{"url": "https://a.example/", "tier": 0}]),
+                ),
+            },
         })
         .unwrap();
     phone
