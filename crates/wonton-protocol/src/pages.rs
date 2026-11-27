@@ -127,7 +127,8 @@ pub struct PagesViewModel {
     /// 主面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`，壳从第一页开。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel_selected: Option<TabRef>,
-    /// 本机改动还没同步上账号数据（多半是断网）：按不确定显示，连上后自动重试，不是错误。
+    /// 本机有改动没写进账号数据，并且上一次写或对账没成（多半是断网）：壳显示“改动还没同步上”。不是错误：
+    /// 核心连上时和之后定时自己再同步，同步上了变回 false。只是断着、本机没改过时是 false。
     #[serde(default)]
     pub sync_stale: bool,
     /// 每个 Bot 往主面板钉页的同意（服务器上的）；设置里按它显示和收回。

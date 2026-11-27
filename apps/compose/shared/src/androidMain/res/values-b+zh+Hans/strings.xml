@@ -102,7 +102,7 @@
     <string name="myapp_problem">我的应用读写出错</string>
     <string name="myapp_remove">从我的应用移出</string>
     <string name="myapp_sync_stale">改动还没同步上</string>
-    <string name="myapp_sync_stale_detail">本机已存好；连上服务器后自动同步。</string>
+    <string name="myapp_sync_stale_detail">本机已存好，会自动再同步。</string>
     <string name="owner_secrets_title">生成的密钥</string>
     <string name="owner_secrets_empty">这个应用没有可查看的生成密钥。</string>
     <string name="owner_secrets_show">显示</string>

@@ -102,7 +102,7 @@
     <string name="myapp_problem">マイアプリを読み書きできませんでした</string>
     <string name="myapp_remove">マイアプリから外す</string>
     <string name="myapp_sync_stale">同期がまだ完了していません</string>
-    <string name="myapp_sync_stale_detail">この端末には保存済み。接続後に自動で同期します。</string>
+    <string name="myapp_sync_stale_detail">この端末に保存済み。自動で同期し直します。</string>
     <string name="owner_secrets_title">生成されたキー</string>
     <string name="owner_secrets_empty">このアプリには表示できる生成済みキーがありません。</string>
     <string name="owner_secrets_show">表示</string>

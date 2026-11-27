@@ -562,6 +562,8 @@ struct ProblemDetail: View {
 /// 什么都显示不出来，整页说明。
 struct ProblemView: View {
     let problem: Problem
+    /// 核心说正在重试：“重试”转圈、不能再点。
+    var isRetrying = false
     let retry: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -576,8 +578,10 @@ struct ProblemView: View {
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
-            Button(String(localized: .Common.commonRetry), action: retry)
+            Button(action: retry) { RetryLabel(isRunning: isRetrying) }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
+                .disabled(isRetrying)
+                .accessibilityIdentifier("problemRetry")
                 .padding(.vertical, WontonTheme.spacing.s8)
             if let detail = problem.detail { ProblemDetail(text: detail) }
         }
@@ -632,6 +636,8 @@ extension View {
 /// 列表还在，只是少了点什么或者不是最新的：一条轻提示，不抢列表的位置。
 struct ProblemRow: View {
     let problem: Problem
+    /// 核心说正在重试：“重试”转圈、不能再点。
+    var isRetrying = false
     var retry: (() -> Void)?
     @Environment(\.wontonColors) private var colors
 
@@ -652,8 +658,34 @@ struct ProblemRow: View {
             }
             Spacer(minLength: 0)
             if let retry {
-                Button(String(localized: .Common.commonRetry), action: retry).buttonStyle(WontonSmallButtonStyle())
+                ProblemRetryButton(isRunning: isRetrying, action: retry)
             }
+        }
+    }
+}
+
+/// 出错提示上的小号“重试”（连接页的 `RetryButton` 是同一条规矩的大号）。进行中由核心给（壳不自己记点没点过）：
+/// 转圈、不能再点，宽度不变，提示不跳。
+struct ProblemRetryButton: View {
+    let isRunning: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) { RetryLabel(isRunning: isRunning) }
+            .buttonStyle(WontonSmallButtonStyle())
+            .disabled(isRunning)
+            .accessibilityIdentifier("problemRetry")
+    }
+}
+
+/// “重试”两个字；进行中换成转圈，字留着占宽。
+struct RetryLabel: View {
+    let isRunning: Bool
+
+    var body: some View {
+        ZStack {
+            Text(.Common.commonRetry).opacity(isRunning ? 0 : 1)
+            if isRunning { ProgressView().controlSize(.small) }
         }
     }
 }

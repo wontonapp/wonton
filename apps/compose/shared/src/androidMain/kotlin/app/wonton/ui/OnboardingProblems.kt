@@ -7,6 +7,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -25,9 +26,22 @@ import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
 
 @Composable
-internal fun OnboardingProblem(title: String, detail: String?, retry: (() -> Unit)? = null) {
+internal fun OnboardingProblem(
+    title: String,
+    detail: String?,
+    retrying: Boolean = false,
+    retry: (() -> Unit)? = null,
+) {
     WontonNotice(WontonIcon.Warning, title) {
-        retry?.let { WontonButton(stringResource(R.string.common_retry), it, kind = WontonButtonKind.SECONDARY) }
+        retry?.let {
+            WontonButton(
+                stringResource(R.string.common_retry),
+                it,
+                Modifier.testTag("problemRetry"),
+                kind = WontonButtonKind.SECONDARY,
+                running = retrying,
+            )
+        }
         detail?.let { ProblemDetail(it) }
     }
 }

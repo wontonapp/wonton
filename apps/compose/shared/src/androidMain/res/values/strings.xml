@@ -113,7 +113,7 @@
     <string name="myapp_problem">Couldn\'t load or save My apps</string>
     <string name="myapp_remove">Remove from My apps</string>
     <string name="myapp_sync_stale">Changes not synced yet</string>
-    <string name="myapp_sync_stale_detail">Saved on this device. They sync automatically once connected.</string>
+    <string name="myapp_sync_stale_detail">Saved on this device. Wonton keeps trying to sync.</string>
     <string name="owner_secrets_title">Generated keys</string>
     <string name="owner_secrets_empty">This app has no generated keys to show.</string>
     <string name="owner_secrets_show">Show</string>

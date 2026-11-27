@@ -23,6 +23,7 @@ mod layout;
 mod link_preview;
 mod mentions;
 mod message_actions;
+mod my_apps_sync;
 mod my_avatar;
 mod notification_actions;
 mod offline_start;

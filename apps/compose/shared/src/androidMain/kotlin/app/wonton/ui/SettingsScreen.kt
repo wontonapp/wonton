@@ -121,7 +121,8 @@ private fun SettingsScreen(settings: SettingsViewModel, version: String, onSubpa
             }
         }
         onboarding.view.problem?.let { problem ->
-            OnboardingProblem(problem.onboardingTitle(), problem.message) {
+            // 核心在重新取（主人点的，或连着时自己再取）时“重试”转圈、不能再点；有了结果核心换掉提示。
+            OnboardingProblem(problem.onboardingTitle(), problem.message, retrying = onboarding.view.loading) {
                 onboarding.send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
             }
         }

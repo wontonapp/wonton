@@ -248,17 +248,23 @@ impl CoreApi {
         timeout: Duration,
     ) -> Result<Vec<u8>, PluginProblem> {
         let path = url.path().to_owned();
-        let (status, bytes) = self
-            .exchange(method, url, body, content_type, timeout)
+        let (status, kind, bytes) = self
+            .exchange_detail(method, url, body, content_type, timeout)
             .await?;
         if status >= 400 {
-            return Err(self.problem(status, &bytes, &path).await);
+            return Err(self.problem(status, kind.as_deref(), &bytes, &path).await);
         }
         Ok(bytes)
     }
 
     /// 失败原因：接口在表里、服务器又比要的版本旧时归“服务器太旧”，否则按原来的类别。
-    async fn problem(&self, status: u16, body: &[u8], path: &str) -> PluginProblem {
+    async fn problem(
+        &self,
+        status: u16,
+        kind: Option<&str>,
+        body: &[u8],
+        path: &str,
+    ) -> PluginProblem {
         let minimum = (status == 404)
             .then(|| minimum_server_version(path))
             .flatten();
@@ -266,7 +272,7 @@ impl CoreApi {
             Some(_) => self.version.get(self).await,
             None => None,
         };
-        core_error(status, body, minimum, version.as_deref())
+        core_error(status, kind, body, minimum, version.as_deref())
     }
 
     /// 升级的接口都回 [`CoreUpgradeStatus`]；被拒绝的原因（`changed`、`busy`……）比插件的失败分类细，要原样保留。
@@ -481,11 +487,11 @@ impl CoreApi {
     ) -> Result<(), PluginProblem> {
         let mut url = self.base.clone();
         url.set_path(&window_path(card));
-        let (status, bytes) = self
-            .exchange(Method::DELETE, url, None, "application/json", timeout)
+        let (status, kind, bytes) = self
+            .exchange_detail(Method::DELETE, url, None, "application/json", timeout)
             .await?;
         if status >= 400 && status != 404 {
-            return Err(core_error(status, &bytes, None, None));
+            return Err(core_error(status, kind.as_deref(), &bytes, None, None));
         }
         Ok(())
     }

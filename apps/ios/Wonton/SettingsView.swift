@@ -107,7 +107,10 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if let problem = onboarding.rejection ?? onboarding.viewModel.problem?.problem {
-                    ProblemRow(problem: problem) { onboarding.send(.onboarding(action: .refreshOnboarding)) }
+                    // 核心在重新取（主人点的，或连着时自己再取）时“重试”转圈、不能再点；有了结果核心换掉提示。
+                    ProblemRow(problem: problem, isRetrying: onboarding.viewModel.loading) {
+                        onboarding.send(.onboarding(action: .refreshOnboarding))
+                    }
                 }
                 ForEach(Array(model.viewModel.sections.enumerated()), id: \.offset) { _, section in
                     WontonGroup {

@@ -6,10 +6,13 @@ use wonton_protocol::{PluginFailure, PluginProblem, SettingsProblem, is_older};
 use super::{ErrorBody, not_connected};
 use crate::l10n::{CATALOG, language};
 
-/// 按核心的错误类别区分原因（ADR-0017）；没有错误体的响应来自核心之外：本地代理连不上隧道时回 502，隧道拒绝这台设备时
-/// 回 403。这两种都是连接的事，由 `HomeViewModel` 说。
+/// 按核心的错误类别区分原因（ADR-0017）。类别先看错误体，再看 `x-wonton-error` 头：本地代理的错误
+/// （连不上隧道 502、隧道拒绝这台设备 403、核心没起来 503）和权限守卫的 403 都只在头里写类别，错误体不是
+/// `{"error": …}`。只看状态码会把“缺权限”和“隧道拒绝”都当成连不上（主人看到“连不上家里的服务器”，
+/// 而服务器明明连着）。两样都没有时才按状态码猜。
 pub(super) fn core_error(
     status: u16,
+    header: Option<&str>,
     body: &[u8],
     minimum: Option<&str>,
     version: Option<&str>,
@@ -34,7 +37,11 @@ pub(super) fn core_error(
     let detail = serde_json::from_slice::<ErrorBody>(body)
         .ok()
         .map(|body| body.error);
-    let reason = failure_kind(detail.as_ref().map(|detail| detail.kind.as_str()), status);
+    let kind = detail
+        .as_ref()
+        .map(|detail| detail.kind.as_str())
+        .or(header);
+    let reason = failure_kind(kind, status);
     if reason == PluginFailure::TransportUnavailable {
         return not_connected();
     }
@@ -73,9 +80,14 @@ pub(super) fn core_error(
 
 pub(crate) fn failure_kind(kind: Option<&str>, status: u16) -> PluginFailure {
     match kind {
-        Some("unauthenticated" | "cross_site" | "permission_required" | "install_not_allowed") => {
-            PluginFailure::Unauthorized
-        }
+        Some(
+            "unauthenticated" | "cross_site" | "permission_required" | "install_not_allowed"
+            // 本地代理：隧道拒绝了这台设备。
+            | "unauthorized",
+        ) => PluginFailure::Unauthorized,
+        // 本地代理的类别（`wonton_tunnel::TunnelError::category`）：隧道不通，和家里的核心还没起来。
+        Some("tunnel-unavailable") => PluginFailure::TransportUnavailable,
+        Some("upstream-unavailable") => PluginFailure::Upstream,
         // 授权列表和插件清单对不上，和设备身份无关：重新看预览、确认，重新配对解决不了。
         Some("changed" | "permission_denied") => PluginFailure::Changed,
         // 拉不到插件的镜像：镜像仓库连不上、镜像不存在、没有权限等，和取商店信息是同一类来源问题。
@@ -124,7 +136,13 @@ mod tests {
             "message": "invalid settings",
             "fields": [{"name": "months", "kind": "above_maximum", "message": "limit"}],
         }});
-        let problem = core_error(400, &serde_json::to_vec(&invalid).unwrap(), None, None);
+        let problem = core_error(
+            400,
+            None,
+            &serde_json::to_vec(&invalid).unwrap(),
+            None,
+            None,
+        );
         assert_eq!(problem.reason, PluginFailure::SettingsInvalid);
         let details = problem.settings.unwrap();
         assert_eq!(details.fields[0].name, "months");
@@ -139,7 +157,7 @@ mod tests {
             "message": "invalid schema",
             "problems": [{"name": "api_key", "kind": "sensitive", "message": "use secrets"}],
         }});
-        let problem = core_error(400, &serde_json::to_vec(&schema).unwrap(), None, None);
+        let problem = core_error(400, None, &serde_json::to_vec(&schema).unwrap(), None, None);
         assert_eq!(problem.reason, PluginFailure::SettingsSchemaInvalid);
         let details = problem.settings.unwrap();
         assert_eq!(details.problems[0].name.as_deref(), Some("api_key"));
@@ -150,6 +168,45 @@ mod tests {
         assert!(details.fields.is_empty());
     }
 
+    /// 权限守卫的 403 体是 `{"missing": …}`、类别在头里；本地代理的 403/502/503 也只在头里写类别。
+    /// 按头分开：缺权限、隧道拒绝、隧道不通、核心没起来各是各的，不都算成连不上。
+    #[test]
+    fn header_only_errors_keep_their_category() {
+        let missing = serde_json::to_vec(&json!({"missing": "server_settings"})).unwrap();
+        let cases = [
+            (
+                403,
+                Some("permission_required"),
+                &missing[..],
+                PluginFailure::Unauthorized,
+            ),
+            (
+                403,
+                Some("unauthorized"),
+                b"unauthorized\n",
+                PluginFailure::Unauthorized,
+            ),
+            (
+                502,
+                Some("tunnel-unavailable"),
+                b"tunnel-unavailable\n",
+                PluginFailure::TransportUnavailable,
+            ),
+            (
+                503,
+                Some("upstream-unavailable"),
+                b"upstream-unavailable\n",
+                PluginFailure::Upstream,
+            ),
+            // 没有类别：只能按状态码猜，和以前一样。
+            (502, None, b"", PluginFailure::TransportUnavailable),
+        ];
+        for (status, header, body, expected) in cases {
+            let problem = core_error(status, header, body, None, None);
+            assert_eq!(problem.reason, expected, "{status} {header:?}");
+        }
+    }
+
     #[test]
     fn settings_invalid_reaches_the_shells_with_the_field_detail() {
         let body = json!({"error": {
@@ -157,7 +214,7 @@ mod tests {
             "message": "1 settings don't pass validation",
             "fields": [{"name": "months", "kind": "above_maximum", "message": "Must be at most 12"}],
         }});
-        let problem = core_error(400, &serde_json::to_vec(&body).unwrap(), None, None);
+        let problem = core_error(400, None, &serde_json::to_vec(&body).unwrap(), None, None);
         let CoreError::SettingsInvalid { reason, fields } =
             crate::plugins::api::to_core_error(problem)
         else {

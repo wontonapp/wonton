@@ -89,6 +89,10 @@ pub(super) async fn serve_matrix(
     {
         return;
     }
+    if text.contains("/account_data/app.wonton.layout ") && core.my_apps_down.load(Ordering::SeqCst)
+    {
+        return;
+    }
     if expire_room_list(&mut tcp, &core, request.as_ref()).await {
         return;
     }

@@ -27,5 +27,7 @@ pub(super) fn fake_pages(mut pages: PagesViewModel) -> PagesViewModel {
         .chain(ui_fake_room::panel())
         .collect();
     pages.panel_selected = None;
+    // 侧边栏“改动还没同步上”的排版走查用。
+    pages.sync_stale = std::env::var("WONTON_UI_FAKE_SYNC_STALE").as_deref() == Ok("1");
     pages
 }

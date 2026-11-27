@@ -49,7 +49,11 @@ internal fun OnboardingProfileStep(
             ) {
                 val problem = view.problem
                 when {
-                    problem != null -> OnboardingProblem(problem.onboardingTitle(), problem.message) {
+                    problem != null -> OnboardingProblem(
+                        problem.onboardingTitle(),
+                        problem.message,
+                        retrying = view.loading,
+                    ) {
                         send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
                     }
                     else -> {

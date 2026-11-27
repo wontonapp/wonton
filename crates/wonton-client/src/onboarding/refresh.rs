@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use tokio::sync::watch::Receiver;
-use wonton_protocol::{HomeStatus, InstalledPlugins, PluginOperation, PluginsViewModel};
+use wonton_protocol::{
+    HomeStatus, InstalledPlugins, PluginFailure, PluginOperation, PluginsViewModel,
+};
 
 use super::{OnboardingLink, api, lock, review};
 
@@ -106,10 +109,56 @@ async fn refresh(link: &Arc<OnboardingLink>) {
             Ok(onboarding) => {
                 state.onboarding = Some(onboarding);
                 state.bot_problem = None;
+                state.transport_retries = 0;
                 state.revision += 1;
             }
             Err(problem) => state.bot_problem = Some(problem),
         }
     }
     link.publish();
+    link.retry_while_connected();
+}
+
+/// 自己再取的第一次等多久；之后每次翻倍，到 [`RETRY_MAX`] 为止。
+const RETRY_FIRST: Duration = Duration::from_secs(2);
+const RETRY_MAX: Duration = Duration::from_secs(60);
+
+impl OnboardingLink {
+    /// 连着却没取到：隧道换了连接、请求断在半路，连接状态一直是“已连接”。跟着连接的重取只在连上的那一刻发生，
+    /// 这时不会再来，提示就一直挂着（主人看到“连不上家里的服务器”，旁边写着已连接）。所以连着的时候自己隔一会儿
+    /// 再取，间隔翻倍到一分钟，取到了提示就收掉；断开时不排，等连上时那一趟。
+    pub(super) fn retry_while_connected(self: &Arc<Self>) {
+        let generation = self.generation();
+        let delay = {
+            let mut state = lock(&self.state);
+            let failed = |problem: &Option<wonton_protocol::PluginProblem>| {
+                problem
+                    .as_ref()
+                    .is_some_and(|problem| problem.reason == PluginFailure::TransportUnavailable)
+            };
+            if state.retry_scheduled || !(failed(&state.problem) || failed(&state.bot_problem)) {
+                return;
+            }
+            state.retry_scheduled = true;
+            let attempt = state.transport_retries.min(6);
+            state.transport_retries = state.transport_retries.saturating_add(1);
+            RETRY_FIRST.saturating_mul(1 << attempt).min(RETRY_MAX)
+        };
+        let link = Arc::downgrade(self);
+        self.runtime.spawn(async move {
+            tokio::time::sleep(delay).await;
+            let Some(link) = link.upgrade() else { return };
+            let loading = {
+                let mut state = lock(&link.state);
+                state.retry_scheduled = false;
+                state.loading
+            };
+            if link.generation() == generation
+                && !loading
+                && link.home.view().status == HomeStatus::Connected
+            {
+                link.refresh_automatically();
+            }
+        });
+    }
 }

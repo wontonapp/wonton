@@ -261,15 +261,19 @@ struct SidebarPanel: View {
                 openDestination(.pluginDetails(plugin.id))
             }
         }
+        // 本机有改动还没写进账号数据时才有（核心给，同步上了就收掉）；核心自己会再同步，这里不放按钮。
         if pages.viewModel.syncStale {
-            HStack(spacing: WontonTheme.spacing.s8) {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 Text(TabText.syncStale)
                     .wontonText(WontonTheme.typography.supporting)
-                Spacer(minLength: 0)
-                Button(TabText.syncStaleRetry) { pages.send(.pages(action: .retryMyAppSync)) }
-                    .buttonStyle(WontonSmallButtonStyle())
+                    .foregroundStyle(Color(colors.textPrimary))
+                Text(TabText.syncStaleDetail)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, WontonTheme.spacing.s12)
+            .padding(.vertical, WontonTheme.spacing.s8)
         }
         if sidebar.moreApps {
             SidebarRow(title: String(localized: .Sidebar.sidebarAllApps), selected: current == .apps) {
