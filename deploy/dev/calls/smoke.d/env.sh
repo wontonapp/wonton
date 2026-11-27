@@ -18,7 +18,12 @@ mask_relays() { sed -E 's#(://)[^@/]+@#\1***@#g' <<<"$1"; }
 relays=${RELAYS:-}
 relay_host=${RELAY_HOST:-}
 if [[ -z $relay_host && -n $relays ]]; then
-    relay_host=$(sed -E 's#^[A-Za-z]+://##; s#^[^@]*@##; s#[:/,\#;].*$##' <<<"$relays")
+    # 取第一条真正的中继地址：跳过 n0/no-n0 和 !删除标记，别把 "n0" 当主机。
+    for item in ${relays//[,;]/ }; do
+        case $item in n0|no-n0|'!'*) continue ;; esac
+        relay_host=$(sed -E 's#^[A-Za-z]+://##; s#^[^@]*@##; s#[:/\#].*$##' <<<"$item")
+        [[ -n $relay_host ]] && break
+    done
 fi
 # 中继组的连续性判定：20 秒里每 2 秒一拍，每拍都要有已连接的候选对，收音频速率不低于这个值。
 relay_min_kbps=${RELAY_MIN_KBPS:-4}

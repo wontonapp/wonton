@@ -61,7 +61,7 @@ RELAYS='https://<令牌>@relay.808cbd.com,no-n0' STACK=call-smoke HOST=localhost
   STAGE=relay deploy/dev/calls/smoke.sh
 ```
 
-- `RELAYS` 是核心 `WONTON_RELAYS` 的原值（准入令牌写在 userinfo，`no-n0` 去掉内置的 n0）。脚本在配对前把它写进 worktree 的 `deploy/dev/core/.env`（`WONTON_DEV_RELAYS`，remote-dev 的 `up` 会推到栈上）、重起核心，再核对核心容器的环境变量和 `/_wonton/api/tunnel` 的返回：表项要和 `RELAYS` 逐项相同（地址、令牌、档位），有 `no-n0` 时不能出现 n0，响应要有 `endpoint_id` 和 `direct_addrs`；原文落 `relay-table.json`。跑完还原 `.env`。只换表不想每轮重编核心时，脚本会 touch worktree 根的 `.dev-no-build`（跳过镜像构建）和 `.dev-no-deps`（只 `compose up --no-deps core`，不重跑在共用机上会卡十几分钟的 `hydra-migrate`），退出时清掉 `.dev-no-deps`。
+- `RELAYS` 是核心 `WONTON_RELAYS` 的原值（准入令牌写在 userinfo）。表里必须写明 `no-n0`（去掉内置 n0）或 `n0`（保留兜底）：不写按核心默认算保留，检查器会提示。脚本在配对前把它写进 worktree 的 `deploy/dev/core/.env`（`WONTON_DEV_RELAYS`，remote-dev 的 `up` 会推到栈上）、重起核心，再核对核心容器的环境变量和 `/_wonton/api/tunnel` 的返回：表项要和 `RELAYS` 逐项相同（地址、令牌、档位），有 `no-n0` 时不能出现 n0，响应要有 `endpoint_id` 和 `direct_addrs`；原文落 `relay-table.json`。跑完还原 `.env`。只换表不想每轮重编核心时，脚本会 touch worktree 根的 `.dev-no-build`（跳过镜像构建）和 `.dev-no-deps`（只 `compose up --no-deps core`，不重跑在共用机上会卡十几分钟的 `hydra-migrate`），退出时清掉 `.dev-no-deps`。
 - `RELAY_HOST` 默认从 `RELAYS` 取。`check_tunnel_relay` 要求两端最近的 `CheckedPath` 同时有 `relay: true` 和目标主机；判定行（`设备 a 隧道走中继 relay.808cbd.com：CheckedPath { … }`）进 `run.log` 和 `relay-path-<a|b>.log`，走到 n0 或别的中继都算失败。relay 组在统计后再判一次两端路径；压掉直连后先等两端真的经中继重连再回房间（实测要 30–40 秒）。
 - 媒体判定后 `check_relay_continuity` 两端各采 24 秒（每 2 秒一拍）：每拍都要有已连接的候选对，收音频字节逐拍增长且不低于 4 kbit/s（`RELAY_MIN_KBPS` 可改）。速率、丢包、抖动和判据原文都进 `relay-stats-c.log`，采样原件是 `relay-stats-<a|b>.jsonl`。
 - 先 `STAGE=udp` 跑通直连确认链路正常，再 `STAGE=relay`。
@@ -74,7 +74,8 @@ RELAYS='https://<令牌>@relay.808cbd.com,no-n0' STACK=call-smoke HOST=localhost
 - APK 只编 `arm64-v8a` 时 x86_64 模拟器装不上；模拟器要用 `./gradlew :androidApp:assembleDebug -Pwonton.abis=x86_64`。
 - EC 的引导层（`Got it`）和媒体权限弹窗是原生层：`adb input tap` 在上面经常不生效（实测点十次没反应），DPAD 才稳——`Got it` 用 `input keyevent 23`，`Allow` 用 `22` 再 `23`。脚本已经先走 DPAD，`tap_text` 只兜底。
 - 每轮开始会 `pm clear` 两个设备（配对、权限、本地缓存的房间都清空），再重新配对；这是为了让“全新安装会先出 Loading/授权页”不再被误判成已配对。**relay 组例外**：它故意先在直连下把 EC 页面打开把 JS 包放进缓存，再下规则。
-- 自建中继当前跑 iroh-relay v1.4.1，App 的 iroh 1.5.0 只发 `Sec-WebSocket-Protocol: iroh-relay`，v1.4.1 只认
-  `iroh-relay-v1|v2`，升级回 400 `unsupported relay version`（`curl` 实测：`iroh-relay` 400、v1/v2 101）。relay 组会卡在
-  block 后的 `transport-unavailable`/`no relay is reachable`；把 relay 镜像升到 v1.5.0 重部署后再跑（本仓的 `deploy/dev/entry-cloud/compose.yaml` 已钉 v1.5.0 摘要）。
+- 自建中继当前跑 iroh-relay v1.4.1；`curl` 裸发 `Sec-WebSocket-Protocol: iroh-relay` 会被 400
+  `unsupported relay version`（v1/v2 是 101），而 iroh 1.5.0 客户端实际发 `iroh-relay-v2, iroh-relay-v1`、v1.4.1 也接受，
+  所以版本不匹配只是可疑项。relay 组现在卡在 block 后的 `transport-unavailable`/`relay_recv_channel closed`；relay 镜像
+  已升 v1.5.0（`deploy/dev/entry-cloud/compose.yaml` 钉了摘要），重部署后再跑。
 - 中继组要 `adb root` 后改设备的 iptables（只动模拟器内部，脚本退出时 `iptables -F OUTPUT` 还原）；真机需要 root/adb root。

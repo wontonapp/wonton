@@ -288,21 +288,11 @@ join_call() {
             if grep -q 'Join call' <<<"$txt"; then
                 # 底栏是 WebView 内容：矩形由 premain 的 __joinRect 给出，点击走 CDP（合成点击对底栏无效）。
                 rect=$(cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" eval "$page" 'JSON.stringify(window.__joinRect ? window.__joinRect() : null)') || true
-                x=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["x"])
-except Exception: pass' "$rect" 2>/dev/null || true)
-                y=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["y"])
-except Exception: pass' "$rect" 2>/dev/null || true)
+                { read -r x; read -r y; } < <(rect_xy "$rect") || true
                 if [[ -z $x || -z $y ]]; then
                     # premain 的 __joinRect 没给到时，按 DOM 里含 “Join call” 的按钮现算中点。
                     rect=$(cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" eval "$page" '(async()=>{const b=[...document.querySelectorAll("button")].find(b=>(b.textContent||"").includes("Join call"));if(!b)return null;const r=b.getBoundingClientRect();return JSON.stringify({x:r.x+r.width/2,y:r.y+r.height/2})})()') || true
-                    x=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["x"])
-except Exception: pass' "$rect" 2>/dev/null || true)
-                    y=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["y"])
-except Exception: pass' "$rect" 2>/dev/null || true)
+                    { read -r x; read -r y; } < <(rect_xy "$rect") || true
                 fi
                 if [[ -n $x && -n $y ]]; then
                     cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" click "$page" "$x" "$y" >/dev/null 2>&1 || true
@@ -347,15 +337,21 @@ cdp() { # cdp <a|b> <端口> <子命令> [参数]
 ptext() { cdp "$1" "$2" eval "$3" 'document.body.innerText' 2>/dev/null | tail -1; }
 
 # 点掉页面里的 “Got it” 介绍层（在 WebView 里，走 CDP 的鼠标事件）。
+rect_xy() { # <cdp eval 输出>：cdp.py 打的是 {"exception":…,"value":"<JS 返回的字符串>"}，先剥一层再取 x/y
+    python3 -c 'import json,sys
+try:
+    v = json.loads(sys.argv[1])
+    if isinstance(v, dict) and "value" in v:
+        v = json.loads(v["value"])
+    print(int(v["x"])); print(int(v["y"]))
+except Exception:
+    pass' "$1" 2>/dev/null || true
+}
+
 page_dismiss() { # page_dismiss <a|b> <端口> <页面>
     local pos x y
     pos=$(cdp "$1" "$2" eval "$3" 'JSON.stringify(window.__gotItRect ? window.__gotItRect() : null)' 2>/dev/null) || return 0
-    x=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["x"])
-except Exception: pass' "$pos" 2>/dev/null || true)
-    y=$(python3 -c 'import json,sys
-try: print(json.loads(sys.argv[1])["y"])
-except Exception: pass' "$pos" 2>/dev/null || true)
+    { read -r x; read -r y; } < <(rect_xy "$pos") || true
     [[ -n $x && -n $y ]] || return 0
     cdp "$1" "$2" click "$3" "$x" "$y" >/dev/null 2>&1 || true
     sleep 2

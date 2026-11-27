@@ -333,9 +333,6 @@ mini（Apple silicon、macOS 27.0、Xcode 27.1）、iOS 26.5 模拟器、iPhone 
 - 没验：真机、媒体捕获权限、完整 App 里 Element Call 页面和信令经本地代理的端到端路径。真机上回环候选不通时按第 5 节的
   退路。
 
-- 没验：真机、媒体捕获权限、完整 App 里 Element Call 页面和信令经本地代理的端到端路径。真机上回环候选不通时按第 5 节的
-  退路。
-
 ### 自建中继现场（2026-11-27）
 
 11-26 自建 iroh 中继上线（`cloud/iroh-relay`，#1058/#1059）后，在 194 的开发栈上验“通话真的只走自建中继”。只改冒烟
@@ -364,16 +361,21 @@ RELAYS='https://<令牌>@relay.808cbd.com,no-n0' STAGE=relay STACK=call-e2e-rela
 `STAGE=udp` 在 194 的开发栈上通过：两端 `call.member`、双向音视频字节、挂断后 state 清空都成立。`STAGE=relay`
 多轮没到媒体阶段，两处的现象一致：
 
-- 两端的隧道在压掉直连后 30–40 秒确实经中继重连上（`隧道连接已建立 handshake_ms=8`），但 App 的 relay 客户端同时
-  报 `no relay is reachable`，随后 `隧道建连失败 code="transport-unavailable"`（`relay1/*-core.log`）。
-- 用 `curl` 直接开 `/relay` 的 WebSocket 复现：带 `Sec-WebSocket-Protocol: iroh-relay` 回 **400
+- App 记录里能看到 `home is now relay https://relay.808cbd.com/`，随后 `relay_recv_channel closed`、隧道
+  `transport-unavailable`（`relay1/app-a-core.log`）。10:34 那轮压掉直连后一直没连上，最后的 `transport-unavailable`
+  之后也没有恢复；现存证据里唯一的 `隧道连接已建立` 是配对阶段的直连（`CheckedPath { remote: Ip(192.168.0.194:19082),
+  relay: false }`）。所以“压掉直连后 30–40 秒经中继重连上”按现存证据**复现不出**。
+- 用 `curl` 直接开 `/relay` 的 WebSocket：带 `Sec-WebSocket-Protocol: iroh-relay` 回 **400
   `unsupported relay version: we support iroh-relay-v2, iroh-relay-v1 but you only provide iroh-relay`**；带
-  `iroh-relay-v1`/`-v2` 回 101（证据 `evidence/relay-probe/probe.log`）。
+  `iroh-relay-v1`/`-v2` 回 101；带客户端的真实组合 `iroh-relay-v2, iroh-relay-v1` 也回 101
+  （证据 `evidence/relay-probe/probe.log`）。
 
-根因：relay 主机跑的是 iroh-relay **v1.4.1**，它只认 `iroh-relay-v1|v2` 子协议；App 里的 iroh **1.5.0** 只发新的
-`iroh-relay`。同版本的 core 侧 QUIC 能连，只有 App 的 WebSocket relay 挂。修法：把 relay 镜像升到 **v1.5.0** 后重新
-部署 `relay.808cbd.com`（194 已 pull 到 `n0computer/iroh-relay:v1.5.0`；本仓的 `deploy/dev/entry-cloud/compose.yaml` 已钉 v1.5.0 摘要，差部署），再按上面的命令复跑两轮，四类判据的原文和
-速率/丢包/抖动补在这里。relay 域名在协调手里，本仓改不了。
+版本面：relay 主机跑 iroh-relay **v1.4.1**（`/healthz` 自报），App 是 iroh **1.5.0**。但 1.5.0 客户端实际发的是
+`iroh-relay-v2, iroh-relay-v1`（`iroh-relay-1.5.0/src/http.rs` 的 `all_as_header_value`），v1.4.1 服务端按逗号取最高
+版本也 101——所以“版本不匹配”不成立为已证实的根因，裸 `iroh-relay` 的 400 只说明客户端不会发那个写法；App 日志里只有
+`relay_recv_channel closed`，没有 400。1.5.0 可能修的是 relay recv 侧（上游 #4694/#4646），**未验证**。修法：先把 relay
+镜像升到 **v1.5.0** 复跑，通过就补四类判据；还 `transport-unavailable` 再按 `relay_recv_channel closed`、模拟器出网
+分层定位根因（194 已 pull；本仓的 `deploy/dev/entry-cloud/compose.yaml` 已钉 v1.5.0 摘要，差部署；relay 域名在协调手里）。
 
 限制：只安卓模拟器；中继主机到 194 的线路和令牌配额决定实际速率；每连接 256 KiB/s 的限速在 iroh 中继上，不在本仓。
 

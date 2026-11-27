@@ -38,14 +38,17 @@ stack_ports() { # 打印名额现在发的「网关 隧道」端口。登记可�
 }
 
 refresh_ports() { # up 后名额可能换端口（.dev-ports 也变）：以 stack-slot 现在发的端口为准，重写并重做两端的 reverse
-    local old_tunnel=$tunnel
-    if ! read -r gw tunnel < <(stack_ports); then log "警告：读不到名额端口，沿用 .dev-ports $gw $tunnel"; fi
-    timeout 60 ssh "$HOST" "printf '%s %s\n' '$gw' '$tunnel' > ~/wonton-dev/stacks/dev-$STACK/.dev-ports" || log "警告：写不回 .dev-ports"
-    if [[ $old_tunnel != "$tunnel" ]]; then
-        for d in "$DEV_A" "$DEV_B"; do
-            timeout 60 ssh "$HOST" "adb -s $d reverse tcp:$old_tunnel tcp:$tunnel" >/dev/null 2>&1 || true
-        done
+    local old_gw=$gw old_tunnel=$tunnel new_gw new_tunnel
+    if read -r new_gw new_tunnel < <(stack_ports) && [[ -n $new_gw && -n $new_tunnel ]]; then
+        gw=$new_gw; tunnel=$new_tunnel
+    else
+        log "警告：读不到名额端口，沿用 .dev-ports $gw $tunnel"
     fi
+    timeout 60 ssh "$HOST" "printf '%s %s\n' '$gw' '$tunnel' > ~/wonton-dev/stacks/dev-$STACK/.dev-ports" || log "警告：写不回 .dev-ports"
+    for d in "$DEV_A" "$DEV_B"; do
+        [[ $old_tunnel != "$tunnel" ]] && timeout 60 ssh "$HOST" "adb -s $d reverse tcp:$old_tunnel tcp:$tunnel" >/dev/null 2>&1 || true
+        [[ $old_gw != "$gw" ]] && timeout 60 ssh "$HOST" "adb -s $d reverse tcp:$old_gw tcp:$gw" >/dev/null 2>&1 || true
+    done
 }
 # 配对码里的直连地址要从 HOST 算：本机模拟器用 10.0.2.2（加 adb reverse），远端栈取那台的局域网 IPv4。
 pair_addr=$HOST
