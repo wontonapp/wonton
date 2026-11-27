@@ -2,7 +2,7 @@ package app.wonton.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,7 +13,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.client.deviceChoices
@@ -49,9 +48,7 @@ fun InstallProviderSections(
     val scope = rememberCoroutineScope()
     var switching by remember(preview.id) { mutableStateOf<String?>(null) }
     var problem by remember(preview.id) { mutableStateOf<Problem?>(null) }
-    if (preview.wantingPlugins.isNotEmpty()) {
-        ConnectedSection(preview, onUpdate)
-    }
+    ConnectedSection(preview, onUpdate)
     preview.installProviders.forEach { section ->
         val wrong = stringResource(R.string.install_provider_wrong, section.capability)
         CapabilitySection(section, preview, switching, onUpdate, onFillProfile) { candidate ->
@@ -94,9 +91,9 @@ internal fun SelectedProviderSection(
             .background(colors.surfaceSubtle.toColor(), RoundedCornerShape(WontonTheme.radii.card)),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
-        Row(
+        FlowRow(
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
         ) {
             Tag(selected.preview.trust.label, selected.preview.trust.tint)
             (selected.preview.provider ?: selected.preview.author?.name)?.let {

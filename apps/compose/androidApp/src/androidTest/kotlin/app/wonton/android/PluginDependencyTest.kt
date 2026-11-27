@@ -4,8 +4,13 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -16,7 +21,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import app.wonton.ui.R
 import java.io.File
 import java.io.FileOutputStream
+import android.os.Build
+import androidx.test.rule.GrantPermissionRule
 import org.junit.Rule
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -26,57 +36,103 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class PluginDependencyTest {
+    private val permissions: TestRule = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        GrantPermissionRule.grant(android.Manifest.permission.POST_NOTIFICATIONS)
+    } else {
+        GrantPermissionRule.grant()
+    }
+
+    private val compose = createAndroidComposeRule<UiFakeMainActivity>()
+
     @get:Rule
-    val compose = createAndroidComposeRule<UiFakeMainActivity>()
+    val rules: RuleChain = RuleChain.outerRule(permissions).around(compose)
 
     private val strings = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Before
+    fun backToTheRoot() {
+        // 上次留下的页面（如备份页）会盖住抽屉：还在子页就按返回，回到有侧边栏按钮的根页。
+        repeat(4) {
+            val drawer = compose.onAllNodes(
+                hasContentDescription(strings.getString(R.string.sidebar_open)),
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes()
+            if (drawer.isNotEmpty()) return@repeat
+            runCatching {
+                compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+                compose.waitForIdle()
+            }
+        }
+    }
 
     @Test
     fun installPreviewListsTheProvider() {
         openStore()
         scroll().performScrollToNode(hasText("Autobangumi"))
-        compose.onNodeWithText("Autobangumi").performClick()
-        compose.onNodeWithText(installLabel()).performClick()
-        compose.onNodeWithText("torrent_client").performScrollTo()
-        compose.onNodeWithText("qBittorrent").performScrollTo()
-        compose.onNodeWithText("Write to the downloads folder").performScrollTo()
-        compose.onNodeWithText("API key").performScrollTo()
-        compose.onNodeWithText("indexer").performScrollTo()
-        compose.onNodeWithText(strings.getString(R.string.install_wants_connected_title)).performScrollTo()
-        compose.onNodeWithText("Audio Book").performScrollTo()
+        compose.onNodeWithText("Autobangumi", useUnmergedTree = true).performClick()
+        compose.waitUntil(WAIT_MS) {
+            compose.onAllNodes(hasText("Follows the season and grabs new episodes"), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        // 商店列表每行也有“Get”：详情页的按钮在最后。
+        val gets = compose.onAllNodes(hasText(installLabel()), useUnmergedTree = true)
+        gets[gets.fetchSemanticsNodes().size - 1].performClick()
+        compose.onNodeWithText("torrent_client", useUnmergedTree = true).performScrollTo()
+        compose.onAllNodesWithText("qBittorrent", useUnmergedTree = true, substring = true)[0].performScrollTo()
+        compose.onNodeWithText("Write to the downloads folder", useUnmergedTree = true).performScrollTo()
+        compose.onNodeWithText("API key", useUnmergedTree = true).performScrollTo()
+        compose.onNodeWithText("indexer", useUnmergedTree = true).performScrollTo()
+        compose.onNodeWithText(strings.getString(R.string.install_wants_connected_title), useUnmergedTree = true).performScrollTo()
+        compose.onNodeWithText("Audio Book", useUnmergedTree = true).performScrollTo()
         shot("install-provider")
     }
 
     @Test
     fun uninstallProviderShowsDependents() {
-        compose.onNodeWithText("qBittorrent").performScrollTo().performClick()
+        openApps()
+        compose.onNodeWithText("qBittorrent", useUnmergedTree = true).performScrollTo().performClick()
         scroll().performScrollToNode(hasText(strings.getString(R.string.plugin_uninstall_action)))
-        compose.onNodeWithText(strings.getString(R.string.plugin_uninstall_action)).performClick()
-        compose.onNodeWithText("These apps still need qBittorrent").performScrollTo()
-        compose.onNodeWithText("Autobangumi").performScrollTo()
-        compose.onNodeWithText("Uninstall them too").performScrollTo()
-        compose.onNodeWithText("Stop them first").performScrollTo()
+        compose.onNodeWithText(strings.getString(R.string.plugin_uninstall_action), useUnmergedTree = true).performClick()
+        compose.onNodeWithText("These apps still need qBittorrent", useUnmergedTree = true).performScrollTo()
+        compose.onNodeWithText("Autobangumi", useUnmergedTree = true).performScrollTo()
+        compose.onNodeWithText("Uninstall them too", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithText("Stop them first", useUnmergedTree = true).assertIsDisplayed()
         shot("uninstall-in-use")
     }
 
     @Test
     fun dependencyProblemOnTheAppPage() {
-        compose.onNodeWithText("Autobangumi").performScrollTo().performClick()
-        compose.onNodeWithText("qBittorrent isn't running, so this app can't use it right now.")
+        openApps()
+        compose.onNodeWithText("Autobangumi", useUnmergedTree = true).performScrollTo().performClick()
+        compose.onAllNodesWithText("qBittorrent isn’t running", useUnmergedTree = true, substring = true)[0]
             .performScrollTo()
-        compose.onNodeWithText("Start qBittorrent").performScrollTo()
+        compose.onNodeWithText("Start qBittorrent", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         shot("dependency-problem")
     }
 
+    private fun openDrawer() {
+        compose.onNodeWithContentDescription(strings.getString(R.string.sidebar_open)).performClick()
+    }
+
+    private fun openApps() {
+        openDrawer()
+        compose.onAllNodesWithText(strings.getString(R.string.sidebar_all), useUnmergedTree = true)[0].performClick()
+    }
+
     private fun openStore() {
-        compose.onNodeWithText(strings.getString(R.string.store_title)).performClick()
+        openDrawer()
+        compose.onAllNodesWithText(strings.getString(R.string.sidebar_store), useUnmergedTree = true)[0].performClick()
         compose.waitUntil(WAIT_MS) { compose.onAllNodes(hasText("Autobangumi")).fetchSemanticsNodes().isNotEmpty() }
     }
 
     /// 详情页的安装按钮：走查用的是英文环境，App 没有强制语言的假数据时按资源取。
     private fun installLabel(): String = strings.getString(R.string.store_get)
 
-    private fun scroll() = compose.onAllNodes(hasScrollAction())[0]
+    /// 抽屉还开着时先命中抽屉自己的滚动容器，取最外层那一页的。
+    private fun scroll(): SemanticsNodeInteraction {
+        val all = compose.onAllNodes(hasScrollAction(), useUnmergedTree = true)
+        return all[all.fetchSemanticsNodes().size - 1]
+    }
 
     private fun shot(name: String) {
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
