@@ -252,8 +252,9 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<T, AgentModelsError> {
         let stdout = self.exec_agent_models(target, op, langs).await?;
-        let value: T = serde_json::from_str(stdout.trim())
-            .map_err(|error| upstream(langs, format!("output is not a result of this op: {error}")))?;
+        let value: T = serde_json::from_str(stdout.trim()).map_err(|error| {
+            upstream(langs, format!("output is not a result of this op: {error}"))
+        })?;
         value
             .checked()
             .map_err(|problem| upstream(langs, problem.0))

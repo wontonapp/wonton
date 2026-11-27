@@ -2,10 +2,9 @@ use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
     AgentChainsViewModel, AgentModelsViewModel, AppLockViewModel, AppearanceViewModel,
     BotContactsViewModel, ChatViewModel, ClientsDomainViewModel, ComposerViewModel,
-    ConfirmationsViewModel,
-    FamilyViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel,
-    PeersViewModel, PluginsViewModel, RoomAgentStop, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, TimelineTarget, TransfersViewModel, WidgetSnapshot,
+    ConfirmationsViewModel, FamilyViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel,
+    PagesViewModel, PeersViewModel, PluginsViewModel, RoomAgentStop, ServersViewModel,
+    SessionListViewModel, SettingsViewModel, TimelineTarget, TransfersViewModel, WidgetSnapshot,
 };
 
 use crate::agent_chains::room_stop::{self, Attempts};

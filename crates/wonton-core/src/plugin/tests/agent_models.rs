@@ -315,7 +315,10 @@ async fn output_up_to_the_limit_parses_and_one_byte_more_is_refused() {
         let pad = len - head.len() - r#","pad":""}"#.len();
         format!(r#"{head},"pad":"{}"}}"#, "x".repeat(pad))
     };
-    assert_eq!(padded(MAX_MODELS_OUTPUT_BYTES).len(), MAX_MODELS_OUTPUT_BYTES);
+    assert_eq!(
+        padded(MAX_MODELS_OUTPUT_BYTES).len(),
+        MAX_MODELS_OUTPUT_BYTES
+    );
     bed.agent.reply(0, &padded(MAX_MODELS_OUTPUT_BYTES), "");
     let whole: ModelCatalog = bed.run("alice", ModelsOp::Catalog).await.unwrap();
     assert_eq!(whole.providers.len(), 1);
@@ -352,7 +355,10 @@ async fn login_select_and_test_pass_the_plugins_answers_through() {
     };
     let finished: ModelLoginState = bed.run("alice", finish).await.unwrap();
     assert_eq!(finished.state, LoginState::Approved);
-    assert_eq!(bed.agent.seen().last().unwrap().input["callback_url"], callback);
+    assert_eq!(
+        bed.agent.seen().last().unwrap().input["callback_url"],
+        callback
+    );
 
     bed.agent.reply(
         0,
