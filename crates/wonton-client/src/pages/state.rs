@@ -1,13 +1,15 @@
 //! 每次刷新的状态推导：换服务器、新装自动加入、卸载清理、重载计数和栈的有效性。
 //! 只经由 [`super`] 的输入和 [`PagesState`] 改状态，不碰发布和持久化。
 
+use wonton_protocol::{BarEntry, BarIcon, BarItem, BarViewModel, MAX_BAR_ITEMS, default_bar};
+
 use super::*;
 use wonton_l10n::l10n;
 
 pub(super) fn empty_view() -> PagesViewModel {
     PagesViewModel {
-        root: TabRef::Apps,
-        shows_apps: false,
+        tab: BarEntry::Agent,
+        bar: default_bar_view(),
         stack: Vec::new(),
         uninstalled: Vec::new(),
         problem: None,
@@ -18,7 +20,31 @@ pub(super) fn empty_view() -> PagesViewModel {
     }
 }
 
-/// 每次刷新：换服务器、卸载、元数据和栈里失效的页面。
+/// 还没拿到任何数据时的底栏：默认两项，没有角标。
+fn default_bar_view() -> BarViewModel {
+    let items = default_bar()
+        .into_iter()
+        .map(|entry| {
+            let (label, icon) = match entry {
+                BarEntry::Agent => (l10n!(CATALOG, language(), "tabs-bar-agent"), BarIcon::Agent),
+                BarEntry::Apps => (l10n!(CATALOG, language(), "tabs-bar-apps"), BarIcon::Apps),
+                BarEntry::App { .. } => unreachable!("the default bar has no app items"),
+            };
+            BarItem {
+                entry,
+                label,
+                icon,
+                badge: 0,
+            }
+        })
+        .collect();
+    BarViewModel {
+        items,
+        max_items: MAX_BAR_ITEMS,
+        full: false,
+    }
+}
+/// 每次刷新：换服务器、卸载、元数据、栈里失效的页面和面板的选择。
 pub(super) fn refresh_state(
     state: &mut PagesState,
     plugins: &PluginsViewModel,
@@ -27,7 +53,8 @@ pub(super) fn refresh_state(
     let mut config_changed = false;
     let server_changed = home.server_id.is_some() && state.config.server_id != home.server_id;
     if server_changed || state.paired != home.server_id.is_some() {
-        state.shows_apps = false;
+        sanitize_bar(&mut state.config.bar);
+        state.settle_tab();
     }
     if server_changed {
         if state.config.server_id.is_some() && state.config.server_id != home.server_id {
@@ -178,6 +205,14 @@ pub(super) fn remove_uninstalled(
         }
         keep
     });
+    state
+        .config
+        .bar
+        .retain(|entry| !bar_plugin_id(entry).is_some_and(gone));
+    if state.config.bar.is_empty() {
+        state.config.bar = default_bar();
+    }
+    state.settle_tab();
     state.stack.retain(|item| {
         let missing = tab_plugin_id(&item.tab).is_some_and(gone);
         if missing && !removed.iter().any(|(tab, _)| *tab == item.tab) {
@@ -240,6 +275,15 @@ pub(super) fn update_metadata(
 
 pub(super) fn clear_plugin_config(state: &mut PagesState) {
     state.config.my_apps.retain(|entry| !is_plugin_page(entry));
+    state
+        .config
+        .bar
+        .retain(|entry| bar_plugin_id(entry).is_none());
+    if state.config.bar.is_empty() {
+        state.config.bar = default_bar();
+    }
+    state.settle_tab();
+    state.config.panel.clear();
     state.stack.clear();
 }
 

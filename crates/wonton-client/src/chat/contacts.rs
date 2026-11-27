@@ -247,6 +247,7 @@ mod tests {
             problem: None,
             chat: Default::default(),
             cloud: None,
+            custom_media: false,
             face: None,
         }
     }

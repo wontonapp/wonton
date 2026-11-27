@@ -127,8 +127,8 @@ impl Rig {
                 stack: Vec::new(),
                 content: HashMap::new(),
                 paired: true,
-                shows_apps: false,
-                failures: HashMap::new(),
+                tab: BarEntry::Agent,
+                bar_full: false,
                 reloads: HashMap::new(),
                 uninstalled: Vec::new(),
                 previous_plugins: None,
@@ -171,6 +171,12 @@ impl Rig {
 
     fn open(&self, tab: TabRef) {
         self.tabs.dispatch(PageAction::OpenPage { tab }).unwrap();
+    }
+
+    fn select(&self, entry: BarEntry) {
+        self.tabs
+            .dispatch(PageAction::SelectBarItem { entry })
+            .unwrap();
     }
 
     fn view(&self) -> PagesViewModel {

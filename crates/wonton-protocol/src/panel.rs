@@ -94,7 +94,9 @@ pub struct LayoutSettings {
     /// 主面板里的页面，按显示顺序。
     #[serde(default, deserialize_with = "drop_unknown")]
     pub panel: Vec<PanelEntry>,
-    /// 底栏的成员和顺序（ADR-0126），过 [`crate::check_bar`]。缺这一项时是 [`crate::default_bar`]；
+    /// 底栏的成员和顺序（ADR-0126）。缺这一项时是 [`crate::default_bar`]；认不出的项在反序列化时逐项丢掉。
+    ///
+    /// 这里只做逐项解析，不查 [`crate::check_bar`]：核心改栏时查，读别人的栏时由客户端核对后再用/写回。
     /// 和我的应用的顺序各管各的。
     #[serde(default = "crate::default_bar", deserialize_with = "drop_unknown")]
     pub bar: Vec<BarEntry>,

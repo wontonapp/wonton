@@ -3,9 +3,10 @@
 use url::Url;
 use wonton_protocol::media::MediaBrowse;
 use wonton_protocol::{
-    CoreError, InstalledPlugin, MyAppRef, NativePage, OpenPage, PagesViewModel, PlacedTab,
-    PluginState, PluginsViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabIcon, TabLayout,
-    TabLoadFailure, TabPage, TabRef, TabState,
+    BarEntry, BarIcon, BarItem, BarViewModel, ChatViewModel, CoreError, InstalledPlugin,
+    MAX_BAR_ITEMS, MyAppRef, NativePage, OpenPage, OwnPrivateBotView, PagesViewModel, PanelEntry,
+    PanelItem, PanelScope, PanelSource, PlacedTab, PluginIcon, PluginState, PluginsViewModel, SidebarApp,
+    SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabLoadFailure, TabPage, TabRef, TabState,
 };
 
 use super::{PagesState, StoredApp, StoredItem, StoredPage, bot, invalid};
@@ -25,6 +26,7 @@ pub(crate) use self::url_page::{build_url_page, stored_url_item};
 pub(super) fn make_view(
     state: &PagesState,
     plugins: &PluginsViewModel,
+    chat: &ChatViewModel,
     sync_stale: bool,
 ) -> PagesViewModel {
     let stack = state
@@ -36,8 +38,8 @@ pub(super) fn make_view(
         })
         .collect();
     PagesViewModel {
-        root: state.root(),
-        shows_apps: state.shows_apps,
+        tab: state.tab.clone(),
+        bar: bar_view(state, plugins, chat),
         stack,
         uninstalled: state.uninstalled.clone(),
         problem: state.problem.clone().or_else(|| state.read_problem.clone()),
@@ -54,6 +56,96 @@ pub(super) fn make_view(
                 camera: pending.camera,
                 microphone: pending.microphone,
             }),
+    }
+}
+
+/// 底栏的展示：按存下的成员和顺序；插件没了的应用项不画。
+fn bar_view(state: &PagesState, plugins: &PluginsViewModel, chat: &ChatViewModel) -> BarViewModel {
+    let installed = plugins.installed.as_ref();
+    let plugin = |plugin_id: &str| {
+        installed.and_then(|list| list.plugins.iter().find(|plugin| plugin.id == plugin_id))
+    };
+    let items = state
+        .config
+        .bar
+        .iter()
+        .filter_map(|entry| {
+            let (label, icon) = match entry {
+                BarEntry::Agent => (l10n!(CATALOG, language(), "tabs-bar-agent"), BarIcon::Agent),
+                BarEntry::Apps => (l10n!(CATALOG, language(), "tabs-bar-apps"), BarIcon::Apps),
+                BarEntry::App { app } => {
+                    let stored = state.config.my_apps.iter().find(|row| &row.app == app)?;
+                    let (title, icon) = match app {
+                        MyAppRef::Plugin { plugin_id } => {
+                            let plugin = plugin(plugin_id)?;
+                            (
+                                stored.title.clone().unwrap_or_else(|| plugin.title.clone()),
+                                plugin.icon.clone(),
+                            )
+                        }
+                        MyAppRef::Page { tab } => {
+                            if let Some(plugin_id) = super::tab_plugin_id(tab) {
+                                plugin(plugin_id)?;
+                            }
+                            let page = stored.page.as_ref()?;
+                            let icon = match &page.icon {
+                                TabIcon::Plugin { icon } => icon.clone(),
+                                TabIcon::Monochrome { .. } => None,
+                            };
+                            (
+                                stored.title.clone().unwrap_or_else(|| page.title.clone()),
+                                icon,
+                            )
+                        }
+                    };
+                    (title, BarIcon::App { icon })
+                }
+            };
+            Some(BarItem {
+                entry: entry.clone(),
+                label,
+                icon,
+                badge: bar_badge(entry, plugins, chat),
+            })
+        })
+        .collect();
+    BarViewModel {
+        items,
+        max_items: MAX_BAR_ITEMS,
+        full: state.bar_full,
+    }
+}
+
+/// 底栏角标：Agent 是主 Agent 会话的未读；应用是出错和可升级的插件数；其余为 0。
+fn bar_badge(entry: &BarEntry, plugins: &PluginsViewModel, chat: &ChatViewModel) -> u32 {
+    match entry {
+        BarEntry::Agent => {
+            let Some(OwnPrivateBotView::Ready {
+                home_room: Some(room),
+                ..
+            }) = &chat.own_private_bot
+            else {
+                return 0;
+            };
+            chat.rooms
+                .iter()
+                .find(|row| &row.room_id == room)
+                .map_or(0, |row| row.unread_count.min(u64::from(u32::MAX)) as u32)
+        }
+        BarEntry::Apps => {
+            let broken = plugins.installed.as_ref().map_or(0, |installed| {
+                installed
+                    .plugins
+                    .iter()
+                    .filter(|plugin| {
+                        plugin.install_failure.is_some()
+                            || matches!(plugin.status, PluginState::Degraded { .. })
+                    })
+                    .count()
+            });
+            u32::try_from(broken + plugins.updatable.len()).unwrap_or(u32::MAX)
+        }
+        BarEntry::App { .. } => 0,
     }
 }
 
@@ -330,7 +422,7 @@ pub(super) fn stored_item_with_title(
     title: Option<String>,
 ) -> Result<StoredItem, CoreError> {
     match tab {
-        TabRef::Chat | TabRef::Apps => {
+        TabRef::Rooms | TabRef::Inbox => {
             Err(invalid(&l10n!(CATALOG, language(), "tabs-view-not-a-page")))
         }
         // Bot 网页和分享页的地址还不由核心给（壳拿到的是空地址），标题先按缓存的走。
@@ -435,7 +527,7 @@ pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
             .is_some_and(|plugin| plugin.web_url.is_some()),
         TabRef::Bot { .. } | TabRef::SharedApp { .. } => true,
         TabRef::Widget { .. } => super::widget::available(tab, plugins),
-        TabRef::Chat | TabRef::Apps => false,
+        TabRef::Rooms | TabRef::Inbox => true,
     }
 }
 

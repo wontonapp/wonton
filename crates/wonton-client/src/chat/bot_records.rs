@@ -101,6 +101,7 @@ fn reconcile(
                 problem: None,
                 chat: Default::default(),
                 cloud: None,
+                custom_media: false,
                 face: None,
             });
         view.availability = fact.chat;

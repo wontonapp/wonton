@@ -144,23 +144,37 @@ impl From<BotChatAvailability> for crate::BotAccess {
 #[serde(rename_all = "snake_case")]
 pub enum BotActivity {
     Idle,
-    /// 有模型请求或工具调用在进行，或在聊天里“正在输入”。
+    /// 有模型请求在途。
+    Thinking,
+    /// 有工具调用在进行，或在聊天里“正在输入”。
     Working,
     /// 在等主人回答确认卡片。
     Waiting,
-    /// 插件没在运行：在安装、升级、启动，停了或者出错。
+    /// 插件启动失败、健康检查不过，或这一轮运行异常结束。
+    Error,
+    /// 插件没在运行：在安装、升级、启动，或者被停了。
     Offline,
 }
 
 impl BotActivity {
-    pub const ALL: [Self; 4] = [Self::Idle, Self::Working, Self::Waiting, Self::Offline];
+    /// 按 ADR-0126 状态表的顺序。
+    pub const ALL: [Self; 6] = [
+        Self::Idle,
+        Self::Thinking,
+        Self::Working,
+        Self::Waiting,
+        Self::Error,
+        Self::Offline,
+    ];
 
     /// 在 [`StateAvatars::states`] 里的键。
     pub fn key(self) -> &'static str {
         match self {
             Self::Idle => "idle",
+            Self::Thinking => "thinking",
             Self::Working => "working",
             Self::Waiting => "waiting",
+            Self::Error => "error",
             Self::Offline => "offline",
         }
     }
@@ -385,6 +399,11 @@ pub struct BotView {
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub cloud: Option<crate::BotCloud>,
+    /// 头像来源是主人自己的图（不是插件清单的默认图，也不是云朵）。资料页据此标二选一的“自己的图”；
+    /// 和 `cloud` 不会同时为真。插件默认图也写在 `avatar` 上，所以单看 `avatar` 分不出来。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub custom_media: bool,
     /// 现在的状态该用的表情素材 ID（ADR-0126 的“状态头像”）；没有云朵或状态不确定时为空。
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
@@ -636,6 +655,7 @@ mod tests {
             saving: false,
             problem: None,
             cloud: None,
+            custom_media: false,
             face: None,
         };
         assert!(bot.current_state_avatar().is_none());
@@ -669,5 +689,66 @@ mod tests {
                 reason: BotChatUnavailable::Other
             }
         );
+    }
+
+    /// 老 App 读不到云朵时，两个新字段缺着也要能收。
+    #[test]
+    fn an_old_bot_view_without_the_cloud_fields_still_reads() {
+        let bot = BotView {
+            chat: Default::default(),
+            availability: Default::default(),
+            user_id: "@b:h".into(),
+            bot: BotRef {
+                plugin_id: "a.b".into(),
+                bot: "default".into(),
+            },
+            web: None,
+            web_page: None,
+            name: "B".into(),
+            avatar: None,
+            state_avatars: Vec::new(),
+            activity: None,
+            saving: false,
+            problem: None,
+            cloud: Some(crate::BotCloud {
+                body: "#C8DBE9".into(),
+                face: "builtin:face/smile".into(),
+                headdress: None,
+            }),
+            custom_media: false,
+            face: Some("builtin:face/smile".into()),
+        };
+        let mut value = serde_json::to_value(&bot).unwrap();
+        let fields = value.as_object_mut().unwrap();
+        for field in ["cloud", "custom_media", "face"] {
+            fields.remove(field);
+        }
+        let old: BotView = serde_json::from_value(value).unwrap();
+        assert_eq!(old.cloud, None);
+        assert!(!old.custom_media);
+        assert_eq!(old.face, None);
+    }
+
+    /// 两个新状态的键和顺序都钉在 ADR-0126 的状态表上；旧 App 忽略多出来的两个键。
+    #[test]
+    fn thinking_and_error_have_stable_state_keys() {
+        assert_eq!(
+            BotActivity::ALL,
+            [
+                BotActivity::Idle,
+                BotActivity::Thinking,
+                BotActivity::Working,
+                BotActivity::Waiting,
+                BotActivity::Error,
+                BotActivity::Offline,
+            ]
+        );
+        assert_eq!(BotActivity::Thinking.key(), "thinking");
+        assert_eq!(BotActivity::Error.key(), "error");
+        assert_eq!(
+            BotActivity::from_key("thinking"),
+            Some(BotActivity::Thinking)
+        );
+        assert_eq!(BotActivity::from_key("error"), Some(BotActivity::Error));
     }
 }

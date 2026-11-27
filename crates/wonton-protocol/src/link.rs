@@ -35,6 +35,9 @@ const ROOM_ID: &AsciiSet = &NON_ALPHANUMERIC
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AppLink {
+    /// 选一个底栏项（ADR-0126）：两个根页切过去，应用项打开它的整页。
+    /// `tab/agent`、`tab/apps` 选根页；应用项整段是它的 JSON。
+    Bar { entry: crate::BarEntry },
     /// 打开一个页面，压进栈（[`PageAction::OpenPage`](crate::PageAction::OpenPage)）。
     Tab { tab: TabRef },
     /// 新会话：打开“发起私聊”。
@@ -55,9 +58,16 @@ pub enum AppLink {
 impl AppLink {
     pub fn to_url(&self) -> String {
         let path = match self {
+            Self::Bar { entry } => match entry {
+                crate::BarEntry::Agent => "tab/agent".to_owned(),
+                crate::BarEntry::Apps => "tab/apps".to_owned(),
+                // 应用项的两种 `MyAppRef` 形状都带标签和插件 ID：整段 JSON 编进路径，别再拼一套。
+                crate::BarEntry::App { app } => format!(
+                    "tab/app/{}",
+                    URL_SAFE_NO_PAD.encode(serde_json::to_vec(app).expect("MyAppRef serializes"))
+                ),
+            },
             Self::Tab { tab } => match tab {
-                TabRef::Chat => "tab/chat".to_owned(),
-                TabRef::Apps => "tab/apps".to_owned(),
                 TabRef::Plugin {
                     plugin_id,
                     page: None,
@@ -121,8 +131,19 @@ impl AppLink {
         let parts: Vec<&str> = path.split('/').collect();
         let tab = |tab| Some(Self::Tab { tab });
         match parts.as_slice() {
-            ["tab", "chat"] => tab(TabRef::Chat),
-            ["tab", "apps"] => tab(TabRef::Apps),
+            ["tab", "agent"] | ["tab", "chat"] => Some(Self::Bar {
+                entry: crate::BarEntry::Agent,
+            }),
+            ["tab", "apps"] => Some(Self::Bar {
+                entry: crate::BarEntry::Apps,
+            }),
+            ["tab", "app", encoded] => {
+                let bytes = URL_SAFE_NO_PAD.decode(encoded).ok()?;
+                let app = serde_json::from_slice(&bytes).ok()?;
+                Some(Self::Bar {
+                    entry: crate::BarEntry::App { app },
+                })
+            }
             ["tab", "plugin", plugin_id] if is_id(plugin_id) => tab(TabRef::Plugin {
                 plugin_id: (*plugin_id).to_owned(),
                 page: None,
@@ -298,8 +319,29 @@ mod tests {
     #[test]
     fn every_link_round_trips_through_its_url() {
         let links = [
-            AppLink::Tab { tab: TabRef::Chat },
-            AppLink::Tab { tab: TabRef::Apps },
+            AppLink::Bar {
+                entry: crate::BarEntry::Agent,
+            },
+            AppLink::Bar {
+                entry: crate::BarEntry::Apps,
+            },
+            AppLink::Bar {
+                entry: crate::BarEntry::App {
+                    app: crate::MyAppRef::Plugin {
+                        plugin_id: "filebrowser".into(),
+                    },
+                },
+            },
+            AppLink::Bar {
+                entry: crate::BarEntry::App {
+                    app: crate::MyAppRef::Page {
+                        tab: TabRef::Plugin {
+                            plugin_id: "grafana".into(),
+                            page: Some("explore".into()),
+                        },
+                    },
+                },
+            },
             AppLink::Settings,
             AppLink::Tab {
                 tab: TabRef::Plugin {
@@ -363,11 +405,38 @@ mod tests {
         }
     }
 
+    /// 旧版发的是 `tab/chat`、`tab/apps`：聊天根就是现在的 Agent 根，旧链接照旧打开。
+    #[test]
+    fn old_root_tab_links_still_open_the_bar_items() {
+        assert_eq!(
+            AppLink::parse("wonton://tab/chat"),
+            Some(AppLink::Bar {
+                entry: crate::BarEntry::Agent,
+            })
+        );
+        assert_eq!(
+            AppLink::parse("wonton://tab/apps"),
+            Some(AppLink::Bar {
+                entry: crate::BarEntry::Apps,
+            })
+        );
+        assert_eq!(
+            AppLink::Bar {
+                entry: crate::BarEntry::Agent,
+            }
+            .to_url(),
+            "wonton://tab/agent"
+        );
+    }
+
     #[test]
     fn unknown_or_tampered_links_are_not_opened() {
         for url in [
             "https://example.com/tab/chat",
             "wonton://tab/unknown",
+            "wonton://tab/app/",
+            "wonton://tab/app/not-base64!",
+            "wonton://tab/app/bm90LWpzb24",
             "wonton://tab/plugin/",
             "wonton://tab/plugin/../etc",
             "wonton://tab/plugin/a b",

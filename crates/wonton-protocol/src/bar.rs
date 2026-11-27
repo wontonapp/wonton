@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{InboxViewModel, MyAppRef, PluginIcon};
 
-/// 底栏最多几项。满了以后 [`PageAction::AddBarItem`](crate::PageAction::AddBarItem) 返回 `InvalidInput`。
-pub const MAX_BAR_ITEMS: usize = 6;
+/// 底栏最多几项。满了以后 [`PageAction::AddBarItem`](crate::PageAction::AddBarItem) 返回 `InvalidInput`；
+/// [`BarViewModel::max_items`] 和它同一个类型。
+pub const MAX_BAR_ITEMS: u32 = 6;
 
 /// 底栏的一项：两个内置根页，或用户从“我的应用”加上来的一项。
 ///
@@ -28,7 +29,7 @@ pub enum BarEntry {
     App { app: MyAppRef },
 }
 
-/// 账号数据里没有 `bar` 时的底栏：Agent、应用。显式存了空表就是空表，不补回默认。
+/// 账号数据里没有 `bar` 时的底栏：Agent、应用。显式存了空表时仍按最短的一项算，见 [`check_bar`]。
 pub fn default_bar() -> Vec<BarEntry> {
     vec![BarEntry::Agent, BarEntry::Apps]
 }
@@ -42,21 +43,21 @@ pub enum BarProblem {
     Full,
     /// 同一项出现了两次。
     Duplicate,
+    /// 一项都没有：两个根页删光也要留至少一项，不然主界面没有开口。
+    Empty,
     #[serde(other)]
     Other,
 }
 
-/// 底栏成员的规则：核心改栏和收下别的设备存的栏时都用它查。
+/// 底栏成员的规则：核心加项和收下别的设备存的栏时都用它查。空表也不行（[`BarProblem::Empty`]），
+/// 没选过时的空栏先落 [`default_bar`]。
 pub fn check_bar(entries: &[BarEntry]) -> Result<(), BarProblem> {
-    if entries.len() > MAX_BAR_ITEMS {
+    if entries.is_empty() {
+        return Err(BarProblem::Empty);
+    }
+    if entries.len() > MAX_BAR_ITEMS as usize {
         return Err(BarProblem::Full);
     }
-    for (index, entry) in entries.iter().enumerate() {
-        if entries[..index].contains(entry) {
-            return Err(BarProblem::Duplicate);
-        }
-    }
-    Ok(())
 }
 
 /// 底栏一项的图标。内置两项是固定图标，“Agent”那一项的选中图标是云朵（ADR-0126）。
@@ -67,6 +68,9 @@ pub enum BarIcon {
     Agent,
     Apps,
     /// 插件自己的彩色图标；公网网页和没有图标的插件为空，壳画占位。
+    ///
+    /// 包一层 `icon`（不学 [`TabRef::Plugin`](crate::TabRef::Plugin) 那样带独立字段）是因为同一个变体要能表示
+    /// “没有图标”，和上面两个固定图标的变体区分开。
     App {
         icon: Option<PluginIcon>,
     },
@@ -92,7 +96,7 @@ pub struct BarViewModel {
     pub items: Vec<BarItem>,
     /// [`MAX_BAR_ITEMS`]。
     pub max_items: u32,
-    /// 刚才那次加项因为满了被拒；下一次加成功时清掉。
+    /// 刚才那次加项因为满了被拒；下一次加成功时清掉。开着时壳把“加到 底栏”显示成满。
     pub full: bool,
 }
 

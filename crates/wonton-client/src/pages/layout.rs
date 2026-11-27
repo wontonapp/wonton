@@ -2,7 +2,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{
-    CoreError, LayoutSettings, MyAppEntry, MyAppRef, PagesFailure, TabIcon, TabLayout, TabRef,
+    BarEntry, BarProblem, CoreError, LayoutSettings, MAX_BAR_ITEMS, MAX_PANEL_PAGES, MyAppEntry,
+    MyAppRef, PagesFailure, PanelEntry, TabIcon, TabLayout, TabRef, check_bar, default_bar,
 };
 
 use super::{entry_plugin_id, invalid};
@@ -21,6 +22,12 @@ pub(super) struct LayoutFile {
     /// 新装的应用自动加到末尾。
     #[serde(default = "auto_add_default")]
     pub(super) auto_add: bool,
+    /// 主聊天页下拉面板里的页面，按显示顺序（ADR-0052）。
+    #[serde(default)]
+    pub(super) panel: Vec<PanelEntry>,
+    /// 底栏的成员和顺序（ADR-0126）；缺这一项（老安装）时是默认的 Agent、应用。
+    #[serde(default = "default_bar")]
+    pub(super) bar: Vec<BarEntry>,
 }
 
 #[derive(Clone)]
@@ -30,7 +37,7 @@ pub(super) struct LayoutReadError {
 }
 
 impl LayoutFile {
-    /// 账号数据里的一份：我的应用。本机文件里多出来的缓存（页面标题图标）不进账号数据。
+    /// 账号数据里的一份：我的应用、主面板和底栏。本机文件里多出来的缓存（页面标题图标）不进账号数据。
     pub(super) fn layout(&self) -> LayoutSettings {
         LayoutSettings {
             my_apps: self
@@ -43,8 +50,8 @@ impl LayoutFile {
                 .collect(),
             auto_add: self.auto_add,
             panel: self.panel.clone(),
-            // 这个核心不改底栏，也不写回去（见 `overwrite_layout`）。
-            bar: wonton_protocol::default_bar(),
+            // 底栏由这个核心改，也写回账号数据（`MANAGED_LAYOUT_KEYS`）。
+            bar: self.bar.clone(),
         }
     }
 
@@ -119,7 +126,7 @@ pub(super) fn read_file(path: &Path) -> Result<LayoutFile, LayoutReadError> {
             });
         }
     };
-    let file: LayoutFile = serde_json::from_slice(&bytes).map_err(|error| LayoutReadError {
+    let mut file: LayoutFile = serde_json::from_slice(&bytes).map_err(|error| LayoutReadError {
         reason: PagesFailure::InvalidConfig,
         message: l10n!(
             CATALOG,
@@ -129,6 +136,7 @@ pub(super) fn read_file(path: &Path) -> Result<LayoutFile, LayoutReadError> {
             reason = error.to_string()
         ),
     })?;
+    sanitize_bar(&mut file.bar);
     validate_file(&file).map_err(|message| LayoutReadError {
         reason: PagesFailure::InvalidConfig,
         message,
@@ -154,10 +162,50 @@ fn validate_file(file: &LayoutFile) -> Result<(), String> {
             check_url(tab)?;
         }
     }
+    validate_panel(&file.panel, MAX_PANEL_PAGES)?;
+    check_bar(&file.bar).map_err(|problem| match problem {
+        BarProblem::Empty => l10n!(CATALOG, language(), "tabs-config-empty-bar"),
+        BarProblem::Full => l10n!(CATALOG, language(), "tabs-config-bar-too-many"),
+        BarProblem::Duplicate => l10n!(CATALOG, language(), "tabs-config-bar-duplicate"),
+        BarProblem::Other => l10n!(CATALOG, language(), "tabs-config-bar-invalid"),
+    })?;
     Ok(())
 }
 
-/// 存下来的公网网页也只收 `https://`，本机文件和账号数据都查。
+/// 底栏的容错：别的设备存的栏可能超长、重复或成空表。超出的丢掉、重复的只留第一个，空了落默认。
+/// 读本机文件和收账号数据都先过它，再 [`check_bar`]。
+pub(super) fn sanitize_bar(bar: &mut Vec<BarEntry>) {
+    let mut kept: Vec<BarEntry> = Vec::new();
+    for entry in bar.drain(..) {
+        if !kept.contains(&entry) && kept.len() < MAX_BAR_ITEMS as usize {
+            kept.push(entry);
+        }
+    }
+    *bar = if kept.is_empty() { default_bar() } else { kept };
+}
+
+/// 我的应用和面板共用的配置规矩：不超上限、没有重页。账号数据也用这份。
+pub(super) fn validate_panel(panel: &[PanelEntry], max: usize) -> Result<(), String> {
+    if panel.len() > max {
+        return Err(l10n!(
+            CATALOG,
+            language(),
+            "panel-config-too-many",
+            count = max
+        ));
+    }
+    let mut seen = Vec::new();
+    for entry in panel {
+        if seen.contains(&entry.tab) {
+            return Err(l10n!(CATALOG, language(), "panel-config-duplicate"));
+        }
+        seen.push(entry.tab.clone());
+        check_url(&entry.tab)?;
+    }
+    Ok(())
+}
+
+/// 存下来的公网网页也只收 `https://`（ADR-0052），本机文件和账号数据都查。
 fn check_url(tab: &TabRef) -> Result<(), String> {
     if let TabRef::Url { url } = tab
         && !is_https_url(url)
@@ -173,6 +221,8 @@ pub(super) fn default_file(server_id: Option<String>) -> LayoutFile {
         my_apps: Vec::new(),
         my_apps_initialized: false,
         auto_add: true,
+        panel: Vec::new(),
+        bar: default_bar(),
     }
 }
 
@@ -185,14 +235,32 @@ pub(super) fn normalize_for_server(file: &mut LayoutFile, server_id: Option<Stri
         // 插件和插件里的页面绑在上一台服务器上；公网网页和服务器无关，留着。
         file.my_apps
             .retain(|entry| entry_plugin_id(entry).is_none());
+        file.bar.retain(|entry| bar_plugin_id(entry).is_none());
+        if file.bar.is_empty() {
+            file.bar = default_bar();
+        }
+        file.panel.clear();
     }
     file.server_id = Some(server_id);
 }
 
 pub(super) fn entry_tab(entry: &StoredApp) -> TabRef {
     match &entry.app {
-        MyAppRef::Plugin { .. } => TabRef::Chat,
+        MyAppRef::Plugin { .. } => TabRef::Rooms,
         MyAppRef::Page { tab } => tab.clone(),
+    }
+}
+
+/// 底栏项绑在哪台服务器的插件上：公网网页和两个内置项不绑。
+pub(super) fn bar_plugin_id(entry: &BarEntry) -> Option<&str> {
+    match entry {
+        BarEntry::Agent | BarEntry::Apps => None,
+        BarEntry::App {
+            app: MyAppRef::Plugin { plugin_id },
+        } => Some(plugin_id),
+        BarEntry::App {
+            app: MyAppRef::Page { tab },
+        } => super::tab_plugin_id(tab),
     }
 }
 
@@ -225,17 +293,22 @@ pub(super) fn adopt_layout(file: &mut LayoutFile, settings: LayoutSettings) -> R
             page,
         });
     }
+    validate_panel(&settings.panel, MAX_PANEL_PAGES)?;
+    let mut bar = settings.bar;
+    sanitize_bar(&mut bar);
     *file = LayoutFile {
         server_id: file.server_id.clone(),
         my_apps,
         my_apps_initialized: true,
         auto_add: settings.auto_add,
+        panel: settings.panel,
+        bar,
     };
     Ok(())
 }
 
-/// 这个核心管的几块；底栏（`bar`）不在里面，别的设备存的底栏原样留着。
-const MANAGED_LAYOUT_KEYS: [&str; 3] = ["my_apps", "auto_add", "panel"];
+/// 这个核心管的几块；别的键（更新版 App 存的）原样留着。
+const MANAGED_LAYOUT_KEYS: [&str; 4] = ["my_apps", "auto_add", "panel", "bar"];
 
 /// 把本机的配置写进账号数据的原文：只换认识的几块，别的键（更新版 App 存的）原样留下。
 pub(super) fn overwrite_layout(

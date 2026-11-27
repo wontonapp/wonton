@@ -13,13 +13,13 @@ mod support;
 
 use std::time::{Duration, Instant};
 
-use wonton_client::{
-    Action, CoreError, HomeStatus, InstalledPlugin, MyAppRef, OpenPage, PagesViewModel, PlacedTab,
-    PluginHealth, PluginImage, PluginState, TabIcon, TabLayout, TabLoadFailure, TabRef, TabState,
-};
-
 use crate::plugins::rig::{FakeHome, Rig, installed};
 use support::{assert_invalid, item, page, tab, web_plugin};
+use wonton_client::{
+    Action, BarEntry, CoreError, HomeStatus, InstalledPlugin, MAX_BAR_ITEMS, MyAppRef, OpenPage,
+    PagesViewModel, PanelScope, PlacedTab, PluginHealth, PluginImage, PluginState, TabIcon,
+    TabLayout, TabLoadFailure, TabRef, TabState,
+};
 
 async fn wait_pages(rig: &Rig, mut ready: impl FnMut(&PagesViewModel) -> bool) -> PagesViewModel {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
@@ -131,9 +131,9 @@ async fn pages_subscription_reports_current_changes_and_cancel() {
 async fn defaults_root_stack_and_my_apps_invariants() {
     let rig = Rig::new().await;
     rig.connected().await;
-    let initial = wait_pages(&rig, |view| view.root == TabRef::Chat).await;
-    // 配对后的根页面是聊天；栈里还没有页面。
-    assert_eq!(initial.root, TabRef::Chat);
+    let initial = wait_pages(&rig, |view| view.tab == BarEntry::Agent).await;
+    // 配对后的根页面是 Agent 会话列表；栈里还没有页面。
+    assert_eq!(initial.tab, BarEntry::Agent);
     assert!(initial.stack.is_empty());
     assert!(initial.my_app_candidates.is_empty());
     assert!(initial.auto_add);
@@ -167,7 +167,9 @@ async fn defaults_root_stack_and_my_apps_invariants() {
     // 根页面一路弹回根；关掉最后一页也回到根。
     rig.app
         .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::OpenPage { tab: TabRef::Chat },
+            action: wonton_protocol::PageAction::SelectBarItem {
+                entry: BarEntry::Agent,
+            },
         })
         .unwrap();
     assert!(rig.app.pages().stack.is_empty());
@@ -178,10 +180,10 @@ async fn defaults_root_stack_and_my_apps_invariants() {
             tab: tab("app.missing", None),
         },
     }));
-    // 我的应用不收内置页：聊天和应用是侧边栏的固定行。
+    // 我的应用不收内置页：Agent 和收件箱是根页，不是能加的行。
     assert_invalid(rig.app.dispatch(Action::Pages {
         action: wonton_protocol::PageAction::AddMyApp {
-            app: MyAppRef::Page { tab: TabRef::Chat },
+            app: MyAppRef::Page { tab: TabRef::Rooms },
             title: None,
             index: None,
         },
@@ -496,7 +498,7 @@ async fn corrupted_config_recovers_and_restart_starts_with_an_empty_stack() {
     rig.reopen();
     let restarted = rig.app.pages();
     assert!(restarted.stack.is_empty());
-    assert_eq!(restarted.root, TabRef::Chat);
+    assert_eq!(restarted.tab, BarEntry::Agent);
     assert_eq!(restarted.problem, None);
 
     std::fs::write(rig.data_dir().join("layout.json"), b"not json").unwrap();
@@ -595,12 +597,12 @@ async fn opening_a_page_is_not_a_selection_and_server_switch_clears_plugin_rows(
     rig.connect_to(other.ticket());
     let switched = wait_pages(&rig, |view| {
         view.stack.is_empty()
-            && view.root == TabRef::Chat
+            && view.tab == BarEntry::Agent
             && rig.app.plugins().sidebar.apps.is_empty()
     })
     .await;
     assert!(switched.uninstalled.is_empty());
-    assert_eq!(switched.root, TabRef::Chat);
+    assert_eq!(switched.tab, BarEntry::Agent);
 }
 
 #[tokio::test]

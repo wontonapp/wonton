@@ -35,12 +35,13 @@ fn bar_entries_have_a_stable_wire_shape() {
 }
 
 #[test]
-fn a_layout_without_a_bar_gets_agent_and_apps_but_an_empty_bar_stays_empty() {
+fn a_layout_without_a_bar_gets_agent_and_apps_and_an_explicit_empty_bar_is_invalid() {
     let old: LayoutSettings = serde_json::from_value(json!({"my_apps": []})).unwrap();
     assert_eq!(old.bar, default_bar());
     assert_eq!(LayoutSettings::default().bar, default_bar());
     let emptied: LayoutSettings = serde_json::from_value(json!({"bar": []})).unwrap();
     assert!(emptied.bar.is_empty());
+    assert_eq!(check_bar(&emptied.bar), Err(BarProblem::Empty));
 }
 
 #[test]
@@ -58,7 +59,7 @@ fn bar_entries_from_a_newer_app_are_dropped_not_fatal() {
 #[test]
 fn the_bar_holds_at_most_six_distinct_entries() {
     assert_eq!(check_bar(&default_bar()), Ok(()));
-    assert_eq!(check_bar(&[]), Ok(()));
+    assert_eq!(check_bar(&[]), Err(BarProblem::Empty));
     let apps: Vec<BarEntry> = (0..MAX_BAR_ITEMS)
         .map(|index| BarEntry::App {
             app: MyAppRef::Plugin {
@@ -77,6 +78,10 @@ fn the_bar_holds_at_most_six_distinct_entries() {
             BarEntry::App { app: rss() }
         ]),
         Err(BarProblem::Duplicate)
+    );
+    assert_eq!(
+        serde_json::to_value(BarProblem::Empty).unwrap(),
+        json!("empty")
     );
     let unknown: BarProblem = serde_json::from_value(json!("too_wide")).unwrap();
     assert_eq!(unknown, BarProblem::Other);
@@ -105,7 +110,7 @@ fn the_bar_view_model_round_trips_through_json() {
                 badge: 0,
             },
         ],
-        max_items: MAX_BAR_ITEMS as u32,
+        max_items: MAX_BAR_ITEMS,
         full: true,
     };
     let value = serde_json::to_value(&view).unwrap();

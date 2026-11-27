@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{PluginIcon, PluginImage};
+use crate::{BarEntry, BarViewModel, PluginIcon, PluginImage};
 
 /// 栈里最多保活几个页面的网页（栈顶往下数）。每多一个多一份整个第三方网页的内存。
 pub const KEEP_ALIVE_PAGES: usize = 3;
@@ -41,25 +41,29 @@ pub enum TabLayout {
 }
 
 /// 指一个页面。操作都用它，壳从 [`OpenPage::tab`] 或插件列表拿，不自己拼。
+///
+/// 主界面的两个根页是底栏项（[`BarEntry`]），不是页面；这里只留压栈的页面。
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TabRef {
-    Chat,
-    /// 应用网格页。
-    Apps,
+    /// 所有会话页（侧边栏“所有会话”和通知的落点）。
+    ///
+    /// 旧的 `{"type":"chat"}` 就是它：不迁移，读的时候按 `rooms` 收。
+    #[serde(alias = "chat")]
+    Rooms,
+    /// 收件箱页（顶栏铃铛、侧边栏的同一入口）。
+    Inbox,
     Plugin {
         plugin_id: String,
         /// 清单 `tabs` 里的 `id`；空的是没声明 `tabs` 的插件的网页入口（`webui`）。
         page: Option<String>,
     },
     /// 插件网站里的某一页：网页入口下的路径（含查询和 `#` 后面的部分），只认同一个插件网站。
-    /// 按网址加进我的应用的（[`PageAction::AddMyAppUrl`](crate::PageAction::AddMyAppUrl)）。
-    PluginPath {
-        plugin_id: String,
-        path: String,
-    },
-    /// 独立 Bot 网页。选择、我的应用、桥及媒体操作都保留这个身份，不借用插件默认页。
+    /// 从正在看的页面加进我的应用或面板的（[`PageAction::PinCurrentPage`](crate::PageAction::PinCurrentPage)），
+    /// 或者编辑器里给插件填的路径。
+    PluginPath { plugin_id: String, path: String },
+    /// 独立 Bot 网页。选择、我的应用、面板、桥及媒体操作都保留这个身份，不借用插件默认页。
     /// URL 来自同一 BotRef 的 BotView.web；没有已核实的 Ready 时不能用插件 web_url 代替。
     Bot {
         bot: crate::BotRef,
@@ -69,10 +73,8 @@ pub enum TabRef {
     },
     /// 公网网页，只收 `https://`。手机直接访问，不经隧道：没有登录身份、桥和 `--wonton-*` 变量，
     /// 存储和插件页面分开。
-    Url {
-        url: String,
-    },
-    /// 插件的 MCP Apps 界面（`ui://` 资源）。核心另给宿主页，
+    Url { url: String },
+    /// 插件的 MCP Apps 界面（`ui://` 资源），Bot 钉上来的（ADR-0052）。核心另给宿主页，
     /// 界面在隔离的 iframe 里，只经 MCP Apps 的 postMessage 说话。
     UiResource {
         plugin_id: String,
@@ -85,23 +87,18 @@ pub enum TabRef {
     },
     /// 插件网页作为 Matrix widget 在某个房间里打开（ADR-0096）：全屏盖在聊天上，不能固定。
     /// 每次打开都是新的 widget 会话，关掉、换房间或退出登录时结束；同一时间只有一个。
-    Widget {
-        plugin_id: String,
-        room_id: String,
-    },
+    Widget { plugin_id: String, room_id: String },
 }
 
 /// 主界面和打开着的页面。壳按 [`PagesViewModel::stack`] 渲染，栈顶在最上面。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PagesViewModel {
-    /// 不在栈里时露出来的那一页：配对后是聊天，没配对时是应用网格页（配对页也在它上面）。
-    pub root: TabRef,
-    /// 配对后的应用网格覆盖层；打开应用或聊天时收起，不改变根页面。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
-    pub shows_apps: bool,
-    /// 打开着的页面，从底到顶；空就是根页面。最后一个元素是当前页。
+    /// 当前选中的底栏项：两个根页之一，或者用户加进底栏的一个应用（点开它的整页）。
+    pub tab: BarEntry,
+    /// 底栏的成员和展示；只在两个根页上画，压着页面时壳不画。
+    pub bar: BarViewModel,
+    /// 打开着的页面，从底到顶；空就是 [`Self::tab`] 那个根页面。最后一个元素是当前页。
     pub stack: Vec<OpenPage>,
     /// 刚被卸载、已从我的应用移除的插件的标题，提示一次，见
     /// [`PageAction::DismissUninstalledTabs`](crate::PageAction::DismissUninstalledTabs)。
@@ -391,8 +388,17 @@ mod tests {
             page: sample_page(TabState::Ready, colored),
         });
         round_trip(PagesViewModel {
-            root: TabRef::Chat,
-            shows_apps: true,
+            tab: crate::BarEntry::Agent,
+            bar: crate::BarViewModel {
+                items: vec![crate::BarItem {
+                    entry: crate::BarEntry::Agent,
+                    label: "Agent".into(),
+                    icon: crate::BarIcon::Agent,
+                    badge: 1,
+                }],
+                max_items: crate::MAX_BAR_ITEMS,
+                full: false,
+            },
             stack,
             uninstalled: vec!["相册".into()],
             sync_stale: true,

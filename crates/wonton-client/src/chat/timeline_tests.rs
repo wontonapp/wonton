@@ -215,6 +215,7 @@ fn chat_view(bots: &[&str]) -> ChatViewModel {
                 saving: false,
                 problem: None,
                 cloud: None,
+                custom_media: false,
                 face: None,
             })
             .collect(),

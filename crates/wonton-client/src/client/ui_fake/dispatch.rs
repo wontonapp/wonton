@@ -3,8 +3,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wonton_protocol::{
-    AskFailure, AskProblem, AskReceipt, AskState, ChatAction, CoreError, OpenPage, PageAction,
-    TabRef,
+    AskFailure, AskProblem, AskReceipt, AskState, BarEntry, BarIcon, BarItem, ChatAction,
+    CoreError, MAX_BAR_ITEMS, OpenPage, PageAction, PanelItem, PanelScope, PanelSource, TabIcon,
+    TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::super::ClientCore;
@@ -19,30 +20,118 @@ impl ClientCore {
         let views = self.views();
         match action {
             PageAction::OpenPage { tab } => {
+                if matches!(tab, TabRef::Rooms) {
+                    views.pages.send_modify(|pages| pages.stack.clear());
+                    return Ok(());
+                }
+                if matches!(tab, TabRef::Inbox) {
+                    views.pages.send_modify(|pages| {
+                        if pages.stack.last().is_some_and(|open| open.tab == tab) {
+                            return;
+                        }
+                        pages.stack.retain(|open| open.tab != tab);
+                        pages.stack.push(fake_root_page(tab.clone()));
+                    });
+                    return Ok(());
+                }
                 let Some((tab, page)) = fake_open(tab.clone()) else {
-                    // 根页面（聊天、应用）一路弹回根；应用网格开没开记在页面视图里。
                     views.pages.send_modify(|pages| {
                         pages.stack.clear();
-                        pages.shows_apps = tab == TabRef::Apps;
+                        if let BarEntry::App { .. } = pages.tab {
+                            pages.tab = BarEntry::Agent;
+                        }
                     });
                     return Ok(());
                 };
-                views.pages.send_if_modified(|pages| {
-                    let left_apps = std::mem::take(&mut pages.shows_apps);
+                views.pages.send_modify(|pages| {
                     if pages.stack.last().is_some_and(|open| open.tab == tab) {
-                        return left_apps;
+                        return;
                     }
                     pages.stack.retain(|open| open.tab != tab);
                     pages.stack.push(OpenPage { tab, page });
-                    true
                 });
                 Ok(())
             }
             PageAction::ClosePage => {
                 // 和真核心一样：没有开着的页时是安静的什么也不做。
-                views.pages.send_if_modified(|pages| {
-                    // 应用网格开着时关的是它，栈不动。
-                    std::mem::take(&mut pages.shows_apps) || pages.stack.pop().is_some()
+                views.pages.send_modify(|pages| {
+                    pages.stack.pop();
+                });
+                Ok(())
+            }
+            PageAction::SelectBarItem { entry } => {
+                views.pages.send_modify(|pages| match &entry {
+                    BarEntry::Agent | BarEntry::Apps => {
+                        pages.tab = entry.clone();
+                        pages.stack.clear();
+                    }
+                    BarEntry::App { app } => {
+                        pages.tab = entry.clone();
+                        let tab = match app {
+                            wonton_protocol::MyAppRef::Page { tab } => tab.clone(),
+                            wonton_protocol::MyAppRef::Plugin { plugin_id } => TabRef::Plugin {
+                                plugin_id: plugin_id.clone(),
+                                page: None,
+                            },
+                        };
+                        if let Some((tab, page)) = fake_open(tab.clone()) {
+                            pages.stack.retain(|open| open.tab != tab);
+                            pages.stack.push(OpenPage { tab, page });
+                        }
+                    }
+                });
+                Ok(())
+            }
+            PageAction::AddBarItem { app } => {
+                let mut added = true;
+                views.pages.send_modify(|pages| {
+                    let entry = BarEntry::App { app };
+                    if pages.bar.items.iter().any(|item| item.entry == entry) {
+                        added = false;
+                        return;
+                    }
+                    if pages.bar.items.len() >= MAX_BAR_ITEMS as usize {
+                        pages.bar.full = true;
+                        added = false;
+                        return;
+                    }
+                    pages.bar.full = false;
+                    pages.bar.items.push(BarItem {
+                        entry,
+                        label: "App".into(),
+                        icon: BarIcon::App { icon: None },
+                        badge: 0,
+                    });
+                });
+                if added {
+                    Ok(())
+                } else {
+                    Err(CoreError::InvalidInput {
+                        reason: "fake bar refused".into(),
+                    })
+                }
+            }
+            PageAction::RemoveBarItem { entry } => {
+                if views.pages.borrow().bar.items.len() <= 1 {
+                    return Err(CoreError::InvalidInput {
+                        reason: "fake bar is empty".into(),
+                    });
+                }
+                views.pages.send_modify(|pages| {
+                    pages.bar.items.retain(|item| item.entry != entry);
+                    pages.bar.full = false;
+                });
+                Ok(())
+            }
+            PageAction::MoveBarItem { from, to } => {
+                views.pages.send_modify(|pages| {
+                    let len = pages.bar.items.len();
+                    let (from, to) = (from as usize, to as usize);
+                    if from >= len || to >= len {
+                        return;
+                    }
+                    let item = pages.bar.items.remove(from);
+                    pages.bar.items.insert(to, item);
                 });
                 Ok(())
             }
@@ -94,5 +183,21 @@ impl ClientCore {
             }
             _ => {}
         }
+    }
+}
+
+/// 假收件箱页：壳按 `TabRef::Inbox` 画自己的原生列表，元数据只给胶囊用。
+fn fake_root_page(tab: TabRef) -> OpenPage {
+    OpenPage {
+        tab,
+        page: TabPage {
+            title: "Inbox".into(),
+            icon: TabIcon::Plugin { icon: None },
+            url: None,
+            layout: TabLayout::Inset,
+            state: TabState::Ready,
+            reload: 0,
+            opens_in_browser: false,
+        },
     }
 }

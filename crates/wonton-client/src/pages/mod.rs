@@ -14,9 +14,10 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
-    BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel, LayoutSettings, MyAppRef,
-    PageAction, PagesFailure, PagesProblem, PagesViewModel, PlacedTab, PluginState,
-    PluginsViewModel, TabIcon, TabLoadFailure, TabRef,
+    BarEntry, BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel,
+    LayoutSettings, MAX_PANEL_PAGES, MyAppRef, OwnPrivateBotView, PageAction, PagesFailure,
+    PagesProblem, PagesViewModel, PanelEntry, PanelItem, PanelScope, PinTarget, PlacedTab,
+    PluginState, PluginsViewModel, RoomPanel, TabIcon, TabLoadFailure, TabRef,
 };
 
 use crate::home::HomeLink;
@@ -70,8 +71,11 @@ struct PagesState {
     content: HashMap<TabRef, content::ContentPage>,
     /// 配上了服务器：根页面是聊天；没配对时根是应用网格页（配对页在它上面）。
     paired: bool,
-    shows_apps: bool,
-    /// 加载失败和重载计数都按页面实例记：同一页面在栈里和内容窗口里是两份。
+    /// 当前选中的底栏项（ADR-0126）。选中的应用项压栈打开，选中的根页只在栈空时露出。
+    tab: BarEntry,
+    /// 刚才加项因为满了被拒；下一次加成功时清掉。
+    bar_full: bool,
+    /// 加载失败和重载计数都按页面实例记：同一页面在栈里和面板里是两份（ADR-0052）。
     failures: HashMap<PlacedTab, (TabLoadFailure, Option<u16>)>,
     reloads: HashMap<PlacedTab, u64>,
     uninstalled: Vec<String>,
@@ -154,6 +158,7 @@ impl PagesLink {
                 Err(error) => problem = Some(storage_problem(&error)),
             }
         }
+        let tab = config.bar.first().cloned().unwrap_or(BarEntry::Agent);
         let state = PagesState {
             config,
             problem,
@@ -161,7 +166,8 @@ impl PagesLink {
             stack: Vec::new(),
             content: HashMap::new(),
             paired: home_view.server_id.is_some(),
-            shows_apps: false,
+            tab,
+            bar_full: false,
             failures: HashMap::new(),
             reloads: HashMap::new(),
             uninstalled: Vec::new(),
@@ -227,13 +233,10 @@ impl PagesLink {
             PageAction::TabLoadSucceeded { page } => self.load_succeeded(page),
             PageAction::AddMyAppUrl { url, title } => self.add_my_app_url(&url, title),
             PageAction::DismissUninstalledTabs => self.dismiss_uninstalled(),
-            // 底栏不在这个核心里：如实报没就绪，不静默当成功。
-            PageAction::SelectBarItem { .. }
-            | PageAction::AddBarItem { .. }
-            | PageAction::RemoveBarItem { .. }
-            | PageAction::MoveBarItem { .. } => Err(CoreError::NotReady {
-                reason: "the bar is not wired yet".into(),
-            }),
+            PageAction::SelectBarItem { entry } => self.select_bar_item(entry),
+            PageAction::AddBarItem { app } => self.add_bar_item(app),
+            PageAction::RemoveBarItem { entry } => self.remove_bar_item(&entry),
+            PageAction::MoveBarItem { from, to } => self.move_bar_item(from, to),
         }
     }
 
@@ -333,7 +336,7 @@ impl PagesLink {
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
     }
@@ -361,7 +364,7 @@ impl PagesLink {
             bot::replace_bots(&mut failed, state.bots.clone());
             failed.problem = Some(storage_problem(&error));
             let sync_stale = self.sync_problem.borrow().is_some();
-            let view = make_view(&failed, &plugins, sync_stale);
+            let view = make_view(&failed, &plugins, &self.chat.borrow(), sync_stale);
             *lock(&self.state) = failed;
             self.publish(view, &plugins);
             return Err(error);
@@ -371,7 +374,7 @@ impl PagesLink {
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         let settings = state.config.layout();
         *lock(&self.state) = state;
         self.publish(view, &plugins);
@@ -420,7 +423,7 @@ impl PagesLink {
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         Ok(())
@@ -492,12 +495,10 @@ impl PagesLink {
 }
 
 impl PagesState {
-    /// 不在栈里时露出来的那一页。
-    fn root(&self) -> TabRef {
-        if self.paired {
-            TabRef::Chat
-        } else {
-            TabRef::Apps
+    /// 选中项还在栏上就用它；被别的设备删掉了就落到第一项。
+    fn settle_tab(&mut self) {
+        if !self.config.bar.contains(&self.tab) {
+            self.tab = self.config.bar.first().cloned().unwrap_or(BarEntry::Agent);
         }
     }
 }

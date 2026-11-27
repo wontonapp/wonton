@@ -1,32 +1,92 @@
-//! 根页面：没配对时是应用网格页（配对页在它上面），配上之后是聊天；栈空时页面都在侧边栏里。
+//! 底栏（ADR-0126）：默认 Agent、应用两项，根页跟着选中的栏项走，旧配置落默认。
 
 use super::*;
 use wonton_client::Action;
 
+fn select(entry: BarEntry) -> Action {
+    Action::Pages {
+        action: PageAction::SelectBarItem { entry },
+    }
+}
+
 #[tokio::test]
-async fn root_is_the_apps_page_unpaired_and_chat_once_paired() {
+async fn the_bar_defaults_to_agent_and_apps_and_keeps_the_selected_root() {
     let rig = Rig::new().await;
-    // 没配对时根页面是“应用”：网格页就是配对页。
     let unpaired = rig.app.pages();
-    assert_eq!(unpaired.root, TabRef::Apps);
+    // 没配对时根页照旧是 Agent；配对页盖在它上面。
+    assert_eq!(unpaired.tab, BarEntry::Agent);
+    assert_eq!(
+        unpaired
+            .bar
+            .items
+            .iter()
+            .map(|item| item.entry.clone())
+            .collect::<Vec<_>>(),
+        [BarEntry::Agent, BarEntry::Apps]
+    );
+    assert_eq!(unpaired.bar.max_items, MAX_BAR_ITEMS);
     assert!(unpaired.stack.is_empty());
-    assert!(!unpaired.shows_apps);
 
     rig.connected().await;
-    // 配上了：根页面回到聊天，栈还是空的。
-    let paired = wait_pages(&rig, |view| view.root == TabRef::Chat).await;
-    assert_eq!(paired.root, TabRef::Chat);
+    let paired = wait_pages(&rig, |view| view.tab == BarEntry::Agent).await;
+    assert_eq!(paired.tab, BarEntry::Agent);
     assert!(paired.stack.is_empty());
-    assert!(!paired.shows_apps);
-    // 候选和我的应用都在核心里算好，侧边栏从那里渲染。
     assert!(paired.my_app_candidates.is_empty());
 }
 
 #[tokio::test]
-async fn an_old_config_with_bar_items_starts_from_the_new_defaults() {
+async fn an_old_config_without_a_bar_gets_the_defaults() {
     let mut rig = Rig::new().await;
     rig.connected().await;
-    // 老安装的 layout.json 是底栏的形状（items/displays/labels）：读不出来就按默认值。
+    wait_pages(&rig, |view| view.tab == BarEntry::Agent).await;
+    // 老安装的 layout.json 没有 bar 字段：补默认两项，不整份作废。
+    std::fs::write(
+        rig.data_dir().join("layout.json"),
+        serde_json::json!({
+            "server_id": "home",
+            "my_apps": [],
+            "auto_add": true,
+            "panel": [],
+        })
+        .to_string(),
+    )
+    .unwrap();
+    rig.reopen();
+    let reopened = rig.app.pages();
+    assert_eq!(reopened.tab, BarEntry::Agent);
+    assert_eq!(
+        reopened
+            .bar
+            .items
+            .iter()
+            .map(|item| item.entry.clone())
+            .collect::<Vec<_>>(),
+        [BarEntry::Agent, BarEntry::Apps]
+    );
+    assert!(reopened.problem.is_none());
+
+    // 显式存了空栏：读的时候按默认补回来，不能没有开口。
+    std::fs::write(
+        rig.data_dir().join("layout.json"),
+        serde_json::json!({
+            "server_id": "home",
+            "my_apps": [],
+            "auto_add": true,
+            "panel": [],
+            "bar": [],
+        })
+        .to_string(),
+    )
+    .unwrap();
+    rig.reopen();
+    assert_eq!(rig.app.pages().bar.items.len(), 2);
+}
+
+/// 老安装的整份形状（items/labels）读不出来：退回默认，原因照旧说清。
+#[tokio::test]
+async fn an_old_items_and_labels_layout_falls_back_to_the_defaults() {
+    let mut rig = Rig::new().await;
+    rig.connected().await;
     std::fs::write(
         rig.data_dir().join("layout.json"),
         serde_json::json!({
@@ -39,85 +99,58 @@ async fn an_old_config_with_bar_items_starts_from_the_new_defaults() {
     .unwrap();
     rig.reopen();
     let reopened = rig.app.pages();
-    // items/labels 不再是字段：整份配置退回默认，原因照旧说清。
     assert!(reopened.problem.is_some());
     assert!(reopened.auto_add);
     assert!(reopened.my_app_candidates.is_empty());
+    assert_eq!(reopened.bar.items.len(), 2);
 }
 
 #[tokio::test]
-async fn sidebar_and_deep_link_open_the_apps_grid_over_chat() {
+async fn deep_links_pick_root_bar_items_and_old_links_still_work() {
     let rig = Rig::new().await;
     rig.connected().await;
-    wait_pages(&rig, |view| view.root == TabRef::Chat).await;
+    wait_pages(&rig, |view| view.tab == BarEntry::Agent).await;
 
-    let plugin_id = "app.grid";
-    rig.core.set_lists(vec![vec![web_plugin(
-        plugin_id,
-        PluginState::Running {
-            health: PluginHealth::Healthy,
-        },
-        vec![page("home")],
-    )]]);
-    rig.app
-        .dispatch(Action::Plugins {
-            action: wonton_protocol::PluginAction::RefreshPlugins,
-        })
-        .unwrap();
-    wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
-    let page_tab = tab(plugin_id, Some("home"));
+    // 链接选的是栏项，不是页面：不压栈，只换根。
+    let apps = wonton_client::parse_app_link("wonton://tab/apps".to_owned()).unwrap();
+    let wonton_protocol::AppLink::Bar {
+        entry: BarEntry::Apps,
+    } = apps
+    else {
+        panic!("expected a bar link");
+    };
+    rig.app.dispatch(select(BarEntry::Apps)).unwrap();
+    let switched = rig.app.pages();
+    assert_eq!(switched.tab, BarEntry::Apps);
+    assert!(switched.stack.is_empty());
+
+    // 旧版发的 tab/chat 落回 Agent 根。
+    let chat = wonton_client::parse_app_link("wonton://tab/chat".to_owned()).unwrap();
+    assert!(matches!(
+        chat,
+        wonton_protocol::AppLink::Bar {
+            entry: BarEntry::Agent
+        }
+    ));
+    rig.app.dispatch(select(BarEntry::Agent)).unwrap();
+    assert_eq!(rig.app.pages().tab, BarEntry::Agent);
+}
+
+#[tokio::test]
+async fn the_last_bar_item_cannot_be_removed() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.app.dispatch(select(BarEntry::Agent)).unwrap();
     rig.app
         .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::OpenPage {
-                tab: page_tab.clone(),
+            action: PageAction::RemoveBarItem {
+                entry: BarEntry::Apps,
             },
         })
         .unwrap();
-    assert_eq!(rig.app.pages().stack.len(), 1);
-
-    // 侧边栏“全部”发同一个 OpenPage(Apps) 操作。
-    rig.app
-        .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::OpenPage { tab: TabRef::Apps },
-        })
-        .unwrap();
-    assert!(rig.app.pages().stack.is_empty());
-    assert_eq!(rig.app.pages().root, TabRef::Chat);
-    assert!(rig.app.pages().shows_apps);
-    // 插件刷新不吞掉网格的打开请求。
-    rig.app
-        .dispatch(Action::Plugins {
-            action: wonton_protocol::PluginAction::RefreshPlugins,
-        })
-        .unwrap();
-    assert_eq!(rig.app.pages().root, TabRef::Chat);
-    assert!(rig.app.pages().shows_apps);
-
-    rig.app
-        .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::ClosePage,
-        })
-        .unwrap();
-    assert!(!rig.app.pages().shows_apps);
-    let wonton_protocol::AppLink::Tab { tab } =
-        wonton_client::parse_app_link("wonton://tab/apps".to_owned()).unwrap()
-    else {
-        panic!("expected a page link");
-    };
-    rig.app
-        .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::OpenPage { tab },
-        })
-        .unwrap();
-    let linked = rig.app.pages();
-    assert_eq!(linked.root, TabRef::Chat);
-    assert!(linked.stack.is_empty());
-    assert!(linked.shows_apps);
-
-    rig.app
-        .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::OpenPage { tab: TabRef::Chat },
-        })
-        .unwrap();
-    assert!(!rig.app.pages().shows_apps);
+    assert_eq!(rig.app.pages().bar.items.len(), 1);
+    let last = rig.app.pages().bar.items[0].entry.clone();
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: PageAction::RemoveBarItem { entry: last },
+    }));
 }

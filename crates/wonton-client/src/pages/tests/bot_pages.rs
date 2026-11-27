@@ -27,6 +27,7 @@ fn bot(name: &str, url: &str) -> BotView {
         problem: None,
         chat: Default::default(),
         cloud: None,
+        custom_media: false,
         face: None,
     }
 }

@@ -21,6 +21,9 @@ pub const CLOUD_FIELD: &str = "app.wonton.cloud";
 pub const CLOUD_ASSETS_PATH: &str = "/_wonton/api/cloud-assets";
 
 /// `GET` 取单项带原图，`DELETE` 只删人自己库里的。ID 里的 `:` 和 `/` 编码进一段路径。
+///
+/// 编码用 [`NON_ALPHANUMERIC`](percent_encoding::NON_ALPHANUMERIC)，`-`、`_`、`.` 也会被编码；
+/// 服务端要先按 `/` 切段、再解这一个段，不能把整条路径先解码（`builtin:face/smile` 里的 `/` 会变成段分隔）。
 pub fn cloud_asset_path(id: &str) -> String {
     let id = percent_encoding::utf8_percent_encode(id, percent_encoding::NON_ALPHANUMERIC);
     format!("{CLOUD_ASSETS_PATH}/{id}")
@@ -68,8 +71,9 @@ impl BotCloud {
         }
     }
 }
-
 /// 只改云朵的一项（取色器、点一个表情或头饰）。
+///
+/// 三项的载荷都是标量或没有，用结构体变体（不是一个元组）让 serde 的内部标签平铺、Swift/Kotlin 的绑定也带字段名。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "part", rename_all = "snake_case")]

@@ -128,6 +128,7 @@ fn profile(id: BotRef, user: &str) -> BotView {
         problem: None,
         chat: Default::default(),
         cloud: None,
+        custom_media: false,
         face: None,
     }
 }

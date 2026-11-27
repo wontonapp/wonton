@@ -62,7 +62,7 @@ impl PagesLink {
                 receiver = Some(content.view.subscribe());
                 return Ok(());
             }
-            let not_a_page = matches!(tab, TabRef::Chat | TabRef::Apps | TabRef::Widget { .. })
+            let not_a_page = matches!(tab, TabRef::Rooms | TabRef::Inbox | TabRef::Widget { .. })
                 || (!page_available(&tab, plugins) && !matches!(tab, TabRef::Plugin { .. }));
             if not_a_page {
                 return Err(invalid(&l10n!(CATALOG, language(), "tabs-view-not-a-page")));

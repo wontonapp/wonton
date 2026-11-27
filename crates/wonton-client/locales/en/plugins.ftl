@@ -201,21 +201,42 @@ tabs-page-cannot-reload = This page can't be reloaded.
 
 tabs-bar-not-pinned = This page isn't pinned to the Navigation bar.
 
-tabs-bar-already-pinned = This page is already in My Apps.
+tabs-bar-already-pinned = This page is already in the Navigation bar.
 
 tabs-bar-replace-required = The Navigation bar is full; pick a page to replace.
 
 tabs-bar-replacing-missing = The page to replace isn't in the Navigation bar.
 
-tabs-bar-fixed = Chat and Apps can't be replaced.
-
 tabs-bar-not-full = The Navigation bar isn't full, so there's nothing to replace.
 
-tabs-bar-remove-fixed = Chat and Apps can't be removed.
+tabs-bar-fixed = The Agent and Apps entries can be replaced.
+
+tabs-bar-remove-fixed = The Agent and Apps entries can be removed.
+
+tabs-bar-index-out-of-range = That position is past the end of the Navigation bar.
+
+# Name of the Agent root tab (icon only, this is the screen-reader label).
+tabs-bar-agent = Agent
+# Name of the Apps root tab.
+tabs-bar-apps = Apps
+# Refused when adding to a Navigation bar that already has the maximum items.
+tabs-bar-full = The Navigation bar is full.
+# Refused when removing the last item: there must always be one.
+tabs-bar-empty = Keep at least one item in the Navigation bar.
+# Refused when removing an item that isn't on the Navigation bar.
+tabs-bar-not-in-bar = This item isn't in the Navigation bar.
+# Title of the all-chats page.
+tabs-rooms-title = All chats
+# Title of the inbox page.
+tabs-inbox-title = Inbox
+# The saved Navigation bar has no items.
+tabs-config-empty-bar = The saved Navigation bar is empty.
+tabs-config-bar-too-many = The saved Navigation bar has too many items.
+tabs-config-bar-duplicate = The saved Navigation bar repeats an item.
+tabs-config-bar-invalid = Part of the saved Navigation bar can't be read.
 
 tabs-bar-page-missing = This page isn't in My Apps.
 
-tabs-bar-index-out-of-range = That position is past the end of My Apps.
 
 tabs-open-only-plugins = Only app pages have an opening mode.
 

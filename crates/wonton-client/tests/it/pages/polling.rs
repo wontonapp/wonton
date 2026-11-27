@@ -75,10 +75,11 @@ async fn periodic_change(rig: &Rig, pinned: &TabRef, plugin: &mut InstalledPlugi
 #[tokio::test]
 async fn chat_is_idle_open_page_polls_and_background_pauses_until_foreground() {
     let (rig, pinned, mut plugin) = connected_page_rig("app.poll-pinned", "home").await;
-    // 回到根页面（栈空）：不活跃。
     rig.app
         .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::OpenPage { tab: TabRef::Chat },
+            action: wonton_protocol::PageAction::SelectBarItem {
+                entry: wonton_client::BarEntry::Agent,
+            },
         })
         .unwrap();
     quiet(&rig, false).await;
