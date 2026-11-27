@@ -199,8 +199,8 @@ impl Bots {
             local.shared = None;
             local.shared_serial = self.refresh_serial.fetch_add(1, Ordering::SeqCst) + 1;
         }
-        self.publish_contacts();
         self.clear_activity();
+        self.publish_contacts();
         let issued = {
             let mut own = lock(&self.own_epoch);
             let issued = own.issue();
@@ -382,6 +382,15 @@ impl Bots {
     fn rows_from_view(mut view: SharedBotsView) -> Vec<SharedBot> {
         if view.state != SharedBotsState::Ready {
             for row in &mut view.bots {
+                // 缺记录是“已经知道”的事实，不随整份清单不可信一起抹掉。
+                if matches!(
+                    row.access,
+                    BotAccess::Unusable {
+                        reason: BotChatUnavailable::BotMissing
+                    }
+                ) {
+                    continue;
+                }
                 row.access = BotAccess::Unknown;
             }
         }

@@ -80,10 +80,16 @@ impl ChatLink {
                     .iter()
                     .cloned()
                     .map(|room| {
-                        let bot = chat.as_ref().and_then(|chat| {
-                            chat.bots
-                                .room_bot(room.direct_user_id.as_ref().map(|user| user.as_str()), &room.name)
-                        });
+                        let bot = if room.is_direct {
+                            chat.as_ref().and_then(|chat| {
+                                chat.bots.room_bot(
+                                    room.direct_user_id.as_ref().map(|user| user.as_str()),
+                                    &room.name,
+                                )
+                            })
+                        } else {
+                            None
+                        };
                         let layout = match &room.direct_user_id {
                             Some(user) => compose(
                                 &settings,
