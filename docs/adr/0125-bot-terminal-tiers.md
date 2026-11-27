@@ -172,7 +172,8 @@
 试点在 194 开发栈（`miragepilot`，fork 分支 `wonton/on-ask`）跑，完整记录和命令在 `tasks/mirage-pilot.result.md`，上一轮证据在 `tasks/mirage-test.result.md`。
 
 - 已验证：容器里的 `cat` 和 `python3` 读隐藏的 `.env` 都是 `Permission denied`；`pip`/`wget` 的 ask 落成 `policy denied`（126）；ask 的四种回答、超时、不可达、回包读不懂七组契约全过；超时按拒绝。
-- 部分：`allow` 的“本会话”只在同一会话内生效（同一命令第二次不问，`[1,0]`）；共享模型的 500/超时会打穿用例，跑批自带三次重试。
+- 已验证（端到端）：允许一次/本会话（`curl` 第一次问、答 `allow/session` 后第二次不问，`[1,0]`）；超时按拒绝（`wget -T 20`，假收件箱睡 8 s、插件 5 s 超时，落 `policy denied`）；整轮 12 条 `failures: 0`，日志 `~/wonton-dev/coord-mirage-pilot/run-green.log`。
+- 跑批实测的坑：同一份 state.db 不要开两个网关（写锁会被加倍争用）；跑批容器和终端用户的 uid 不同，预建文件要放开属主。
 - 仍开：待验证 4/5/6/7/8/9/10/12 未做，逐条在结果文件的“没做/未验证”。
 - 安装侧新发现：**一次跑批超过 480 秒会把插件判成 `degraded`**（即使容器 RUNNING/HEALTHY），所以跑批服务要常驻并只靠 `/health` 就绪（常驻后再放宽 healthcheck 的超时和重试，避免共享机器上一次抖动被判死）。
 - 权限侧新发现：只给 `SYS_ADMIN` 还不够，docker-default 的 AppArmor 会挡容器里的 `mount`，终端服务必须带 `security_opt: [apparmor:unconfined]`；这也成了清单的第四个最高权限项（见第 5 节）。
