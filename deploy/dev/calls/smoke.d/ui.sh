@@ -22,13 +22,86 @@ ui() { # <dev>：当前界面 XML。系统 ANR 弹窗（"isn't responding"）会
     done
     printf '%s\n' "$xml"
 }
+# App 是否在前台。只看窗口焦点，不信 dump 文本：部分系统界面（配对页的输入框焦点、
+# 桌面）在 dump 里没有可认的字，靠文本判断会把它们当成 App 页面继续空转。
+app_fg() { timeout 60 ssh "$HOST" "adb -s $1 shell dumpsys window 2>/dev/null | grep -q 'mCurrentFocus=.*app.wonton.android'" >/dev/null 2>&1; }
+# 把页面带回聊天列表：焦点不在 App 就冷启动，在就 BACK 退出设置/备份这类页面。
+to_list() { # to_list <dev>：一路清掉验证/备份页直到聊天列表出现
+    local dev=$1 xml action
+    for _ in $(seq 1 12); do
+        xml=$(ui "$dev" 2>/dev/null || true)
+        # 首次引导（Install these apps → Go to chat）和引导后自动打开的默认机器人面板（Close）
+        # 先处理：只认 Sidebar/房名的 to_list 会把这些页面当成“还没到列表”，一路 BACK 退出 App。
+        action=$(onboarding_action "$xml")
+        if [[ -n $action ]]; then onboarding_do "$dev" "$action"; continue; fi
+        if grep -qE 'content-desc="Sidebar"|text="Waiting for you"' <<<"$xml" || room_label "$xml" >/dev/null 2>&1; then return 0; fi
+        if grep -qE 'text="(Skip|Skip for now|跳过|先跳过|先跳過)"' <<<"$xml"; then
+            tap_text "$dev" "Skip for now" >/dev/null 2>&1 || tap_text "$dev" "Skip" >/dev/null 2>&1 ||
+                tap_text "$dev" "先跳过" >/dev/null 2>&1 || tap_text "$dev" "跳过" >/dev/null 2>&1 || true
+            sleep 2; continue
+        fi
+        # 验证超时页：只有跳过一条路，BACK 会退出 App。
+        if grep -q "Continue on your other device" <<<"$xml"; then
+            tap_text "$dev" "I don't have my other device" || true; sleep 2; continue
+        fi
+        # 抽屉盖在列表上：点 Chats 直接到聊天标签。
+        if grep -q 'content-desc="Collapse sidebar"' <<<"$xml"; then tap_name "$dev" 'Chats' || true; sleep 2; continue; fi
+        # 备份页与确认框：确认框点 Cancel，页面本体 BACK（BACK 不会退出 App 的页面才用 BACK）。
+        if grep -q 'text="Reset chat backup?"' <<<"$xml"; then
+            tap_text "$dev" "Cancel" || true; sleep 1
+        fi
+        if grep -qE 'Verify with another device|Enter (your )?recovery key|can.t see past messages|text="Chat backup"|Reset backup' <<<"$xml"; then
+            if app_fg "$dev"; then timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent BACK" >/dev/null 2>&1 || true; fi
+            sleep 2; continue
+        fi
+        # 都不是：不在前台就冷启动，在前台就 BACK 退一层。
+        if app_fg "$dev"; then
+            timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent BACK" >/dev/null 2>&1 || true
+        else
+            timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent 66" >/dev/null 2>&1 || true
+        fi
+        sleep 1
+    done
+    printf '%s\n' "$xml"
+}
+# 处理识别到的引导/面板状态（onboarding_action 的 install|goto|next|close）。
+# install 后要等预置插件装完（按钮变成 Go to chat），失败出 Retry 就重试；最多 90 秒，不无限等。
+onboarding_do() { # onboarding_do <dev> <action>
+    local dev=$1 action=$2 xml i
+    case $action in
+    install)
+        log "设备 $dev 首次引导：装预置插件"
+        tap_text "$dev" "Install these apps" >/dev/null 2>&1 || true
+        for i in $(seq 1 45); do
+            sleep 2
+            xml=$(ui "$dev" 2>/dev/null || true)
+            if grep -q 'text="Go to chat"\|text="去聊天"\|text="Done"\|text="完成"' <<<"$xml"; then
+                tap_text "$dev" "Go to chat" >/dev/null 2>&1 || tap_text "$dev" "Done" >/dev/null 2>&1 || true
+                sleep 2; return 0
+            fi
+            if grep -qE 'text="(Try again|重试)"' <<<"$xml"; then
+                tap_text "$dev" "Try again" >/dev/null 2>&1 || tap_text "$dev" "重试" >/dev/null 2>&1 || true
+            fi
+        done
+        log "设备 $dev 首次引导：预置插件 90 秒没装完（还停在 Install these apps）"
+        ;;
+    goto) tap_text "$dev" "Go to chat" >/dev/null 2>&1 || tap_text "$dev" "去聊天" >/dev/null 2>&1 ||
+        tap_text "$dev" "Done" >/dev/null 2>&1 || tap_text "$dev" "完成" >/dev/null 2>&1 || true; sleep 2 ;;
+    next) tap_text "$dev" "Next" >/dev/null 2>&1 || tap_text "$dev" "下一步" >/dev/null 2>&1 || true; sleep 2 ;;
+    close) tap_desc "$dev" "Close page" >/dev/null 2>&1 || tap_desc "$dev" "Close panel" >/dev/null 2>&1 ||
+        tap_desc "$dev" "Close" >/dev/null 2>&1 || tap_text "$dev" "Close" >/dev/null 2>&1 || true; sleep 2 ;;
+    esac
+}
+# 把要放进 grep -E 的字面串转义：房名里的 + ( . 等不再当正则。
+ere_escape() { printf '%s\n' "$1" | sed 's/[][\\.^$*+?(){}|]/\\&/g'; }
 # 点一个无障碍可见的名字：先等它出现（最多 90 秒），再按它的 bounds 中心点。
 tap_name() {
-    local dev=$1 text=$2 xml coords x y
+    local dev=$1 text=$2 xml coords x y esc
+    esc=$(ere_escape "$text")
     for _ in $(seq 1 10); do
         xml=$(ui "$dev" 2>/dev/null || true)
         # 取最后一个匹配：弹窗节点排在底页同文案之后。
-        line=$(printf '%s' "$xml" | grep -oE "text=\"$text\"[^>]*bounds=\"[^\"]+\"" | tail -1) || true
+        line=$(printf '%s' "$xml" | grep -oE "text=\"$esc\"[^>]*bounds=\"[^\"]+\"" | tail -1) || true
         bounds=${line##*bounds=\"}
         coords=""
         [[ -n $bounds ]] && coords=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${bounds%\"}")
@@ -47,7 +120,7 @@ tap_name() {
     timeout 60 ssh "$HOST" "adb -s $dev shell input tap $x $y"
     # 第二下只在目标还在时补：双击会把刚弹出的确认框点到背景上关掉。
     sleep 1
-    ui "$dev" 2>/dev/null | grep -q "text=\"$text\"" && timeout 60 ssh "$HOST" "adb -s $dev shell input tap $x $y"
+    ui "$dev" 2>/dev/null | grep -q "text=\"$esc\"" && timeout 60 ssh "$HOST" "adb -s $dev shell input tap $x $y"
     true
 }
 shot() { timeout 60 ssh "$HOST" "adb -s $1 exec-out screencap -p" > "$EVIDENCE/$2.png"; }
@@ -61,9 +134,22 @@ fetch_rec() { # 视频经 exec-out 回本地（adb pull 会把文件写到 HOST 
 }
 
 tap_text() { # 按精确文本点中心，不做祖先回退
-    local dev=$1 text=$2 xml c b x1 y1 x2 y2
+    local dev=$1 text=$2 xml c b x1 y1 x2 y2 esc
+    esc=$(ere_escape "$text")
     xml=$(ui "$dev" 2>/dev/null || true)
-    c=$(grep -oE "text=\"$text\"[^>]*bounds=\"[^\"]+\"" <<<"$xml" | tail -1) || true
+    c=$(grep -oE "text=\"$esc\"[^>]*bounds=\"[^\"]+\"" <<<"$xml" | tail -1) || true
+    [[ -n $c ]] || return 1
+    b=${c##*bounds=\"}
+    c=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${b%\"}")
+    read -r x1 y1 x2 y2 <<<"$c"
+    timeout 25 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
+}
+
+tap_desc() { # 按 content-desc 点中心（关闭这类只有无障碍描述的按钮）
+    local dev=$1 text=$2 xml c b x1 y1 x2 y2 esc
+    esc=$(ere_escape "$text")
+    xml=$(ui "$dev" 2>/dev/null || true)
+    c=$(grep -oE "content-desc=\"$esc\"[^>]*bounds=\"[^\"]+\"" <<<"$xml" | tail -1) || true
     [[ -n $c ]] || return 1
     b=${c##*bounds=\"}
     c=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${b%\"}")
@@ -112,8 +198,8 @@ clear_dialogs() { # 设备验证、备份提示这类会话级弹层
 }
 
 open_room() { # open_room <dev> <显示名片段>
-    # 列表行按房间名找；房间名带时间戳，用前缀匹配。
-    local dev=$1 name=$2 xml row b cs x1 y1 x2 y2
+    # 列表行按房间名找；房名含 - . 等字符，按字面匹配不当正则。
+    local dev=$1 name=$2 xml row action b cs x1 y1 x2 y2
     # App 冷启动会回到上次的界面（可能在别的房间里，没有列表）：先退回聊天列表再找行。
     to_list "$dev" >/dev/null 2>&1 || true
     for i in $(seq 1 400); do
@@ -125,6 +211,9 @@ open_room() { # open_room <dev> <显示名片段>
             sleep 12
         fi
         xml=$(ui "$dev" 2>/dev/null || true)
+        # 首次引导/默认机器人面板会盖住列表：先按状态推进，别在 open_room 里只滑动空转。
+        action=$(onboarding_action "$xml")
+        if [[ -n $action ]]; then onboarding_do "$dev" "$action"; continue; fi
         # 冷启动或房间打不开时核心/页面会盖一层弹窗，先点掉再找房名。
         if grep -q 'text="OK"' <<<"$xml"; then tap_text "$dev" "OK" >/dev/null 2>&1 || true; sleep 2; continue; fi
         if grep -q 'text="Got it"' <<<"$xml"; then tap_text "$dev" "Got it" >/dev/null 2>&1 || true; sleep 1; continue; fi
@@ -153,7 +242,7 @@ open_room() { # open_room <dev> <显示名片段>
         fi
         # 房名在就先匹配：横幅与房名可同页共存（04:46 实测），recovery 分支先走会让
         # 匹配器永远轮不到；横幅留给进房后处理。
-        row=$(printf '%s' "$xml" | grep -oE 'text="[^"]*'"$name"'[^"]*"' | head -1) || true
+        row=$(room_label "$xml") || true
         [[ -n $row ]] && break
         if grep -qE 'Verify with another device|Enter (your )?recovery key|This device.c?an.t see past messages yet|text="Chat backup"' <<<"$xml"; then
             to_list "$dev"; continue
@@ -168,8 +257,8 @@ open_room() { # open_room <dev> <显示名片段>
         if grep -q "I don't have my other device" <<<"$xml"; then tap_text "$dev" "I don't have my other device" >/dev/null 2>&1 || true; sleep 2; continue; fi
         # 验证向导只退不进：开始验证会引入需要人守的多步流程，冒烟一律 BACK。
         if grep -q 'text="Start verification"' <<<"$xml"; then to_list "$dev"; continue; fi
-        if [[ $name != call-smoke ]] && grep -q 'text="Element Call |' <<<"$xml"; then return 0; fi
-        row=$(printf '%s' "$xml" | grep -oE 'text="[^"]*'"$name"'[^"]*"' | head -1) || true
+        if grep -q 'text="Element Call |' <<<"$xml"; then return 0; fi
+        row=$(room_label "$xml") || true
         [[ -n $row ]] && break
         # 列表不滚太狠：每 3 轮才向下试一屏，每 12 轮回顶部，免得把已经露出来的新房间刷过去。
         if (( i % 12 == 0 )); then
@@ -185,8 +274,7 @@ open_room() { # open_room <dev> <显示名片段>
         { echo "== $(date +%T) $dev fg=$(ssh "$HOST" "adb -s $dev shell dumpsys window 2>/dev/null | grep -o 'mCurrentFocus=[^ ]*'" | tr -d '\r')"; printf '%s\n' "$xml" | head -40; } >> "$EVIDENCE/openroom-debug.log" 2>&1 || true
         die "房间 $name 不在设备 $dev 的列表里"
     fi
-    local label=${row#text=\"}; label=${label%\"}
-    tap_name "$dev" "$label" || true
+    tap_name "$dev" "$row" || true
     sleep 4
     # 进房后偶尔弹核心的「Not available right now / OK」（同步还没就绪），点掉再确认房名。
     for _ in $(seq 1 12); do
@@ -203,7 +291,7 @@ open_room() { # open_room <dev> <显示名片段>
 }
 
 open_call() { # 顶栏的入口，通话中时是“通话中”
-    local dev=$1 port=9331
+    local dev=$1 port=9331 label
     [[ $dev == "$DEV_B" ]] && port=9334
     for i in $(seq 1 20); do
         deadline_hit && { log "open_call $dev 组级超时"; return 1; }
@@ -222,9 +310,7 @@ open_call() { # 顶栏的入口，通话中时是“通话中”
         else
             # 入口没有 content-desc 时：若退到了列表（房间行可见），先进房再找入口；
             # 盲按顶栏会落空，B 就永远进不了通话页。
-            row=$(printf '%s' "$xml" | grep -oE 'text="[^"]*call-smoke-[^"]*"' | head -1) || true
-            if [[ -n $row ]]; then
-                label=${row#text=\"}; label=${label%\"}
+            if label=$(room_label "$xml"); then
                 tap_name "$dev" "$label" >/dev/null 2>&1 || true
                 sleep 3
                 continue

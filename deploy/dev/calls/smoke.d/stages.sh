@@ -244,7 +244,7 @@ stack_ports() { # 打印名额现在发的「网关 隧道」端口。登记可�
     local n out a b i
     for i in 1 2 3; do
         for n in "$STACK" "wonton-$STACK"; do
-            out=$(timeout 60 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $n" 2>/dev/null) || continue
+            out=$(timeout 60 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $n" 2>&1) || continue
             read -r a b <<<"$out"
             if [[ $a =~ ^[0-9]+$ && $b =~ ^[0-9]+$ ]]; then printf '%s %s\n' "$a" "$b"; return 0; fi
         done

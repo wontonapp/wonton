@@ -43,13 +43,21 @@ STACK=call-smoke HOST=192.0.2.10 DEV_A=emulator-5560 DEV_B=emulator-5562 \
 - `STAGE=udp|tcp|relay|kill|plain` 只跑一组；默认 `all` 按 udp → kill → tcp → relay 走完，**一组失败也继续跑后面的组**，最后按失败组数汇总退出码。`plain` 用不加密房间跑 UDP 组，记录 Element Call 在不加密房间里的行为。
 - `relay` 组会先在直连下把房间和 Element Call 页面打开（EC 入口 JS 有 325 KB，公网中继会把约 100 KB 以上的 HTTP 响应流截断成 `ERR_CONTENT_LENGTH_MISMATCH`，冷缓存下 EC 永远起不来），再下 iptables 规则；拔掉直连后**不要重启 App**，让 iroh 自己把路径切到 relay。n0 公共中继会对 endpoint 限速，隧道流会反复 `transport-unavailable`，中继组的媒体能不能通取决于限速；2026-11-25 只到 `CheckedPath { relay: true }` + 两条 `call.member`，LiveKit 没连上。
 - 每次跑都从远端 `stack-slot.sh ports <栈名>` 重新读网关和隧道端口（名额重排会换端口，旧 `.dev-ports` 会让配对和网关都连不上）。
-- `ROOM_ID`/`ROOM_NAME` 复用房间（脚本只比对**本轮新增**的 `call.member`，旧成员不影响判定）；不给就新建。
+- `ROOM_ID` 复用已有房间（脚本只比对**本轮新增**的 `call.member`，旧成员不影响判定）；房间没有名字时要补 `ROOM_NAME`，只给 `ROOM_ID` 时脚本从 `m.room.name` 读。两个都不给就新建。
 - `PKG` 改插件包的 worktree 内相对路径（只有 `all`/`tcp` 组用得到，见“插件包”）。
 - 同一 `EVIDENCE` 同时只允许一份在跑（`.lock`）。
 - 每组有组级 deadline（`GROUP_DEADLINE`，默认 600 秒，从配置完成后起算）：卡在开房间、join、`ensure_media` 任一步，到点就 `fail_group` 出判决并留错因，不被一步卡死吞掉整轮。
 - 失败时（relay 组）自动把两端 App 核心日志尾、logcat 关键行（`ERR_CONTENT_LENGTH`、`Failed to connect`、`transport-unavailable`）和核心容器日志尾落成 `failure-*-*.log`；`check_tunnel_relay` 无论过没过都把最近 `CheckedPath` 和错因写 `relay-path-<a|b>.log`。中继组先判路径、再做媒体断言，路径证据不会被媒体卡住拖没。
 
 证据都写进 `EVIDENCE`：`run.log`（判定原文）、`webrtc-*-<组>.jsonl`（15 个采样，判定看最大值；plain 组也是自己的前缀）、`group-<组>-*.png`/`group-<组>-*.mp4`、`permissions.log`、`members.log`、`pair-*.raw`、`relay-path-<a|b>.log`、失败时的 `failure-*-*.log`。退出码：0 全部通过；1 有组失败或前置失败。
+
+## 离线测试
+
+`smoke.d/` 的房名匹配、引导状态和端口回退是纯函数，可以不起栈、不连设备直接测：
+
+```bash
+bash deploy/dev/calls/test/offline.sh
+```
 
 ## 用自建中继跑
 

@@ -15,8 +15,9 @@ timeout 60 ssh "$HOST" "docker ps --format '{{.Names}}'" | grep -q -- '--app-ele
     die "栈里没装 app.element-call（先装默认 UDP 版）"
 log "预检"
 # dev.sh status 会跑 docker compose ps，在共用机上常常一卡几分钟；这里只看 .dev-ports 和网关是否回 HTTP（根路径 401/404 都算在）。
-read -r gw tunnel < <(timeout 60 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports" 2>/dev/null)
-[[ -n ${gw:-} && -n ${tunnel:-} ]] || die "栈 $STACK 的 .dev-ports 没有（栈没起？）"
+dev_ports=$(timeout 60 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports" 2>/dev/null || true)
+read -r gw tunnel <<<"$dev_ports"
+[[ -n ${gw:-} && -n ${tunnel:-} ]] || die "栈 $STACK 的 .dev-ports 没有（栈没起？）；先 remote-dev.sh $STACK up"
 # 名额可能换了端口，也可能自动登记成了 wonton-<栈> 的名字（stack_ports 两种都试），以它现在发的为准。
 refresh_ports
 code=$(timeout 60 ssh "$HOST" "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$gw/" || true)
@@ -40,9 +41,10 @@ timeout 60 ssh "$HOST" "for d in $DEV_A $DEV_B; do
 done" || die "清空 App 数据或授权失败"
 pair a "$DEV_A"; pair b "$DEV_B"
 # 配对之后再建房：wait_room_visible 要看设备的房间列表，未配对时列表一直是空的。
-if [[ -n ${ROOM_ID:-} ]]; then
-    room_name=$ROOM_NAME room_id=$ROOM_ID
-    log "复用房间 $room_id"
+if [[ -n ${ROOM_ID:-} || -n ${ROOM_NAME:-} ]]; then
+    room_name=$(resolve_room_reuse)
+    room_id=$ROOM_ID
+    log "复用房间 $room_id（$room_name）"
 else
     create_room
 fi

@@ -28,7 +28,7 @@ stack_ports() { # 打印名额现在发的「网关 隧道」端口。登记可�
     local n out a b i
     for i in 1 2 3; do
         for n in "$STACK" "wonton-$STACK"; do
-            out=$(timeout 60 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $n" 2>/dev/null) || continue
+            out=$(timeout 60 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $n" 2>&1) || continue
             read -r a b <<<"$out"
             if [[ $a =~ ^[0-9]+$ && $b =~ ^[0-9]+$ ]]; then printf '%s %s\n' "$a" "$b"; return 0; fi
         done
@@ -38,12 +38,13 @@ stack_ports() { # 打印名额现在发的「网关 隧道」端口。登记可�
 }
 
 refresh_ports() { # up 后名额可能换端口（.dev-ports 也变）：以 stack-slot 现在发的端口为准，重写并重做两端的 reverse
-    local old_gw=$gw old_tunnel=$tunnel new_gw new_tunnel
-    if read -r new_gw new_tunnel < <(stack_ports) && [[ -n $new_gw && -n $new_tunnel ]]; then
-        gw=$new_gw; tunnel=$new_tunnel
-    else
-        log "警告：读不到名额端口，沿用 .dev-ports $gw $tunnel"
-    fi
+    local old_gw=$gw old_tunnel=$tunnel dev_ports slot_ports ports
+    dev_ports=$(timeout 60 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports" 2>/dev/null || true)
+    slot_ports=$(stack_ports 2>&1 || true)
+    # 有占名额端口就以它为准；未占名额 / 没自动登记时 select_ports 沿用 .dev-ports 并留下原因；
+    # 两处都没有才 die（点名 remote-dev up），不让空端口一路走到 curl。
+    ports=$(select_ports "$dev_ports" "$slot_ports")
+    read -r _ _ gw tunnel <<<"$ports"
     timeout 60 ssh "$HOST" "printf '%s %s\n' '$gw' '$tunnel' > ~/wonton-dev/stacks/dev-$STACK/.dev-ports" || log "警告：写不回 .dev-ports"
     for d in "$DEV_A" "$DEV_B"; do
         [[ $old_tunnel != "$tunnel" ]] && timeout 60 ssh "$HOST" "adb -s $d reverse tcp:$old_tunnel tcp:$tunnel" >/dev/null 2>&1 || true

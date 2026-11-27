@@ -111,7 +111,8 @@ pair() { # pair <a|b> <dev>
             # 配对完成后的备份/恢复码/跨设备验证页：退回聊天列表。
             to_list "$dev"; continue
         fi
-        if grep -qE 'text="(聊天|Chat)"|text="call-smoke-|text="Element Call \||Waiting for you|content-desc="In call"' <<<"$xml"; then
+        if grep -qE 'text="(聊天|Chat)"|text="Element Call \||text="Waiting for you"|content-desc="(In call|Sidebar)"' <<<"$xml" ||
+            room_label "$xml" >/dev/null 2>&1; then
             # 配好了但停在备份页（底部已经能看见标签）时退回列表。
             grep -q 'Save your recovery key\|Chat backup is on\|can.t see past messages' <<<"$xml" && { timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent BACK"; sleep 2; continue; }
             break
@@ -143,6 +144,20 @@ pair() { # pair <a|b> <dev>
     done
     kill "$pid" 2>/dev/null || true
     die "设备 $dev 没在 180 秒内配对成功（见 $log）"
+}
+
+# 复用已有房间：ROOM_ID 必给；ROOM_NAME 缺省时从 m.room.name 读，读不到就报清楚（不猜名字）。
+resolve_room_reuse() {
+    [[ -n ${ROOM_ID:-} ]] || die "给了 ROOM_NAME 但缺 ROOM_ID（复用房间要两个都给；要新建就别给这两个）"
+    if [[ -n ${ROOM_NAME:-} ]]; then printf '%s\n' "$ROOM_NAME"; return 0; fi
+    local body name
+    body=$(api GET "/_matrix/client/v3/rooms/$ROOM_ID/state/m.room.name" 2>/dev/null) ||
+        die "只给了 ROOM_ID 没给 ROOM_NAME，Matrix API 也读不到房间 $ROOM_ID 的名字；请补 ROOM_NAME 或重试"
+    name=$(python3 -c 'import json,sys
+try: print(json.load(sys.stdin).get("name") or "")
+except Exception: pass' <<<"$body" 2>/dev/null || true)
+    [[ -n $name ]] || die "只给了 ROOM_ID 没给 ROOM_NAME，房间 $ROOM_ID 也没有名字；请补 ROOM_NAME"
+    printf '%s\n' "$name"
 }
 
 room_id=""

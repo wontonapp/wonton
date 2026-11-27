@@ -13,7 +13,7 @@
 #
 # 只跑某一步：STAGE=udp|tcp|relay|kill|plain（默认 all：udp→kill→tcp→relay）。默认每轮新建加密房间；
 # plain 用不加密房间跑 UDP 组（记录 Element Call 在不加密房间里的行为，供“房间不再端到端加密”的决定用）。
-# ROOM_ID=<房间> ROOM_NAME=<名字> 可复用已有房间（旧房间会积着上轮成员，判定要看本轮新增的两条）。
+# ROOM_ID=<房间> [ROOM_NAME=<名字>] 可复用已有房间；只给 ROOM_ID 时从房间状态读名字（旧房间会积着上轮成员，判定要看本轮新增的两条）。
 # 插件包：PKG（worktree 内的相对路径，默认 deploy/dev/calls/plugin，由调用方放好）。
 # 每组有组级 deadline：GROUP_DEADLINE=秒（默认 600），从判定阶段起算，到点就 fail_group 出判决，不被卡死的步骤吞掉。
 # 自建中继：RELAYS 是核心的 `WONTON_RELAYS` 值（含令牌，如 `https://<令牌>@relay.808cbd.com,no-n0`）。
@@ -30,6 +30,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$here/smoke.d/env.sh"
 # shellcheck source=deploy/dev/calls/smoke.d/evidence.sh
 source "$here/smoke.d/evidence.sh"
+# shellcheck source=deploy/dev/calls/smoke.d/parse.sh
+source "$here/smoke.d/parse.sh"
 # shellcheck source=deploy/dev/calls/smoke.d/remote.sh
 source "$here/smoke.d/remote.sh"
 # shellcheck source=deploy/dev/calls/smoke.d/matrix.sh
