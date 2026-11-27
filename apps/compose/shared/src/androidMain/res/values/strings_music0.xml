@@ -41,4 +41,10 @@
     <string name="music_problem_unknown_title">The music library returned an unfamiliar error</string>
     <!-- Problem title: the music library's reply could not be understood. -->
     <string name="music_problem_protocol_title">Couldn\'t read the music library\'s reply</string>
+    <!-- Title of the full-screen player and accessibility label of the mini player: the song playing now. -->
+    <string name="music_now_playing">Now Playing</string>
+    <!-- Player button: go back to the previous song, or to the start of this one. -->
+    <string name="music_previous">Previous</string>
+    <!-- Problem title: playing the song failed for a reason this app does not know. -->
+    <string name="music_playback_failed_title">Couldn\'t play this song</string>
 </resources>

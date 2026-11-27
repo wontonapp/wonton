@@ -48,4 +48,16 @@
     <string name="music_problem_not_found_title">This is no longer in the music library</string>
     <!-- Problem title: the music library itself returned an error. -->
     <string name="music_problem_upstream_title">The music library ran into a problem</string>
+    <!-- Player button: start or continue playing. -->
+    <string name="music_play">Play</string>
+    <!-- Player button: pause. -->
+    <string name="music_pause">Pause</string>
+    <!-- Player button: skip to the next song. -->
+    <string name="music_next">Next</string>
+    <!-- Problem title: the song's format cannot be played on this device. -->
+    <string name="music_playback_unsupported_title">This song can\'t play on this device</string>
+    <!-- Next step under the can't-play-on-this-device problem. -->
+    <string name="music_playback_unsupported_next_step">The music library couldn\'t convert it to a format this device can play.</string>
+    <!-- Next step under the playback-failed problem. -->
+    <string name="music_playback_failed_next_step">Try again in a moment.</string>
 </resources>
