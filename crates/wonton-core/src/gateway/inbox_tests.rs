@@ -337,29 +337,7 @@ async fn worker_done_without_choices_and_unknown_events() {
 async fn the_owner_sees_keeper_confirmations() {
     let h = Harness::start(None).await;
     let bus = h.gateway.mcp.as_ref().unwrap().bus.clone();
-    let draft = crate::mcp::Draft {
-        title: "装 Immich？".into(),
-        lines: Vec::new(),
-        choices: vec![
-            wonton_protocol::CardChoice {
-                answer: wonton_protocol::Answer::Approve,
-                label: "允许".into(),
-                choice_id: None,
-            },
-            wonton_protocol::CardChoice {
-                answer: wonton_protocol::Answer::Reject,
-                label: "拒绝".into(),
-                choice_id: None,
-            },
-        ],
-        scope: None,
-        plugin_id: None,
-        secret_inputs: Vec::new(),
-        settings: None,
-        category: None,
-        permissions: Vec::new(),
-        devices: Vec::new(),
-    };
+    let draft = install_draft();
     let caller = crate::plugin::PluginId::parse("app.hermes").unwrap();
     tokio::spawn(async move {
         let _ = bus
@@ -385,4 +363,95 @@ async fn the_owner_sees_keeper_confirmations() {
                 && item["id"].as_str().unwrap_or("").starts_with("c-")),
         "{items:?}"
     );
+}
+
+fn install_draft() -> crate::mcp::Draft {
+    crate::mcp::Draft {
+        title: "装 Immich？".into(),
+        lines: Vec::new(),
+        choices: vec![
+            wonton_protocol::CardChoice {
+                answer: wonton_protocol::Answer::Approve,
+                label: "允许".into(),
+                choice_id: None,
+            },
+            wonton_protocol::CardChoice {
+                answer: wonton_protocol::Answer::Reject,
+                label: "拒绝".into(),
+                choice_id: None,
+            },
+        ],
+        scope: None,
+        plugin_id: None,
+        secret_inputs: Vec::new(),
+        settings: None,
+        category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
+    }
+}
+
+async fn needing(h: &Harness, after: Option<u64>) -> (u64, u64) {
+    let path = match after {
+        Some(after) => format!("/_wonton/api/inbox?after={after}"),
+        None => "/_wonton/api/inbox".to_owned(),
+    };
+    let list = h
+        .get(crate::gateway::tests::CORE, &path, &authed(TOKEN))
+        .await;
+    assert_eq!(list.status, 200, "{}", list.text());
+    let body = list.json();
+    (
+        body["counts"]["needing"].as_u64().unwrap(),
+        body["revision"].as_u64().unwrap(),
+    )
+}
+
+/// 没有东西要回答时角标是 0；来了一张确认卡片，挂着的长轮询马上醒、角标变 1；卡片答完，下一次长轮询
+/// 也马上醒、角标回 0。确认表的版本和收件箱的版本合在一起比较，不会白等到超时。
+#[tokio::test]
+async fn a_confirmation_wakes_the_long_poll_and_answering_clears_it() {
+    let h = Harness::start(None).await;
+    let bus = h.gateway.mcp.as_ref().unwrap().bus.clone();
+    let (count, revision) = needing(&h, None).await;
+    assert_eq!(count, 0, "没有卡片时不该有要回答的");
+
+    let poll = needing(&h, Some(revision));
+    let opened = async {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let caller = crate::plugin::PluginId::parse("app.hermes").unwrap();
+        let ask_bus = bus.clone();
+        tokio::spawn(async move {
+            let _ = ask_bus
+                .confirmations()
+                .ask_as(&caller, install_draft(), crate::mcp::Audience::default())
+                .await;
+        });
+    };
+    let started = std::time::Instant::now();
+    let ((count, revision), ()) = tokio::join!(poll, opened);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "长轮询等了 {:?} 才返回",
+        started.elapsed()
+    );
+    assert_eq!(count, 1);
+
+    let (pending, _, _) = bus.confirmations().list(None);
+    let card = pending[0].id.clone();
+    let poll = needing(&h, Some(revision));
+    let answered = async {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        bus.confirmations()
+            .answer(&card, wonton_protocol::Answer::Reject, None)
+            .unwrap();
+    };
+    let started = std::time::Instant::now();
+    let ((count, _), ()) = tokio::join!(poll, answered);
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "长轮询等了 {:?} 才返回",
+        started.elapsed()
+    );
+    assert_eq!(count, 0, "答完的卡片不该还算要回答");
 }

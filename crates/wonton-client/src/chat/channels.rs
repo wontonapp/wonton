@@ -6,7 +6,7 @@ use std::sync::Arc;
 use futures_util::future::BoxFuture;
 use tokio::sync::watch;
 use wonton_matrix::MatrixSession;
-use wonton_protocol::{ChatViewModel, ConfirmationsViewModel, PushMethod};
+use wonton_protocol::{ChatViewModel, ConfirmationsViewModel, InboxViewModel, PushMethod};
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
 #[cfg(not(feature = "test-hooks"))]
@@ -21,8 +21,10 @@ pub(crate) type CardSuccess = Arc<dyn for<'a> Fn(&'a str) -> BoxFuture<'a, ()> +
 pub(crate) struct ChatChannels {
     /// ViewModel 发送端，换服务器时给壳接着订阅用。
     pub(crate) view: Option<watch::Sender<ChatViewModel>>,
-    /// “等你确认”列表的发送端，同上。
+    /// 确认卡片列表的发送端，同上。
     pub(crate) confirmations: Option<watch::Sender<ConfirmationsViewModel>>,
+    /// 收件箱的发送端，同上。
+    pub(crate) inbox: Option<watch::Sender<InboxViewModel>>,
     /// 推送方式。
     pub(crate) method: watch::Receiver<PushMethod>,
     /// App 锁，锁着时通知藏内容。

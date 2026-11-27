@@ -36,6 +36,7 @@ chat-confirmation-response-unreadable = The response from your home server could
 chat-confirmation-core-status = Your home server returned HTTP { $status }
 
 chat-confirmations-list-failed = Couldn't load the list of confirmations: { $message }
+chat-inbox-list-failed = Couldn't load the inbox: { $message }
 
 # $reason is the Matrix ID parser's original error.
 chat-contacts-invalid-user-id = That user ID isn't valid: { $reason }

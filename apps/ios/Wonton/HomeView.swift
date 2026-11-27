@@ -9,8 +9,6 @@ struct HomeView: View {
     let chat: ChatModel
     let settings: SettingsModel
     let open: (PluginEntry) -> Void
-    let pendingCards: [PendingConfirmation]
-    let openCardRoom: (String?) -> Void
     let showSettings: () -> Void
     let showServer: () -> Void
     var settingsPresented = false
@@ -89,8 +87,7 @@ struct HomeView: View {
                 if let installed = plugins.viewModel.installed {
                     installedPlugins(installed)
                     HomeStatusPanel(
-                        home: model.viewModel, plugins: plugins.viewModel, cards: pendingCards,
-                        showConnection: showServer, openCardRoom: openCardRoom
+                        home: model.viewModel, plugins: plugins.viewModel, showConnection: showServer
                     )
                 } else if plugins.viewModel.actions.contains(.store) {
                     placeholder.frame(maxWidth: .infinity)

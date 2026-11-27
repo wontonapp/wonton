@@ -120,8 +120,8 @@ internal fun ExpandedChatPane(
 @Composable
 internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
     val core = nav.pages.core
-    val confirmations by remember(core) { core.confirmationsUpdates() }
-        .collectAsState(remember(core) { core.confirmations() })
+    val inbox by remember(core) { core.inboxUpdates() }
+        .collectAsState(remember(core) { core.inbox() })
     var appsExpanded by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         ExpandedChatActions({ nav.sidebar(SidebarDestination.NewChat) }, { appsExpanded = !appsExpanded },
@@ -135,8 +135,8 @@ internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
         Box(Modifier.weight(1f)) {
             ChatListScreen(
                 chat, nav.pages.plugins, nav.plugins,
-                confirmationCount = confirmations.pending.size + confirmations.contactRequests.size,
-                onOpenConfirmations = nav.chat::openConfirmations,
+                inboxNeeding = inbox.needing,
+                onOpenInbox = nav.chat::openInbox,
                 onAction = { nav.pages.plugins.reject(nav.pages.core.send(it)) },
                 onOpenRoom = {
                     nav.chat.startingChat = false

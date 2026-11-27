@@ -1,6 +1,6 @@
 import XCTest
 
-/// Real-stack walkthrough: Confirm Probe room, Room approval / Room rejection cards and one
+/// Real-stack walkthrough of the inbox (ADR-0119): Confirm Probe room, Room approval / Room rejection cards and one
 /// No room approval card, plus requests from Contact Approve and Contact Reject.
 /// All data comes from the real disposable backend; only PAIRING_CODE is injected.
 final class ConfirmationsUITests: XCTestCase {
@@ -19,13 +19,13 @@ final class ConfirmationsUITests: XCTestCase {
     func testListAndRoomCards() throws {
         try requireSeededStack()
         reachChat()
-        let entry = app.buttons["confirmations-entry"]
+        let entry = app.buttons["inbox-bell"]
         XCTAssertTrue(entry.waitForExistence(timeout: networkWait))
         entry.tap()
         XCTAssertTrue(cardTitle("Room approval").waitForExistence(timeout: networkWait))
         XCTAssertTrue(cardTitle("No room approval").waitForExistence(timeout: networkWait))
         XCTAssertFalse(app.buttons["pending-confirmations-banner"].exists)
-        shot("01-confirmations-list")
+        shot("01-inbox")
         back()
 
         let room = app.buttons.containing(.staticText, identifier: "Confirm Probe").firstMatch
@@ -71,18 +71,10 @@ final class ConfirmationsUITests: XCTestCase {
             "Requires disposable confirmation probe cards and contact requests")
     }
 
-    func testPermanentListEntry() {
-        reachChat()
-        app.buttons["confirmations-entry"].tap()
-        XCTAssertFalse(app.buttons["pending-confirmations-banner"].exists)
-        back()
-        XCTAssertTrue(app.buttons["confirmations-entry"].exists)
-    }
-
     func testIncomingContactDecisions() throws {
         try requireSeededStack()
         reachChat()
-        app.buttons["confirmations-entry"].tap()
+        app.buttons["inbox-bell"].tap()
         decideContact("Contact Approve", approve: true)
         decideContact("Contact Reject", approve: false)
         shot("04-contact-decisions")
@@ -100,7 +92,7 @@ final class ConfirmationsUITests: XCTestCase {
     }
 
     private func reachChat() {
-        let entry = app.buttons["confirmations-entry"]
+        let entry = app.buttons["inbox-bell"]
         for _ in 0..<8 where !entry.waitForExistence(timeout: 10) {
             if UITestBackend.skipKeyHandoff(app) { continue }
             ["Skip", "Done", "Next"].map { app.buttons[$0].firstMatch }

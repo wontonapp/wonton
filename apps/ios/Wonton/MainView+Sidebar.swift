@@ -25,6 +25,9 @@ extension MainView {
         case .newChat:
             pages.open(.chat)
             chat.path = [.startChat]
+        case .inbox:
+            pages.open(.chat)
+            chat.openInbox()
         case let .reload(tab):
             // 核心只重新加载栈里的页面：先打开，打开被拒了就只报那一条。
             if pages.send(.pages(action: .openPage(tab: tab))) {

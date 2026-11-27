@@ -32,7 +32,7 @@ extension MainView {
                 contentLayers
                 .environment(\.wontonOpenSidebar) { showsSidebar = true }
             } panel: {
-                SidebarPanel(home: home, plugins: plugins,
+                SidebarPanel(home: home, plugins: plugins, inbox: chat.inbox,
                              current: pages.viewModel.stack.last?.tab ?? pages.viewModel.root, navigate: navigate)
             }
         }
@@ -56,7 +56,6 @@ extension MainView {
         if isPaired {
             HomeView(
                 model: home, plugins: plugins, chat: chat, settings: settings, open: open,
-                pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
                 showSettings: { settings.path = []; showsSettings = true },
                 showServer: { showServerRoute(.server) }, settingsPresented: showsSettings || !showsApps,
                 layered: true, devWebURL: devWebURL, path: $appsPath

@@ -42,7 +42,6 @@ import app.wonton.protocol.InstallFailure
 import app.wonton.protocol.InstallStage
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.InstalledPlugins
-import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.PeerRow
 import app.wonton.protocol.PeerStatus
 import app.wonton.protocol.PluginKind
@@ -353,11 +352,6 @@ internal fun previewPlugins(
     mediaGrants = emptyList(),
 )
 
-internal fun previewCard() = PendingConfirmation(
-    id = "card-1",
-    roomId = "!hermes:home.example",
-    title = "Hermes wants to install File Search",
-)
 
 internal fun previewEncryption() = EncryptionStatus(
     verification = DeviceVerification.UNKNOWN,
@@ -399,7 +393,7 @@ internal fun PreviewFrame(dark: Boolean = false, content: @Composable () -> Unit
     }
 }
 
-/** 主屏图标下面那组状态：连接、等答案的卡片、存储（首屏）。 */
+/** 主屏图标下面那组状态：连接、存储（首屏）。 */
 @Preview(name = "首屏状态", locale = "en", widthDp = 390, heightDp = 200)
 @Composable
 internal fun HomeStatusPanelPreview() {
@@ -407,9 +401,7 @@ internal fun HomeStatusPanelPreview() {
         HomeStatusPanel(
             home = previewHome(),
             plugins = previewPlugins(),
-            cards = listOf(previewCard()),
             onConnection = {},
-            onOpenCardRoom = {},
         )
     }
 }
@@ -422,9 +414,7 @@ internal fun HomeStatusPanelDarkPreview() {
         HomeStatusPanel(
             home = previewHome(),
             plugins = previewPlugins(),
-            cards = listOf(previewCard()),
             onConnection = {},
-            onOpenCardRoom = {},
         )
     }
 }

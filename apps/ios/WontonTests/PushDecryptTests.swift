@@ -50,7 +50,7 @@ final class PushDecryptTests: XCTestCase {
     }
 
     /// 核心直推的确认卡片（ADR-0016）：带 `confirmation` 段的明文解成 .confirmation，没有来源会话的卡片
-    /// `origin` 为 nil（点开后壳落到“等你确认”的入口）。
+    /// `origin` 为 nil（点开后壳落到收件箱）。
     func testConfirmationPushParses() throws {
         let withOrigin = """
             {"server":"srv","confirmation":{"id":"c1","title":"claw 想安装 Grafana",\

@@ -35,6 +35,7 @@ chat-confirmation-response-unreadable = 自宅サーバーの応答を読み取�
 chat-confirmation-core-status = 自宅サーバーがHTTP { $status }を返しました
 
 chat-confirmations-list-failed = 確認リストを読み込めませんでした：{ $message }
+chat-inbox-list-failed = 受信トレイを読み込めませんでした：{ $message }
 
 # $reason はMatrix IDパーサーの元のエラーです。
 chat-contacts-invalid-user-id = ユーザーIDが無効です：{ $reason }

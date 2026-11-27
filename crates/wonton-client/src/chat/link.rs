@@ -12,7 +12,7 @@ use tokio::task::JoinHandle;
 use wonton_matrix::MatrixSession;
 use wonton_protocol::{
     ChatViewModel, ConfirmationView, ConfirmationsViewModel, CoreError, DeviceVerification,
-    EncryptionStatus, PushMethod, RecoveryNextStep, RecoveryStatus,
+    EncryptionStatus, InboxViewModel, PushMethod, RecoveryNextStep, RecoveryStatus,
 };
 
 #[cfg(all(test, feature = "ui-fake"))]
@@ -52,13 +52,17 @@ pub(crate) struct ChatLink {
     pub(super) side_chat_support: Arc<side_chat::Support>,
     /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
     pub(super) answers: watch::Sender<Answers>,
-    /// “等你确认”列表（ADR-0016）：长轮询核心的确认接口得到的视图，壳订阅它。换服务器时给壳接着订阅用，
+    /// 卡片列表（ADR-0016）：长轮询核心的确认接口得到的视图，壳订阅它。换服务器时给壳接着订阅用，
     /// 所以从通道进来。
     pub(super) confirmations: watch::Sender<ConfirmationsViewModel>,
     /// 会话里能显示的卡片（等回答的，加上这个进程里看着结束的），按 `origin.room_id` 由时间线的出口过滤。
     pub(super) room_cards: watch::Sender<Arc<Vec<ConfirmationView>>>,
-    /// `ChatAction::RetryConfirmations` 放行长轮询的退避等待。
+    /// `ChatAction::RetryInbox` 放行卡片列表长轮询的退避等待。
     pub(super) retry_confirmations: Arc<tokio::sync::Notify>,
+    /// 收件箱（ADR-0119）：核心的收件箱列表合上卡片列表，壳订阅它；同 `confirmations` 从通道进来。
+    pub(super) inbox: watch::Sender<InboxViewModel>,
+    /// `ChatAction::RetryInbox` 放行收件箱长轮询的退避等待。
+    pub(super) retry_inbox: Arc<tokio::sync::Notify>,
     /// 本会话里亲眼看到从没结束变成成功的插件 ID：插件列表多半还是旧的，补取的逻辑在插件那头。
     pub(super) card_success: CardSuccess,
     /// 正在重置恢复。途中 SDK 会报“未设置”，不能覆盖“处理中”或触发自动开启。

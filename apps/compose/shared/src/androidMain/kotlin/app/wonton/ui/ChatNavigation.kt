@@ -74,7 +74,7 @@ class ChatNavigation(
     var showingBackup by showingBackup
     var startingChat by startingChat
     var botProfile by mutableStateOf<BotRef?>(null)
-    var showingConfirmations by mutableStateOf(false)
+    var showingInbox by mutableStateOf(false)
 
     /** 问 Bot 的动作 ID、待处理回执和失败提示；只认自己发起的动作对应的回执。 */
     inner class AskNavigation {
@@ -185,9 +185,9 @@ class ChatNavigation(
 
     val ask = AskNavigation()
 
-    fun openConfirmations() {
+    fun openInbox() {
         reset()
-        showingConfirmations = true
+        showingInbox = true
         selectTab(TabRef.Chat)
     }
 
@@ -224,7 +224,7 @@ class ChatNavigation(
         returnTab = null
         showingBackup = false
         startingChat = false
-        showingConfirmations = false
+        showingInbox = false
     }
 
     /** 打开 [roomId]，[sideChatRoot] 不为空时进这个旁聊。这时还没有同步到它的话，等它出现。 */

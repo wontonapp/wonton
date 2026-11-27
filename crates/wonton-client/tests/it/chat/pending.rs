@@ -348,7 +348,7 @@ async fn a_broken_poll_keeps_the_last_list_until_it_recovers() {
     home.fail_confirmations(0);
     phone
         .dispatch(Action::Chat {
-            action: wonton_protocol::ChatAction::RetryConfirmations,
+            action: wonton_protocol::ChatAction::RetryInbox,
         })
         .unwrap();
     wait_confirmations(&phone, "重试后恢复", |view| {

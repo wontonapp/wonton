@@ -142,7 +142,7 @@ private fun AppContent(
     val status = connectionBarStatus(home, { pages.send(Action.Home(HomeAction.RetryConnection)) }, nav::settings)
     val cards = chat.pendingConfirmations.filter {
         val listShown = shown == TabRef.Chat && !nav.settingsOverlay && !view.showsApps &&
-            nav.chat.showingConfirmations
+            nav.chat.showingInbox
         val roomShown = shown == TabRef.Chat && !nav.settingsOverlay && !view.showsApps &&
             !nav.chat.showingBackup && !nav.chat.startingChat && it.roomId != null &&
             it.roomId == nav.chat.openRoom
@@ -155,7 +155,7 @@ private fun AppContent(
     // 面板只在聊天页和房间里；拉开时左边缘归面板（A 块的手势用来关它）。
     val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
     val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay &&
-        !view.showsApps && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
+        !view.showsApps && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingInbox
     val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
         rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope,
             nav.pages)
@@ -303,7 +303,6 @@ private fun NativeTab(
             home.status is HomeStatus.NotConfigured -> HomeRoute(
             pages.core, home, pages.plugins, nav.plugins, nav.appsPage,
             { nav.appsPage = it },
-            chat.pendingConfirmations, nav::openCardTarget,
             onConnection = { nav.settings(SettingsSubpage.SERVER) }, settingsUpgrade = settings.serverUpgrade,
             onSettings = { nav.settings() },
         )

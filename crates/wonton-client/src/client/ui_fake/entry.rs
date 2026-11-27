@@ -99,10 +99,12 @@ impl ClientCore {
             confirmations: watch::Sender::new(ui_fake_devices::confirmations(
                 current.confirmations.borrow().clone(),
             )),
+            inbox: watch::Sender::default(),
             agent_chains: watch::Sender::new(current.agent_chains.borrow().clone()),
             agent_stops: watch::Sender::default(),
         };
         drop(current);
+        super::super::ui_fake_inbox::follow(views.confirmations.subscribe(), views.inbox.clone());
         self.servers.seed_ui_fake(fake_servers());
         *self
             .views

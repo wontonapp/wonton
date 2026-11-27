@@ -108,6 +108,7 @@ struct MainView: View {
         .task { await home.observeServers() }
         .task { await plugins.observe() }
         .task { await chat.observe() }
+        .task { await chat.inbox.observe() }
         .task { await chat.files.observe() }
         .task { await settings.observe() }
         .environment(pages)
@@ -223,7 +224,6 @@ struct MainView: View {
                         } else {
                             HomeView(
                                 model: home, plugins: plugins, chat: chat, settings: settings, open: open,
-                                pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
                                 showSettings: { settings.path = []; showsSettings = true },
                                 showServer: { showServerRoute(.server) }, settingsPresented: showsSettings,
                                 devWebURL: devWebURL, path: $appsPath
@@ -260,7 +260,7 @@ struct MainView: View {
 
     private var pendingElsewhere: [PendingConfirmation] {
         let shown: String? = if pages.showsPluginPage { nil } else { chat.shownRoom(in: .chat) }
-        if !pages.showsPluginPage, chat.path.last == .confirmations { return [] }
+        if !pages.showsPluginPage, chat.path.last == .inbox { return [] }
         return chat.viewModel.pendingConfirmations.filter { $0.roomId == nil || shown != $0.roomId }
     }
 

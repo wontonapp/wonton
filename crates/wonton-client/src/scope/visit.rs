@@ -74,6 +74,7 @@ impl Visit {
             crate::chat::ChatChannels {
                 view: None,
                 confirmations: None,
+                inbox: None,
                 method: push_method.subscribe(),
                 app_lock: app_lock.clone(),
                 lock_screen: lock_screen.subscribe(),

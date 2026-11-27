@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// “等你确认”列表里的确认卡片行：收起是一行——发起者头像、标题和结果；点开是完整卡片，能直接回答。
+/// 收件箱里的确认卡片行：收起是一行——发起者头像、标题和结果；点开是完整卡片，能直接回答。
 /// 完整卡片复用说明行、按钮、密钥和设置表单。
 struct ConfirmationCardRow: View {
     let view: ConfirmationView

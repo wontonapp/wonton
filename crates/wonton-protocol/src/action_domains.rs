@@ -201,8 +201,8 @@ pub enum ChatAction {
     StopConfirmationWindow {
         id: String,
     },
-    /// 重新取“等你确认”列表（[`ConfirmationsViewModel::problem`](crate::ConfirmationsViewModel::problem) 之后）。
-    RetryConfirmations,
+    /// 马上重新取收件箱和确认卡片列表（[`InboxViewModel::problem`](crate::InboxViewModel::problem) 之后的重试）。
+    RetryInbox,
     /// 把这一份的选择换成 `choice`：为空的项回到默认值。
     SetChatLayout {
         target: ChatLayoutTarget,

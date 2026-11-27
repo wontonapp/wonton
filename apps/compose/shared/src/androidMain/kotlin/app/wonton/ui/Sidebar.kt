@@ -35,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -78,6 +79,7 @@ import app.wonton.ui.icons.Chat
 import app.wonton.ui.icons.ChatFill
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.List
+import app.wonton.ui.icons.Notify
 import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.Store
 import app.wonton.ui.icons.WontonIcon
@@ -123,6 +125,8 @@ internal sealed interface SidebarDestination {
     data object Settings : SidebarDestination
 
     data object NewChat : SidebarDestination
+
+    data object Inbox : SidebarDestination
 
     data class Plugin(val entry: PluginEntry) : SidebarDestination
 
@@ -377,6 +381,24 @@ internal fun SidebarPanel(
                 icon = {
                     Icon(
                         if (current == TabRef.Chat) WontonIcon.ChatFill else WontonIcon.Chat,
+                        // 装饰：行的文字在右边。
+                        contentDescription = null,
+                        Modifier.size(ROW_ICON),
+                        tint = colors.textPrimary.toColor(),
+                    )
+                },
+            )
+            val inbox by remember(plugins.core) { plugins.core.inboxUpdates() }
+                .collectAsState(remember(plugins.core) { plugins.core.inbox() })
+            SidebarRow(
+                title = stringResource(R.string.inbox_title),
+                selected = false,
+                interactive = interactive,
+                badge = inbox.needing ?: 0,
+                onClick = { onGo(SidebarDestination.Inbox) },
+                icon = {
+                    Icon(
+                        WontonIcon.Notify,
                         // 装饰：行的文字在右边。
                         contentDescription = null,
                         Modifier.size(ROW_ICON),

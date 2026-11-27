@@ -1,8 +1,8 @@
-//! “等你确认”列表（ADR-0016）：长轮询核心的确认接口，把等回答的、结束的卡片交给壳。主人在别的房间、别的页面
+//! 卡片列表（ADR-0016）：长轮询核心的确认接口，把等回答的、结束的卡片交给壳。主人在别的房间、别的页面
 //! 时，壳靠 `ChatViewModel::pending_confirmations` 提示有卡片要回答。
 //!
 //! 跟着家里的连接走，不和 Matrix 会话绑定：卡片不是 Matrix 消息，换登录、重连都不动这份状态；连不上核心时如实
-//! 报问题、留上次的列表，退避重试，`ChatAction::RetryConfirmations` 立即重试。
+//! 报问题、留上次的列表，退避重试，`ChatAction::RetryInbox` 立即重试。
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Weak};
@@ -27,7 +27,7 @@ const BACKOFF_MAX: Duration = Duration::from_secs(30);
 /// 短确认只发普通通知；持续等主人一分钟的 Bot 任务才成为进行中通知（ADR-0101 §4）。
 const LONG_WAIT_MS: u64 = 60_000;
 
-/// 长轮询“等你确认”列表。三份产出都从核心的同一份列表加这台设备的回答进展算出来：
+/// 长轮询卡片列表。三份产出都从核心的同一份列表加这台设备的回答进展算出来：
 /// - 壳订阅的 [`ConfirmationsViewModel`]：等回答的、结束的、取没取到过、最近一次的问题；
 /// - [`ChatViewModel::pending_confirmations`] 和 `settled_confirmations`：提示条和撤通知的依据；
 /// - 打开的房间要显示的卡片：时间线的出口按 `origin.room_id` 过滤后放进 `TimelineUpdate::confirmations`。
@@ -165,7 +165,7 @@ impl Follower {
     }
 
     /// 连接没就绪就不打核心：留上次的列表，一次都没取到过就还显示加载中。失败过的先等退避；
-    /// `ChatAction::RetryConfirmations` 立即放行。连接没了（作用域释放）返回 `None`。
+    /// `ChatAction::RetryInbox` 立即放行。连接没了（作用域释放）返回 `None`。
     async fn wait_ready(&mut self) -> Option<(Url, ProxySettings)> {
         if !self.backoff.is_zero() {
             tokio::select! {

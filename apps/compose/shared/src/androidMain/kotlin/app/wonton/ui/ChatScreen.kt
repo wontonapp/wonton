@@ -103,7 +103,7 @@ fun ChatRoute(
     val updates = remember(core) { core.chatUpdates() }
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
-    val confirmations by remember(core) { core.confirmationsUpdates() }.collectAsState(core.confirmations())
+    val inbox by remember(core) { core.inboxUpdates() }.collectAsState(core.inbox())
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val scope = rememberCoroutineScope()
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
@@ -114,10 +114,10 @@ fun ChatRoute(
     LaunchedEffect(room) { if (room != null) navigation.showingBackup = false }
     val profile = navigation.botProfile
     when {
-        navigation.showingConfirmations -> {
-            BackHandler { navigation.showingConfirmations = false }
-            ConfirmationsScreen(confirmations, viewModel.bots, plugins, onAction) {
-                navigation.showingConfirmations = false
+        navigation.showingInbox -> {
+            BackHandler { navigation.showingInbox = false }
+            InboxScreen(inbox, viewModel.bots, plugins, onAction) {
+                navigation.showingInbox = false
             }
         }
         navigation.showingBackup -> {
@@ -174,8 +174,8 @@ fun ChatRoute(
                 viewModel = viewModel,
                 plugins = plugins,
                 pluginNavigation = pluginNavigation,
-                confirmationCount = confirmations.pending.size + confirmations.contactRequests.size,
-                onOpenConfirmations = navigation::openConfirmations,
+                inboxNeeding = inbox.needing,
+                onOpenInbox = navigation::openInbox,
                 onAction = onAction,
                 onOpenRoom = { navigation.openRoom = it },
                 onOpenBackup = {
@@ -215,8 +215,8 @@ internal fun ChatListScreen(
     viewModel: ChatViewModel,
     plugins: PluginsState,
     pluginNavigation: PluginNavigation,
-    confirmationCount: Int,
-    onOpenConfirmations: () -> Unit,
+    inboxNeeding: Int?,
+    onOpenInbox: () -> Unit,
     onAction: (Action) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
@@ -231,15 +231,16 @@ internal fun ChatListScreen(
     val listState = rememberLazyListState()
     WontonScreen(
         bar = {
-            WontonRootBar(stringResource(R.string.tab_chat), actions = if (panel != null) {
-                {
+            WontonRootBar(stringResource(R.string.tab_chat), actions = {
+                InboxBell(inboxNeeding, onOpenInbox)
+                if (panel != null) {
                     WontonIconButton(
                         WontonIcon.Home,
                         stringResource(R.string.panel_open),
                         { panel.move(PanelLevel.FULL) },
                     )
                 }
-            } else null)
+            })
         },
     ) {
         Box(Modifier.fillMaxSize()) {
@@ -252,15 +253,6 @@ internal fun ChatListScreen(
                 ),
             ) {
                 item(key = "notices") { Notices(viewModel, onOpenBackup) }
-                item(key = "confirmations") {
-                    WontonRow(
-                        stringResource(R.string.confirmations_title),
-                        titleTint = if (confirmationCount == 0) WontonTheme.colors.textSecondary else null,
-                        badgeCount = confirmationCount,
-                        showsForward = true,
-                        onClick = onOpenConfirmations,
-                    )
-                }
                 itemsIndexed(installing, key = { _, row -> "install:${row.pluginId}" }) { index, row ->
                     if (index > 0) {
                         Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {

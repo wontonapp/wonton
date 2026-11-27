@@ -43,6 +43,7 @@ fn rig() -> (Arc<ChatLink>, tempfile::TempDir) {
         ChatChannels {
             view: None,
             confirmations: None,
+            inbox: None,
             method,
             lock_screen: watch::channel(crate::lock_screen::Hidden::default()).1,
             app_lock: crate::app_lock::AppLockLink::new(dir.path()),

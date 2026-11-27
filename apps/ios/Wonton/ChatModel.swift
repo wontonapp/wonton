@@ -19,7 +19,7 @@ enum ChatRoute: Hashable {
     case room(String)
     case chatBackup
     case startChat
-    case confirmations
+    case inbox
 }
 
 @MainActor
@@ -61,7 +61,7 @@ final class ChatModel {
 
     let core: ClientCore
     @ObservationIgnored private(set) lazy var files = FilesModel(chat: self)
-    @ObservationIgnored private(set) lazy var confirmations = ConfirmationsModel(core: core)
+    @ObservationIgnored private(set) lazy var inbox = InboxModel(core: core)
 
     init(core: ClientCore, draftStore: ChatDraftStore? = nil) {
         self.core = core
@@ -338,9 +338,9 @@ extension ChatModel {
         path = [.startChat]
     }
 
-    func openConfirmations() {
+    func openInbox() {
         resetNavigation()
-        path = [.confirmations]
+        path = [.inbox]
     }
 
     /// 一次“问 Bot”的回执还没到时记着的请求；只认这个 ID 的回执。

@@ -2,32 +2,62 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "confirmations.empty": {
-      "comment": "Empty state of the awaiting-approval list: no card is waiting and none ended recently.",
+    "confirmations.inboxEmpty": {
+      "comment": "Empty state of the inbox: nothing is waiting and nothing was handled recently.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nothing needs your confirmation"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有要你确认的事"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "沒有要你確認的事"
+            "value": "All caught up"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "確認が必要なものはありません"
+            "value": "すべて対応済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "都处理完了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "都處理完了"
+          }
+        }
+      }
+    },
+    "confirmations.inboxTitle": {
+      "comment": "Title of the inbox screen and the accessibility label of the bell that opens it (ADR-0119).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inbox"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信トレイ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收件箱"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收件匣"
           }
         }
       }
@@ -178,36 +208,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "結果は不明"
-          }
-        }
-      }
-    },
-    "confirmations.title": {
-      "comment": "Title of the awaiting-approval list screen.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Waiting for you"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等你确认"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等你確認"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "確認待ち"
           }
         }
       }

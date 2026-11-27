@@ -7,12 +7,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.ConnectionNotice
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
-import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonRow
@@ -20,14 +18,12 @@ import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
-/** 主屏图标下面的状态：连接、等确认的卡片、存储。不知道的如实显示不确定。 */
+/** 主屏图标下面的状态：连接、存储。不知道的如实显示不确定。等你回答的事在收件箱（铃铛），这里不重复。 */
 @Composable
 fun HomeStatusPanel(
     home: HomeViewModel,
     plugins: PluginsViewModel,
-    cards: List<PendingConfirmation>,
     onConnection: () -> Unit,
-    onOpenCardRoom: (String?) -> Unit,
 ) {
     val colors = WontonTheme.colors
     val context = LocalContext.current
@@ -39,18 +35,6 @@ fun HomeStatusPanel(
             showsForward = true,
             onClick = onConnection,
         )
-        WontonSeparator()
-        val first = cards.firstOrNull()
-        if (first != null) {
-            WontonRow(
-                stringResource(R.string.home_awaiting),
-                pluralStringResource(R.plurals.home_cards, cards.size, cards.size),
-                showsForward = true,
-                onClick = { onOpenCardRoom(first.roomId) },
-            )
-        } else {
-            WontonRow(stringResource(R.string.home_awaiting), stringResource(R.string.home_none))
-        }
         WontonSeparator()
         WontonRow(stringResource(R.string.home_storage), storageText(context, plugins))
         plugins.storageProblem?.let { problem ->
