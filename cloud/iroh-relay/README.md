@@ -1,4 +1,5 @@
 # iroh 中继（relay.808cbd.com）
+本目录里的 `relay.808cbd.com`/`omarchy.online` 是**真实部署域名**，换域名要改 `install.sh` 的 `DOMAIN` 与 nginx `server_name`；占位示例是 `192.0.2.10`。
 
 给 Wonton 隧道用的转发站：两台设备打洞失败时，端到端加密的 QUIC 流量经它中转，中继看不到内容，也不存数据。
 只转发、不存账号和业务数据（[ADR-0012](../../docs/adr/0012-updates-release-cloud.md)）。

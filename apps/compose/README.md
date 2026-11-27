@@ -189,6 +189,7 @@ Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将
 
 - 栈：开发栈（`remote-dev.sh`/`stack-slot.sh` 起的），**别连正式安装**；配对码从自己那套栈现取（10 分钟、单次）。
 - 两个 APK 必须同一台机器上编：本机和 194 的 debug keystore 不同，混着装会签名不符、`am instrument` 直接被拒。
+- `194`/`1k`/`mini`/`npchy` 是开发机代号，`192.168.0.194` 是 194 的局域网地址（真实值，不是占位）。
 - 没传 `-e code` 时用例 `Assume` 跳过（nightly 的安卓作业不带参数，见 `nightly-ui.yml`）。
 - 已知软失败在用例的 `knownIssues` 里放行（现在只有“没配模型时 `/` 没有命令菜单”），新问题照红。
 - 截图由用例写进设备相册 `Pictures/WontonUITests/`；侧栏只验入口存在和点得开，进页面以后的内容属于各页面自己的测试。
