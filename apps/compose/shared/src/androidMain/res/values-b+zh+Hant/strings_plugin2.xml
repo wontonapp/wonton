@@ -41,4 +41,9 @@
     <!-- Row in the install/upgrade confirmation and on the app's detail page: what the app's web page may do when opened inside a chat room, for the capabilities that never touch message content. No arguments. -->
     <string name="plugin_widget_normal">在房間裡開啟時，它的網頁能讀寫通話狀態這類不含聊天內容的資訊，並向通話服務證明是你本人。</string>
     <string name="plugin_setup_title">第一次開啟</string>
+    <string name="plugin_dependency_connect">接上</string>
+    <string name="plugin_dependency_find_in_store">去商店找能提供它的應用程式。</string>
+    <string name="plugin_uninstall_in_use">這些應用程式還在用「%1$s」</string>
+    <string name="plugin_uninstall_unused_providers">這些也沒人用了：</string>
+    <string name="plugin_uninstall_checking">正在看還有誰在用它…</string>
 </resources>

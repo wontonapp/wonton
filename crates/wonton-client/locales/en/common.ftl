@@ -45,12 +45,12 @@ plugins-tasks-uncertain = The connection dropped, so the result from your home s
 plugins-tasks-server-changed = Your home server changed, so the result from the previous one is unknown.
 
 plugins-tasks-preview-no-source = This preview has no source, so it can't be installed.
-# $title is the provider's name, $capability the missing required capability it provides.
-plugins-tasks-install-together = { $title } will be installed with it, because it provides the missing required capability { $capability }.
+# $id is the blocked plugin, $detail the server's explanation.
+plugins-tasks-dependent-in-use = Couldn't uninstall { $id }: other apps still need it. { $detail }
 # $capability is the missing required capability.
 plugins-tasks-preview-no-provider = Nothing in the store provides the missing required capability { $capability}, so it can't be installed.
-# $title 是提供方的名字。
-plugins-tasks-provider-needs-own-confirm = { $title } needs permissions that must be confirmed on their own: install it by itself first, then install this plugin again.
+# $provider and $got are plugin IDs.
+plugins-capability-wrong-provider = The source for { $provider } now gives a different plugin ({ $got }); preview again.
 
 # $id is the unchanged task ID.
 plugins-tasks-no-such-task = There's no such task: { $id }

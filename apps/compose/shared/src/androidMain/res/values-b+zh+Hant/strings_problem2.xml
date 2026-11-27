@@ -41,4 +41,6 @@
     <string name="problem_peer_public_access_off_next_step">等對方重新打開後再傳；訊息會在那之後補到。</string>
     <!-- Next step when the other server isn't paired: pair it first. -->
     <string name="problem_server_not_paired_next_step">先在「其他伺服器」裡配對，再打開聊天。</string>
+    <string name="problem_plugin_in_use_title">還有應用程式在用它</string>
+    <string name="problem_plugin_in_use_next_step">先解除安裝在用的應用程式，或安裝別的提供方。</string>
 </resources>

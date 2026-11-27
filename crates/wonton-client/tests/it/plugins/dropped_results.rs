@@ -276,6 +276,8 @@ async fn uninstalling_a_broken_plugin_over_a_dropped_connection_is_uncertain() {
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: "app.photos".to_owned(),
                 delete_data: false,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();

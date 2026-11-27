@@ -75,6 +75,11 @@ extension PluginFailure {
                 .Problem1.problemPluginConflictTitle,
                 .Problem3.problemPluginConflictNextStep,
                 detail)
+        case .inUse:
+            categorizedProblem(
+                .Problem2.problemPluginInUseTitle,
+                .Problem0.problemPluginInUseNextStep,
+                detail)
         case .invalid:
             categorizedProblem(
                 .Problem2.problemPluginInvalidTitle,

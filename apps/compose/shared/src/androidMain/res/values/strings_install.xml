@@ -47,4 +47,14 @@
     <string name="install_audience_title">Who can open this app</string>
     <string name="install_audience_shared_data">This app does not separate accounts. People with access may see and change the same data.</string>
     <string name="install_request_admin">Ask an administrator to install</string>
+    <string name="install_required_capabilities">Required capabilities it needs</string>
+    <string name="install_optional_capabilities">Optional capabilities</string>
+    <string name="install_provider_third_party">Third-party capability</string>
+    <string name="install_provider_high_privilege">High privilege</string>
+    <string name="install_provider_missing">No app in the store provides it, so it can’t be installed.</string>
+    <string name="install_provider_connects">%1$s will be able to use %3$s through %2$s.</string>
+    <string name="install_wants_missing">Nothing provides %1$s; the app installs without it.</string>
+    <string name="install_provider_wrong">The source for %1$s returned a different app.</string>
+    <string name="install_provider_permission_title">Permissions %1$s asks for</string>
+    <string name="install_provider_secret_title">Secrets %1$s asks for</string>
 </resources>

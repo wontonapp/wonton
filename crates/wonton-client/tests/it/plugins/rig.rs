@@ -536,6 +536,7 @@ pub fn preview(id: &str) -> InstallPreview {
         always_allowed: Vec::new(),
         audience: None,
         install_gate: wonton_client::Gate::Allow,
+        install_providers: Vec::new(),
     }
 }
 

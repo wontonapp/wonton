@@ -191,6 +191,7 @@ fn preview() -> InstallPreview {
         plan: "consumer-plan".into(),
         audience: None,
         install_gate: crate::Gate::Allow,
+        install_providers: Vec::new(),
         id: "app.samba".into(),
         title: "Samba".into(),
         summary: "局域网文件共享".into(),

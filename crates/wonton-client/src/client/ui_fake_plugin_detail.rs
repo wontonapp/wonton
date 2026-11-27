@@ -40,6 +40,12 @@ pub(super) fn detail(
     if id == BUDGET_ID {
         return Some(budget(installed));
     }
+    if id == &super::ui_fake_install::consumer_id() {
+        return Some(dependent(installed));
+    }
+    if id == &super::ui_fake_install::provider_id() {
+        return Some(required_provider(installed));
+    }
     // main 侧的“安装失败”详情：别的应用装着且带安装失败时，拿它自己的头面给一份；从空白底子起，
     // 不带 hub 的设备、问题，也不带 hub 的分享状态（那是 Home Hub 的，不是这个插件的）。
     let installed = installed.filter(|plugin| plugin.install_failure.is_some())?;
@@ -66,6 +72,51 @@ fn budget(installed: Option<InstalledPlugin>) -> PluginDetail {
         grants: Vec::new(),
     });
     detail
+}
+
+/// 要 `torrent_client` 的自动下载器：依赖的提供方没在运行，详情页给提示和能力选择。
+fn dependent(installed: Option<InstalledPlugin>) -> PluginDetail {
+    let mut detail = app(
+        &super::ui_fake_install::consumer_id(),
+        "Autobangumi",
+        "Follows the season and grabs new episodes",
+        installed,
+    );
+    detail.source = Some(super::ui_fake_install::CONSUMER_SOURCE.into());
+    detail.hints = vec![wonton_protocol::PluginHint {
+        category: wonton_protocol::PluginHintCategory::DependencyStopped,
+        detail: None,
+        provider: Some(provider_ref()),
+        capability: None,
+    }];
+    detail.capability_providers = vec![wonton_protocol::ConsumerCapabilitySetting {
+        capability: "torrent_client".into(),
+        third_party: false,
+        providers: vec![provider_ref()],
+        selected: None,
+    }];
+    detail
+}
+
+/// 它提供的下载器能力被自动下载器用着：卸载会被挡住。
+fn required_provider(installed: Option<InstalledPlugin>) -> PluginDetail {
+    let mut detail = app(
+        &super::ui_fake_install::provider_id(),
+        "qBittorrent",
+        "The household's downloads",
+        installed,
+    );
+    detail.source = Some(super::ui_fake_install::PROVIDER_SOURCE.into());
+    detail.trust = wonton_protocol::PluginTrust::Community;
+    detail
+}
+
+fn provider_ref() -> wonton_protocol::CapabilityProviderRef {
+    wonton_protocol::CapabilityProviderRef {
+        id: super::ui_fake_install::provider_id(),
+        title: "qBittorrent".into(),
+        high_privilege: true,
+    }
 }
 
 pub(super) fn app(

@@ -23,7 +23,10 @@ pub(super) fn listing() -> StoreListing {
         },
         added: Vec::new(),
         community: StoreSection {
-            plugins: vec![item("LAN Scan", LAN_SOURCE, None)],
+            plugins: vec![
+                item("LAN Scan", LAN_SOURCE, None),
+                item("Autobangumi", super::ui_fake_install::CONSUMER_SOURCE, None),
+            ],
             fetched_at_ms: Some(1_793_000_000_000),
             problem: None,
             unreadable: Vec::new(),
@@ -71,10 +74,17 @@ pub(super) fn detail(route: &PluginDetailRoute) -> Option<PluginDetail> {
             MUSIC_TITLE,
             "The household's records, playable from anywhere",
         ),
+        super::ui_fake_install::CONSUMER_SOURCE => {
+            ("Autobangumi", "Follows the season and grabs new episodes")
+        }
         _ => return None,
     };
     let mut detail = super::ui_fake_plugin_detail::app(&id_of(source), title, summary, None);
     detail.source = Some(source.clone());
+    if source == super::ui_fake_install::CONSUMER_SOURCE {
+        // 商店那一行和装着的那一份是不同的 ID：不然详情会被当成已装的，只给“打开”。
+        detail.id = super::ui_fake_install::store_id();
+    }
     Some(detail)
 }
 

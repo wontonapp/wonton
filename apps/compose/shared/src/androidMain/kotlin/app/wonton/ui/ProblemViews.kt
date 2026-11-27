@@ -202,6 +202,11 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         nextStepRes = R.string.problem_plugin_conflict_next_step,
         detail = detail,
     )
+    PluginFailure.IN_USE -> Problem(
+        titleRes = R.string.problem_plugin_in_use_title,
+        nextStepRes = R.string.problem_plugin_in_use_next_step,
+        detail = detail,
+    )
     PluginFailure.INVALID -> Problem(
         titleRes = R.string.problem_plugin_invalid_title,
         nextStepRes = R.string.problem_plugin_invalid_next_step,

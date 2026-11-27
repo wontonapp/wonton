@@ -43,4 +43,6 @@
     <string name="problem_peer_public_access_off_next_step">Wait for them to turn it back on, then send again. Messages arrive after that.</string>
     <!-- Next step when the other server isn't paired: pair it first. -->
     <string name="problem_server_not_paired_next_step">Pair it under Other servers, then open the chat again.</string>
+    <string name="problem_plugin_in_use_title">Other apps still need it</string>
+    <string name="problem_plugin_in_use_next_step">Uninstall those apps first, or install another provider.</string>
 </resources>

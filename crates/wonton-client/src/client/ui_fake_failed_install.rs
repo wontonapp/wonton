@@ -47,6 +47,9 @@ fn fixture(retryable: bool) -> InstalledPlugin {
 impl ClientCore {
     /// 插件操作里只接重试失败的安装，别的照旧不落到作用域。
     pub(super) fn dispatch_ui_fake_plugins(&self, action: PluginAction) -> Result<(), CoreError> {
+        if super::ui_fake_install::dispatch(self, &action)? {
+            return Ok(());
+        }
         let PluginAction::RetryPluginInstall { id } = action else {
             return Ok(());
         };

@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::InstallRequest;
+use super::{InstallRequest, SecretValues};
 
 /// 一项能力在索引里的提供方（ADR-0053）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +49,68 @@ pub struct InstallTogether {
     /// 提供方自己的完整安装决定。内层 `install_together`、`connect_plugins` 都必须为空，否则输入非法。
     #[serde(deserialize_with = "provider_request")]
     pub request: InstallRequest,
+}
+
+/// 确认页上一个缺的必需能力（ADR-0053）：列出索引里的提供方，主人选一个一起装，选中的显示它自己的
+/// 完整预览。[`super::InstallPreview::install_providers`] 用它。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InstallProvider {
+    /// 缺的能力名。
+    pub capability: String,
+    /// 是不是第三方定义的能力。
+    pub third_party: bool,
+    /// 索引里的候选，按索引顺序；空表示商店里没有提供方，装不上。
+    pub providers: Vec<CapabilityProvider>,
+    /// 选中的提供方；没选时为空。客户端默认选第一个。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub selected: Option<SelectedProvider>,
+}
+
+/// 选中一起装的提供方（ADR-0053）：它自己的完整安装预览和主人填的密钥。确认时装进
+/// [`InstallTogether::request`]。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SelectedProvider {
+    /// 提供方本身。
+    pub provider: CapabilityProvider,
+    /// 提供方自己的完整预览：权限、可选项、密钥、设备和局域网开关单独列一节。
+    pub preview: super::InstallPreview,
+    /// 主人填的密钥值；确认时装进内层请求的 `secrets`。
+    #[serde(default)]
+    pub secrets: SecretValues,
+}
+
+/// 详情页依赖异常给主人的下一步（ADR-0053）：壳按它显示按钮，文字仍按类别写。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DependencyNextStep {
+    /// `dependency_stopped`：启动提示里的提供方。
+    StartProvider,
+    /// `provider_not_connected`：给这个插件接上提示里的提供方。
+    ConnectProvider,
+    /// `wants_unsatisfied`：去商店装一个提供这个能力的插件。
+    OpenStore,
+}
+
+/// 打开卸载面板前问核心的结果（ADR-0053）：能不能卸；可以卸时列出一起卸就再没人用的提供方，
+/// 被在用的依赖挡住时列出依赖方。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UninstallOutcome {
+    /// 能卸；`unused_providers` 主人可以选择一起卸。
+    Ready {
+        #[serde(default)]
+        unused_providers: Vec<CapabilityProviderRef>,
+    },
+    /// 有插件还在用它提供的必需能力、又没有别的提供方能接上：先卸它们（或先停掉）再卸这个。
+    InUse {
+        #[serde(default)]
+        dependents: Vec<CapabilityProviderRef>,
+    },
 }
 
 fn provider_request<'de, D>(deserializer: D) -> Result<InstallRequest, D::Error>

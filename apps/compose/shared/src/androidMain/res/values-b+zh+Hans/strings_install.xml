@@ -47,4 +47,14 @@
     <string name="install_audience_title">谁能打开这个应用</string>
     <string name="install_audience_shared_data">这个应用不区分个人账号。能打开它的人可能看到和修改同一份数据。</string>
     <string name="install_request_admin">请管理员安装</string>
+    <string name="install_required_capabilities">需要的必需能力</string>
+    <string name="install_optional_capabilities">可选能力</string>
+    <string name="install_provider_third_party">第三方能力</string>
+    <string name="install_provider_high_privilege">高权限</string>
+    <string name="install_provider_missing">商店里没有提供方的插件，装不上。</string>
+    <string name="install_provider_connects">「%1$s」能经「%2$s」使用「%3$s」。</string>
+    <string name="install_wants_missing">没有提供「%1$s」的插件，照装但少点能力。</string>
+    <string name="install_provider_wrong">「%1$s」的来源取回来的是别的插件。</string>
+    <string name="install_provider_permission_title">「%1$s」要的权限</string>
+    <string name="install_provider_secret_title">「%1$s」要填的密钥</string>
 </resources>

@@ -399,7 +399,9 @@ impl PluginsLink {
                 SOURCE_TIMEOUT,
             )
             .await?;
-        super::tasks::provider_notices(&mut preview);
+        self.install_providers(&mut preview)
+            .await
+            .map_err(super::tasks::problem)?;
         Ok(preview)
     }
 
@@ -495,6 +497,7 @@ impl PluginsLink {
                 install_progress: None,
                 waiting_for_connection: false,
                 added_tools: None,
+                dependents: Vec::new(),
                 id,
             });
             Self::derive(view);
@@ -728,6 +731,7 @@ mod tests {
             always_allowed: Vec::new(),
             audience: None,
             install_gate: wonton_protocol::Gate::Allow,
+            install_providers: Vec::new(),
         }
     }
 

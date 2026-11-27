@@ -301,6 +301,7 @@ fn profile_problem(error: CoreApiError) -> BotProfileProblem {
             kind,
             message,
             problem,
+            ..
         } => {
             let reason = match (status, kind.as_deref()) {
                 (404, _) => BotProfileFailure::NotReady,

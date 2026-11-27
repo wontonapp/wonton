@@ -30,4 +30,6 @@
     <string name="plugin_uninstall_keep_data">アンインストール（データを残す）</string>
     <string name="plugin_clear_failure">失敗したインストールを消去</string>
     <string name="plugin_clear_failure_message">アプリのデータは保持されます。</string>
+    <string name="plugin_dependency_not_connected">「%1$s」にまだ接続していないため、「%2$s」は使えません。</string>
+    <string name="plugin_uninstall_together">一緒にアンインストール</string>
 </resources>

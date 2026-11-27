@@ -4,6 +4,7 @@
 pub(crate) mod api;
 mod audience;
 mod cache;
+pub(crate) mod capabilities;
 pub(crate) mod cards;
 mod core_upgrade;
 mod detail;

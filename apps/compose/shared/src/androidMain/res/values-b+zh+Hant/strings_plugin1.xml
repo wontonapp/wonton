@@ -18,4 +18,7 @@
     <!-- Status of a finished update task. -->
     <string name="plugin_task_upgrade_done">已升級</string>
     <string name="plugin_clear_failure_title">清除「%1$s」失败的安裝嗎？</string>
+    <string name="plugin_dependency_stopped">「%1$s」沒在執行，這個應用程式現在用不了它。</string>
+    <string name="plugin_capabilities_title">能力</string>
+    <string name="plugin_uninstall_stop_dependents">先停掉它們</string>
 </resources>

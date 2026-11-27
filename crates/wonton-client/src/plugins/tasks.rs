@@ -11,14 +11,14 @@ use tokio::sync::watch;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CapabilityProvider, CardLine, CoreError, HomeStatus, HomeViewModel, InstallPreview,
-    InstallRequest, InstallTogether, MissingCapability, PluginDetail, PluginFailure, PluginIcon,
-    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskNextStep, PluginTaskState,
-    PluginsViewModel, SecretString, SecretUpdate, SecretValues, SettingValues, UpgradeRequest,
-    UpgradeResult,
+    CapabilityProviderRef, CoreError, HomeStatus, HomeViewModel, InstallPreview, InstallRequest,
+    InstallTogether, MissingCapability, PluginDetail, PluginFailure, PluginIcon, PluginOperation,
+    PluginProblem, PluginState, PluginTask, PluginTaskNextStep, PluginTaskState, PluginsViewModel,
+    SecretString, SecretUpdate, SecretValues, SelectedProvider, SettingValues, UninstallRequest,
+    UpgradeRequest, UpgradeResult,
 };
 
-use super::api::{CoreApi, INSTALL_TIMEOUT, to_core_error};
+use super::api::{CoreApi, CoreApiError, INSTALL_TIMEOUT, to_core_error};
 use super::{POLL_INTERVAL, PluginsLink};
 use crate::l10n::{CATALOG, language};
 
@@ -118,6 +118,8 @@ impl PluginsLink {
             .and_then(crate::selected_plugin_audience);
         let devices = Self::chosen_devices(&preview);
         let missing = preview.missing_requires.clone();
+        // 预览里每个缺的必需能力都带着选中的提供方；一起装的请求按预览原样带上（ADR-0053）。
+        let decisions = install_together(&preview);
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
@@ -153,7 +155,13 @@ impl PluginsLink {
                 return;
             };
             let sent = async {
-                request.install_together = link.providers(&missing).await.map_err(problem)?;
+                // 新预览带着每个提供方的完整决定；老预览（聊天导入、旧核心）退回按来源取第一个。
+                request.install_together = match decisions {
+                    Ok(together) if !together.is_empty() => together,
+                    Ok(_) => link.providers(&missing).await.map_err(problem)?,
+                    Err(error) => return Err(problem(error)),
+                };
+
                 api.post_unit(&["plugins"], &request, INSTALL_TIMEOUT).await
             };
             link.finish_task(&id, Outcome::Running { version: None }, sent)
@@ -163,7 +171,7 @@ impl PluginsLink {
     }
 
     /// 一起装的提供方（ADR-0053）：预览里缺的必需能力各取列表的第一个提供方，连同它自己的预览一起装。
-    /// 确认页没有选提供方的操作，主人看到的是 [`provider_notices`] 写下的那一行。
+    /// 老预览（聊天导入、旧核心）没有提供方的完整决定时，按来源取列表的第一个再装。
     async fn providers(
         self: &Arc<Self>,
         missing: &[MissingCapability],
@@ -187,7 +195,11 @@ impl PluginsLink {
                 continue;
             }
             let preview = self.preview_install(provider.source.clone()).await?;
-            together.push(provider_install(provider, preview)?);
+            together.push(provider_install(&SelectedProvider {
+                provider: provider.clone(),
+                preview,
+                secrets: Default::default(),
+            })?);
         }
         Ok(together)
     }
@@ -266,11 +278,15 @@ impl PluginsLink {
         Ok(())
     }
 
-    /// `UninstallPlugin`：标题、图标和分类从已安装列表里取。
+    /// `UninstallPlugin`：标题、图标和分类从已安装列表里取。先卸 `dependents`（保留数据），再卸这个；
+    /// `providers` 是同一次请求里一起卸的、没人再用的提供方（ADR-0053）。被在用的依赖挡住时把依赖方
+    /// 留在任务上，壳据此给出“一起卸载”或“先停它们”。
     pub(crate) fn uninstall(
         self: &Arc<Self>,
         id: String,
         delete_data: bool,
+        providers: Vec<String>,
+        dependents: Vec<String>,
     ) -> Result<(), CoreError> {
         let (title, icon) = {
             let view = self.view.borrow();
@@ -290,13 +306,65 @@ impl PluginsLink {
             let Some(api) = link.task_api(&id, generation) else {
                 return;
             };
-            let query: &[(&str, &str)] = if delete_data {
-                &[("purge", "true")]
-            } else {
-                &[]
+            let sent = async {
+                for dependent in &dependents {
+                    let deleted = api
+                        .delete_detailed(
+                            &["plugins", dependent.as_str()],
+                            &[],
+                            None::<&UninstallRequest>,
+                            INSTALL_TIMEOUT,
+                        )
+                        .await;
+                    if let Err(error) = deleted {
+                        return Err(match error {
+                            CoreApiError::Http {
+                                message, plugins, ..
+                            } if !plugins.is_empty() => PluginProblem {
+                                reason: PluginFailure::InUse,
+                                message: l10n!(
+                                    CATALOG,
+                                    language(),
+                                    "plugins-tasks-dependent-in-use",
+                                    id = dependent.as_str(),
+                                    detail = message
+                                ),
+                                min_version: None,
+                                settings: None,
+                            },
+                            error => error.into_problem(),
+                        });
+                    }
+                }
+                let query: &[(&str, &str)] = if delete_data {
+                    &[("purge", "true")]
+                } else {
+                    &[]
+                };
+                let path = ["plugins", id.as_str()];
+                let request = (!providers.is_empty()).then(|| UninstallRequest {
+                    providers: providers.clone(),
+                });
+                let body = request.as_ref();
+                match api
+                    .delete_detailed(&path, query, body, INSTALL_TIMEOUT)
+                    .await
+                {
+                    Ok(()) => Ok(()),
+                    Err(CoreApiError::Http {
+                        message, plugins, ..
+                    }) if !plugins.is_empty() => {
+                        link.set_task_dependents(&id, plugins);
+                        Err(PluginProblem {
+                            reason: PluginFailure::InUse,
+                            message,
+                            min_version: None,
+                            settings: None,
+                        })
+                    }
+                    Err(error) => Err(error.into_problem()),
+                }
             };
-            let path = ["plugins", id.as_str()];
-            let sent = api.delete(&path, query, INSTALL_TIMEOUT);
             link.finish_task(&id, Outcome::Removed, sent).await;
         });
         Ok(())
@@ -420,6 +488,7 @@ impl PluginsLink {
             install_progress: None,
             waiting_for_connection: false,
             added_tools: None,
+            dependents: Vec::new(),
         });
         Self::derive(view);
         Ok(())
@@ -453,6 +522,15 @@ impl PluginsLink {
                 task.waiting_for_connection = false;
             }
             Self::derive(view);
+        });
+    }
+
+    /// 记下挡住这次卸载的依赖方：任务停在失败上，壳照它列出名字。
+    fn set_task_dependents(&self, id: &str, dependents: Vec<CapabilityProviderRef>) {
+        self.view.send_modify(|view| {
+            if let Some(task) = view.tasks.iter_mut().find(|task| task.id == id) {
+                task.dependents = dependents;
+            }
         });
     }
 
@@ -732,64 +810,38 @@ fn enabled_permissions(preview: &InstallPreview) -> Vec<String> {
         .collect()
 }
 
-/// 确认页写明会一起装的提供方（ADR-0053）：安装确认页就是这次授权的确认，高权限的提供方要醒目。
-pub(super) fn provider_notices(preview: &mut InstallPreview) {
-    // 同一个提供方补几个缺的能力时只写一行：能力名列全，emphasis 取各行 high_privilege 的“或”
-    //（同一个插件对不同能力的高权限标记可以不一样），和 [`PluginsLink::providers`] 的一次安装对上。
-    let mut rows: Vec<(&str, &str, Vec<&str>, bool)> = Vec::new();
-    for missing in &preview.missing_requires {
-        let Some(provider) = missing.providers.first() else {
-            continue;
+/// 预览里选中的提供方转成一起装的请求（ADR-0053）：同一个提供方补几个缺的能力只装一次。
+/// 缺的必需能力没有选中提供方时给出“商店里没有提供方”。
+fn install_together(preview: &InstallPreview) -> Result<Vec<InstallTogether>, CoreError> {
+    if preview.install_providers.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut chosen = HashSet::new();
+    let mut together = Vec::new();
+    for section in &preview.install_providers {
+        let Some(selected) = section.selected.as_ref() else {
+            return Err(CoreError::NotReady {
+                reason: l10n!(
+                    CATALOG,
+                    language(),
+                    "plugins-tasks-preview-no-provider",
+                    capability = section.capability.as_str()
+                ),
+            });
         };
-        match rows.iter_mut().find(|(id, ..)| *id == provider.id.as_str()) {
-            Some((_, _, capabilities, emphasis)) => {
-                capabilities.push(missing.capability.as_str());
-                *emphasis |= provider.high_privilege;
-            }
-            None => rows.push((
-                provider.id.as_str(),
-                provider.title.as_str(),
-                vec![missing.capability.as_str()],
-                provider.high_privilege,
-            )),
+        if !chosen.insert(selected.provider.id.as_str()) {
+            continue;
         }
+        together.push(provider_install(selected)?);
     }
-    for (_, title, capabilities, emphasis) in rows {
-        preview.notices.push(CardLine {
-            text: l10n!(
-                CATALOG,
-                language(),
-                "plugins-tasks-install-together",
-                title = title,
-                capability = capabilities.join(", ").as_str()
-            ),
-            emphasis,
-        });
-    }
+    Ok(together)
 }
 
-/// 一个提供方的安装决定：它预览里列出的权限照授，内层不再带别的依赖（ADR-0053）。
-fn provider_install(
-    provider: &CapabilityProvider,
-    mut preview: InstallPreview,
-) -> Result<InstallTogether, CoreError> {
-    // 一起装时确认页只有使用方的预览：提供方自己的高风险权限（ADR-0036 的各级，最高级的
-    // “单独确认”在内）和醒目提示（高权限能力的“谁连上谁”在里面，ADR-0053）都没经过主人，
-    // 丢掉提示就照连不行。这种提供方请主人先单独装，装它的确认页把提示和确认走全。
-    if preview
-        .permissions
-        .iter()
-        .any(|line| !line.optional && line.risk.is_some())
-        || preview.notices.iter().any(|notice| notice.emphasis)
-    {
-        return Err(CoreError::NotReady {
-            reason: l10n!(
-                CATALOG,
-                language(),
-                "plugins-tasks-provider-needs-own-confirm",
-                title = provider.title.as_str()
-            ),
-        });
+/// 一个提供方的安装决定：它预览里列出的权限照授、主人填的密钥带上，内层不再带别的依赖（ADR-0053）。
+fn provider_install(selected: &SelectedProvider) -> Result<InstallTogether, CoreError> {
+    let mut preview = selected.preview.clone();
+    if let Some(blocked) = preview.blocked.clone().or(preview.missing_profile.clone()) {
+        return Err(CoreError::NotReady { reason: blocked });
     }
     let grant = confirmed(&preview)?;
     let enabled_permissions = enabled_permissions(&preview);
@@ -805,7 +857,7 @@ fn provider_install(
         });
     };
     Ok(InstallTogether {
-        id: provider.id.clone(),
+        id: selected.provider.id.clone(),
         request: InstallRequest {
             source,
             digest: preview.digest,
@@ -814,7 +866,7 @@ fn provider_install(
             audience,
             grant,
             enabled_permissions,
-            secrets: SecretValues::new(),
+            secrets: selected.secrets.clone(),
             settings: Default::default(),
             devices,
             lan_webui,
@@ -828,7 +880,7 @@ fn provider_install(
 /// 取提供方预览失败：断线照样可能已经装上了（从已安装列表等结果），错误按原因分给任务，不再
 /// 混成“输入非法”。NotReady 是“提供方要单独确认/商店里没有提供方”，和 onboarding 的 core_problem
 /// 一样归 Upstream，不给“重新安装”的下一步。
-fn problem(error: CoreError) -> PluginProblem {
+pub(super) fn problem(error: CoreError) -> PluginProblem {
     let (reason, message, min_version) = match error {
         CoreError::TransportUnavailable { reason } => {
             (PluginFailure::TransportUnavailable, reason, None)

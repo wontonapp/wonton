@@ -71,6 +71,24 @@ pub(super) fn core_error(
     }
 }
 
+/// 已经分开的类别和原话转成问题：`*_detailed` 的调用方在解析过错误体后用。
+pub(super) fn problem_from_parts(
+    status: u16,
+    kind: Option<&str>,
+    message: String,
+) -> PluginProblem {
+    let reason = failure_kind(kind, status);
+    if reason == PluginFailure::TransportUnavailable {
+        return not_connected();
+    }
+    PluginProblem {
+        reason,
+        message,
+        min_version: None,
+        settings: None,
+    }
+}
+
 pub(crate) fn failure_kind(kind: Option<&str>, status: u16) -> PluginFailure {
     match kind {
         Some("unauthenticated" | "cross_site" | "permission_required" | "install_not_allowed") => {
@@ -89,6 +107,7 @@ pub(crate) fn failure_kind(kind: Option<&str>, status: u16) -> PluginFailure {
         Some("unsupported" | "gpu_unavailable") => PluginFailure::Unsupported,
         Some("device_unavailable") => PluginFailure::DeviceUnavailable,
         Some("conflict") => PluginFailure::Conflict,
+        Some("in_use") => PluginFailure::InUse,
         Some("not_ready") => PluginFailure::Upstream,
         Some("invalid_input") => PluginFailure::Invalid,
         Some("lan_unavailable") => PluginFailure::LanUnavailable,

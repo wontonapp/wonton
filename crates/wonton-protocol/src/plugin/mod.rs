@@ -37,8 +37,8 @@ use crate::{CardLine, LanPort, PluginChat, PluginTab};
 pub use capability_deps::{
     BlockedCategory, CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef,
     CapabilityProviderSettings, CapabilitySetting, ConsumerCapabilityChoice,
-    ConsumerCapabilitySetting, InUseError, InstallTogether, MissingCapability, UninstallPreview,
-    UninstallRequest,
+    ConsumerCapabilitySetting, DependencyNextStep, InUseError, InstallProvider, InstallTogether,
+    MissingCapability, SelectedProvider, UninstallOutcome, UninstallPreview, UninstallRequest,
 };
 pub use detail::{PluginDetail, PluginDetailOutcome, PluginDetailRoute};
 pub use forms::{PluginKind, PluginRuntime, PluginScope, SecurityTier, plugin_scope_path};
@@ -604,7 +604,11 @@ pub enum PluginFailure {
     /// 核心不支持：需要的权限、宿主架构、比核心新的规范版本等。
     Unsupported,
     /// 已经装了，或者正在装、正在升级、正在卸载。
+    /// 已经装了，或者正在装、正在升级、正在卸载。
     Conflict,
+    /// 还有在用的插件 `requires` 这个插件提供的能力，又没有别的提供方能接上（ADR-0053）：
+    /// 依赖方在 [`PluginTask::dependents`]，可以一起卸载或先停掉它们。
+    InUse,
     /// 插件包不合法。
     Invalid,
     /// 选择的设备在这台主机上不可用。

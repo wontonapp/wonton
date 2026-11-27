@@ -112,6 +112,11 @@ pub struct InstallPreview {
     pub lan_webui: Option<LanWebuiOffer>,
     /// 升级时已经对这个插件始终允许的 Bot（ADR-0024）：新版本多出来的工具也算在内，主人在确认页可以关。新装时为空。
     pub always_allowed: Vec<BotSwitch>,
+    /// 缺的 `requires` 能力选中的提供方和它们自己的预览（ADR-0053）：确认页单独一节列出名字、来源、
+    /// 权限和密钥，一起装。没有提供方的能力在这里也有一项，`selected` 为空。升级预览里为空：
+    /// [`UpgradeRequest`] 不带这一层。
+    #[serde(default)]
+    pub install_providers: Vec<super::InstallProvider>,
 }
 
 /// `POST /_wonton/api/plugins` 的请求体（JSON）：按来源安装。

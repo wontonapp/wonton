@@ -35,10 +35,14 @@
     <string name="plugin_task_check_installed">Check installed</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
     <string name="plugin_task_uninstall_failed">Uninstall failed: %1$s</string>
-    <!-- Small tag: the app isn't reviewed. -->
+    <!-- Small tag: the app isn’t reviewed. -->
     <string name="plugin_trust_unreviewed">Unreviewed</string>
     <!-- Action-sheet item that uninstalls the app. -->
     <string name="plugin_uninstall_action">Uninstall</string>
     <!-- Highlighted row in the install/upgrade confirmation and on the app's detail page: the app's web page can read and change message content in the room it is opened in. No arguments. -->
     <string name="plugin_widget_high">Its page can read messages in the room you open it in, and send or delete messages as you.</string>
+    <string name="plugin_dependency_start">Start %1$s</string>
+    <string name="plugin_dependency_missing">Nothing provides %1$s; this app works without it.</string>
+    <string name="plugin_capability_follow_default">Use the default</string>
+    <string name="plugin_uninstall_preview_failed">Couldn’t check what still needs it.</string>
 </resources>

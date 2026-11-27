@@ -33,4 +33,8 @@
     <string name="plugin_uninstall_action">解除安裝</string>
     <!-- Highlighted row in the install/upgrade confirmation and on the app's detail page: the app's web page can read and change message content in the room it is opened in. No arguments. -->
     <string name="plugin_widget_high">它的網頁能在你開啟它的房間裡讀到聊天內容，以你的名義傳送、收回訊息。</string>
+    <string name="plugin_dependency_start">啟動「%1$s」</string>
+    <string name="plugin_dependency_missing">沒有提供「%1$s」的插件，這個應用程式少點能力。</string>
+    <string name="plugin_capability_follow_default">跟預設</string>
+    <string name="plugin_uninstall_preview_failed">沒能查清還有誰在用它。</string>
 </resources>

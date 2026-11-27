@@ -20,7 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -66,9 +66,10 @@ fun InstallConfirmScreen(
     var fillingProfile by remember { mutableStateOf(false) }
     var submittedId by remember(confirmation) { mutableStateOf<String?>(null) }
     var previousTask by remember(confirmation) { mutableStateOf<PluginTask?>(null) }
-    val loaded by produceState<Result<InstallPreview>?>(null, confirmation, attempt) {
-        value = null
-        value = try {
+    var loaded by remember(confirmation) { mutableStateOf<Result<InstallPreview>?>(null) }
+    LaunchedEffect(confirmation, attempt) {
+        loaded = null
+        loaded = try {
             Result.success(
                 loadInstallPreview(plugins, confirmation).also { preview -> choices.reset(preview) },
             )
@@ -107,6 +108,7 @@ fun InstallConfirmScreen(
                     onFillProfile = { fillingProfile = true },
                     secrets = secrets,
                     onSecret = { name, value -> secrets = secrets + (name to value) },
+                    onUpdate = { updated -> loaded = Result.success(updated) },
                 )
             }
             preview?.let { current ->
@@ -163,6 +165,7 @@ private fun PreviewResult(
     onFillProfile: () -> Unit,
     secrets: Map<String, String>,
     onSecret: (String, String) -> Unit,
+    onUpdate: (InstallPreview) -> Unit,
 ) {
     when {
         result == null -> LoadingView()
@@ -174,6 +177,7 @@ private fun PreviewResult(
             onFillProfile = onFillProfile,
             secrets = secrets,
             onSecret = onSecret,
+            onUpdate = onUpdate,
         )
     }
 }
@@ -306,34 +310,14 @@ private fun PreviewContent(
     onFillProfile: () -> Unit,
     secrets: Map<String, String>,
     onSecret: (String, String) -> Unit,
+    onUpdate: (InstallPreview) -> Unit,
 ) {
-    val colors = WontonTheme.colors
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            PluginIconImage(preview.icon, WontonTheme.size.previewIcon, plugins)
-            Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-                Text(preview.title, style = WontonTheme.typography.itemTitle, color = colors.textPrimary.toColor())
-                val version = preview.upgradeFrom?.let { "$it → ${preview.version}" } ?: preview.version
-                Text(version, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Tag(preview.trust.label, preview.trust.tint)
-                    // 提供方是核实过的，有它就不写清单里自称的作者；两个都放一行放不下。
-                    (preview.provider ?: preview.author?.name)?.let {
-                        Text(it, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
-                    }
-                }
-            }
-        }
+        PreviewHeader(preview, plugins)
         preview.blocked?.let { WontonNotice(WontonIcon.Blocked, it) }
         preview.missingProfile?.let {
             WontonNotice(WontonIcon.Info, it, isError = false) {
@@ -341,22 +325,68 @@ private fun PreviewContent(
             }
         }
         if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
-        choices.audience?.let { PluginAudienceSection(it, onChange = { changed -> choices.audience = changed }) }
-        InstallPermissionChoices(preview.permissions, choices.enabled, choices::setOptional, preview.widgetCapabilities)
-        deviceChoices(choices.devices, choices.applyTo(preview).permissions)?.let { section ->
-            DeviceChoicesSection(section) { id -> choices.devices = toggleDevice(choices.devices, id) }
+        if (preview.installProviders.isNotEmpty() || preview.missingWants.isNotEmpty()) {
+            InstallProviderSections(preview, plugins, onUpdate)
         }
-        if (preview.secretInputs.isNotEmpty()) {
-            DetailSection(stringResource(R.string.secret_section_title)) {
-                SecretInputsSection(preview.secretInputs, secrets, onChange = onSecret)
+        PreviewInputs(preview, choices, secrets, onSecret)
+        PreviewExtras(preview, plugins, choices)
+    }
+}
+
+@Composable
+private fun PreviewHeader(preview: InstallPreview, plugins: PluginsState) {
+    val colors = WontonTheme.colors
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PluginIconImage(preview.icon, WontonTheme.size.previewIcon, plugins)
+        Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+            Text(preview.title, style = WontonTheme.typography.itemTitle, color = colors.textPrimary.toColor())
+            val version = preview.upgradeFrom?.let { "$it → ${preview.version}" } ?: preview.version
+            Text(version, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Tag(preview.trust.label, preview.trust.tint)
+                // 提供方是核实过的，有它就不写清单里自称的作者；两个都放一行放不下。
+                (preview.provider ?: preview.author?.name)?.let {
+                    Text(it, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
+                }
             }
         }
-        AlwaysAllowed(preview, plugins)
-        preview.lanWebui?.let { LanWebuiToggle(it, choices.lanWebui, enabled = true) { on -> choices.lanWebui = on } }
-        preview.releaseNotes?.let { notes ->
-            DetailSection(stringResource(R.string.install_release_notes)) {
-                Text(notes, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
-            }
+    }
+}
+
+/** 主人的选择：谁能用、权限、设备和密钥。 */
+@Composable
+private fun PreviewInputs(
+    preview: InstallPreview,
+    choices: InstallChoices,
+    secrets: Map<String, String>,
+    onSecret: (String, String) -> Unit,
+) {
+    choices.audience?.let { PluginAudienceSection(it, onChange = { changed -> choices.audience = changed }) }
+    InstallPermissionChoices(preview.permissions, choices.enabled, choices::setOptional, preview.widgetCapabilities)
+    deviceChoices(choices.devices, choices.applyTo(preview).permissions)?.let { section ->
+        DeviceChoicesSection(section) { id -> choices.devices = toggleDevice(choices.devices, id) }
+    }
+    if (preview.secretInputs.isNotEmpty()) {
+        DetailSection(stringResource(R.string.secret_section_title)) {
+            SecretInputsSection(preview.secretInputs, secrets, onChange = onSecret)
+        }
+    }
+}
+
+/** 始终允许的 Bot、局域网开关和更新说明。 */
+@Composable
+private fun PreviewExtras(preview: InstallPreview, plugins: PluginsState, choices: InstallChoices) {
+    AlwaysAllowed(preview, plugins)
+    preview.lanWebui?.let { LanWebuiToggle(it, choices.lanWebui, enabled = true) { on -> choices.lanWebui = on } }
+    preview.releaseNotes?.let { notes ->
+        DetailSection(stringResource(R.string.install_release_notes)) {
+            Text(notes, style = WontonTheme.typography.body, color = WontonTheme.colors.textPrimary.toColor())
         }
     }
 }

@@ -33,4 +33,8 @@
     <string name="plugin_uninstall_action">アンインストール</string>
     <!-- Highlighted row in the install/upgrade confirmation and on the app's detail page: the app's web page can read and change message content in the room it is opened in. No arguments. -->
     <string name="plugin_widget_high">このアプリのページは、開いたルームのメッセージを読み、あなたの名前でメッセージを送信・削除できます。</string>
+    <string name="plugin_dependency_start">「%1$s」を起動</string>
+    <string name="plugin_dependency_missing">「%1$s」の提供元がないため、このアプリは少し機能が減ります。</string>
+    <string name="plugin_capability_follow_default">既定を使う</string>
+    <string name="plugin_uninstall_preview_failed">まだ使っているアプリを確認できませんでした。</string>
 </resources>

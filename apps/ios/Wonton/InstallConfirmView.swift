@@ -76,7 +76,8 @@ struct InstallConfirmView: View {
             }
         case let .success(preview):
             PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled,
-                           devices: $devices, audience: $audience, secrets: $secrets) {
+                           devices: $devices, audience: $audience, secrets: $secrets,
+                           update: { loaded = .success($0) }) {
                 isFillingProfile = true
             }
         }
@@ -101,6 +102,7 @@ struct InstallConfirmView: View {
         guard let preview else { return false }
         return previewInstallAction(preview: preview) != .blocked && preview.missingProfile == nil
             && preview.permissions.allSatisfy(\.supported)
+            && installProvidersReady(preview: preview)
             && !missingRequiredSecret(preview.secretInputs, secrets)
             && deviceChoices(devices: devices, permissions: preview.permissionLines(enabling: enabled))?.ready != false
     }
@@ -144,7 +146,13 @@ struct InstallConfirmView: View {
     }
 
     private func requestConfirmation(_ preview: InstallPreview) {
-        let needsHost = preview.permissions.contains { line in
+        let providerHost = preview.installProviders.contains { section in
+            section.selected?.preview.permissions.contains { line in
+                line.requiresHostConfirmation && (!line.optional || line.enabled)
+                    && (line.optional || line.risk != nil)
+            } == true
+        }
+        let needsHost = providerHost || preview.permissions.contains { line in
             line.requiresHostConfirmation && (!line.optional || enabled.contains(line.permission))
                 && (line.optional || line.risk != nil)
         } || upgradeHighestRisk(
@@ -194,6 +202,7 @@ private struct PreviewContent: View {
     @Binding var devices: [PluginDevice]
     @Binding var audience: PluginAudienceView?
     @Binding var secrets: [String: String]
+    let update: (InstallPreview) -> Void
     let fillProfile: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -211,6 +220,9 @@ private struct PreviewContent: View {
                     }
                 }
                 if !preview.notices.isEmpty { NoticeLines(lines: preview.notices) }
+                if !preview.installProviders.isEmpty || !preview.missingWants.isEmpty {
+                    InstallProviderSections(model: model, preview: preview, update: update)
+                }
                 if let binding = Binding($audience) {
                     PluginAudienceSection(audience: binding)
                 }

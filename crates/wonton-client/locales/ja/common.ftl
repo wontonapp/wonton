@@ -42,12 +42,12 @@ plugins-tasks-uncertain = 接続が切断されたため、自宅サーバーで
 plugins-tasks-server-changed = 自宅サーバーが変わったため、以前のサーバーでの結果は不明です。
 
 plugins-tasks-preview-no-source = このプレビューには提供元がないため、インストールできません。
-# $title は提供元の名前、$capability はそれが提供する不足中の必須機能です。
-plugins-tasks-install-together = { $title }も一緒にインストールします：不足している必須機能{ $capability }はこれが提供します。
+# $id はブロックされたプラグイン、$detail はサーバーの説明です。
+plugins-tasks-dependent-in-use = 「{ $id }」をアンインストールできませんでした：まだ使っているアプリがあります。{ $detail }
 # $capability は不足している必須機能です。
 plugins-tasks-preview-no-provider = 不足している必須機能{ $capability }を提供するプラグインがストアにないため、インストールできません。
-# $title は提供側プラグインの名前。
-plugins-tasks-provider-needs-own-confirm = { $title }には個別の確認が必要な権限があります。先に「{ $title }」だけをインストールしてから、このプラグインをインストールしてください。
+# $provider と $got はプラグイン ID です。
+plugins-capability-wrong-provider = { $provider } の取得元が別のプラグイン（{ $got }）に変わっています。プレビューをやり直してください。
 
 # $id はそのままのタスクIDです。
 plugins-tasks-no-such-task = そのようなタスクはありません：{ $id }

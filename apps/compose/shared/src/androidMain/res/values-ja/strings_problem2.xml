@@ -41,4 +41,6 @@
     <string name="problem_peer_public_access_off_next_step">相手がオンに戻してからもう一度送ってください。メッセージはその後で届きます。</string>
     <!-- Next step when the other server isn't paired: pair it first. -->
     <string name="problem_server_not_paired_next_step">「他のサーバー」でペアリングしてから、チャットを開いてください。</string>
+    <string name="problem_plugin_in_use_title">まだ使っているアプリがあります</string>
+    <string name="problem_plugin_in_use_next_step">使っているアプリを先にアンインストールするか、別の提供元をインストールしてください。</string>
 </resources>

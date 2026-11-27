@@ -14,7 +14,7 @@ use wonton_protocol::{
     MyAvatarProblem, OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel,
     PluginDetail, PluginImage, PluginsViewModel, PrivacyViewModel, RoomTransfers, SecretString,
     ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget,
-    TransfersViewModel,
+    TransfersViewModel, UninstallOutcome,
 };
 
 use crate::app_lock::AppLockLink;
@@ -71,6 +71,8 @@ mod ui_fake_devices;
 mod ui_fake_failed_install;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_family;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_install;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_plugin_detail;
 #[cfg(feature = "ui-fake")]
@@ -437,10 +439,43 @@ impl ClientCore {
     /// 安装前的预览：家里的服务器解析来源、取插件包，给出要主人确认的权限和说明，确认页渲染它。`source` 是
     /// [`StoreItem::source`]，或者主人输入的 `github:<owner>/<repo>[@<tag>]`。
     pub async fn preview_install(&self, source: String) -> Result<InstallPreview, CoreError> {
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return ui_fake_install::preview(&source).ok_or_else(|| CoreError::NotReady {
+                reason: format!("no fake preview for {source}"),
+            });
+        }
         let scope = self.scope();
         let plugins = scope.plugins.clone();
         scope
             .run(async move { plugins.preview_install(source).await })
+            .await
+    }
+
+    /// 给这个插件的一项能力选提供方；`provider` 为空表示跟全局默认走。返回重新取的详情。
+    pub async fn set_plugin_capability(
+        &self,
+        id: String,
+        capability: String,
+        provider: Option<String>,
+    ) -> Result<PluginDetail, CoreError> {
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.set_capability(&id, &capability, provider).await })
+            .await
+    }
+
+    /// 打开卸载面板前问核心：能不能卸、有哪些可以一起卸的提供方，还是被在用的依赖挡住。
+    pub async fn uninstall_preview(&self, id: String) -> Result<UninstallOutcome, CoreError> {
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(ui_fake_install::outcome(&id));
+        }
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.uninstall_preview(&id).await })
             .await
     }
 

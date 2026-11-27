@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import app.wonton.client.PluginInstallAction
 import app.wonton.client.deviceChoices
+import app.wonton.client.installProvidersReady
 import app.wonton.client.previewInstallAction
 import app.wonton.client.upgradeHighestRisk
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,9 +63,7 @@ internal fun ConfirmInstallButton(
     onConfirm: () -> Unit,
 ) {
     var acknowledging by remember(preview.id) { mutableStateOf(false) }
-    val rootPermissions = preview.permissions.filter { line ->
-        line.needsRootConfirmation && (!line.optional || line.enabled)
-    }
+    val rootPermissions = rootPermissions(preview)
     val deviceHighestRisk = upgradeHighestRisk(
         originalDevices,
         preview.devices.orEmpty(),
@@ -75,10 +74,7 @@ internal fun ConfirmInstallButton(
         { if (rootPermissions.isEmpty() && !deviceHighestRisk) onConfirm() else acknowledging = true },
         Modifier.padding(bottom = LocalWontonBottomInset.current)
             .padding(WontonTheme.spacing.pageInset).fillMaxWidth(),
-        enabled = previewInstallAction(preview) != PluginInstallAction.BLOCKED &&
-            preview.missingProfile == null && secretsReady && preview.permissions.all { it.supported } &&
-            // 必选的串口没选时不能确认（ADR-0036）。
-            deviceChoices(preview.devices.orEmpty(), preview.permissions)?.ready != false,
+        enabled = canConfirm(preview, secretsReady),
     )
     if (acknowledging) {
         WontonDialog(
@@ -100,6 +96,23 @@ internal fun ConfirmInstallButton(
         )
     }
 }
+
+/// 一起装的提供方自己的最高级权限也走这一步确认（ADR-0036）。
+private fun rootPermissions(preview: InstallPreview): List<PermissionLine> =
+    preview.permissions.filter { line ->
+        line.needsRootConfirmation && (!line.optional || line.enabled)
+    } + preview.installProviders.flatMap { section ->
+        section.selected?.preview?.permissions.orEmpty().filter { line ->
+            line.needsRootConfirmation && (!line.optional || line.enabled)
+        }
+    }
+
+/// 能点“安装”：没挡、资料齐、密钥和提供方都齐、没有不支持的权限、必选的串口选了。
+private fun canConfirm(preview: InstallPreview, secretsReady: Boolean): Boolean =
+    previewInstallAction(preview) != PluginInstallAction.BLOCKED &&
+        preview.missingProfile == null && secretsReady &&
+        preview.permissions.all { it.supported } && installProvidersReady(preview) &&
+        deviceChoices(preview.devices.orEmpty(), preview.permissions)?.ready != false
 
 /** 主人在确认页上的选择：局域网开关、打开的可选权限、谁能用、选中的设备。随“安装”一起写回预览交给核心。 */
 internal class InstallChoices {

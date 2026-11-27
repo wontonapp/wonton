@@ -86,9 +86,10 @@ pub use pages::bridge::{
 pub use pages::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use pages::media_permission::TabMediaPermission;
 pub use plugin_choices::{
-    PluginInstallAction, detail_install_action, plugin_audience_notice, preview_install_action,
-    selected_plugin_audience, store_install_action,
+    PluginInstallAction, detail_install_action, install_providers_ready, plugin_audience_notice,
+    preview_install_action, selected_plugin_audience, store_install_action,
 };
+pub use plugins::capabilities::dependency_next_step;
 pub use sharing::discover_share_source;
 pub use subscription::{
     AgentChainsSubscription, AgentStopSubscription, AppLockSubscription, AppearanceSubscription,

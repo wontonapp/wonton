@@ -41,4 +41,9 @@
     <!-- Row in the install/upgrade confirmation and on the app's detail page: what the app's web page may do when opened inside a chat room, for the capabilities that never touch message content. No arguments. -->
     <string name="plugin_widget_normal">ルームで開くと、このアプリのページは通話の状態などメッセージを含まない情報を読み書きでき、通話サービスにあなた本人であることを証明できます。</string>
     <string name="plugin_setup_title">はじめて使うとき</string>
+    <string name="plugin_dependency_connect">接続</string>
+    <string name="plugin_dependency_find_in_store">ストアで提供元のアプリを探してください。</string>
+    <string name="plugin_uninstall_in_use">これらのアプリがまだ「%1$s」を使っています</string>
+    <string name="plugin_uninstall_unused_providers">ほかに使っているアプリはありません：</string>
+    <string name="plugin_uninstall_checking">まだ使っているアプリを確認しています…</string>
 </resources>

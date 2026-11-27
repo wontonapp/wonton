@@ -572,6 +572,36 @@
         }
       }
     },
+    "install.optionalCapabilities": {
+      "comment": "Section heading: capabilities the app can use but does not require.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional capabilities"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选能力"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可選能力"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意の機能"
+          }
+        }
+      }
+    },
     "install.permissions": {
       "comment": "Section title above the permissions the app asks for, in the install preview and the detail page.",
       "extractionState": "manual",
@@ -598,6 +628,216 @@
           "stringUnit": {
             "state": "translated",
             "value": "使うもの"
+          }
+        }
+      }
+    },
+    "install.providerConnects": {
+      "comment": "High-privilege line: $consumer is the app being installed, $provider the app installed with it, $capability the capability name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ will be able to use %3$@ through %2$@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 能经 %2$@ 使用 %3$@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 能經 %2$@ 使用 %3$@。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ は %2$@ 経由で %3$@ を使えるようになります。"
+          }
+        }
+      }
+    },
+    "install.providerHighPrivilege": {
+      "comment": "Tag on a provider: connecting it gives the app a lot of the provider's power, so the owner confirms explicitly.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "High privilege"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高权限"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高權限"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高権限"
+          }
+        }
+      }
+    },
+    "install.providerMissing": {
+      "comment": "The required capability has no provider in the store, so the app can't be installed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No app in the store provides it, so it can't be installed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商店里没有提供方的插件，装不上。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商店裡沒有提供方的插件，裝不上。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストアに提供元がなく、インストールできません。"
+          }
+        }
+      }
+    },
+    "install.providerPermissionTitle": {
+      "comment": "Heading over the permissions the app $provider asks for, installed together with this app.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permissions %1$@ asks for"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」要的权限"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」要的權限"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」が求める権限"
+          }
+        }
+      }
+    },
+    "install.providerSecretTitle": {
+      "comment": "Heading over the secrets the app $provider asks for, installed together with this app.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secrets %1$@ asks for"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」要填的密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」要填的金鑰"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」が求めるシークレット"
+          }
+        }
+      }
+    },
+    "install.providerThirdParty": {
+      "comment": "Tag on a capability: it is defined by a third-party, not by the core.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Third-party capability"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第三方能力"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第三方能力"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サードパーティの機能"
+          }
+        }
+      }
+    },
+    "install.providerWrong": {
+      "comment": "$provider is the app title. Its source now resolves to a different plugin.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The source for %1$@ returned a different app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」的来源取回来的是别的插件。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」的來源取回來的是別的插件。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」の取得元は別のプラグインでした。"
           }
         }
       }
@@ -658,6 +898,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "管理者にインストールを依頼"
+          }
+        }
+      }
+    },
+    "install.requiredCapabilities": {
+      "comment": "Section heading on the install confirmation page: required capabilities the app needs that the store must provide.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Required capabilities it needs"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要的必需能力"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要的必要能力"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必要な必須機能"
+          }
+        }
+      }
+    },
+    "install.wantsMissing": {
+      "comment": "$capability is an optional capability with no provider. The app still installs.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing provides %1$@; the app installs without it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有提供「%1$@」的插件，照装但少点能力。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有提供「%1$@」的插件，照裝但少點能力。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」の提供元がないため、少し機能が減った状態でインストールします。"
           }
         }
       }
