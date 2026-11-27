@@ -16,6 +16,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import app.wonton.protocol.AgentRunChoice
 import app.wonton.protocol.AgentRunState
+import app.wonton.protocol.AgentToolCall
+import app.wonton.protocol.AgentToolKind
+import app.wonton.protocol.AgentToolStatus
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChoiceSend
 import app.wonton.protocol.FontStyle
@@ -36,7 +39,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * 夜跑界面测试（ADR-0082）：working 显示工作标记和步骤、一轮收成一行“N 步”，waiting 整行可点开卡片。
+ * 夜跑界面测试（ADR-0082）：working 显示工作标记和步骤、一轮收成一行“N 步”，waiting 整行可点开卡片；
+ * 调过的工具默认收起，点“N 步”才露出清单（ADR-0128）。
  * 时间线要登录后的房间才有（核心假数据只够首屏），所以直接渲染真组件，数据用核心类型构造。
  */
 @RunWith(AndroidJUnit4::class)
@@ -112,6 +116,31 @@ class AgentRunRowTest {
     }
 
     @Test
+    fun theToolTraceStaysFoldedUntilTheStepsLineIsTapped() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val trace = listOf(
+            AgentToolCall("c1", AgentToolKind.Read, "read_file: notes.md", AgentToolStatus.Completed),
+            AgentToolCall("c2", AgentToolKind.Execute, "terminal: ls -la", AgentToolStatus.Failed),
+        )
+        compose.setContent {
+            WontonTheme(previewAppearance()) {
+                AgentRunRowView(
+                    fixture(AgentRunState.Working, step = "Running a command", steps = 2u, trace = trace),
+                    {},
+                    {},
+                )
+            }
+        }
+        compose.onNodeWithText("terminal: ls -la").assertDoesNotExist()
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.agent_run_steps, 2, 2)).performClick()
+        compose.onNodeWithTag("agentRunTrace").assertExists()
+        compose.onNodeWithText("read_file: notes.md").assertExists()
+        compose.onNodeWithText("terminal: ls -la").assertExists()
+        compose.onNodeWithTag("agentRunSteps").performClick()
+        compose.onNodeWithTag("agentRunTrace").assertDoesNotExist()
+    }
+
+    @Test
     fun askingChipsWrapIntoEqualPairs() {
         val choices = listOf("Allow once", "Allow for this session", "Deny").mapIndexed { index, label ->
             AgentRunChoice(
@@ -149,6 +178,7 @@ class AgentRunRowTest {
         cardId: String? = null,
         timestampMs: ULong = 0uL,
         choices: List<AgentRunChoice> = emptyList(),
+        trace: List<AgentToolCall> = emptyList(),
     ) = TimelineContent.AgentRun(
         run = null,
         state = state,
@@ -163,6 +193,7 @@ class AgentRunRowTest {
         senderName = "Echo",
         timestampMs = timestampMs,
         unreadAnchor = false,
+        trace = trace,
     )
 
     private fun waiting() = fixture(AgentRunState.Waiting, cardId = "card-1")

@@ -1,6 +1,6 @@
 //! Agent 一轮任务的进度（ADR-0082）：Bot 发的状态消息在时间线里是一条随编辑推进的 AgentRun；只对 Bot 账号
 //! 解读；Bot 离线时显示成不确定；waiting 时带上这个 Bot 在这个房间等回答的卡片（从「等你确认」列表来，
-//! ADR-0016，不在时间线里）；Bot 自己发的 `choices` 以反应回答。
+//! ADR-0016，不在时间线里）；Bot 自己发的 `choices` 以反应回答；状态消息旁的工具调用清单跟着编辑走（ADR-0128）。
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -11,7 +11,8 @@ use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, Membership, RelationType};
 use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{
-    AgentRunChoice, AgentRunState, BotActivityFacts, ChoiceSend, TimelineAction, TimelineTarget,
+    AgentRunChoice, AgentRunState, AgentToolCall, AgentToolKind, AgentToolStatus, BotActivityFacts,
+    ChoiceSend, TimelineAction, TimelineTarget,
 };
 
 use super::confirmation::{in_ten_minutes, joined_direct_chat, send};
@@ -516,4 +517,115 @@ async fn choices_answer_with_a_reaction_only_when_tapped() {
     tokio::time::timeout(super::support::WAIT, waiting)
         .await
         .expect("反应发出来了");
+}
+
+/// 带工具调用清单的状态消息（ADR-0128）：`calls` 是 `(id, kind, title, status)`。
+fn traced(state: &str, extra: Value, calls: &[(&str, &str, &str, &str)]) -> Value {
+    let mut content = status(state, extra);
+    content["app.wonton.trace"] = json!({
+        "v": 1,
+        "calls": calls
+            .iter()
+            .map(|(id, kind, title, status)| {
+                json!({"id": id, "kind": kind, "title": title, "status": status})
+            })
+            .collect::<Vec<_>>(),
+    });
+    content
+}
+
+async fn edit_raw(room: &ChatRoom, event: &str, new_content: Value) {
+    let mut edit = new_content.clone();
+    edit["m.new_content"] = new_content;
+    edit["m.relates_to"] = json!({"rel_type": "m.replace", "event_id": event});
+    send(room, edit).await;
+}
+
+fn call(id: &str, kind: AgentToolKind, title: &str, status: AgentToolStatus) -> AgentToolCall {
+    AgentToolCall {
+        id: id.into(),
+        kind,
+        title: title.into(),
+        status,
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn the_tool_trace_follows_edits_and_a_call_left_running_turns_uncertain() {
+    let mut setup = setup().await;
+    let (timeline, bot_room) = (&mut setup.timeline, &setup.bot_room);
+
+    let event = bot_room
+        .send_raw_message(traced(
+            "working",
+            json!({"step": "读文件", "steps": 1}),
+            &[("c1", "read", "read_file: notes.md", "in_progress")],
+        ))
+        .await
+        .expect("Bot 发状态消息");
+    let running = timeline
+        .until("清单里有一项在跑", |item| match &item.content {
+            TimelineContent::AgentRun { trace, .. } if !trace.is_empty() => Some(trace.clone()),
+            _ => None,
+        })
+        .await;
+    assert_eq!(
+        running,
+        vec![call(
+            "c1",
+            AgentToolKind::Read,
+            "read_file: notes.md",
+            AgentToolStatus::InProgress
+        )]
+    );
+
+    // 结束时第一项完成、第二项失败、第三项 Bot 没来得及更新：一轮已经结束，没人会再改它，核心显示成不确定。
+    edit_raw(
+        bot_room,
+        event.as_str(),
+        traced(
+            "done",
+            json!({"steps": 3}),
+            &[
+                ("c1", "read", "read_file: notes.md", "completed"),
+                ("c2", "execute", "terminal: ls", "failed"),
+                ("c3", "fetch", "web_search: 天气", "in_progress"),
+            ],
+        ),
+    )
+    .await;
+    let done = timeline
+        .until("清单跟着编辑到完成", |item| match &item.content {
+            TimelineContent::AgentRun { state, trace, .. }
+                if *state == AgentRunState::Done && trace.len() == 3 =>
+            {
+                Some(trace.clone())
+            }
+            _ => None,
+        })
+        .await;
+    assert_eq!(
+        done,
+        vec![
+            call(
+                "c1",
+                AgentToolKind::Read,
+                "read_file: notes.md",
+                AgentToolStatus::Completed
+            ),
+            call(
+                "c2",
+                AgentToolKind::Execute,
+                "terminal: ls",
+                AgentToolStatus::Failed
+            ),
+            call(
+                "c3",
+                AgentToolKind::Fetch,
+                "web_search: 天气",
+                AgentToolStatus::Uncertain
+            ),
+        ]
+    );
 }

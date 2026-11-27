@@ -19,7 +19,8 @@ enum AgentRunFixtures {
             ("cancelled", cancelled),
             ("uncertain", uncertain),
             ("offline", offline),
-            ("other", other)
+            ("other", other),
+            ("working (trace)", workingWithTrace)
         ]
     }
 
@@ -34,7 +35,8 @@ enum AgentRunFixtures {
         cardId: String? = nil,
         choices: [AgentRunChoice] = [],
         senderName: String = "",
-        timestampMs: UInt64 = 0
+        timestampMs: UInt64 = 0,
+        trace: [AgentToolCall] = []
     ) -> AnyView {
         AnyView(AgentRunRow(
             state: state,
@@ -49,6 +51,7 @@ enum AgentRunFixtures {
             senderName: senderName,
             // 0 = 不带发送时间：已等待那行不显示，参考图不吃真实时钟。
             timestampMs: timestampMs,
+            trace: trace,
             openCard: { _ in },
             answerChoice: { _ in }
         ))
@@ -88,5 +91,18 @@ enum AgentRunFixtures {
     static var other: AnyView {
         row(state: .other("new-state"), body: "Runner restarted, this run is inconclusive")
     }
+    static var workingWithTrace: AnyView {
+        row(state: .working, step: "Running a command", steps: 2, trace: [
+            .sample("c1", .read, "read_file: notes.md", .completed),
+            .sample("c2", .execute, "terminal: ls -la", .inProgress)
+        ])
+    }
 }
 #endif
+
+extension AgentToolCall {
+    /// 样例里 Bot 写的原话：App 原样显示，不是界面文字，不进字符串目录。
+    static func sample(_ id: String, _ kind: AgentToolKind, _ said: String, _ status: AgentToolStatus) -> AgentToolCall {
+        AgentToolCall(id: id, kind: kind, title: said, status: status)
+    }
+}

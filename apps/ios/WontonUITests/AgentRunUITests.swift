@@ -1,6 +1,7 @@
 import XCTest
 
-/// Agent 运行状态行（ADR-0082）的夜跑走屏：working 转圈加步骤、一轮收成完成、waiting 整行点开卡片。
+/// Agent 运行状态行（ADR-0082）的夜跑走屏：working 转圈加步骤、一轮收成完成、waiting 整行点开卡片；
+/// 调过的工具默认收起，点“N 步”才露出清单（ADR-0128）。
 /// 不需要后端：启动参数进夹具屏（`AgentRunPreview`，同 QualityPreviews 的做法），时间线要登录后的房间才有。
 final class AgentRunUITests: XCTestCase {
     func testWorkingToDoneAndWaitingOpensCard() throws {
@@ -40,5 +41,24 @@ final class AgentRunUITests: XCTestCase {
         shot.name = "agent-run-preview"
         shot.lifetime = .keepAlways
         add(shot)
+    }
+
+    func testTheToolTraceStaysFoldedUntilTheStepsLineIsTapped() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "wonton-agent-run-preview"]
+        UITestBackend.launch(app)
+
+        // 夹具屏里只有带清单的那一行能点“N 步”。
+        let steps = app.buttons["agentRun-steps"]
+        XCTAssertTrue(steps.waitForExistence(timeout: 10), "带清单的状态行没有“N 步”\n\(app.debugDescription)")
+        XCTAssertFalse(app.staticTexts["terminal: ls -la"].exists, "清单应该默认收起")
+        steps.tap()
+        XCTAssertTrue(app.staticTexts["terminal: ls -la"].waitForExistence(timeout: 5), "点了“N 步”没有露出清单")
+        XCTAssertTrue(app.staticTexts["read_file: notes.md"].exists)
+        steps.tap()
+        let folded = expectation(
+            for: NSPredicate(format: "exists == false"), evaluatedWith: app.staticTexts["terminal: ls -la"])
+        wait(for: [folded], timeout: 5)
     }
 }

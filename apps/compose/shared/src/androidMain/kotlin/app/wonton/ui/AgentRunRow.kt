@@ -24,11 +24,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
@@ -56,6 +54,7 @@ import app.wonton.ui.icons.WontonIcon
  * `step`、`result`、`body`、choice 的 `label` 是 Bot 自己写的文字，原样显示，不翻译、不拼句；
  * 不认识的 `state` 落到通用样子，按 `body` 显示。
  * 做完了的一轮只留一行小的步骤摘要，点开是 Bot 自己的总结；没有步数也没有总结的不占地方（[isBlank]）。
+ * 调过的工具（ADR-0128）默认收起：状态行下面的“N 步”点开才露出清单，做完的一轮清单和总结一起出。
  */
 @Composable
 fun AgentRunRowView(
@@ -66,11 +65,21 @@ fun AgentRunRowView(
 ) {
     // 减弱动态效果是进程级监听（ADR-0044），这里补一次注册，取到的是实时值。
     AvatarEnvironment.observeSystem(LocalContext.current)
+    var expanded by remember { mutableStateOf(false) }
+    val toggle = { expanded = !expanded }
     Column(
         modifier.fillMaxWidth().padding(end = WontonTheme.spacing.s48),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
     ) {
-        if (run.state == AgentRunState.Done) DoneSummary(run) else StatusLine(run, onOpenCard)
+        if (run.state == AgentRunState.Done) {
+            DoneSummary(run, expanded, toggle)
+        } else {
+            StatusLine(run, onOpenCard)
+            if (run.state !is AgentRunState.Other && run.trace.isNotEmpty()) {
+                AgentRunSteps(run.steps?.toInt() ?: run.trace.size, expandable = true, expanded, toggle)
+                if (expanded) AgentRunTrace(run.trace)
+            }
+        }
         if (run.state == AgentRunState.Working && run.progress != null) {
             LinearProgressIndicator(
                 progress = { run.progress },
@@ -88,52 +97,22 @@ fun AgentRunRowView(
 val TimelineContent.AgentRun.isBlank: Boolean
     get() = state == AgentRunState.Done && (steps ?: 0u) == 0u && result.isNullOrEmpty() && choices.isEmpty()
 
-/** 展开时尖角朝下：转四分之一圈。 */
-private const val EXPANDED_TURN = 90f
-
 /** 已等待的分钟数多久刷新一次；分钟粒度，半分钟内跟上就行。 */
 private const val WAITED_TICK_MS = 30_000L
 
 private const val MINUTE_MS = 60_000L
 
-/** 做完的一轮：一行“N 步”，有总结时能点开；没有步数只有总结时直接写总结。 */
+/** 做完的一轮：一行“N 步”，有清单或总结时能点开；没有步数只有总结时直接写总结。 */
 @Composable
-private fun DoneSummary(run: TimelineContent.AgentRun) {
-    val ink = WontonTheme.colors.textSecondary.toColor()
-    val style = WontonTheme.typography.caption
+private fun DoneSummary(run: TimelineContent.AgentRun, expanded: Boolean, onToggle: () -> Unit) {
     val total = run.steps?.toInt() ?: 0
     val result = run.result.orEmpty()
-    var showsResult by remember { mutableStateOf(false) }
     if (total > 0) {
-        Row(
-            Modifier
-                .then(
-                    if (result.isEmpty()) {
-                        Modifier
-                    } else {
-                        Modifier
-                            .testTag("agentRunSteps")
-                            .clickable(role = Role.Button) { showsResult = !showsResult }
-                            .heightIn(min = WontonTheme.size.chip)
-                    },
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
-        ) {
-            Text(pluralStringResource(R.plurals.agent_run_steps, total, total), style = style, color = ink)
-            if (result.isNotEmpty()) {
-                // 装饰：整行可点，尖角只表示能展开。
-                Icon(
-                    WontonIcon.Forward,
-                    null,
-                    Modifier.size(WontonTheme.size.iconTiny).rotate(if (showsResult) EXPANDED_TURN else 0f),
-                    tint = ink,
-                )
-            }
-        }
+        AgentRunSteps(total, expandable = result.isNotEmpty() || run.trace.isNotEmpty(), expanded, onToggle)
+        if (expanded) AgentRunTrace(run.trace)
     }
-    if (result.isNotEmpty() && (showsResult || total == 0)) {
-        Text(result, style = style, color = ink)
+    if (result.isNotEmpty() && (expanded || total == 0)) {
+        Text(result, style = WontonTheme.typography.caption, color = WontonTheme.colors.textSecondary.toColor())
     }
 }
 

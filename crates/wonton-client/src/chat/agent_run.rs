@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use wonton_matrix::{AgentRunStatus, ChatRoom};
 use wonton_protocol::{
-    AgentRunState, BotActivity, ChatViewModel, ConfirmationRequester, ConfirmationState,
-    ConfirmationView, CoreError, TimelineContent,
+    AgentRunState, AgentToolCall, AgentToolStatus, BotActivity, ChatViewModel,
+    ConfirmationRequester, ConfirmationState, ConfirmationView, CoreError, TimelineContent,
 };
 
 use super::side_chat::{SideChatsView, Support};
@@ -102,10 +102,11 @@ impl BotsView {
         sender_name: &str,
         timestamp_ms: u64,
     ) -> TimelineContent {
+        let state = self.visible(sender, &status.state);
         TimelineContent::AgentRun {
             run: status.run.clone(),
-            trace: Vec::new(),
-            state: self.visible(sender, &status.state),
+            trace: trace(&status.trace, &state),
+            state,
             step: status.step.clone(),
             steps: status.steps,
             progress: status.progress,
@@ -121,6 +122,22 @@ impl BotsView {
             unread_anchor: false,
         }
     }
+}
+
+/// 工具调用清单（ADR-0128 第 4 节）：这一轮还在干活、在等人时原样；已经结束或显示成不确定时，还标着进行中的项
+/// 没人会再更新了，改成不确定，壳不再转圈。
+fn trace(calls: &[AgentToolCall], state: &AgentRunState) -> Vec<AgentToolCall> {
+    let live = matches!(state, AgentRunState::Working | AgentRunState::Waiting);
+    calls
+        .iter()
+        .map(|call| match call.status {
+            AgentToolStatus::InProgress if !live => AgentToolCall {
+                status: AgentToolStatus::Uncertain,
+                ..call.clone()
+            },
+            _ => call.clone(),
+        })
+        .collect()
 }
 
 /// 这个房间里每个 Bot 等回答的卡片：房间的确认卡片按发起者归组，多张时取最早到期的。

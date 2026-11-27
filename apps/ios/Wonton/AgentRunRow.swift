@@ -4,6 +4,7 @@ import WontonClient
 /// 时间线里 Agent 一轮运行状态的那一行（ADR-0082）：真的在干活才转圈，要人管的醒目，
 /// 打断了和结果不确定不用失败的红。减弱动态效果时不转圈。
 /// 做完了的一轮只留一行小的步骤摘要，点开是 Bot 自己的总结；没有步数也没有总结的不占地方（`isBlank`）。
+/// 调过的工具（ADR-0128）默认收起：状态行下面的“N 步”点开才露出清单，做完的一轮清单和总结一起出。
 /// 字段就是核心 `TimelineContent.AgentRun` 的字段，用的也是核心的 `AgentRunState`、`AgentRunEnd`
 /// 和选项类型；`step`、`result`、`body`、choice 的 `label` 是 Bot 自己写的文字，原样显示，
 /// 不翻译、不拼句；不认识的 `state` 落到通用样子，按 `body` 显示。
@@ -29,11 +30,13 @@ struct AgentRunRow: View {
     let senderName: String
     /// 这条状态消息自己的发送时间（Unix 毫秒，编辑不改它）；working 行从它算已经等了多久。
     let timestampMs: UInt64
+    /// 这一轮调过的工具，`title` 是 Bot 写的说明。
+    var trace: [AgentToolCall] = []
     /// 点开这张等回答的确认卡片（waiting 且有卡片 ID 时才有）。
     let openCard: (String) -> Void
     /// 对 Bot 自己的提问以主人的身份发反应作答（choices 的 key）。
     let answerChoice: (String) -> Void
-    @State private var showsResult = false
+    @State private var expanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.wontonColors) private var colors
 
@@ -48,6 +51,12 @@ struct AgentRunRow: View {
                 summary
             } else {
                 status
+                if !isOther, !trace.isEmpty {
+                    AgentRunSteps(total: Int(steps ?? UInt32(trace.count)), expandable: true, expanded: $expanded)
+                    if expanded {
+                        AgentRunTrace(calls: trace)
+                    }
+                }
             }
             if state == .working, let progress {
                 ProgressView(value: Double(progress))
@@ -66,34 +75,17 @@ struct AgentRunRow: View {
         .accessibilityIdentifier(identifier)
     }
 
-    /// 做完的一轮：一行“N 步”，有总结时能点开；没有步数只有总结时直接写总结。
+    /// 做完的一轮：一行“N 步”，有清单或总结时能点开；没有步数只有总结时直接写总结。
     @ViewBuilder private var summary: some View {
         let total = Int(steps ?? 0)
         let result = result ?? ""
         if total > 0 {
-            let line = HStack(spacing: WontonTheme.spacing.s4) {
-                Text(.AgentRun.agentRunSteps(total))
+            AgentRunSteps(total: total, expandable: !result.isEmpty || !trace.isEmpty, expanded: $expanded)
+            if expanded {
+                if !trace.isEmpty {
+                    AgentRunTrace(calls: trace)
+                }
                 if !result.isEmpty {
-                    WontonIcon.forward.view(size: WontonTheme.size.iconTiny)
-                        .rotationEffect(.degrees(showsResult ? 90 : 0))
-                        .accessibilityHidden(true)
-                }
-            }
-            .wontonText(WontonTheme.typography.caption)
-            .foregroundStyle(Color(colors.textSecondary))
-            if result.isEmpty {
-                line
-            } else {
-                Button {
-                    withAnimation(reduceMotion ? nil : .easeOut(duration: WontonTheme.motion.reduced)) {
-                        showsResult.toggle()
-                    }
-                } label: {
-                    line.frame(minHeight: WontonTheme.size.chip).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("agentRun-steps")
-                if showsResult {
                     resultText(result)
                 }
             }

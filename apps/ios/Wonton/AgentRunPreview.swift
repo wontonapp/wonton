@@ -6,7 +6,7 @@ import WontonClient
 /// `wonton-agent-run-preview` 时生效（同 `QualityPreviews` 的做法）。
 /// 时间线要登录后的房间才有（核心假数据只够首屏），这里核对行本身的显示和“点开卡片”的接线；
 /// 一轮从 working 到 done 用按钮推进，waiting 行点了记下开卡片这件事；
-/// 一串长选项核对多出来的换到下一排（ADR-0109 的选项排法）。
+/// 一串长选项核对多出来的换到下一排（ADR-0109 的选项排法）；带工具清单的一行核对清单默认收起、点“N 步”展开（ADR-0128）。
 enum AgentRunPreview {
     static var active: Bool {
         ProcessInfo.processInfo.arguments.contains("wonton-agent-run-preview")
@@ -97,6 +97,25 @@ private struct AgentRunPreviewScreen: View {
                 timestampMs: 0,
                 openCard: { _ in },
                 answerChoice: { answered = $0 }
+            )
+            AgentRunRow(
+                state: .working,
+                step: "Running a command",
+                steps: 2,
+                progress: nil,
+                result: nil,
+                end: nil,
+                bodyText: "",
+                cardId: nil,
+                choices: [],
+                senderName: "Hermes",
+                timestampMs: 0,
+                trace: [
+                    .sample("c1", .read, "read_file: notes.md", .completed),
+                    .sample("c2", .execute, "terminal: ls -la", .failed)
+                ],
+                openCard: { _ in },
+                answerChoice: { _ in }
             )
             if let answered {
                 Text(verbatim: "answered \(answered)")

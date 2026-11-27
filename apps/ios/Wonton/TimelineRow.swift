@@ -55,7 +55,7 @@ struct TimelineRow: View {
             note(Text(text))
         case let .agentRun(
             _, state, step, steps, progress, result, end, body, cardId, choices, senderName, timestampMs,
-            _, _):
+            _, trace):
             AgentRunRow(
                 state: state,
                 step: step,
@@ -68,6 +68,7 @@ struct TimelineRow: View {
                 choices: choices,
                 senderName: senderName,
                 timestampMs: timestampMs,
+                trace: trace,
                 openCard: openCard,
                 answerChoice: answerChoice
             )

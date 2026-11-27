@@ -226,6 +226,7 @@ mod tests {
                 result: None,
                 end: None,
                 choices: Vec::new(),
+                trace: Vec::new(),
             });
         }
         entry
