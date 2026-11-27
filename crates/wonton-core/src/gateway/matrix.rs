@@ -422,12 +422,12 @@ pub(crate) fn matrix_error(
     response
 }
 
-/// 网关拒绝的响应（ADR-0045 的“网关管房间规则”）：403 `M_FORBIDDEN`，[`GATEWAY_REFUSAL_HEADER`] 写明原因，
-/// SDK 拿到 403 不会重试。
+/// 网关拒绝的响应（ADR-0045 的“网关管房间规则”）：403，`errcode` 写明 [`GatewayRefusal`]（`x-wonton-error` 照旧），
+/// SDK 拿到 403 不会重试。`errcode` 用自定义码是因为 Matrix SDK 读不到响应头，只能靠 `errcode` 认类别。
 pub(super) fn refusal(refusal: GatewayRefusal, message: &str) -> Response {
     let mut response = (
         StatusCode::FORBIDDEN,
-        Json(json!({"errcode": "M_FORBIDDEN", "error": message})),
+        Json(json!({"errcode": refusal.errcode(), "error": message})),
     )
         .into_response();
     response.headers_mut().insert(
