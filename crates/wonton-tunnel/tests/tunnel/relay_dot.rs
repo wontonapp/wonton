@@ -213,7 +213,7 @@ async fn a_code_with_a_dotted_relay_url_pairs_over_a_ca_verified_relay() {
     let dotted = format!("https://relay.test.:{port}/");
     let code = PairingCode {
         server_id: server_endpoint.id(),
-        relays: vec![Relay {
+        relays: vec![RelayView {
             url: dotted.parse().unwrap(),
             token: None,
             quic_port: None,

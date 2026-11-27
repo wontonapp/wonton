@@ -13,8 +13,8 @@ fn relay(text: &str, tier: u8) -> RelayView {
     }
 }
 
-fn table_of(relays: Vec<Relay>) -> RelayTable {
-    RelayTable::from_relays(relays)
+fn table_of(relays: Vec<RelayView>) -> RelayTable {
+    RelayTable::from_views(relays)
 }
 
 #[test]
@@ -148,8 +148,8 @@ fn every_entry_point_yields_the_same_relay_for_both_spellings() {
     assert_eq!(table.tier(1)[0].url, url("https://a.example/"));
     assert_eq!(table.tier(1)[0].token.as_ref().unwrap().expose(), "tok");
     // 从连接信息或配对码组表也一样。
-    let table = RelayTable::from_relays(vec![relay("https://a.example./", 0)]);
-    assert_eq!(table.tier(0), [relay("https://a.example/", 0)]);
+    let table = RelayTable::from_views(vec![relay("https://a.example./", 0)]);
+    assert_eq!(table.views(), [relay("https://a.example/", 0)]);
     // iroh 的默认 n0 表里也没有带尾点的写法。
     assert!(
         RelayTable::builtin_n0().relays().iter().all(|relay| !relay

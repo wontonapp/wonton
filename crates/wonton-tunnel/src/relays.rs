@@ -55,7 +55,7 @@ pub struct Relay {
 impl Relay {
     /// iroh 认识的中继配置。自建中继按 ADR-0048 的部署约定开 QUIC 地址发现（UDP 7842），和 iroh
     /// 对 n0 中继的默认一样。
-    fn relay_config(&self) -> RelayConfig {
+    pub fn relay_config(&self) -> RelayConfig {
         let mut config = RelayConfig::from(self.url.clone());
         if let Some(token) = &self.token {
             config = config.with_auth_token(token.expose());
