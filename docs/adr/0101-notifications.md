@@ -29,7 +29,7 @@
   和表单字段（`secret_inputs` :51-57、`settings` :54）；推送结构里还没有 choices，由下面决策 1 补上。
 - **未读数已经有了**：`RoomInfo::unread_count` 来自 Matrix 的 `room.num_unread_messages()`
   （`crates/wonton-matrix/src/rooms.rs:594`，字段声明 :113），进 `RoomRow.unread_count`
-  （`crates/wonton-protocol/src/chat.rs:323`）。已读由打开房间时发回执清（`crates/wonton-matrix/src/chat_room/timeline.rs:244`，
+  （`crates/wonton-protocol/src/chat/rooms.rs:55`）。已读由打开房间时发回执清（`crates/wonton-matrix/src/chat_room/timeline.rs:244`，
   调用方 `crates/wonton-client/src/chat/ops.rs:16`）。没有总计，也没有任何地方把它交给系统角标。
 - **Agent 进度已经有了**：`AgentRunState` 的 `Working`/`Waiting`/`Done`/`Failed`/`Uncertain`
   （`crates/wonton-protocol/src/agent_run.rs:12-22`，MSC4564 四值 + 客户端合成的 `Uncertain`，ADR-0082 第 4 节），
