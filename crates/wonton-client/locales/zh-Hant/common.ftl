@@ -156,3 +156,6 @@ app-lock-corrupt = App 鎖設定檔 { $path } 已損壞：{ $reason }
 pages-storage-problem = 我的應用存不下，下次啟動可能恢復舊狀態：{ $error }
 # 僅給主人查看產生的外掛金鑰；使用者填寫和外掛收集的金鑰絕不返回。
 plugins-owner-secret-not-listed = 這項金鑰不在已展開的清單中：{ $name }
+
+# 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
+models-invalid-action = 不是能在這一頁做的操作。

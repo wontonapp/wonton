@@ -156,3 +156,6 @@ app-lock-corrupt = App 锁设置文件 { $path } 坏了：{ $reason }
 pages-storage-problem = 我的应用存不下，下次启动可能恢复旧状态：{ $error }
 # 只给主人查看生成的插件密钥；用户填写和插件收集的密钥绝不返回。
 plugins-owner-secret-not-listed = 这项密钥不在已展开的列表里：{ $name }
+
+# 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
+models-invalid-action = 不是能在这一页做的操作。

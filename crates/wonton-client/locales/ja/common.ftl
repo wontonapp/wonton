@@ -157,3 +157,6 @@ app-lock-corrupt = App ロックの設定ファイル{ $path }が壊れていま
 pages-storage-problem = マイアプリを保存できませんでした。次回起動時に前の状態に戻るかもしれません：{ $error }
 # Owner-only generated plugin keys; input and collected secrets are never returned.
 plugins-owner-secret-not-listed = 開いている一覧にこのキーはありません：{ $name }
+
+# 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
+models-invalid-action = このページではできない操作です。
