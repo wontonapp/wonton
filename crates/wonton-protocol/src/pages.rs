@@ -60,10 +60,10 @@ pub enum TabRef {
         page: Option<String>,
     },
     /// 插件网站里的某一页：网页入口下的路径（含查询和 `#` 后面的部分），只认同一个插件网站。
-    /// 从正在看的页面加进我的应用或面板的（[`PageAction::PinCurrentPage`](crate::PageAction::PinCurrentPage)），
+    /// 从正在看的页面加进我的应用的（[`PageAction::AddMyAppUrl`](crate::PageAction::AddMyAppUrl)），
     /// 或者编辑器里给插件填的路径。
     PluginPath { plugin_id: String, path: String },
-    /// 独立 Bot 网页。选择、我的应用、面板、桥及媒体操作都保留这个身份，不借用插件默认页。
+    /// 独立 Bot 网页。选择、我的应用、桥及媒体操作都保留这个身份，不借用插件默认页。
     /// URL 来自同一 BotRef 的 BotView.web；没有已核实的 Ready 时不能用插件 web_url 代替。
     Bot {
         bot: crate::BotRef,

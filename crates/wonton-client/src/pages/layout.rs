@@ -34,7 +34,7 @@ pub(super) struct LayoutReadError {
 }
 
 impl LayoutFile {
-    /// 账号数据里的一份：我的应用、主面板和底栏。本机文件里多出来的缓存（页面标题图标）不进账号数据。
+    /// 账号数据里的一份：我的应用和底栏。本机文件里多出来的缓存（页面标题图标）不进账号数据。
     pub(super) fn layout(&self) -> LayoutSettings {
         LayoutSettings {
             my_apps: self

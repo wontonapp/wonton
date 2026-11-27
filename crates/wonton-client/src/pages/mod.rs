@@ -74,7 +74,7 @@ struct PagesState {
     tab: BarEntry,
     /// 刚才加项因为满了被拒；下一次加成功时清掉。
     bar_full: bool,
-    /// 加载失败和重载计数都按页面实例记：同一页面在栈里和面板里是两份（ADR-0052）。
+    /// 加载失败和重载计数都按页面实例记：同一页面在栈里有两份（ADR-0052）。
     failures: HashMap<PlacedTab, (TabLoadFailure, Option<u16>)>,
     reloads: HashMap<PlacedTab, u64>,
     uninstalled: Vec<String>,

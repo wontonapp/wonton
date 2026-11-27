@@ -44,7 +44,7 @@ fn metadata(row: &SharedAppRow) -> StoredPage {
     }
 }
 
-/// 面板候选里的分享页：来源就绪、页面没问题的那些。
+/// 可以分享的插件页：来源就绪、页面没问题的那些。
 pub(super) fn candidates(
     plugins: &PluginsViewModel,
 ) -> impl Iterator<Item = wonton_protocol::TabCandidate> + '_ {

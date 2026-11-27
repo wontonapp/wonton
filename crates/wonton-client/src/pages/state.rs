@@ -44,7 +44,7 @@ fn default_bar_view() -> BarViewModel {
         full: false,
     }
 }
-/// 每次刷新：换服务器、卸载、元数据、栈里失效的页面和面板的选择。
+/// 每次刷新：换服务器、卸载、元数据、栈里失效的页面。
 pub(super) fn refresh_state(
     state: &mut PagesState,
     plugins: &PluginsViewModel,
