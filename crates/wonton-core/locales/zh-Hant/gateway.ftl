@@ -192,6 +192,13 @@ clients-gate-public-list-not-cleared = 公網憑證清單沒清空
 clients-gate-entry-not-reloaded = 入口沒有重讀設定：{ $error }
 clients-gate-connector-mismatch = 連接器容器和開關不一致
 clients-gate-public-list-mismatch = 公網憑證清單和開關不一致
+clients-domain-terms-required = 先勾選 Let's Encrypt 的訂戶協議
+clients-domain-external-certificate = 這家裝的是自己的憑證（WONTON_ENTRY_CERTIFICATE=external），核心不簽發
+clients-domain-fixed-suffix = 伺服器名稱已經定了，只能換服務商和憑據
+clients-domain-suffix-required = 填一個網域
+clients-domain-suffix-invalid = 用小寫的 ASCII 網域，不帶萬用字元和連接埠
+clients-domain-suffix-ip = 填網域，不是 IP 位址
+clients-domain-credentials-required = 首次設定或更換服務商時要一起填這個服務商的憑據
 gateway-chains-disabled = 家裡的伺服器沒有啟用呼叫鏈帳本
 
 # agent_acp 的轉發（ADR-0061 第 5 塊）：建連時的拒絕和逐幀轉發裡的錯誤，按類別回給使用方。

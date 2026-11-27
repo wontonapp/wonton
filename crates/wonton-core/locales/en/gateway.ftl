@@ -192,6 +192,13 @@ clients-gate-public-list-not-cleared = The public certificate list wasn't cleare
 clients-gate-entry-not-reloaded = The entry didn't reload its configuration: { $error }
 clients-gate-connector-mismatch = The connector container doesn't match the switch
 clients-gate-public-list-mismatch = The public certificate list doesn't match the switch
+clients-domain-terms-required = Accept the Let's Encrypt subscriber agreement first
+clients-domain-external-certificate = This home uses its own certificate (WONTON_ENTRY_CERTIFICATE=external); the core doesn't issue one
+clients-domain-fixed-suffix = The server name is fixed; only the provider and its credentials can change
+clients-domain-suffix-required = Enter a domain
+clients-domain-suffix-invalid = Use a lower-case ASCII domain without wildcards or a port
+clients-domain-suffix-ip = Enter a domain name, not an IP address
+clients-domain-credentials-required = Fill in the provider's credentials when first setting it up or changing providers
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
 
 # agent_acp forwarding (ADR-0061, block 5): connect-time refusals and per-frame errors, returned to the consumer by category.

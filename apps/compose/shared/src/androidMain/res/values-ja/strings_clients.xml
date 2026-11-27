@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the HTTPS and domain settings page and its settings row. -->
+    <string name="clients_domain_title">HTTPS とドメイン</string>
+    <!-- Label of the domain field. -->
+    <string name="clients_domain_suffix">ドメイン</string>
+    <!-- Shown under a changeable domain: third-party apps must re-enter the address. -->
+    <string name="clients_domain_suffix_note">変更後はサードパーティのアプリでアドレスを入れ直してください</string>
+    <!-- Heading of the DNS provider choice list. -->
+    <string name="clients_domain_provider">DNS プロバイダー</string>
+    <!-- Last provider row: type the lego code yourself. -->
+    <string name="clients_domain_other">その他</string>
+    <!-- Label of the lego provider code field. -->
+    <string name="clients_domain_other_code">lego プロバイダーのコード</string>
+    <!-- Placeholder of the free-form credentials field. -->
+    <string name="clients_domain_other_hint">1 行に 1 つ「キー=値」</string>
+    <!-- Label of the credentials field. -->
+    <string name="clients_domain_credentials">認証情報</string>
+    <!-- Shown when credentials are already stored on the server; values are never read back. -->
+    <string name="clients_domain_credentials_set">入力済み</string>
+    <!-- Link to the provider\'s sign-up page. -->
+    <string name="clients_domain_signup">登録する</string>
+    <!-- Checkbox for the Let\'s Encrypt subscriber agreement. -->
+    <string name="clients_domain_terms">Let\'s Encrypt の加入者契約に同意します</string>
+    <!-- Link to the Let\'s Encrypt agreement page. -->
+    <string name="clients_domain_terms_open">契約を読む</string>
+    <!-- Heading of the certificate section. -->
+    <string name="clients_domain_certificate">証明書</string>
+    <!-- Certificate is valid; argument is the expiry date. -->
+    <string name="clients_domain_cert_valid">%1$s に期限切れ</string>
+    <!-- Renewal failed; the old certificate is still in use. -->
+    <string name="clients_domain_cert_renewing">更新に失敗しました。古い証明書を使い続けています</string>
+    <!-- The certificate expired; connections fail. -->
+    <string name="clients_domain_cert_expired">証明書が期限切れです。接続に失敗します</string>
+    <!-- A certificate is being issued. -->
+    <string name="clients_domain_cert_issuing">発行中</string>
+    <!-- No certificate has been requested yet. -->
+    <string name="clients_domain_cert_none">証明書はまだありません</string>
+    <!-- Button to retry certificate issuance. -->
+    <string name="clients_domain_retry">再試行</string>
+    <!-- Heading of the CAA record section. -->
+    <string name="clients_domain_caa">CAA</string>
+    <!-- CAA record limits issuance to this home\'s account. -->
+    <string name="clients_domain_caa_bound">この家のアカウントに限定済み</string>
+    <!-- No CAA record; adding one is recommended. -->
+    <string name="clients_domain_caa_missing">このレコードの追加をすすめます</string>
+    <!-- A CAA record exists but does not name this home\'s account. -->
+    <string name="clients_domain_caa_mismatch">レコードはありますが、この家のアカウントに限定されていません</string>
+    <!-- The CAA record could not be checked. -->
+    <string name="clients_domain_caa_unknown">確認できません</string>
+    <!-- Button that copies the record line. -->
+    <string name="clients_domain_copy">コピー</string>
+    <!-- Shown after copying; the button ticks meanwhile. -->
+    <string name="clients_domain_copied">コピーしました</string>
+    <!-- Heading of the LAN record section. -->
+    <string name="clients_domain_lan">LAN レコード</string>
+    <!-- The LAN record already points to this host. -->
+    <string name="clients_domain_lan_ok">このホストを指しています</string>
+    <!-- The LAN record is missing. -->
+    <string name="clients_domain_lan_missing">レコードがありません</string>
+    <!-- The LAN record points elsewhere; argument is the current address. -->
+    <string name="clients_domain_lan_wrong">現在 %1$s を指しています</string>
+    <!-- The LAN record could not be checked. -->
+    <string name="clients_domain_lan_unknown">確認できません</string>
+    <!-- Placeholder where the line needs this host\'s LAN address. -->
+    <string name="clients_domain_lan_address">このホストの LAN アドレス</string>
+    <!-- Heading of the collapsed deSEC instructions. -->
+    <string name="clients_domain_desec">deSEC トークン</string>
+    <!-- Steps to create a deSEC token limited to the two challenge records. -->
+    <string name="clients_domain_desec_steps">desec.io で登録し、_acme-challenge と _acme-challenge.lan の 2 つの TXT レコードだけを書けるトークンを作ります。</string>
+    <!-- Generic save failure title. -->
+    <string name="clients_domain_problem_failed">保存できませんでした</string>
+    <!-- Title when the form needs fixing; the detail says what. -->
+    <string name="clients_domain_problem_invalid">直すところがあります</string>
+    <!-- Title when this device may not change the domain. -->
+    <string name="clients_domain_problem_unauthenticated">この端末では変更できません</string>
+    <!-- Next step for the unauthenticated case. -->
+    <string name="clients_domain_problem_unauthenticated_next">持ち主の端末でトンネル経由でやり直してください</string>
+    <!-- Title when the core or plugin is not ready. -->
+    <string name="clients_domain_problem_not_ready">自宅のサーバーの準備ができていません</string>
+    <!-- Next step when the core or plugin is not ready. -->
+    <string name="clients_domain_problem_not_ready_next">アプリやプラグインの準備ができてからやり直してください</string>
+    <!-- Title when the provider or relay failed. -->
+    <string name="clients_domain_problem_upstream">プロバイダー側で失敗しました</string>
+    <!-- Next step when the provider failed. -->
+    <string name="clients_domain_problem_upstream_next">後でやり直してください。詳細にプロバイダーの原文があります</string>
+    <!-- Title when the LAN record is wrong. -->
+    <string name="clients_domain_problem_lan">LAN レコードを直す必要があります</string>
+    <!-- Next step when the LAN record is wrong. -->
+    <string name="clients_domain_problem_lan_next">表示どおりにレコードを追加・修正してください</string>
+</resources>

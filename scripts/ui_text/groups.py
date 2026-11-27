@@ -102,6 +102,8 @@ PREFIXES: Dict[str, str] = {
     "shortcut": "settings",
     # 成员与角色（设置里的成员页）
     "family": "family",
+    # 第三方客户端和域名页
+    "clients": "clients",
     # common
     "common": "common",
     "problem": "problem",
@@ -148,7 +150,7 @@ GROUP_OF: Dict[str, str] = {
         "onboarding": "onboarding pairing joining install home homestatus launcher",
         "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo preview secret sidebar sessions scope takeover port mapping portmapping",
         "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff matrixlogin",
-        "settings": "settings appearance applock egress notification push path shortcuts shortcut privacy licenses relays",
+        "settings": "settings appearance applock egress notification push path shortcuts shortcut privacy licenses relays clients",
         "common": "common problem core coreupgrade design app language startup page pin unpin",
         "family": "family",
     }.items()

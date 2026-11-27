@@ -800,6 +800,23 @@ case "${1:-}" in
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
     ensure_core_network
+    # 本地 ACME（走查和冒烟用）：CA 文件给核心读，lego 容器起在自己的 acme 网络上。
+    # 地址段跟着名额的核心网络走（同机两套栈不会撞），没走名额时用 10.250.89.0/24。
+    if [[ ${WONTON_DEV_CORE_SUBNET:-} =~ ^10\.214\.([0-9]+)\.0/24$ ]]; then
+      acme_prefix="10.251.${BASH_REMATCH[1]}"
+      export WONTON_DEV_ACME_SUBNET="$acme_prefix.0/24"
+    else
+      acme_prefix="10.250.89"
+      export WONTON_DEV_ACME_SUBNET="10.250.89.0/24"
+    fi
+    export WONTON_DEV_ACME_DNS_IP="$acme_prefix.2" WONTON_DEV_ACME_PEBBLE_IP="$acme_prefix.3" \
+      WONTON_DEV_ACME_HTTPREQ_IP="$acme_prefix.4"
+    # 用容器名：Pebble 证书的 SAN 是 `pebble`，IP 不在里面，且名字要靠 lego 的 NO_PROXY 绕过宿主代理。
+    export WONTON_DEV_ACME_DIRECTORY="${WONTON_DEV_ACME_DIRECTORY:-https://pebble:14000/dir}"
+    export WONTON_DEV_ACME_RESOLVERS="${WONTON_DEV_ACME_RESOLVERS:-$acme_prefix.2:8053}"
+    export WONTON_DEV_ACME_CA_FILE="${WONTON_DEV_ACME_CA_FILE:-$WONTON_DEV_DATA/acme/pebble-ca.pem}"
+    export WONTON_DEV_ACME_NETWORK="${WONTON_DEV_ACME_NETWORK:-$(core_network | sed 's/_core$/_acme/')}"
+    mkdir -p "$(dirname "$WONTON_DEV_ACME_CA_FILE")"
     # 只改了 compose 环境（不动 Cargo 工作区）时不想每轮都重建镜像：worktree 根放 .dev-no-build 就跳过构建。
     # 开发栈的 Dockerfile 上下文只有工作区，环境在 .env 里，compose up 自己会按新环境重建容器。
     # .dev-no-deps 再进一步：只重建 core，不重跑 hydra-migrate（共用机上它会卡十几分钟不退出）。
@@ -813,8 +830,13 @@ case "${1:-}" in
     else
       compose up -d --build --wait
     fi
+    # Pebble 的根证书：核心只读进发的请求，不信任它就签不出证书。
+    if ! compose cp pebble:/test/certs/pebble.minica.pem "$WONTON_DEV_ACME_CA_FILE" >/dev/null 2>&1; then
+      echo "dev.sh：取 Pebble 根证书失败，域名设置签不出证书" >&2
+    fi
     fill_dev_profile
     echo "核心已就绪：$base_url（提交 $WONTON_BUILD_COMMIT，主人令牌：$0 token）"
+    echo "域名设置走查：后缀 example.test，服务商选“其他”，HTTPREQ_ENDPOINT=http://$WONTON_DEV_ACME_HTTPREQ_IP:8484"
     ;;
   commit) build_commit ;;
   build) build_image "${@:2}" ;;

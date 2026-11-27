@@ -67,6 +67,7 @@ struct SettingsTab: View {
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .friends: FriendsView(core: chat.core)
+        case .clientsDomain: ClientsDomainView(core: chat.core)
         case .egress: EgressSettingsView(model: plugins)
         case .registryMirror: RegistryMirrorSettingsView(model: plugins)
         case .coreUpgrade: CoreUpgradeView(model: plugins)
@@ -142,6 +143,10 @@ struct SettingsView: View {
             }
         case .language:
             LanguageSettingsRow()
+        case .clientsDomain:
+            NavigationLink(value: SettingsRoute.clientsDomain) {
+                WontonRow(title: String(localized: .Clients.clientsDomainTitle), showsForward: true)
+            }
         case let .peers(count):
             NavigationLink(value: SettingsRoute.peers) {
                 WontonRow(title: String(localized: .Peers3.peersTitle), value: String(count), showsForward: true)
