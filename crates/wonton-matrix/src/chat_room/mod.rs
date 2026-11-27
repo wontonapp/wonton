@@ -895,9 +895,9 @@ mod actions;
 #[cfg(test)]
 mod bootstrap_tests;
 mod focus;
-mod image;
 mod names;
-pub(crate) use image::check_upload_size;
+mod upload;
+pub(crate) use upload::check_upload_size;
 mod pagination_status;
 mod raw;
 mod send;
