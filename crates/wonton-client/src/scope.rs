@@ -26,6 +26,7 @@ use crate::files::FilesLink;
 use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::lock_screen::LockScreenLink;
+use crate::music_library::{LiveLibraries, MusicLink};
 use crate::onboarding::OnboardingLink;
 use crate::pages::PagesLink;
 use crate::peers::PeersLink;
@@ -60,6 +61,8 @@ pub(crate) struct Scope {
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
     /// 要跨源隔离的插件网页交给系统浏览器时用的回环入口（ADR-0033）。
     pub(crate) browser: Arc<crate::browser::BrowserLink>,
+    /// 原生音乐页的曲库浏览（ADR-0113 第 2 节）。
+    pub(crate) music: Arc<MusicLink>,
     /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
     /// 换服务器换作用域，测试不换服务器就一直是同一个。
     #[cfg(feature = "test-hooks")]
@@ -376,6 +379,14 @@ impl Scope {
             plugins.subscribe(),
             links.chat.subscribe(),
         );
+        // 封面按服务器分开放：两台服务器上的插件可能同名。
+        let music = MusicLink::new(
+            handle.clone(),
+            LiveLibraries::new(home.clone(), plugins.clone()),
+            crate::cache_dir::cache_root(root)
+                .join("music-covers")
+                .join(slot),
+        );
         let bot_contacts = BotContactsLink::new(
             handle.clone(),
             home.clone(),
@@ -402,6 +413,7 @@ impl Scope {
             settings: people.4,
             shared_apps,
             browser,
+            music,
             #[cfg(feature = "test-hooks")]
             card_success_hook,
             runtime,

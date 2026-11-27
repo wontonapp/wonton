@@ -101,19 +101,7 @@ fn cache_key(mxc: &str) -> String {
 }
 
 fn cache_directory(data_dir: &Path) -> PathBuf {
-    let parent = data_dir.parent();
-    if let Some(support) =
-        parent.filter(|path| path.file_name().is_some_and(|n| n == "Application Support"))
-        && let (Some(library), Some(app)) = (support.parent(), data_dir.file_name())
-    {
-        return library.join("Caches").join(app).join("avatars");
-    }
-    if data_dir.file_name().is_some_and(|name| name == "files")
-        && let Some(app) = parent
-    {
-        return app.join("cache").join("avatars");
-    }
-    data_dir.join("cache").join("avatars")
+    crate::cache_dir::cache_root(data_dir).join("avatars")
 }
 
 async fn download_file(
