@@ -301,7 +301,8 @@ pub struct NewSharedBot {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SharedBotsView {
     /// 整份列表可不可信。请求人的身份、成员或角色读不明时是 [`SharedBotsState::Unknown`]，
-    /// 这时 `bots` 照常给能列出的行，但每行的 [`SharedBot::access`] 都是 [`BotAccess::Unknown`]。
+    /// 这时 `bots` 照常给能列出的行，除“Bot 记录根本不存在”的 [`BotChatUnavailable::BotMissing`] 外，
+    /// 每行的 [`SharedBot::access`] 都是 [`BotAccess::Unknown`]。
     pub state: SharedBotsState,
     pub bots: Vec<SharedBot>,
 }

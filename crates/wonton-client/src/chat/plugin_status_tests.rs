@@ -85,7 +85,7 @@ fn a_room_with_a_missing_bot_record_matches_the_plugin_by_bot_ref() {
             reason: wonton_protocol::BotChatUnavailable::BotMissing,
         },
     });
-    let mut plugins = view(PluginState::Stopped);
+    let plugins = view(PluginState::Stopped);
 
     assert!(refresh(&mut rooms, &plugins));
     assert_eq!(rooms[0].plugin.as_ref().unwrap().plugin_id, "app.agent");
