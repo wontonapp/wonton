@@ -139,6 +139,7 @@ pub enum MediaFailureCode {
     ServerStorageFull,
     SuspendedBySystem,
     SourceRequired, // 见“选哪个提供方”
+    StaleRevision,  // 队列改动撞上别处先改，见第 4 节
     Other(String),
 }
 

@@ -407,6 +407,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `upstream_error` | 上游 5xx | “服务器出错”，带重试 | 同传输 |
 | `server_storage_full` | 服务器空间不足 | “家里硬盘满了”，列占用 | 不退避 |
 | `source_required` | 能做这件事的媒体源不止一家，主人没定默认 | 请用户选一家，带 `source` 再来 | 不退避 |
+| `stale_revision` | 队列被别处先改了，这次按位置的改动对不上 | 换上当前队列，请用户看过再改 | 不退避 |
 | `suspended_by_system` | 平台暂停（iOS 挂起、Android 配额到） | 进 `Paused{reason}`，不报错；它只在 `Paused` 里用，不进 `Failed` | 恢复时从断点续 |
 
 退避用完标 `Failed`，不藏也不无限重试；手动重试重置计数。
