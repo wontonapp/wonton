@@ -102,6 +102,22 @@ uniffi::custom_type!(usize, u64, {
     try_lift: |value| usize::try_from(value).map_err(Into::into),
 });
 
+/// 客户端核心能直接对提供方说的浏览标准（清单 `provides.media_source.browse`，ADR-0113 音乐浏览的例外）：
+/// 客户端经插件网页的代理（网关注入当前这个人的身份头）请求它，点开插件进原生界面，网页留在“更多”里。
+/// 认不得的标准落到 `Other`，客户端当作没声明，照旧打开网页。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum MediaBrowse {
+    /// OpenSubsonic：网页同源的 `/rest/` 接口，靠代理身份头认人，不带账号密码。
+    OpenSubsonic,
+    /// 新版本新加的标准，原值在里。
+    Other(String),
+}
+
+known_or_other!(MediaBrowse {
+    OpenSubsonic => "opensubsonic",
+});
+
 /// 一条媒体条目的不变量；原生页要的展示字段全在这里，提供方内部 id 只回传给提供方。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
