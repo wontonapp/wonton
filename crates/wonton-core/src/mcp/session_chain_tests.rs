@@ -1,4 +1,4 @@
-//! 工具调用带回来的 `wonton-session` 认不认到链上：认到才挂链和会话，停了的链不再挂。
+//! 工具调用带回来的 `wonton-session` 认不认到链上：认到才挂链和会话；停了的链照样认（卡片绑上那刻再撤回）。
 
 use std::sync::Arc;
 
@@ -71,14 +71,15 @@ async fn a_live_session_keeps_its_chain() {
 }
 
 #[tokio::test]
-async fn a_stopped_session_is_no_longer_on_the_chain() {
-    // 停链只撤走当时挂着的卡片；之后还挂上去的卡片没人撤，所以停了的链不再认。
+async fn a_stopped_session_still_names_its_chain() {
+    // 停链只撤得走当时挂着的卡片；之后还挂上去的卡片，靠这条链在绑上那刻认出已停再撤回，
+    // 所以停了的链照样交出来（审计记 stopped_session）。
     let (s, chains, caller) = session_setup().await;
     let chain = start(&chains, "s-1");
     chains.ledger().stop(&chain).unwrap();
     assert_eq!(
         super::server::chain_session(&s.bus, &caller, Some(&headers("s-1"))),
-        None
+        Some((chain, "s-1".to_owned()))
     );
 }
 
