@@ -102,7 +102,7 @@ async fn the_declared_command_runs_in_the_bots_own_container_with_one_json_line(
 #[tokio::test]
 async fn the_key_goes_in_on_stdin_and_never_comes_back_out() {
     let bed = bed(MODELS).await;
-    let secret = "fake-test-key-not-a-secret";
+    let secret = "fake-test-key-not-a-secret"; // gitleaks:allow：测试用的假 key，不是凭据
     let save = || ModelsOp::SaveKey {
         provider: "openrouter".into(),
         key: SecretString::new(secret),
