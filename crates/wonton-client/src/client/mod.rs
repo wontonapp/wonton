@@ -35,6 +35,7 @@ use switch::Replay;
 #[cfg(feature = "ui-fake")]
 use wonton_protocol::{AvatarImage, AvatarKind};
 
+pub use music::MusicPageSubscription;
 pub use share_in::ShareInSubscription;
 
 mod agent_chains;
@@ -45,6 +46,7 @@ mod confirmations;
 mod dispatch;
 mod limits;
 mod media;
+mod music;
 mod my_avatar;
 mod page_color;
 mod pages;
