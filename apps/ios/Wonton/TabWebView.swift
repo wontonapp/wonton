@@ -431,3 +431,15 @@ final class WeakTabMessageHandler: NSObject, WKScriptMessageHandler {
         session?.receive(message)
     }
 }
+
+extension TabWebSession {
+    /// 出错页上的“重试”：进度和结果由核心按这一份实例写回 `TabPage.retry`（ADR-0026 的“动作按钮的反馈”）。
+    /// 分享页不走插件状态，照旧刷新分享来源再重新加载。
+    func retryPage() {
+        if case .sharedApp = tab { return retry() }
+        problem = nil
+        do {
+            try core.dispatch(action: .pages(action: .retryPage(page: placed)))
+        } catch { problem = error.problem }
+    }
+}

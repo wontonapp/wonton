@@ -157,6 +157,7 @@ impl PagesLink {
             }
             let page = canonical_page(page);
             state.failures.remove(&page);
+            state.retries.remove(&page);
             increment_reload(state, &page);
             Ok(())
         })
@@ -186,9 +187,9 @@ impl PagesLink {
             } else {
                 TabLoadFailure::Upstream
             };
-            state
-                .failures
-                .insert(canonical_page(page), (failure, status));
+            let page = canonical_page(page);
+            state.failures.insert(page.clone(), (failure, status));
+            retry_loaded(state, &page, false);
             Ok(())
         })
     }
@@ -203,7 +204,8 @@ impl PagesLink {
                     "tabs-bridge-page-not-open"
                 )));
             }
-            if !state.failures.contains_key(&canonical_page(page.clone())) {
+            let page = canonical_page(page.clone());
+            if !state.failures.contains_key(&page) && !state.retries.contains_key(&page) {
                 return Ok(());
             }
         }
@@ -215,7 +217,9 @@ impl PagesLink {
                     "tabs-bridge-page-not-open"
                 )));
             }
-            state.failures.remove(&canonical_page(page));
+            let page = canonical_page(page);
+            state.failures.remove(&page);
+            retry_loaded(state, &page, true);
             Ok(())
         })
     }

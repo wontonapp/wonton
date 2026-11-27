@@ -20,6 +20,7 @@ pub(crate) fn panel() -> Vec<PanelItem> {
             layout: TabLayout::default(),
             state: TabState::Ready,
             reload: 0,
+            retry: Default::default(),
             opens_in_browser: false,
         },
         attention: false,
@@ -39,6 +40,7 @@ pub(crate) fn corner() -> Option<(TabRef, TabPage)> {
         layout: TabLayout::default(),
         state: TabState::Ready,
         reload: 0,
+        retry: Default::default(),
         opens_in_browser: false,
     };
     Some((TabRef::Url { url }, page))

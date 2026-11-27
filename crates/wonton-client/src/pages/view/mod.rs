@@ -261,8 +261,17 @@ pub(crate) fn page_from_metadata(
         layout: normalize_layout(metadata.layout),
         state: state_value,
         reload: state.reloads.get(placed).copied().unwrap_or_default(),
+        retry: retry_run(state, placed),
         opens_in_browser: false,
     }
+}
+
+pub(super) fn retry_run(state: &PagesState, placed: &PlacedTab) -> wonton_protocol::ActionRun {
+    state
+        .retries
+        .get(placed)
+        .map(|retry| retry.run.clone())
+        .unwrap_or_default()
 }
 
 pub(super) fn page_state(

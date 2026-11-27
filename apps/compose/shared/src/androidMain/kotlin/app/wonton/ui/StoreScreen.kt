@@ -62,6 +62,7 @@ import app.wonton.protocol.StoreConfirmation
 import app.wonton.protocol.StoreUpdateState
 import app.wonton.protocol.UpdatablePlugin
 import app.wonton.protocol.StoreSection
+import app.wonton.ui.design.WontonActionButton
 import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.WontonChip
 import app.wonton.ui.design.WontonScreen
@@ -381,13 +382,13 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
                             ProblemDetail(state.message)
                         }
                         if (installFailure?.retryable == true) {
-                            WontonSmallButton(stringResource(R.string.common_retry), {
+                            WontonActionButton(stringResource(R.string.common_retry), {
                                 plugins.send(Action.Plugins(PluginAction.RetryPluginInstall(id = item.id)))
-                            })
+                            }, small = true)
                         } else if (installFailure == null && task.operation == PluginOperation.UPGRADE) {
-                            WontonSmallButton(stringResource(R.string.common_retry), {
+                            WontonActionButton(stringResource(R.string.common_retry), {
                                 plugins.send(Action.Plugins(PluginAction.UpgradeNow(pluginId = item.id)))
-                            })
+                            }, small = true)
                         }
                     }
                 }

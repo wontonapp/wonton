@@ -8,7 +8,7 @@
 //! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、一个带授权设备的应用（`ui_fake_plugin_detail.rs`）、
 //! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、一个整页打开本机网页的应用、
 //! 主面板里钉着的一页、商店入口、“等你确认”里一张带设备的安装卡片（`ui_fake_devices.rs`）、引导已经走完。
-//! 操作里只认开页、关页（`OpenPage`、`ClosePage`）、回答确认卡片、重试失败的安装（`ui_fake_failed_install.rs`），
+//! 操作里只认开页、关页（`OpenPage`、`ClosePage`）、回答确认卡片、重试失败的安装（`ui_fake_failed_install.rs`）、出错页的重试（`ui_fake/retry.rs`，进行中两秒再给“还是不行”），
 //! 以及时间线上界面测试约定的那几个（`ui_fake_timeline.rs`）：停下在跑的轮次（`ui_fake_agent_stop.rs`，停成了连在等
 //! 的卡片一起撤回），开关页照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
 //! 没有隧道，插件的网页本身加载不出来；房间的时间线和加载得出来的本机网页（面板里一张、整页一张）在 `ui_fake_room/`。
@@ -27,6 +27,7 @@ mod home;
 mod onboarding;
 mod pages;
 mod plugins;
+mod retry;
 mod tabs;
 
 /// 假房间和假插件给 `client` 其他模块的入口：再导出保持原来的 `super::ui_fake::…` 路径不变。

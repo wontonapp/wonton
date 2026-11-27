@@ -503,6 +503,9 @@ pub enum PageAction {
     /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份：栈里的和面板里的同一页面
     /// 各自加载，互不影响（ADR-0052）。
     ReloadTab { page: crate::PlacedTab },
+    /// 出错页上的“重试”：核心先重新取插件状态，插件好了再重新加载这一份；进度和结果写在这一份的
+    /// [`TabPage::retry`](crate::TabPage::retry)。正在重试时再发是安静的什么也不做。
+    RetryPage { page: crate::PlacedTab },
     /// 壳报告网页加载失败。`status` 是 HTTP 状态码，没拿到响应时为空；原因由核心判断。
     /// `page` 指是哪一份实例。
     TabLoadFailed {

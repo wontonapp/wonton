@@ -11,6 +11,7 @@ uniffi::setup_scaffolding!();
 mod about;
 mod action;
 mod action_domains;
+mod action_run;
 mod agent_chain;
 mod agent_outbox;
 mod agent_permission;
@@ -88,6 +89,7 @@ pub use action_domains::{
     FriendsAction, HomeAction, OnboardingAction, PageAction, PeerAction, PluginAction, PushAction,
     SessionAction, SettingsAction, SharingAction,
 };
+pub use action_run::{ActionFailure, ActionRun};
 pub use agent_chain::{
     AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS, AGENT_LIMITS_PATH,
     AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentAction,

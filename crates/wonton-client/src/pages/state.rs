@@ -48,6 +48,7 @@ pub(super) fn refresh_state(
         state.previous_plugins = None;
         state.failures.clear();
         state.reloads.clear();
+        state.retries.clear();
         state.connected = matches!(home.status, HomeStatus::Connected);
     }
     state.paired = home.server_id.is_some();
@@ -61,6 +62,7 @@ pub(super) fn refresh_state(
         config_changed |= update_metadata(state, installed);
     }
     ensure_stack(state, plugins);
+    drop_gone_retries(state);
     config_changed
 }
 

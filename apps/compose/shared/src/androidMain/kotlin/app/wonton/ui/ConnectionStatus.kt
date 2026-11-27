@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.ActionRun
 import app.wonton.protocol.ConnectionCheck
 import app.wonton.protocol.ConnectionNotice
 import app.wonton.protocol.ConnectionQuality
@@ -40,6 +41,7 @@ import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.InstalledPlugins
 import app.wonton.protocol.UdpFlowStats
+import app.wonton.ui.design.WontonActionButton
 import app.wonton.ui.design.WontonBarStatus
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.wontonContentPadding
@@ -185,19 +187,10 @@ private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen
 
 @Composable
 private fun RetryButton(retrying: Boolean, onRetry: () -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
-    ) {
-        if (retrying) {
-            CircularProgressIndicator(
-                Modifier.size(WontonTheme.size.iconSmall),
-                color = WontonTheme.colors.textSecondary.toColor(),
-                strokeWidth = 2.dp,
-            )
-        }
-        WontonSmallButton(stringResource(R.string.common_retry), onRetry, enabled = !retrying)
-    }
+    WontonActionButton(
+        stringResource(R.string.common_retry), onRetry, small = true,
+        run = if (retrying) ActionRun.Running else ActionRun.Idle,
+    )
 }
 
 /** 设置里的家用服务器：连接诊断和服务器管理入口。 */

@@ -115,7 +115,7 @@ struct TabPageView: View {
             let inputs = inputs(safe: safe)
             ZStack {
                 if blocksBotPage {
-                    ProblemView(problem: Problem(title: blockedBotText), retry: session.retry)
+                    ProblemView(problem: Problem(title: blockedBotText), retry: session.retryPage)
                 } else if requiresDisclosure {
                     BotWebDisclosure(url: page.url, proceed: {
                         disclosedURL = page.url
@@ -134,7 +134,7 @@ struct TabPageView: View {
                     TabPageStateView(
                         page: page, session: session, connected: connected,
                         shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
-                        details: { showsDetails = true }, remove: closePage
+                        remove: closePage
                     )
                     .ignoresSafeArea(.container)
                 }

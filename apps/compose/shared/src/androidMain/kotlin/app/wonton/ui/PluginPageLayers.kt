@@ -82,7 +82,7 @@ private fun PageOverlays(
         SharedPageStatus(page, shared, connection.source, pages, state.problem, connection.supported,
             state.covers(page), inset)
     } else {
-        PageStatusOverlay(state, page, state.tab, connection.supported, page.opensInBrowser, inset, onDetails,
+        PageStatusOverlay(state, page, state.tab, connection.supported, page.opensInBrowser, inset,
             browserAttempted, browserAllowed)
     }
     val capsule: (@Composable () -> Unit)? = if (viewport.capsule) {
