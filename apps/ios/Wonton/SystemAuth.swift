@@ -26,10 +26,6 @@ enum SystemAuth {
 
     /// 弹系统验证。页面看得见时才调，否则系统提示会被收走。
     static func authenticate(reason: String) async -> Outcome {
-        #if DEBUG
-        // 界面测试测的是验证之后的那一屏（恢复密钥的复制按钮）：模拟器的系统验证要输设备密码，测试里过不去。
-        if ProcessInfo.processInfo.environment["WONTON_UI_TEST_SYSTEM_AUTH"] == "pass" { return .passed }
-        #endif
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
