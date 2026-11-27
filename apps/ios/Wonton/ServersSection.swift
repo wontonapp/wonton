@@ -20,7 +20,7 @@ struct ServersSection: View {
                         WontonRow(title: server.name.localizedDisplayName)
                         if server.current {
                             Image(systemName: "checkmark")
-                                .foregroundStyle(Color(colors.primary))
+                                .foregroundStyle(Color(colors.textPrimary))
                                 .padding(.trailing, WontonTheme.spacing.s16)
                                 .accessibilityHidden(true)
                         }

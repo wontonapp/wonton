@@ -54,7 +54,7 @@ struct ChatRoomBar<Trailing: View>: View {
             if let typing {
                 Text(typing)
                     .wontonText(WontonTheme.typography.barStatus)
-                    .foregroundStyle(Color(colors.accentInk))
+                    .foregroundStyle(Color(colors.textPrimary))
                     .lineLimit(1)
                     .accessibilityIdentifier("barActivity")
             } else if status.line == nil, let subtitle = status.subtitle {
@@ -138,7 +138,6 @@ struct ChatEdgeFade: View {
         ZStack {
             Rectangle().fill(.regularMaterial)
             palette.wallBase.opacity(WontonTheme.ratio.secondaryContent)
-            palette.wallTint
         }
         .mask {
             VStack(spacing: 0) {

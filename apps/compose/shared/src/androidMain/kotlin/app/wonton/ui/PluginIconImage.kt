@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.PluginIcon
 import app.wonton.protocol.PluginImage
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.accentFill
+import app.wonton.ui.design.emphasisFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.AppsFill
 import app.wonton.ui.icons.WontonIcon
@@ -60,13 +60,13 @@ fun PluginIconImage(icon: PluginIcon?, size: Dp, imageOrNull: suspend (PluginIma
             contentScale = ContentScale.Crop,
         )
         IconState.Loading -> Box(Modifier.size(size).clip(shape).background(colors.surfaceSubtle.toColor()))
-        IconState.Missing -> Box(Modifier.size(size).accentFill(shape), contentAlignment = Alignment.Center) {
+        IconState.Missing -> Box(Modifier.size(size).emphasisFill(shape), contentAlignment = Alignment.Center) {
             Icon(
                 WontonIcon.AppsFill,
                 // 装饰：占位图，旁边总有名字。
                 contentDescription = null,
                 modifier = Modifier.size(size * GLYPH_RATIO),
-                tint = colors.accentInkOnFill.toColor(),
+                tint = colors.onPrimary.toColor(),
             )
         }
     }

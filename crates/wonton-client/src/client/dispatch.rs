@@ -415,7 +415,6 @@ impl ClientCore {
                 self.replay().languages = Some(languages);
                 Ok(())
             }
-            SettingsAction::SetAccentColor { color } => self.appearance.set_accent(color),
             SettingsAction::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
             SettingsAction::SetTextSize { size } => self.appearance.set_text_size(size),
             SettingsAction::SetFont { font } => self.appearance.set_font(font),

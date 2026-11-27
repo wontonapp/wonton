@@ -122,7 +122,7 @@ private fun ServerItem(server: ServerRow, send: (Action) -> Unit, rename: () -> 
                 Icons.Default.Check,
                 // 装饰：这一行有 selected 状态。
                 contentDescription = null,
-                tint = WontonTheme.colors.primary.toColor(),
+                tint = WontonTheme.colors.textPrimary.toColor(),
             )
         }
         DropdownMenu(menu, onDismissRequest = { menu = false }) {
@@ -190,11 +190,11 @@ private fun AddServerRow(add: () -> Unit) {
             Icons.Default.Add,
             // 装饰：右边的文字就是“添加服务器”。
             contentDescription = null,
-            tint = WontonTheme.colors.primary.toColor(),
+            tint = WontonTheme.colors.textPrimary.toColor(),
         )
         Text(
             stringResource(R.string.servers_add), Modifier.padding(start = WontonTheme.spacing.s12),
-            style = WontonTheme.typography.body, color = WontonTheme.colors.primary.toColor(),
+            style = WontonTheme.typography.body, color = WontonTheme.colors.textPrimary.toColor(),
         )
     }
 }
@@ -212,11 +212,11 @@ private fun MatrixLoginRow(open: () -> Unit) {
             // 装饰：右边的文字就是“用 Matrix 账号登录”。
             contentDescription = null,
             modifier = Modifier.size(WontonTheme.size.icon),
-            tint = WontonTheme.colors.primary.toColor(),
+            tint = WontonTheme.colors.textPrimary.toColor(),
         )
         Text(
             stringResource(R.string.matrix_login_entry), Modifier.padding(start = WontonTheme.spacing.s12),
-            style = WontonTheme.typography.body, color = WontonTheme.colors.primary.toColor(),
+            style = WontonTheme.typography.body, color = WontonTheme.colors.textPrimary.toColor(),
         )
     }
 }

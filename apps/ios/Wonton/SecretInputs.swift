@@ -93,7 +93,7 @@ struct SecretInputField: View {
             if let link = input.url.flatMap(URL.init(string:)) {
                 Button(String(localized: .Plugins.secretGetOne)) { openURL(link) }
                     .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.accentInk))
+                    .foregroundStyle(Color(colors.textPrimary))
             }
         }
     }

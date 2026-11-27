@@ -17,8 +17,8 @@ struct ReplyQuoteView: View {
     let core: ClientCore
     /// 画在自己气泡里时用气泡的文字颜色。
     let ink: Color
-    /// 竖条和名字的颜色（ADR-0109 第 9 节）：重点色，画在自己气泡里时用气泡上的那一档。
-    let accent: Color
+    /// 竖条和名字的颜色（ADR-0109 第 9 节）：页面上用字色，画在自己气泡里时用气泡上的那一档。
+    let emphasis: Color
     /// 输入框上方的那一份带叉、撑满一行；消息里的不带，按内容收缩，垫一层淡淡的底色。
     var cancel: (() -> Void)?
     /// 点了这条引用、核心还在往前翻页找原消息（ADR-0109 第 4 节）。
@@ -34,9 +34,9 @@ struct ReplyQuoteView: View {
                 .padding(.leading, WontonTheme.size.quoteBar + 1 + WontonTheme.spacing.s8)
                 .padding(.trailing, WontonTheme.spacing.s8)
                 .padding(.vertical, WontonTheme.spacing.s4 / 2)
-                .background(accent.opacity(WontonTheme.ratio.codeFill))
+                .background(emphasis.opacity(WontonTheme.ratio.codeFill))
                 .overlay(alignment: .leading) {
-                    Rectangle().fill(accent).frame(width: WontonTheme.size.quoteBar + 1).accessibilityHidden(true)
+                    Rectangle().fill(emphasis).frame(width: WontonTheme.size.quoteBar + 1).accessibilityHidden(true)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.bubbleJoined - 2))
         } else {
@@ -48,12 +48,12 @@ struct ReplyQuoteView: View {
         HStack(spacing: WontonTheme.spacing.s8) {
             if cancel != nil {
                 Image(systemName: "arrowshape.turn.up.left")
-                    .foregroundStyle(accent)
+                    .foregroundStyle(emphasis)
                     .accessibilityHidden(true)
             }
             if cancel != nil {
                 Capsule()
-                    .fill(accent)
+                    .fill(emphasis)
                     .frame(width: WontonTheme.size.quoteBar + 1, height: WontonTheme.size.chip)
                     .accessibilityHidden(true)
             }
@@ -99,7 +99,7 @@ struct ReplyQuoteView: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(message.senderName)
                 .wontonText(WontonTheme.typography.senderName)
-                .foregroundStyle(accent)
+                .foregroundStyle(emphasis)
                 .lineLimit(1)
             switch message.content {
             case let .text(text):

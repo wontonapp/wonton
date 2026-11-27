@@ -102,7 +102,7 @@ struct ClientsDomainView: View {
                     openURL(URL(string: "https://letsencrypt.org/repository/")!)
                 }
                 .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.accentInk))
+                .foregroundStyle(Color(colors.textPrimary))
             }
             .padding(WontonTheme.spacing.s12)
         }

@@ -21,9 +21,9 @@ pub(crate) const COLOR_VARIABLES: &[ColorVariable] = &[
     ("--color-text-warning", |c| c.warning),
     ("--color-border-warning", |c| c.warning),
     ("--color-ring-warning", |c| c.warning),
-    ("--wonton-accent-fill", |c| c.accent_fill),
-    ("--wonton-accent-ink", |c| c.accent_ink),
-    ("--wonton-accent-ink-on-fill", |c| c.accent_ink_on_fill),
+    ("--wonton-accent-fill", |c| c.primary),
+    ("--wonton-accent-ink", |c| c.text_primary),
+    ("--wonton-accent-ink-on-fill", |c| c.on_primary),
 ];
 
 pub(crate) const RADIUS_VARIABLES: &[(&str, f64, f64)] = &[

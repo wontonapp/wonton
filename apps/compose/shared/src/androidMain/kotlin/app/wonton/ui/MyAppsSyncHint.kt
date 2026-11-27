@@ -43,7 +43,7 @@ internal fun MyAppsSyncHint(pages: PagesState, interactive: Boolean) {
             if (view.syncStale) {
                 TextButton(onClick = { pages.send(Action.Pages(PageAction.RetryMyAppSync)) }, enabled = interactive) {
                     Text(stringResource(R.string.common_retry), style = WontonTheme.typography.supporting,
-                        color = colors.accentInk.toColor())
+                        color = colors.textPrimary.toColor())
                 }
             }
         }

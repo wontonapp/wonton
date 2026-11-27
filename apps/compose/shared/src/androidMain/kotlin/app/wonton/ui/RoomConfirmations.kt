@@ -37,12 +37,12 @@ import app.wonton.ui.icons.WontonIcon
 @Composable
 internal fun RoomConfirmationRow(cards: List<ConfirmationView>, onOpen: (String) -> Unit) {
     val first = cards.firstOrNull() ?: return
-    val ink = WontonTheme.colors.textOnAccentFill.toColor()
+    val ink = WontonTheme.colors.onPrimary.toColor()
     val icon = Modifier.size(WontonTheme.size.iconSmall)
     Row(
         Modifier
             .fillMaxWidth()
-            .background(WontonTheme.colors.accentFill.toColor())
+            .background(WontonTheme.colors.primary.toColor())
             .clickable(role = Role.Button) { onOpen(first.card.id) }
             .heightIn(min = WontonTheme.size.target)
             .padding(horizontal = WontonTheme.spacing.pageInset, vertical = WontonTheme.spacing.s8)

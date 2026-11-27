@@ -28,7 +28,8 @@ jobs:
     if: github.event.label.name == 'record-snapshots'
     # macOS 托管机：和 ios.yml 一样要 Xcode 27.1 的镜像。
     runs-on: xcode-27
-    timeout-minutes: 45
+    # 改了核心的 PR 取不到核心产物缓存，冷编核心约 33 分钟（11-27 实测），45 分钟录不完。
+    timeout-minutes: 75
     permissions:
       # 把录好的参考图推回 PR 分支。
       contents: write
@@ -261,7 +262,8 @@ jobs:
     name: 重录 Android 参考图
     if: github.event.label.name == 'record-snapshots'
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # 改了核心的 PR 取不到核心产物缓存，冷编核心约 33 分钟（11-27 实测），45 分钟录不完。
+    timeout-minutes: 75
     permissions:
       # 把重录的参考图推回 PR 的分支，推完摘掉标签。
       contents: write

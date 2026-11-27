@@ -213,7 +213,7 @@ private fun DeniedAlbum(onOpenSettings: () -> Unit) {
                     .heightIn(min = WontonTheme.size.target)
                     .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s8),
                 style = WontonTheme.typography.body,
-                color = WontonTheme.colors.accentInk.toColor(),
+                color = WontonTheme.colors.textPrimary.toColor(),
             )
         }
     }
@@ -256,7 +256,7 @@ private fun AlbumGrid(remaining: Int, selected: List<Uri>, onToggle: (Uri) -> Un
 private fun AlbumCell(uri: Uri, picked: Boolean, enabled: Boolean, onToggle: (Uri) -> Unit) {
     val context = LocalContext.current
     val colors = WontonTheme.colors
-    val tint = WontonTheme.colors.accentInkOnFill.toColor()
+    val tint = WontonTheme.colors.onPrimary.toColor()
     val thumbnail by produceState<ImageBitmap?>(null, uri) {
         value = withContext(Dispatchers.IO) {
             runCatching {
@@ -281,7 +281,7 @@ private fun AlbumCell(uri: Uri, picked: Boolean, enabled: Boolean, onToggle: (Ur
                 Modifier.align(Alignment.TopEnd)
                     .padding(WontonTheme.spacing.s4)
                     .size(WontonTheme.size.iconTiny)
-                    .background(WontonTheme.colors.accentFill.toColor(), CircleShape),
+                    .background(WontonTheme.colors.primary.toColor(), CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(

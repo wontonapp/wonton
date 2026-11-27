@@ -22,7 +22,7 @@ struct RoomConfirmationBanner: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
                 }
-                .foregroundStyle(Color(colors.textOnAccentFill))
+                .foregroundStyle(Color(colors.onPrimary))
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.vertical, WontonTheme.spacing.s8)
                 .frame(minHeight: WontonTheme.size.target)
@@ -30,7 +30,7 @@ struct RoomConfirmationBanner: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("room-confirmations")
-            .background(Color(colors.accentFill))
+            .background(Color(colors.primary))
         }
     }
 }

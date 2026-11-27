@@ -247,7 +247,7 @@ internal fun LinkButton(text: String, onClick: () -> Unit) {
         Modifier.clickable(role = Role.Button, onClick = onClick)
             .padding(WontonTheme.spacing.s12),
         style = WontonTheme.typography.supporting,
-        color = WontonTheme.colors.accentInk.toColor(),
+        color = WontonTheme.colors.textPrimary.toColor(),
     )
 }
 

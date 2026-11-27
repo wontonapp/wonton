@@ -148,10 +148,10 @@ struct SideChatCardView: View {
                     Text(unreadLabel)
                         .wontonText(WontonTheme.typography.caption)
                         .monospacedDigit()
-                        .foregroundStyle(Color(colors.accentInkOnFill))
+                        .foregroundStyle(Color(colors.onPrimary))
                         .padding(.horizontal, WontonTheme.spacing.s8)
                         .padding(.vertical, WontonTheme.spacing.s4)
-                        .accentFill(Capsule())
+                        .emphasisFill(Capsule())
                         .accessibilityLabel(Text(.Chat.sideChatUnread(count: Int(card.unreadCount))))
                 }
             }

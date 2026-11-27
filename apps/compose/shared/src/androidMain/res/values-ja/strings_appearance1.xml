@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Accessibility state of the More row while the extra colors are shown. -->
+    <!-- Accessibility state of an expandable row or text while it is expanded. -->
     <string name="appearance_expanded">展開</string>
     <!-- Section title for the font. -->
     <string name="appearance_font">フォント</string>
@@ -10,8 +10,6 @@
     <string name="appearance_font_monospaced">等幅</string>
     <!-- Choice row: the rounded system font design. -->
     <string name="appearance_font_rounded">丸ゴシック</string>
-    <!-- Row that expands the extra color swatches and the color input field. -->
-    <string name="appearance_more">その他</string>
     <!-- Sample chat bubble on the appearance page, hidden from accessibility; it shows how the theme looks. -->
     <string name="appearance_preview_message">今夜の夕飯、何にする？</string>
     <!-- Choice row: large text size. -->

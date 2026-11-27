@@ -96,7 +96,7 @@ adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<�
   `adb shell run-as app.wonton.android cat files/core.log`。
 - WebView 的代理由 androidx.webkit 的 `ProxyController` 设置，对整个 App 生效。
 
-设置首页订阅客户端核心的 `SettingsViewModel`，按 `sections` 的分组和顺序画列表；明暗、重点色、字号和字体收在“外观”二级页，“通知”页列出系统通知、推送状态和类别，点击进入对应的系统通知设置；“关于”只显示 App 版本和构建号（ADR-0028）。
+设置首页订阅客户端核心的 `SettingsViewModel`，按 `sections` 的分组和顺序画列表；明暗、字号和字体收在“外观”二级页，“通知”页列出系统通知、推送状态和类别，点击进入对应的系统通知设置；“关于”只显示 App 版本和构建号（ADR-0028）。
 
 “应用”页的商店入口独立放在已装插件网格上方，有更新时显示数量，未安装插件时保留“去应用商店”空状态按钮。根页不显示大标题，连接状态仍在顶栏显示，状态栏后是不透明的 `canvas`。
 

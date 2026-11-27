@@ -39,7 +39,7 @@ fun WontonRadioRow(
     val shape = RoundedCornerShape(WontonTheme.radii.control)
     Row(
         Modifier.fillMaxWidth().clip(shape)
-            .then(if (selected) Modifier.accentFill(shape) else Modifier.background(colors.surfaceSubtle.toColor()))
+            .then(if (selected) Modifier.emphasisFill(shape) else Modifier.background(colors.surfaceSubtle.toColor()))
             .alpha(if (enabled) 1f else DISABLED_ALPHA)
             .heightIn(min = WontonTheme.size.target)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onSelect)
@@ -49,13 +49,13 @@ fun WontonRadioRow(
     ) {
         Text(
             title, Modifier.weight(1f), style = WontonTheme.typography.body,
-            color = (if (selected) colors.textOnAccentFill else colors.textPrimary).toColor(),
+            color = (if (selected) colors.onPrimary else colors.textPrimary).toColor(),
         )
         value?.let {
             Text(
                 it, Modifier.weight(RESULT_WEIGHT),
                 style = WontonTheme.typography.supporting.copy(textAlign = TextAlign.End),
-                color = (valueTint ?: if (selected) colors.textOnAccentFill else colors.textSecondary).toColor(),
+                color = (valueTint ?: if (selected) colors.onPrimary else colors.textSecondary).toColor(),
             )
         }
         if (selected) {
@@ -64,7 +64,7 @@ fun WontonRadioRow(
                 // 装饰：选中状态由单选项本身朗读。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
-                tint = colors.accentInkOnFill.toColor(),
+                tint = colors.onPrimary.toColor(),
             )
         }
     }

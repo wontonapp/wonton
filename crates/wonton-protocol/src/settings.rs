@@ -63,7 +63,7 @@ pub enum SettingsEntry {
         /// 服务器有新版本、主人还没跳过，画角标。
         upgrade: bool,
     },
-    /// 明暗、重点色、字号和字体。
+    /// 明暗、字号和字体。
     Appearance,
     /// HTTPS 和域名（ADR-0089）：服务商、证书和 CAA。只给主人。
     ClientsDomain,

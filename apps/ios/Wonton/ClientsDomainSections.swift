@@ -56,7 +56,7 @@ extension ClientsDomainView {
             if let link = signupLink {
                 Button(String(localized: .Clients.clientsDomainSignup)) { openURL(link) }
                     .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.accentInk))
+                    .foregroundStyle(Color(colors.textPrimary))
             }
         }
     }
@@ -174,7 +174,7 @@ extension ClientsDomainView {
                     .fixedSize(horizontal: false, vertical: true)
                 Button("desec.io") { openURL(URL(string: "https://desec.io")!) }
                     .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.accentInk))
+                    .foregroundStyle(Color(colors.textPrimary))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, WontonTheme.spacing.s8)

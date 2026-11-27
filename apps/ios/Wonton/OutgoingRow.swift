@@ -36,13 +36,13 @@ struct OutgoingRow: View {
                 if !message.body.isEmpty {
                     Text(message.body)
                         .wontonText(WontonTheme.typography.message)
-                        .foregroundStyle(Color(colors.textOnAccentFill))
+                        .foregroundStyle(Color(colors.onPrimary))
                 }
                 footer
             }
             .padding(.horizontal, WontonTheme.spacing.s12)
             .padding(.vertical, WontonTheme.spacing.s8)
-            .background(shape.fill(Color(colors.accentFill)))
+            .background(shape.fill(Color(colors.primary)))
         }
         .accessibilityIdentifier("outgoingMessage")
     }
@@ -55,10 +55,10 @@ struct OutgoingRow: View {
                     Text(.Message2.messageSendingProgress(
                         Double(progress).formatted(.percent.precision(.fractionLength(0)))
                     ))
-                    .foregroundStyle(Color(colors.textOnAccentFill))
+                    .foregroundStyle(Color(colors.onPrimary))
                 } else {
                     Text(.Message2.messageSending)
-                        .foregroundStyle(Color(colors.textOnAccentFill))
+                        .foregroundStyle(Color(colors.onPrimary))
                 }
                 // 盲测在气泡上找不到取消：状态文字不像能点，取消要自己长成看得见的按钮，点开确认。
                 // 传着的时候也能取消：整条不发，上传停下（盲测：取消了照样发出去）。
@@ -89,7 +89,7 @@ struct OutgoingRow: View {
                             ? details ?? String(localized: failure.text)
                             : String(localized: failure.text))
                     }
-                    .foregroundStyle(Color(colors.textOnAccentFill))
+                    .foregroundStyle(Color(colors.onPrimary))
                 }
                 .buttonStyle(.plain)
                 .wontonActionSheet(isPresented: $isChoosingFailed, title: details, actions: [

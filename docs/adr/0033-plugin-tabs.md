@@ -143,7 +143,7 @@ x-wonton:
 | 白屏 | 加载完之前 WebView 透明、背景设成 `canvas`（Android `setBackgroundColor`），盖一层 App 画的骨架。iOS 加载完改成不透明：WebKit 只在不透明时才在网页之外（全屏时 Home 条后面）画页面自己的背景色，透明时露出的是 `canvas`，内容在容器里滚的页面底下就是一条白（iOS 26.5 实测） |
 | 骨架什么时候撤 | 收到 SDK 握手（`ui/notifications/initialized`）或页面加载完，以先到为准；没适配的页面靠后者，这和 Telegram 的 `ready()` 一样 |
 | 第一帧的颜色 | 文档开始前注入脚本（iOS `WKUserScript`，Android `addDocumentStartJavaScript`），把令牌写到根元素，同时设 `color-scheme` 和根元素背景 |
-| 切换明暗和重点色 | 不重新加载：换根元素上的变量，再发 `host-context-changed` |
+| 切换明暗 | 不重新加载：换根元素上的变量，再发 `host-context-changed` |
 | 字号（ADR-0028） | iOS 保持 `pageZoom = 1`，壳在文档开始时注入 `-webkit-text-size-adjust: <百分比> !important`，变更时原地更新；Android 用 `textZoom`。只放大文字，不缩小布局视口；安全区和栏高不除以文字比例。字体跟不了，页面用 `--font-sans` 的才跟 |
 | 切标签 | WebView 常驻，切回来在原来的位置。第一次点才创建，不预加载：多数人不会每次都打开所有页面 |
 | 进程被系统收掉 | iOS `webViewWebContentProcessDidTerminate`、Android `onRenderProcessGone`（Android 必须处理，否则整个 App 被杀）：重建，恢复地址，骨架盖着 |
@@ -164,7 +164,7 @@ x-wonton:
 | `--color-border-primary` | `separator` |
 | `--color-*-danger`、`-success`、`-warning` | 状态色 |
 | `--font-sans`、`--border-radius-*` | 系统字体，`control`、`card` 等圆角 |
-| `--wonton-accent-fill`、`--wonton-accent-ink`、`--wonton-accent-ink-on-fill` | 重点色三层，ADR-0026 的规则照用 |
+| `--wonton-accent-fill`、`--wonton-accent-ink`、`--wonton-accent-ink-on-fill` | 强调色的底、页面上的强调字、底上的字。[ADR-0130](0130-black-and-white.md) 起没有重点色，名字不改，分别是 `primary`、`textPrimary`、`onPrimary` |
 | `--wonton-inset-top`、`--wonton-inset-bottom` | 栏占的高度，含安全区；全屏时是状态栏下沿（横屏为 0）和 Home 条，胶囊会自己藏起来，不算在内。`inset` 布局下是 0 |
 | `--wonton-inset-left`、`--wonton-inset-right` | 左右安全区，横屏全屏时躲刘海和圆角用。`inset` 布局下是 0 |
 
@@ -241,7 +241,7 @@ x-wonton:
 | --- | --- | --- |
 | `ui/initialize`、`ui/notifications/initialized` | 有 | `hostContext`：`theme`、`styles`、`locale`、`timeZone`、`platform: mobile`、`displayMode`（带栏时 `inline`，全屏时 `fullscreen`）、`availableDisplayModes`、`safeAreaInsets` |
 | `ui/notifications/size-changed` | 收下不处理 | SDK 默认会发；底栏页的大小由 App 定 |
-| `ui/notifications/host-context-changed` | 有 | 明暗、重点色、字号、全屏状态变化时 |
+| `ui/notifications/host-context-changed` | 有 | 明暗、字号、全屏状态变化时 |
 | `ui/request-display-mode` | 有 | `inline` 或 `fullscreen`，只收主框架，回实际生效的模式。页面退不掉胶囊；用户把这个页面设成 `standard` 时不生效 |
 | `ui/open-link` | 有 | 系统浏览器打开，只收 `https` |
 | `ui/message` | 有 | 切到聊天，把文字放进输入框当草稿，**用户点发送才发**。发给哪个 Bot 由用户选的房间决定。这是动态页“讨论”按钮的做法 |

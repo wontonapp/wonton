@@ -23,9 +23,9 @@ struct PluginIconView: View {
                 shape.fill(Color(colors.surfaceSubtle)).frame(width: size, height: size)
             } else {
                 WontonIcon.appsFill.view(size: size * 0.54)
-                    .foregroundStyle(Color(colors.accentInkOnFill))
+                    .foregroundStyle(Color(colors.onPrimary))
                     .frame(width: size, height: size)
-                    .accentFill(shape)
+                    .emphasisFill(shape)
             }
         }
         .task(id: source?.path) {

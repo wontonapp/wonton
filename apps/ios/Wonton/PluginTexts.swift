@@ -109,7 +109,7 @@ struct PermissionRow: View {
             if let risk = line.riskLabel { Tag(text: risk, tint: colors.warning) }
             if line.optional { Tag(text: String(localized: .Plugin3.pluginPermissionOptional),
                 tint: colors.textSecondary) }
-            if line.added { Tag(text: String(localized: .Plugin3.pluginPermissionAdded), tint: colors.primary) }
+            if line.added { Tag(text: String(localized: .Plugin3.pluginPermissionAdded), tint: colors.textPrimary) }
             if !line.supported { Tag(text: String(localized: .Plugin0.pluginPermissionUnsupported),
                 tint: colors.danger) }
         }

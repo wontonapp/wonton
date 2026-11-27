@@ -26,7 +26,7 @@
     <string name="sidebar_all_apps">All apps</string>
     <!-- Round button at the bottom of the sidebar that opens Settings. -->
     <string name="sidebar_settings">Settings</string>
-    <!-- Accent capsule at the bottom of the sidebar that starts a new chat. -->
+    <!-- Filled capsule at the bottom of the sidebar that starts a new chat. -->
     <string name="sidebar_new_chat">New chat</string>
     <!-- Content description of the red count badge on the Store row: how many apps have updates. -->
     <string name="sidebar_updates_badge">%1$d updates available</string>

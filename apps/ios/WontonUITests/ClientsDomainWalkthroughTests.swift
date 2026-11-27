@@ -56,7 +56,7 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
             if sawCode || app.buttons.matching(UITestSidebar.button).firstMatch.exists {
                 if tapFirst([
                     "Go to Chat", "进入聊天", "Install these apps", "安装这些应用", "Next", "下一步", "Done", "完成",
-                    "Skip", "跳过",
+                    "Skip", "跳过"
                 ]) {
                     _ = app.wait(for: .runningForeground, timeout: 0.5)
                     continue

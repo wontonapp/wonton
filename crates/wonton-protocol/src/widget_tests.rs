@@ -21,11 +21,6 @@ fn colors(base: u8) -> ThemeColors {
         success: rgb(9),
         warning: rgb(10),
         danger: rgb(11),
-        accent_fill: rgb(12),
-        accent_ink: rgb(13),
-        accent_ink_on_fill: rgb(14),
-        text_on_accent_fill: rgb(15),
-        accent_fill_border: None,
     }
 }
 
@@ -43,11 +38,6 @@ fn colors_json(base: u8) -> serde_json::Value {
         "success": rgb(9),
         "warning": rgb(10),
         "danger": rgb(11),
-        "accent_fill": rgb(12),
-        "accent_ink": rgb(13),
-        "accent_ink_on_fill": rgb(14),
-        "text_on_accent_fill": rgb(15),
-        "accent_fill_border": null,
     })
 }
 

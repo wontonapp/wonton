@@ -103,10 +103,6 @@ pub struct WidgetPlugin {
 /// 入口读快照文件的结果。
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "passed by value across FFI once per read, so variant sizes do not matter; UniFFI fields do not support Box"
-)]
 pub enum WidgetSnapshotRead {
     /// 核心还没写过：App 装好后还没打开过。
     Missing,

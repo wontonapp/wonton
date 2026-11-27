@@ -148,7 +148,7 @@ struct WontonRow: View {
                     .multilineTextAlignment(.trailing)
             }
             if badge {
-                Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
+                Circle().fill(Color(colors.textPrimary)).frame(width: 12, height: 12)
                     .accessibilityLabel(String(localized: .Design.designUpdateBadge))
             }
             if let badgeText {
@@ -224,9 +224,9 @@ extension View {
         modifier(WontonFieldModifier())
     }
 
-    /// 重点色的填充：纸质的颗粒盖在颜色上，有描边令牌时加描边。
-    func accentFill<S: InsettableShape>(_ shape: S, border: Bool = true) -> some View {
-        modifier(AccentFillModifier(shape: shape, border: border))
+    /// 强调色的填充：纸质的颗粒盖在 `primary` 上（ADR-0130）。
+    func emphasisFill<S: InsettableShape>(_ shape: S) -> some View {
+        modifier(EmphasisFillModifier(shape: shape))
     }
 }
 
@@ -248,20 +248,14 @@ private struct WontonFieldModifier: ViewModifier {
     }
 }
 
-private struct AccentFillModifier<S: InsettableShape>: ViewModifier {
+private struct EmphasisFillModifier<S: InsettableShape>: ViewModifier {
     let shape: S
-    let border: Bool
     @Environment(\.wontonColors) private var colors
 
     func body(content: Content) -> some View {
         content.background {
-            shape.fill(Color(colors.accentFill))
+            shape.fill(Color(colors.primary))
                 .overlay { NoiseTile().clipShape(shape) }
-                .overlay {
-                    if border, let color = colors.accentFillBorder {
-                        shape.strokeBorder(Color(color), lineWidth: WontonTheme.size.hairline)
-                    }
-                }
         }
     }
 }
@@ -406,7 +400,7 @@ struct WontonPushedBar<Trailing: View>: View {
                     if let activity {
                         Text(activity)
                             .wontonText(WontonTheme.typography.caption)
-                            .foregroundStyle(Color(colors.accentInk))
+                            .foregroundStyle(Color(colors.textPrimary))
                             .lineLimit(1)
                             .accessibilityIdentifier("barActivity")
                     } else if showsStatus || showsStatusLine, line == nil, let subtitle = status.subtitle {
