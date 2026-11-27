@@ -79,6 +79,8 @@ pub enum StoreLoadState {
     #[default]
     NotRequested,
     WaitingForConnection,
+    /// 还没配对家里的服务器：配对后连上会自动取，不用重试。
+    NotPaired,
     Loading,
     Ready,
     Failed {

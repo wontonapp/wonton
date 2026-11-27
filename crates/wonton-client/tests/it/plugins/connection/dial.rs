@@ -59,7 +59,7 @@ async fn without_a_server_a_task_fails_at_once() {
         matches!(
             state,
             PluginTaskState::Failed {
-                reason: PluginFailure::TransportUnavailable,
+                reason: PluginFailure::NotPaired,
                 ..
             }
         ),

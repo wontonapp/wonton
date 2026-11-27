@@ -12,6 +12,16 @@
         "ja": { "stringUnit": { "state": "translated", "value": "このデバイスにページ設定を保存できません" } }
       }
     },
+    "problem.notPaired.nextStep": {
+      "comment": "Next step: scan the home server's QR code to pair this phone, then retry.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Scan the QR code on your home server to pair this phone, then come back." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "先用家里的服务器上的二维码配对这台手机，再回来。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "先用家裡的伺服器上的 QR Code 配對這台手機，再回來。" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "自宅サーバーに表示された QR コードでこのスマートフォンをペアリングしてから、もう一度お試しください。" } }
+      }
+    },
     "problem.notReady.title": {
       "comment": "Problem title when the core says the action can't run yet; the core's own reason goes into Details.",
       "extractionState": "manual",

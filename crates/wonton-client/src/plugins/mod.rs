@@ -546,11 +546,16 @@ impl PluginsLink {
     }
 
     pub(crate) fn api(&self) -> Result<CoreApi, PluginProblem> {
+        let home = self.home.view();
+        // 还没配对：这不是连接失败，是还缺配对。壳据此引导去配对，配对后再取。
+        if home.status == HomeStatus::NotConfigured {
+            return Err(api::not_paired());
+        }
         // 已知隧道不通就立刻失败，不等超时。
         if self.home.tunnel_outage().is_some() {
             return Err(api::not_connected());
         }
-        let proxy = self.home.view().proxy.ok_or_else(api::not_connected)?;
+        let proxy = home.proxy.ok_or_else(api::not_connected)?;
         let base = self.home.core_url().ok_or_else(api::not_connected)?;
         let client = {
             let mut cached = lock(&self.client);
