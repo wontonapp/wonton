@@ -12,7 +12,7 @@ log "预检"
 # dev.sh status 会跑 docker compose ps，在共用机上常常一卡几分钟；这里只看 .dev-ports 和网关是否回 HTTP（根路径 401/404 都算在）。
 # 名额端口优先（重排会换）；未占名额时 select_ports 沿用 .dev-ports 并留下原因。
 dev_ports=$(timeout 25 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports" 2>/dev/null || true)
-slot_ports=$(timeout 25 ssh "$HOST" "$HOME/wonton-dev/stack-slot.sh ports $STACK" 2>&1 || true)
+slot_ports=$(timeout 25 ssh "$HOST" "\$HOME/wonton-dev/stack-slot.sh ports $STACK" 2>&1 || true)
 ports=$(select_ports "$dev_ports" "$slot_ports")
 read -r port_src old_tunnel gw tunnel <<<"$ports"
 if [[ $port_src == slot ]]; then

@@ -22,14 +22,17 @@ onboarding_do() { # onboarding_do <dev> <action>
                 tap_text "$dev" "Go to chat" >/dev/null 2>&1 || tap_text "$dev" "Done" >/dev/null 2>&1 || true
                 sleep 2; return 0
             fi
-            grep -q 'text="Retry"' <<<"$xml" && tap_text "$dev" "Retry" >/dev/null 2>&1 || true
+            if grep -qE 'text="(Try again|重试)"' <<<"$xml"; then
+                tap_text "$dev" "Try again" >/dev/null 2>&1 || tap_text "$dev" "重试" >/dev/null 2>&1 || true
+            fi
         done
         log "设备 $dev 首次引导：预置插件 90 秒没装完（还停在 Install these apps）"
         ;;
     goto) tap_text "$dev" "Go to chat" >/dev/null 2>&1 || tap_text "$dev" "去聊天" >/dev/null 2>&1 ||
         tap_text "$dev" "Done" >/dev/null 2>&1 || tap_text "$dev" "完成" >/dev/null 2>&1 || true; sleep 2 ;;
     next) tap_text "$dev" "Next" >/dev/null 2>&1 || tap_text "$dev" "下一步" >/dev/null 2>&1 || true; sleep 2 ;;
-    close) tap_text "$dev" "Close" >/dev/null 2>&1 || true; sleep 2 ;;
+    close) tap_desc "$dev" "Close page" >/dev/null 2>&1 || tap_desc "$dev" "Close panel" >/dev/null 2>&1 ||
+        tap_desc "$dev" "Close" >/dev/null 2>&1 || tap_text "$dev" "Close" >/dev/null 2>&1 || true; sleep 2 ;;
     esac
 }
 # 把页面带回聊天列表：焦点不在 App 就冷启动，在就 BACK 退出设置/备份这类页面。
@@ -42,8 +45,9 @@ to_list() { # to_list <dev>：一路清掉验证/备份页直到聊天列表出�
         action=$(onboarding_action "$xml")
         if [[ -n $action ]]; then onboarding_do "$dev" "$action"; continue; fi
         if grep -qE 'content-desc="Sidebar"|text="Waiting for you"' <<<"$xml" || room_label "$xml" >/dev/null 2>&1; then return 0; fi
-        if grep -q 'text="Skip"\|text="跳过"' <<<"$xml"; then
-            tap_text "$dev" "Skip" >/dev/null 2>&1 || tap_text "$dev" "跳过" >/dev/null 2>&1 || true
+        if grep -qE 'text="(Skip|Skip for now|跳过|先跳过|先跳過)"' <<<"$xml"; then
+            tap_text "$dev" "Skip for now" >/dev/null 2>&1 || tap_text "$dev" "Skip" >/dev/null 2>&1 ||
+                tap_text "$dev" "先跳过" >/dev/null 2>&1 || tap_text "$dev" "跳过" >/dev/null 2>&1 || true
             sleep 2; continue
         fi
         # 验证超时页：只有跳过一条路，BACK 会退出 App。
@@ -69,13 +73,16 @@ to_list() { # to_list <dev>：一路清掉验证/备份页直到聊天列表出�
         sleep 2
     done
 }
+# 把要放进 grep -E 的字面串转义：房名里的 + ( . 等不再当正则。
+ere_escape() { printf '%s\n' "$1" | sed 's/[][\\.^$*+?(){}|]/\\&/g'; }
 # 点一个无障碍可见的名字：先等它出现（最多 90 秒），再按它的 bounds 中心点。
 tap_name() {
-    local dev=$1 text=$2 xml coords x y
+    local dev=$1 text=$2 xml coords x y esc
+    esc=$(ere_escape "$text")
     for _ in $(seq 1 10); do
         xml=$(ui "$dev" 2>/dev/null || true)
         # 取最后一个匹配：弹窗节点排在底页同文案之后。
-        line=$(printf '%s' "$xml" | grep -oE "text=\"$text\"[^>]*bounds=\"[^\"]+\"" | tail -1) || true
+        line=$(printf '%s' "$xml" | grep -oE "text=\"$esc\"[^>]*bounds=\"[^\"]+\"" | tail -1) || true
         bounds=${line##*bounds=\"}
         coords=""
         [[ -n $bounds ]] && coords=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${bounds%\"}")
@@ -94,7 +101,7 @@ tap_name() {
     timeout 25 ssh "$HOST" "adb -s $dev shell input tap $x $y"
     # 第二下只在目标还在时补：双击会把刚弹出的确认框点到背景上关掉。
     sleep 1
-    ui "$dev" 2>/dev/null | grep -q "text=\"$text\"" && timeout 25 ssh "$HOST" "adb -s $dev shell input tap $x $y"
+    ui "$dev" 2>/dev/null | grep -q "text=\"$esc\"" && timeout 25 ssh "$HOST" "adb -s $dev shell input tap $x $y"
     true
 }
 shot() { timeout 25 ssh "$HOST" "adb -s $1 exec-out screencap -p" > "$EVIDENCE/$2.png"; }
@@ -108,9 +115,22 @@ fetch_rec() { # 视频经 exec-out 回本地（adb pull 会把文件写到 HOST 
 }
 
 tap_text() { # 按精确文本点中心，不做祖先回退
-    local dev=$1 text=$2 xml c b x1 y1 x2 y2
+    local dev=$1 text=$2 xml c b x1 y1 x2 y2 esc
+    esc=$(ere_escape "$text")
     xml=$(ui "$dev" 2>/dev/null || true)
-    c=$(grep -oE "text=\"$text\"[^>]*bounds=\"[^\"]+\"" <<<"$xml" | tail -1) || true
+    c=$(grep -oE "text=\"$esc\"[^>]*bounds=\"[^\"]+\"" <<<"$xml" | tail -1) || true
+    [[ -n $c ]] || return 1
+    b=${c##*bounds=\"}
+    c=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${b%\"}")
+    read -r x1 y1 x2 y2 <<<"$c"
+    timeout 25 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
+}
+
+tap_desc() { # 按 content-desc 点中心（关闭这类只有无障碍描述的按钮）
+    local dev=$1 text=$2 xml c b x1 y1 x2 y2 esc
+    esc=$(ere_escape "$text")
+    xml=$(ui "$dev" 2>/dev/null || true)
+    c=$(grep -oE "content-desc=\"$esc\"[^>]*bounds=\"[^\"]+\"" <<<"$xml" | tail -1) || true
     [[ -n $c ]] || return 1
     b=${c##*bounds=\"}
     c=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${b%\"}")

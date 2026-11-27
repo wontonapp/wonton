@@ -18,13 +18,14 @@ room_label() { # room_label <xml>
 }
 
 # 首次引导/默认机器人面板的状态：install（点主按钮装预置插件）| goto | next | close。
-# 引导页的关闭是图标（content-desc）；这里 text="Close" 是引导后自动打开的默认机器人面板按钮。
+# 关闭在整个 App 里都是无障碍描述（Close page/Close panel/Close）；text="Close" 只作网页兜底。
 onboarding_action() { # onboarding_action <xml>
     local xml=$1
     grep -q 'text="Install these apps"' <<<"$xml" && { echo install; return 0; }
     grep -q 'text="Go to chat"\|text="Done"\|text="去聊天"\|text="完成"' <<<"$xml" && { echo goto; return 0; }
     grep -qE 'text="Next"|text="下一步"' <<<"$xml" && { echo next; return 0; }
-    grep -q 'text="Close"' <<<"$xml" && { echo close; return 0; }
+    # 关闭走无障碍描述：Close page（通话页）/Close panel（面板）/Close（引导 X、横幅、错误页兜底）。
+    grep -qE 'content-desc="(Close page|Close panel|Close)"|text="Close"' <<<"$xml" && { echo close; return 0; }
     return 0
 }
 

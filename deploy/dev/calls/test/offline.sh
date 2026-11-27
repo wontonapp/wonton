@@ -62,6 +62,7 @@ check_action() { # <期望> <xml 片段>
 check_action install '<node text="Install these apps" bounds="[0,0][1,1]" />'
 check_action goto '<node text="Go to chat" bounds="[0,0][1,1]" />'
 check_action next '<node text="Next" bounds="[0,0][1,1]" />'
+check_action close '<node content-desc="Close panel" bounds="[0,0][1,1]" />'
 check_action close '<node text="Close" bounds="[0,0][1,1]" />'
 check_action '' '<node text="Hello" bounds="[0,0][1,1]" />'
 
@@ -96,7 +97,7 @@ out=$(select_ports '' 'call-e2e-relay 没有占名额，先 acquire' 2>/dev/null
 out=$( (select_ports '' 'call-e2e-relay 没有占名额，先 acquire') 2>&1 ) || true
 assert_contains "$out" '.dev-ports' '缺少 .dev-ports 报错点名'
 
-# 假 dump：按队列逐个喂给 ui，记录 tap_text 点到的文本。
+# 假 dump：按队列逐个喂给 ui（跨命令替换，索引用文件计）。
 ui() {
     local n=${#XMLQ[@]} idx
     idx=$(cat "$QFILE" 2>/dev/null || echo 0)
@@ -104,28 +105,63 @@ ui() {
     printf '%s\n' "${XMLQ[$idx]}"
     echo $((idx + 1)) >"$QFILE"
 }
-tap_text() { TAPS+=("$2"); }
-tap_name() { TAPS+=("$2"); }
+ssh() { TAPS+=("$2"); }
+sleep() { :; }
+timeout() { shift; "$@"; }
 cdp() { :; }
 allow_media() { :; }
 deadline_hit() { return 1; }
-sleep() { :; }
-timeout() { :; }
-ssh() { :; }
 
-# —— to_list：Install these apps → Go to chat → Close 面板 → 列表 ——
+# —— 点击助手：房名按字面交给 grep，+ ( 等不能当正则 ——
+XMLQ=( '<node text="Smoke (A)+1" bounds="[24,300][1000,420]" />' )
+: >"$QFILE"; TAPS=()
+tap_name emulator-a 'Smoke (A)+1' && ok 'tap_name 点得到含 + ( 的房名' || bad 'tap_name 点不到含 + ( 的房名'
+assert_contains "${TAPS[*]}" 'input tap 512 360' 'tap_name 按字面命中的 bounds 点击'
+
+: >"$QFILE"; TAPS=()
+tap_text emulator-a 'Smoke (A)+1' && ok 'tap_text 点得到含 + ( 的文本' || bad 'tap_text 点不到含 + ( 的文本'
+assert_contains "${TAPS[*]}" 'input tap 512 360' 'tap_text 按字面命中的 bounds 点击'
+
+XMLQ=( '<node content-desc="Close panel" bounds="[900,100][1000,200]" />' )
+: >"$QFILE"; TAPS=()
+tap_desc emulator-a 'Close panel' && ok 'tap_desc 点得到 content-desc' || bad 'tap_desc 点不到 content-desc'
+assert_contains "${TAPS[*]}" 'input tap 950 150' 'tap_desc 按无障碍描述的 bounds 点击'
+
+# 集成测试用 stub，记录的是按钮文案而不是坐标。
+tap_text() { TAPS+=("$2"); }
+tap_name() { TAPS+=("$2"); }
+tap_desc() { # 和真实现一样：没这个 desc 就失败（好让调用方继续试下一个描述）
+    local xml
+    xml=$(ui "$1")
+    [[ $xml == *"content-desc=\"$2\""* ]] && TAPS+=("$2")
+}
+
+# —— to_list：装插件（失败后 Try again）→ Go to chat → content-desc 关面板 → 列表 ——
 XMLQ=(
     '<node text="Install these apps" bounds="[300,1800][800,1900]" />'
     '<node text="Install these apps" bounds="[300,1800][800,1900]" />'
+    '<node text="Install these apps" bounds="[300,1800][800,1900]" /><node text="Try again" bounds="[300,1600][800,1700]" />'
     '<node text="Go to chat" bounds="[300,1800][800,1900]" />'
-    '<node text="Close" bounds="[900,100][1000,200]" />'
+    '<node content-desc="Close panel" bounds="[900,100][1000,200]" />'
+    '<node content-desc="Close panel" bounds="[900,100][1000,200]" />'
+    '<node content-desc="Close panel" bounds="[900,100][1000,200]" />'
     '<node content-desc="Sidebar" bounds="[0,0][100,100]" /><node text="smoke-verify-1127" bounds="[0,300][1000,420]" />'
 )
 room_name='smoke-verify-1127'
 : >"$QFILE"
 TAPS=()
 to_list emulator-a && ok 'to_list 走过引导和面板后回到列表' || bad 'to_list 没回到列表'
-assert_eq 'Install these apps|Go to chat|Close' "$(IFS='|'; printf '%s' "${TAPS[*]}")" 'to_list 依次点装插件、进聊天、关面板'
+assert_eq 'Install these apps|Try again|Go to chat|Close panel' "$(IFS='|'; printf '%s' "${TAPS[*]}")"     'to_list 依次点装插件、Try again、进聊天、关面板'
+
+# —— to_list：引导页的 Skip for now ——
+XMLQ=(
+    '<node text="Skip for now" bounds="[600,1800][1000,1900]" />'
+    '<node content-desc="Sidebar" bounds="[0,0][100,100]" /><node text="smoke-verify-1127" bounds="[0,300][1000,420]" />'
+)
+: >"$QFILE"
+TAPS=()
+to_list emulator-a && ok 'to_list 点 Skip for now 跳过引导' || bad 'to_list 没跳过引导'
+assert_eq 'Skip for now' "$(IFS='|'; printf '%s' "${TAPS[*]}")" 'to_list 命中 Skip for now'
 
 # —— open_call：列表里按当前房名（不一定是 call-smoke-*）进房找入口 ——
 XMLQ=(
