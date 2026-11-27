@@ -80,22 +80,21 @@ final class VideoPlayerController: NSObject, @preconcurrency AVPlayerViewControl
             })
             observe(.AVPlayerItemTimeJumped, item) { [weak self] _ in self?.report(force: true) }
             observe(.AVPlayerItemDidPlayToEndTime, item) { [weak self] _ in self?.close(finished: true) }
-            observe(.AVPlayerItemFailedToPlayToEndTime, item) { [weak self] note in
-                let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-                self?.fail(error?.localizedDescription ?? "")
-            }
+            observe(.AVPlayerItemFailedToPlayToEndTime, item) { [weak self] reason in self?.fail(reason) }
         }
         player.play()
     }
 
-    /// 主线程上收这一项的通知。
+    /// 主线程上收这一项的通知；交出来的是通知里带的错误说明（放不下去时才有）。
     private func observe(
         _ name: Notification.Name,
         _ item: AVPlayerItem,
-        _ handle: @escaping @MainActor (Notification) -> Void
+        _ handle: @escaping @MainActor (String) -> Void
     ) {
         tokens.append(NotificationCenter.default.addObserver(forName: name, object: item, queue: .main) { note in
-            MainActor.assumeIsolated { handle(note) }
+            let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            let reason = error?.localizedDescription ?? ""
+            MainActor.assumeIsolated { handle(reason) }
         })
     }
 
