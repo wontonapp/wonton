@@ -215,7 +215,6 @@ private struct RecoveryKeySection: View {
                     Text(.ChatBackup1.chatBackupRevealKey).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
-                .accessibilityIdentifier("recovery-key-reveal")
             }
         }
         .wontonDialog(
@@ -276,7 +275,6 @@ private struct RecoveryKeySection: View {
                 .foregroundStyle(Color(colors.textSecondary))
             HStack(spacing: WontonTheme.spacing.s8) {
                 WontonCopyButton(text: recoveryKey, clipboard: .localSecret, look: .wide)
-                    .accessibilityIdentifier("recovery-key-copy")
                 // 点“已保存”先确认一次：关掉后本机不再显示这把密钥，误点等于永久丢失（盲测 11-12）。
                 Button { isConfirmingSaved = true } label: {
                     Text(.ChatBackup1.chatBackupSaved).frame(maxWidth: .infinity)

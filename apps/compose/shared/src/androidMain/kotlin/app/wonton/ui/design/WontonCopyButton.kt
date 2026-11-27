@@ -1,5 +1,6 @@
 package app.wonton.ui.design
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,17 +18,6 @@ import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.Copy
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.delay
-
-enum class WontonCopyLook {
-    /** 和旁边的主按钮并排的次按钮。 */
-    WIDE,
-
-    /** 小胶囊按钮。 */
-    SMALL,
-
-    /** 只有图标（代码块右上角）。 */
-    ICON,
-}
 
 /**
  * App 里所有的“复制”按钮：点了先由 [copy] 写进剪贴板，再把图标换成对勾、文字换成“已复制”，带一下确认触觉，
@@ -61,8 +51,10 @@ fun WontonCopyButton(
     val icon = if (done) WontonIcon.Check else WontonIcon.Copy
     when (look) {
         WontonCopyLook.WIDE -> WontonButton(text, onClick, modifier, WontonButtonKind.SECONDARY, icon = icon)
-        WontonCopyLook.SMALL -> WontonSmallButton(text, onClick, icon = icon)
-        WontonCopyLook.ICON -> WontonIconButton(icon, if (done) text else label ?: text, onClick, tint)
+        WontonCopyLook.SMALL -> Box(modifier) { WontonSmallButton(text, onClick, icon = icon) }
+        WontonCopyLook.ICON -> Box(modifier) {
+            WontonIconButton(icon, if (done) text else label ?: text, onClick, tint)
+        }
     }
 }
 
