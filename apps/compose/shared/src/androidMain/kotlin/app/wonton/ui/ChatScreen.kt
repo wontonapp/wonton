@@ -1,6 +1,5 @@
 package app.wonton.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,7 +22,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -52,9 +50,9 @@ import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
+import app.wonton.protocol.ConfirmationsViewModel
 import app.wonton.protocol.BotView
 import app.wonton.protocol.PluginAction
-import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
@@ -83,6 +81,7 @@ import app.wonton.ui.icons.LockFill
 import app.wonton.ui.icons.VoiceCallFill
 import app.wonton.ui.icons.WontonIcon
 import java.time.Instant
+import kotlinx.coroutines.CoroutineScope
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -111,78 +110,9 @@ fun ChatRoute(
     val room = navigation.openRoom
     // 提示条和通知能在备份页面上打开房间。
     LaunchedEffect(room) { if (room != null) navigation.showingBackup = false }
-    val profile = navigation.botProfile
-    when {
-        navigation.showingConfirmations -> {
-            BackHandler { navigation.showingConfirmations = false }
-            ConfirmationsScreen(confirmations, viewModel.bots, plugins, onAction) {
-                navigation.showingConfirmations = false
-            }
-        }
-        navigation.showingBackup -> {
-            BackHandler { navigation.showingBackup = false }
-            ChatBackupScreen(
-                viewModel.encryption,
-                onAction,
-                onContinueHandoff = { navigation.keyHandoffDeferred = false },
-                onClose = { navigation.showingBackup = false },
-            )
-        }
-        profile != null -> {
-            BackHandler { navigation.botProfile = null }
-            BotProfileScreen(
-                profile, viewModel.bots.firstOrNull { it.bot == profile }, plugins, onAction,
-                onClose = { navigation.botProfile = null },
-            )
-        }
-        navigation.startingChat -> {
-            BackHandler { navigation.startingChat = false }
-            StartChatScreen(
-                core = core,
-                viewModel = viewModel,
-                plugins = plugins,
-                onStart = { userId, contact ->
-                    navigation.startingChat = false
-                    rejection = if (contact != null) {
-                        navigation.startChatWith(core, contact) { row -> viewModel.bots.directBot(row) != null }
-                    } else {
-                        navigation.openDirectChat(core, userId)
-                    }
-                },
-                onClose = { navigation.startingChat = false },
-            )
-        }
-        room != null -> {
-            BackHandler { navigation.closeRoom() }
-            val row = viewModel.rooms.firstOrNull { it.roomId == room }
-            val context = LocalContext.current
-            val opener = remember(core, navigation, context, scope, onAppLink) {
-                AndroidLinkOpener(context, core, navigation, scope, onAppLink) { rejection = it }
-            }
-            CompositionLocalProvider(LocalLinkOpener provides opener) {
-                OpenRoom(core, navigation, room, row, viewModel, plugins, onAction) { rejection = it }
-            }
-        }
-        LocalExpandedChat.current -> PluginPages(plugins, pluginNavigation) { ChatDetailEmpty() }
-        else -> PluginPages(plugins, pluginNavigation) {
-            ChatListScreen(
-                viewModel = viewModel,
-                plugins = plugins,
-                pluginNavigation = pluginNavigation,
-                confirmationCount = confirmations.pending.size + confirmations.contactRequests.size,
-                onOpenConfirmations = navigation::openConfirmations,
-                onAction = onAction,
-                onOpenRoom = { navigation.openRoom = it },
-                onOpenBackup = {
-                    // 收起了的交接页从提醒再打开，不进备份页（ADR-0087）。
-                    if (viewModel.encryption.backupReminder == BackupReminder.CONTINUE_ON_OTHER_DEVICE) {
-                        navigation.keyHandoffDeferred = false
-                    } else navigation.showingBackup = true
-                },
-                onStartChat = { navigation.startingChat = true },
-                onOpenApps = onOpenApps,
-            )
-        }
+    BackLayers(navigation.chatPages(), ChatPage::key, onBack = navigation::close) { page ->
+        ChatPageContent(page, core, navigation, viewModel, confirmations, plugins, pluginNavigation, onAction,
+            ChatLinks(scope, onAppLink), onOpenApps) { rejection = it }
     }
 
     viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.Chat(ChatAction.DismissChatProblem)) } }
@@ -541,7 +471,7 @@ internal fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
 
 /** 选一个人或输入用户名发起私聊，房间出现后打开。 */
 @Composable
-private fun StartChatScreen(
+internal fun StartChatScreen(
     core: ClientCore,
     viewModel: ChatViewModel,
     plugins: PluginsState,

@@ -89,7 +89,6 @@ fun MyAppsSettingsScreen(onBack: () -> Unit, open: (PluginEntry) -> Unit, checkI
         MyAppCandidatesScreen { adding = false }
         return
     }
-    BackHandler(onBack = onBack)
     val list = rememberLazyListState()
     PluginPages(pages.plugins, navigation) {
         WontonScreen(bar = { MyAppsBar(stringResource(R.string.settings_my_apps), onBack) }) {

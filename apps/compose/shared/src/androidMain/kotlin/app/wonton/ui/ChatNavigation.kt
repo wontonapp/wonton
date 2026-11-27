@@ -76,6 +76,10 @@ class ChatNavigation(
     var botProfile by mutableStateOf<BotRef?>(null)
     var showingConfirmations by mutableStateOf(false)
 
+    /** 关房间会回到打开它的那一页（应用页、商店），不是聊天列表。 */
+    val returnsElsewhere: Boolean
+        get() = returnTab != null
+
     /** 问 Bot 的动作 ID、待处理回执和失败提示；只认自己发起的动作对应的回执。 */
     inner class AskNavigation {
         var askFailure by mutableStateOf<AskFailureBanner?>(null)

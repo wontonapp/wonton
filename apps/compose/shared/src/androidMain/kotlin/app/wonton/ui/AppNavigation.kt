@@ -202,16 +202,6 @@ internal fun AppNavigation.closeApps() {
     plugins.detail = null
 }
 
-/** 栈顶这页归不归原生的层画（聊天根、应用网格；其余是整页的插件网页）。 */
-internal fun TabRef.isNativeRoot(): Boolean = this == TabRef.Chat || this == TabRef.Apps
-
-/** 原生层此刻画的是哪一块（重组不丢滚动位置用）。 */
-internal fun AppNavigation.nativeKey(): String = when {
-    settingsOverlay -> "settings/${settingsPage.name}"
-    pages.viewModel.showsApps || pages.current == TabRef.Apps -> "apps/$appsPage"
-    else -> "chat"
-}
-
 /** 每次系统 Intent 有自己的消费状态；重组或 Activity 重建不能重放已处理的导航。 */
 class AppLinkRequest(val link: AppLink, val onHandled: () -> Unit) {
     internal var handled = false

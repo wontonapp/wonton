@@ -1,6 +1,5 @@
 package app.wonton.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
@@ -31,7 +30,6 @@ fun HomeRoute(
 ) {
     val servers = LocalServers.current
     val activity = LocalActivity.current
-    BackHandler(enabled = page != HomePage.LAUNCHER) { onPage(HomePage.LAUNCHER) }
     when {
         viewModel.status is HomeStatus.NotConfigured && (servers.adding || servers.servers.none { it.current }) ->
             PairingPage(
@@ -42,10 +40,12 @@ fun HomeRoute(
                 } else null,
             )
         else -> PluginPages(plugins, navigation, storeConfirmations = true) {
-            if (page == HomePage.STORE && app.wonton.protocol.AppsAction.STORE in plugins.viewModel.actions) {
-                StoreRoute(plugins, navigation, onBack = { onPage(HomePage.LAUNCHER) })
-            } else {
-                LauncherScreen(
+            val store = page == HomePage.STORE && app.wonton.protocol.AppsAction.STORE in plugins.viewModel.actions
+            val shown = if (store) listOf(HomePage.STORE, HomePage.LAUNCHER) else listOf(HomePage.LAUNCHER)
+            BackLayers(shown, HomePage::name, onBack = { onPage(HomePage.LAUNCHER) }) { home ->
+                if (home == HomePage.STORE) {
+                    StoreRoute(plugins, navigation, onBack = { onPage(HomePage.LAUNCHER) })
+                } else LauncherScreen(
                     viewModel,
                     plugins,
                     navigation,

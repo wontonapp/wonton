@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.zIndex
 import app.wonton.ui.design.WontonEdgeToEdgeScaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -107,7 +108,9 @@ internal fun ServerApp(
                     AppContent(navigation, home, settings, appearance, chatView)
                 }
                 navigation.confirmationCard?.let { card ->
-                    ConfirmationsScreen(core, card) { navigation.confirmationCard = null }
+                    BackOverlay(onBack = { navigation.confirmationCard = null }) {
+                        ConfirmationsScreen(core, card) { navigation.confirmationCard = null }
+                    }
                 }
             }
             TabMediaPermissions(pages)
@@ -130,9 +133,9 @@ private fun AppContent(
     val draft = LocalTabDraft.current
     val shown = pages.current
     // 栈顶是插件网页时整页归网页；其余都是原生的（聊天根、应用网格）。设置盖在什么上面都算原生。
-    val opened = view.stack.lastOrNull()
-    val pluginShown = !view.showsApps && opened != null && !opened.tab.isNativeRoot()
-    val native = !pluginShown || nav.settingsOverlay
+    val chain = nav.rootPages(home)
+    val top = chain.first()
+    val pluginShown = top is RootPage.Web
     val expanded = LocalExpandedChat.current
     var showsSidebar by remember { mutableStateOf(false) }
     val nativeState = rememberSaveableStateHolder()
@@ -154,6 +157,7 @@ private fun AppContent(
     // 只在聊天的根页面响应左边缘右滑（开抽屉）：进了房间、页面或盖了别的层，左边缘是系统的返回手势。
     val edgeSwipe = !expanded && chatShown && nav.chat.openRoom == null
     BackRootExit(nav, view)
+    val rootBack = rememberRootBack(nav, chain)
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
         WithPendingCards(cards, pluginShown && !nav.settingsOverlay, nav::openCardTarget) { bannerTop ->
             val page: @Composable () -> Unit = {
@@ -176,15 +180,11 @@ private fun AppContent(
                         Box(Modifier.fillMaxSize()) {
                             PluginPagesHost(
                                 pages, home, appearance,
-                                active = opened?.tab?.takeIf { !native },
-                                onDetails = nav::detail, onDraft = onDraft, bannerTop = bannerTop,
+                                active = (top as? RootPage.Web)?.tab,
+                                onDetails = nav::detail, onDraft = onDraft, bannerTop = bannerTop, back = rootBack,
                             )
-                            if (native) Box(Modifier.fillMaxSize()) {
-                                CompositionLocalProvider(LocalWontonOpenSidebar provides
-                                    if (expanded) null else ({ showsSidebar = true })) {
-                                    NativeContent(nav, home, settings, appearance, chat, nativeState)
-                                }
-                                OpeningChat(nav.chat)
+                            RootLayers(nav, rootBack, top, if (expanded) null else ({ showsSidebar = true })) { page ->
+                                NativeContent(page, nav, home, settings, appearance, chat, nativeState)
                             }
                         }
                     }
@@ -201,8 +201,8 @@ private fun AppContent(
 private const val BACK_EXIT_MS = 2_000L
 
 /**
- * 谁都没接住的返回：页面自己的返回（视频全屏、网页历史、关页）排在前面；这里只在它的处理器没装上时
- * 兜底关页。到了根页面才谈退出：第一下提示，第二下在 [BACK_EXIT_MS] 内退出。
+ * 谁都没接住的返回：页面自己的返回（视频全屏、网页历史、关页）和最外层的跟手返回（[rememberRootBack]）排在前面；
+ * 这里只在它们的处理器没装上时兜底关页。到了根页面才谈退出：第一下提示，第二下在 [BACK_EXIT_MS] 内退出。
  * 关页和退出之间留这一下，刚关掉页面又习惯性补按返回时，不会把云吞直接摔回桌面。
  */
 @Composable
@@ -241,28 +241,46 @@ private fun OpeningChat(chat: ChatNavigation) {
     }
 }
 
+/**
+ * 最外层原生的那一块：平时是最上面那页（原生时）；拖返回时下面那页是原生的也垫在这里。最上面是网页时这一块
+ * 只有垫着的那页，整个放到网页下面，压暗另画在两者之间。
+ */
+@Composable
+private fun RootLayers(
+    nav: AppNavigation, back: RootBack, top: RootPage, openSidebar: (() -> Unit)?,
+    page: @Composable (RootPage) -> Unit,
+) {
+    val under = back.preview.under?.takeIf { it != top }
+    if (top.native || under?.native == true) {
+        // 原生页在上时压在所有网页（含垫着预览的那页）之上；网页在上时整块垫到网页底下。
+        Box(Modifier.fillMaxSize().zIndex(if (top.native) NATIVE_Z else -1f)) {
+            CompositionLocalProvider(LocalWontonOpenSidebar provides openSidebar) {
+                RootNativePages(back, top, page)
+            }
+            OpeningChat(nav.chat)
+        }
+    }
+    if (!top.native && under != null) BackUnderDim(back.preview, Modifier.zIndex(ROOT_DIM_Z))
+}
+
 @Composable
 private fun NativeContent(
-    nav: AppNavigation, home: HomeViewModel, settings: SettingsViewModel, appearance: AppearanceViewModel,
-    chat: ChatViewModel, holder: SaveableStateHolder,
+    page: RootPage, nav: AppNavigation, home: HomeViewModel, settings: SettingsViewModel,
+    appearance: AppearanceViewModel, chat: ChatViewModel, holder: SaveableStateHolder,
 ) {
-    holder.SaveableStateProvider(nav.nativeKey()) {
-        NativeTab(nav, home, settings, appearance, chat)
+    holder.SaveableStateProvider(page.key) {
+        NativeTab(page, nav, home, settings, appearance, chat)
     }
 }
 
 @Composable
 private fun NativeTab(
-    nav: AppNavigation, home: HomeViewModel, settings: SettingsViewModel,
+    page: RootPage, nav: AppNavigation, home: HomeViewModel, settings: SettingsViewModel,
     appearance: AppearanceViewModel, chat: ChatViewModel,
 ) {
     val pages = nav.pages
-    if (nav.settingsOverlay) BackHandler {
-        if (nav.settingsPage == SettingsSubpage.MAIN) nav.settingsOverlay = false
-        else nav.settingsPage = nav.settingsPage.parent()
-    }
-    when {
-        nav.settingsOverlay -> SettingsPage(
+    when (page) {
+        RootPage.Settings -> SettingsPage(
             pages.plugins, settings, home, appearance, chat, nav.settingsPage,
             onClose = { nav.settingsOverlay = false },
             peersOpenRequests = nav.peersOpenRequests,
@@ -274,18 +292,19 @@ private fun NativeTab(
             },
             checkInstalled = { nav.checkInstalled() },
         ) { nav.settingsPage = it }
-        pages.viewModel.showsApps || pages.current == TabRef.Apps ||
-            home.status is HomeStatus.NotConfigured -> HomeRoute(
+        RootPage.Apps -> HomeRoute(
             pages.core, home, pages.plugins, nav.plugins, nav.appsPage,
             { nav.appsPage = it },
             chat.pendingConfirmations, nav::openCardTarget,
             onConnection = { nav.settings(SettingsSubpage.SERVER) }, settingsUpgrade = settings.serverUpgrade,
             onSettings = { nav.settings() },
         )
-        else -> ChatRoute(
+        RootPage.Chat -> ChatRoute(
             pages.core, nav.chat, pages.plugins, nav.plugins,
             onAppLink = { nav.openLink(it) },
         ) { nav.openApps(HomePage.LAUNCHER) }
+        // 网页由 PluginPagesHost 画。
+        is RootPage.Web -> Unit
     }
 }
 

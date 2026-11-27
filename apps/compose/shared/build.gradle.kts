@@ -158,7 +158,7 @@ kotlin {
                 implementation(libs.androidx.browser)
                 // Apache-2.0。把网页媒体状态接到系统媒体会话和默认通知。
                 implementation(libs.androidx.media3.session)
-                // Apache-2.0。系统的照片选择器（PickVisualMedia）和返回键处理（BackHandler）。
+                // Apache-2.0。系统的照片选择器（PickVisualMedia）和返回键、跟手返回（BackHandler、PredictiveBackHandler）。
                 implementation(libs.androidx.activity.compose)
                 // Apache-2.0。扫码配对页的相机取景和逐帧分析（CameraX）。
                 implementation(libs.androidx.camera.camera2)
