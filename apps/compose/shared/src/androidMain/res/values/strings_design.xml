@@ -22,4 +22,8 @@
     <string name="design_update_badge">Update available</string>
     <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
     <string name="design_badge_count">%1$d pending</string>
+    <!-- Copy button: puts the shown text on the clipboard. -->
+    <string name="design_copy">Copy</string>
+    <!-- The same copy button for a moment after the text was copied. -->
+    <string name="design_copied">Copied</string>
 </resources>

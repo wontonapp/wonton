@@ -22,4 +22,8 @@
     <string name="design_update_badge">アップデートあり</string>
     <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
     <string name="design_badge_count">未処理 %1$d 件</string>
+    <!-- Copy button: puts the shown text on the clipboard. -->
+    <string name="design_copy">コピー</string>
+    <!-- The same copy button for a moment after the text was copied. -->
+    <string name="design_copied">コピーしました</string>
 </resources>

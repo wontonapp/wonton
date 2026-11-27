@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Accessibility label of that copy button right after the code was copied. -->
-    <string name="message_code_copied">コピーしました</string>
     <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
     <string name="message_delete_everyone">全員のメッセージを削除</string>
     <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->

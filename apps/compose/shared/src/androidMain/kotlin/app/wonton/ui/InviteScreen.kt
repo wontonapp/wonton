@@ -51,11 +51,11 @@ import app.wonton.protocol.DeviceInvite
 import app.wonton.protocol.KeyHandoff
 import app.wonton.protocol.VerificationFlow
 import app.wonton.protocol.VerificationStage
+import app.wonton.ui.design.WontonCopyButton
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonNotice
-import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Error
@@ -238,7 +238,7 @@ internal fun InviteCodeDetails(code: String, fullText: Boolean, onToggle: () -> 
                 )
             }
         }
-        WontonSmallButton(stringResource(R.string.chat_backup_copy), onClick = onCopy)
+        WontonCopyButton(onCopy)
     }
 }
 
