@@ -1,5 +1,5 @@
 //! 假核心里的相册：`/_wonton/api/media/library/…` 按提供方的形状回时间线、相册、搜索、人物、详情和字节，
-//! 写操作照真的记账（收藏、进回收站、恢复、加进相册），逐条失败按测试塞进来的回。
+//! 写操作照真的记账（收藏、进回收站、恢复，建相册、加进、移出、共享），逐条失败按测试塞进来的回。
 //!
 //! 隧道和请求记录用 `plugins::rig` 的；要整个接口失败时用 rig 的预设回应，它排在这里前面。
 
@@ -195,7 +195,10 @@ pub fn respond(
         (&Method::GET, []) => json(LibraryFeatures {
             actions: vec![
                 LibraryActionKind::Favorite,
+                LibraryActionKind::CreateAlbum,
                 LibraryActionKind::AddToAlbum,
+                LibraryActionKind::RemoveFromAlbum,
+                LibraryActionKind::ShareAlbum,
                 LibraryActionKind::Trash,
                 LibraryActionKind::Restore,
                 LibraryActionKind::Other("rotate".to_owned()),
@@ -363,35 +366,92 @@ fn act(fake: &PhotosFake, action: LibraryAction) -> Response {
             }
             ids.len()
         }
-        LibraryAction::AddToAlbum { album, ids } => {
-            let ids = allowed(ids);
-            let mut albums = fake.albums.lock().unwrap();
-            let Some((found, members)) = albums.iter_mut().find(|(found, _)| found.id == album)
-            else {
-                return (
-                    StatusCode::NOT_FOUND,
-                    envelope(MediaFailureCode::MediaGone, "no album"),
-                )
-                    .into_response();
-            };
-            members.extend(ids.iter().cloned());
-            album_result = Some(Album {
-                count: members.len() as u32,
-                ..found.clone()
-            });
-            ids.len()
-        }
-        _ => {
-            return (
-                StatusCode::BAD_REQUEST,
-                envelope(MediaFailureCode::Protocol, "not in the fake"),
-            )
-                .into_response();
-        }
+        other => match album_act(fake, other, &mut allowed) {
+            Ok((changed, album)) => {
+                album_result = album;
+                changed
+            }
+            Err(failure) => return failure.into_response(),
+        },
     };
     json(LibraryActionResult {
         changed: changed as u32,
         album: album_result,
         failed,
     })
+}
+
+/// 相册上的写操作：建、加进、移出、共享。回改了几项和改过的相册。
+fn album_act(
+    fake: &PhotosFake,
+    action: LibraryAction,
+    allowed: &mut dyn FnMut(Vec<String>) -> Vec<String>,
+) -> Result<(usize, Option<Album>), (StatusCode, String)> {
+    let mut albums = fake.albums.lock().unwrap();
+    if let LibraryAction::CreateAlbum {
+        title,
+        ids,
+        share_with,
+    } = action
+    {
+        let ids = allowed(ids);
+        let created = Album {
+            id: format!("new-{}", albums.len()),
+            title,
+            count: ids.len() as u32,
+            owner: AlbumOwner::Me,
+            shared: !share_with.is_empty(),
+            cover: ids.first().cloned(),
+            members: share_with,
+            updated_at: None,
+        };
+        albums.push((created.clone(), ids.clone()));
+        return Ok((ids.len(), Some(created)));
+    }
+    let target = match &action {
+        LibraryAction::AddToAlbum { album, .. }
+        | LibraryAction::RemoveFromAlbum { album, .. }
+        | LibraryAction::ShareAlbum { album, .. } => album.clone(),
+        _ => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                envelope(MediaFailureCode::Protocol, "not in the fake"),
+            ));
+        }
+    };
+    let Some((found, items)) = albums.iter_mut().find(|(found, _)| found.id == target) else {
+        return Err((
+            StatusCode::NOT_FOUND,
+            envelope(MediaFailureCode::MediaGone, "no album"),
+        ));
+    };
+    let changed = match action {
+        LibraryAction::AddToAlbum { ids, .. } => {
+            let ids = allowed(ids);
+            items.extend(ids.iter().cloned());
+            ids.len()
+        }
+        LibraryAction::RemoveFromAlbum { ids, .. } => {
+            let ids = allowed(ids);
+            items.retain(|id| !ids.contains(id));
+            ids.len()
+        }
+        LibraryAction::ShareAlbum { people, .. } => {
+            found.shared = true;
+            let new: Vec<String> = people
+                .into_iter()
+                .filter(|person| !found.members.contains(person))
+                .collect();
+            found.members.extend(new.iter().cloned());
+            new.len()
+        }
+        _ => 0,
+    };
+    Ok((
+        changed,
+        Some(Album {
+            count: items.len() as u32,
+            ..found.clone()
+        }),
+    ))
 }

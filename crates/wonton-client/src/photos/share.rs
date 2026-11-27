@@ -18,6 +18,7 @@ struct Me {
 }
 
 impl PhotosLink {
+    /// 写操作表说这个源能建相册或共享相册时才调。
     pub(super) fn share_targets(self: &Arc<Self>) {
         let Some(ticket) = self.start(Section::ShareTargets, |_, view| {
             view.share_targets.loading = true;

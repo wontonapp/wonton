@@ -322,9 +322,10 @@ fn failed(code: MediaFailureCode, message: &str) -> PhotosViewModel {
             ..PhotoAlbums::default()
         },
         people: PhotoPeople {
-            problem,
+            problem: problem.clone(),
             ..PhotoPeople::default()
         },
+        actions_problem: problem,
         ..PhotosViewModel::default()
     }
 }

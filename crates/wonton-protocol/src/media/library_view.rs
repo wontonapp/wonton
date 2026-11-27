@@ -18,11 +18,13 @@ pub struct PhotosViewModel {
     pub timeline: PhotoTimeline,
     pub albums: PhotoAlbums,
     pub people: PhotoPeople,
-    /// 建相册、共享相册时能选的家人
+    /// 建相册、共享相册时能选的家人；这个源接建相册或共享相册时才取
     pub share_targets: PhotoShareTargets,
     /// 这个源接的写操作，壳只出这里有的按钮；接收藏时 `Favorite`、`Unfavorite` 都在。只读的源为空表；
-    /// 还没取到或没取成时为空值，壳先不出写操作的按钮（原因看时间线的 `problem`）
+    /// 还没取到或没取成时为空值，壳先不出写操作的按钮，没取成的原因在 `actions_problem`
     pub actions: Option<Vec<PhotoEditKind>>,
+    /// 写操作表没取成的原因；时间线可能同时取成了，所以不并进时间线的 `problem`。下次取成时清空
+    pub actions_problem: Option<MediaFailure>,
     /// 打开着的相册
     pub album: Option<PhotoAlbumView>,
     /// 搜索页的查询和结果；清掉搜索时为空
@@ -460,7 +462,7 @@ pub struct PhotoItemFailure {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PhotosAction {
-    /// 进相册页：取写操作表、时间线、相册和人物。`utc_offset_minutes` 是手机此刻的时差（东八区为 480），按日分组
+    /// 进相册页：取写操作表、时间线、相册和人物，源接建相册或共享相册时再取能共享给的家人。`utc_offset_minutes` 是手机此刻的时差（东八区为 480），按日分组
     /// 用它。`source` 是用哪个相册插件（插件 id），空着由核心按主人定的默认挑；换了插件，已取的都清掉重取。
     Open {
         utc_offset_minutes: i32,
@@ -468,7 +470,7 @@ pub enum PhotosAction {
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         source: Option<String>,
     },
-    /// 重取写操作表、时间线、相册和人物；打开着的月、相册、搜索和大图页一起重取第一页
+    /// 重取写操作表、时间线、相册、人物和能共享给的家人；打开着的月、相册、搜索和大图页一起重取第一页
     Refresh,
     /// 取一个月的第一页（`YYYY-MM`）；已经取过的不重取
     OpenMonth {

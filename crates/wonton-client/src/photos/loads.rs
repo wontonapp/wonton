@@ -10,8 +10,9 @@ use wonton_protocol::media::library::{
     PhotoDetail, Timeline, album_path, library_item_path, timeline_bucket_path,
 };
 use wonton_protocol::media::library_view::{
-    PhotoAlbumRow, PhotoAlbumView, PhotoDetailView, PhotoEdit, PhotoEditOutcome, PhotoInfo,
-    PhotoPage, PhotoPerson, PhotoSearch, PhotoSearchView, PhotoTile, PhotosViewModel,
+    PhotoAlbumRow, PhotoAlbumView, PhotoDetailView, PhotoEdit, PhotoEditKind, PhotoEditOutcome,
+    PhotoInfo, PhotoPage, PhotoPerson, PhotoSearch, PhotoSearchView, PhotoShareTargets, PhotoTile,
+    PhotosViewModel,
 };
 
 use super::{PhotosLink, Section, api, view};
@@ -79,13 +80,12 @@ fn can_load_more(page: &PhotoPage) -> bool {
 }
 
 impl PhotosLink {
-    /// 写操作表、时间线、相册、人物和能共享给的家人。
+    /// 写操作表、时间线、相册和人物；能共享给的家人跟在写操作表后面。
     pub(super) fn refresh_lists(self: &Arc<Self>) {
         self.features();
         self.timeline();
         self.albums();
         self.people();
-        self.share_targets();
     }
 
     /// 都重取：列表，加上打开着的月、相册、搜索和大图页的第一页。
@@ -130,17 +130,41 @@ impl PhotosLink {
         }
     }
 
+    /// 写操作表；源能建相册或共享相册时接着取能共享给的家人，只读的源不读家人名单。
     fn features(self: &Arc<Self>) {
         let Some(ticket) = self.start(Section::Features, |_, _| true) else {
             return;
         };
-        self.fetch(
-            ticket,
-            PATH_LIBRARY.to_owned(),
-            |_, view, result: Result<LibraryFeatures, _>| {
-                view.actions = result.ok().map(|features| view::edit_kinds(&features));
-            },
-        );
+        let api = MediaApi::connect(&self.home);
+        let path = api::core_path(PATH_LIBRARY.to_owned(), ticket.source.as_deref());
+        let link = Arc::clone(self);
+        self.runtime.spawn(async move {
+            let result = match api {
+                Ok(api) => api.get::<LibraryFeatures>(&path).await,
+                Err(failure) => Err(failure),
+            };
+            let mut shares = false;
+            link.apply(&ticket, |_, view| match result {
+                Ok(features) => {
+                    let kinds = view::edit_kinds(&features);
+                    shares = kinds.iter().any(|kind| {
+                        matches!(kind, PhotoEditKind::CreateAlbum | PhotoEditKind::ShareAlbum)
+                    });
+                    if !shares {
+                        view.share_targets = PhotoShareTargets::default();
+                    }
+                    view.actions = Some(kinds);
+                    view.actions_problem = None;
+                }
+                Err(failure) => {
+                    view.actions = None;
+                    view.actions_problem = Some(failure);
+                }
+            });
+            if shares {
+                link.share_targets();
+            }
+        });
     }
 
     fn timeline(self: &Arc<Self>) {

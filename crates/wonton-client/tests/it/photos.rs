@@ -15,14 +15,14 @@ use crate::photos_support::{album, asset, envelope};
 use crate::plugins::rig::{Canned, FakeHome, Rig, WAIT};
 
 const TIMELINE: &str = "/_wonton/api/media/library/timeline";
-const ALBUMS: &str = "/_wonton/api/media/library/albums";
+pub(crate) const ALBUMS: &str = "/_wonton/api/media/library/albums";
 
 /// 东八区 2026-11-27 00:30、2026-11-26 21:33、2026-11-26 18:46。
 const LATE_27: u64 = 1_795_710_600_000;
 const NIGHT_26: u64 = 1_795_700_000_000;
 const EVENING_26: u64 = 1_795_690_000_000;
 
-async fn photos(
+pub(crate) async fn photos(
     rig: &Rig,
     what: &str,
     mut check: impl FnMut(&PhotosViewModel) -> bool,
@@ -41,11 +41,11 @@ async fn photos(
         .unwrap_or_else(|_| panic!("{what}：超时，当前：{:#?}", rig.app.photos()))
 }
 
-fn send(rig: &Rig, action: PhotosAction) -> Result<(), CoreError> {
+pub(crate) fn send(rig: &Rig, action: PhotosAction) -> Result<(), CoreError> {
     rig.app.dispatch(Action::Photos { action })
 }
 
-fn open(rig: &Rig) {
+pub(crate) fn open(rig: &Rig) {
     open_with(rig, None);
 }
 
@@ -60,7 +60,7 @@ fn open_with(rig: &Rig, source: Option<&str>) {
     .unwrap();
 }
 
-fn november(rig: &Rig) {
+pub(crate) fn november(rig: &Rig) {
     rig.core.photos.month(
         "2026-11",
         vec![
@@ -80,7 +80,7 @@ fn ids(view: &PhotosViewModel) -> Vec<String> {
 }
 
 /// 打开相册页、打开十一月，等第一页到。
-async fn november_open(rig: &Rig) -> PhotosViewModel {
+pub(crate) async fn november_open(rig: &Rig) -> PhotosViewModel {
     rig.connected().await;
     open(rig);
     november_month(rig).await
@@ -599,33 +599,6 @@ async fn the_chosen_plugin_goes_with_every_request_and_switching_starts_over() {
             .iter()
             .any(|seen| seen.path == format!("{TIMELINE}?source=app.example.other"))
     );
-}
-
-#[tokio::test]
-async fn edit_buttons_follow_what_the_plugin_accepts() {
-    let rig = Rig::new().await;
-    rig.connected().await;
-    open(&rig);
-    let view = photos(&rig, "写操作表", |view| view.actions.is_some()).await;
-    let actions = view.actions.unwrap();
-    for kind in [
-        PhotoEditKind::Favorite,
-        PhotoEditKind::Unfavorite,
-        PhotoEditKind::Trash,
-        PhotoEditKind::Restore,
-    ] {
-        assert!(actions.contains(&kind), "{actions:?}");
-    }
-    assert!(!actions.contains(&PhotoEditKind::ShareAlbum), "{actions:?}");
-
-    // 取不到就不确定：不出写操作的按钮，不当只读也不当全能。
-    rig.core.answer(
-        Method::GET,
-        "/_wonton/api/media/library",
-        Canned(503, envelope(MediaFailureCode::PluginUnavailable, "down")),
-    );
-    send(&rig, PhotosAction::Refresh).unwrap();
-    photos(&rig, "写操作表没取成", |view| view.actions.is_none()).await;
 }
 
 #[tokio::test]
