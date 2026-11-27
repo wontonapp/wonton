@@ -136,3 +136,31 @@ impl Lan {
         self.memory().degraded.contains(id)
     }
 }
+
+#[cfg(test)]
+impl crate::plugin::PluginManager {
+    /// 测试用：换掉假检测器（[`Detector::Fixed`]）下一次给的宿主网络。
+    pub fn set_lan_host_for_test(&self, network: super::probe::HostNetwork) {
+        match &self.lan.detector {
+            Detector::Fixed(host) => *host.lock().expect("假检测器锁") = Ok(network),
+            other => panic!("只有假检测器能换宿主网络：{other:?}"),
+        }
+    }
+
+    /// 测试用：检测一次，局域网入口跟上。
+    pub async fn lan_pass_for_test(&self) {
+        self.lan_pass(&crate::plugin::languages::Languages::default())
+            .await
+            .expect("局域网检测");
+    }
+
+    /// 测试用：像启动器声明了 `WONTON_ANNOUNCE_ADDRESSES` 那样检测一次。
+    pub async fn lan_pass_announced_for_test(&self, announce: &str) {
+        let announce = super::announce::parse(announce).expect("宣告地址的写法");
+        let detected = self
+            .follow_detection(&crate::plugin::languages::Languages::default())
+            .await
+            .expect("局域网检测");
+        self.follow_entry(&detected, Some(&announce)).await;
+    }
+}

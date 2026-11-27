@@ -80,7 +80,8 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 
 - **自己的域名**：设 `WONTON_MATRIX_SERVER_NAME` 为自己的小写 DNS 名（可同时设 `WONTON_MATRIX_NAME_MODE=own`），不注册送的名字。
   主人负责 DNS、对外入口和服务发现；证书用上表的自定义 DNS provider，或显式选择外部证书。自己的入口连接器默认发布在 `127.0.0.1:8443`，
-  由主人的公网转发接入；`.env` 里的 `WONTON_ENTRY_BIND`、`WONTON_ENTRY_PORT` 改绑定地址和端口。
+  由主人的公网转发接入；`.env` 里的 `WONTON_ENTRY_BIND`、`WONTON_ENTRY_PORT` 改绑定地址和端口，`WONTON_CLIENT_PORT` 改局域网入口
+  的端口（默认 8483）。
 - **不要名字**：设 `WONTON_MATRIX_NAME_MODE=none`，不能同时设 `WONTON_MATRIX_SERVER_NAME`。生成随机的 `<24 位>.wonton.internal`，
   只与同类已配对云吞通信。安装时会警告：以后不能改名，要接入 Matrix 生态必须清空聊天数据、所有人换新账号。
 

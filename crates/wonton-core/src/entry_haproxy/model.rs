@@ -18,9 +18,6 @@ pub const EDGE_SUBNET: &str = "10.90.0.0/24";
 /// 两种都只认这个对端。
 pub const CONNECTOR_ADDRESS: &str = "10.90.0.2";
 pub const ENTRY_EDGE_ADDRESS: &str = "10.90.0.3";
-/// 局域网转发在 `wonton-lanfwd` 上的固定地址（C8 建网）。连接器不在那个网络上（ADR-0021“网络规则”）。
-pub const LAN_FORWARD_ADDRESS: &str = "10.90.1.2";
-pub const LAN_FORWARD_SUBNET: &str = "10.90.1.0/24";
 
 /// 证书文件（证书和私钥在同一个 PEM 里），和 crt-list 一样在只读的 `/certs` 下。
 pub const CERT_FILE: &str = "/certs/site.pem";
@@ -62,7 +59,7 @@ pub struct Model {
     pub trust: Trust,
     /// 公网前端认的对端（连接器）。局域网转发是 `lan_forward`，不在这个列表里。
     pub connectors: Vec<String>,
-    /// 入口容器接了局域网转发网络时才有；没有就不生成局域网前端（C8 之前）。
+    /// 局域网转发在 `lanfwd` 上的地址；没有插件开局域网入口时为空，不生成局域网前端。
     pub lan_forward: Option<String>,
 }
 

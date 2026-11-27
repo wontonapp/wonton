@@ -1,6 +1,6 @@
-//! ACME 下单前独立查询 DNS，不能把管理接口的成功当成 CAA 已生效。
+//! 核心自己查 DNS：ACME 下单前查 CAA（不能把管理接口的成功当成 CAA 已生效），打开局域网入口前查 `*.lan` 的 A 记录。
 
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 use anyhow::{Context, ensure};
@@ -48,6 +48,27 @@ pub async fn caa_issues(domain: &str, servers: &[String]) -> anyhow::Result<Vec<
             })
         })
         .collect())
+}
+
+/// `name` 的 A 记录，排好序、去掉重复。没有记录（NXDOMAIN 或只有别的类型）时是空列表，查询本身失败才报错。
+pub async fn a_records(name: &str, servers: &[String]) -> anyhow::Result<Vec<Ipv4Addr>> {
+    let resolver = resolver(servers)?;
+    let records = match resolver.lookup(format!("{name}."), RecordType::A).await {
+        Ok(records) => records,
+        Err(NetError::Dns(DnsError::NoRecordsFound(_))) => return Ok(Vec::new()),
+        Err(error) => return Err(error).with_context(|| format!("查询 {name} 的 A 记录失败")),
+    };
+    let mut found: Vec<Ipv4Addr> = records
+        .answers()
+        .iter()
+        .filter_map(|record| match &record.data {
+            RData::A(address) => Some(address.0),
+            _ => None,
+        })
+        .collect();
+    found.sort();
+    found.dedup();
+    Ok(found)
 }
 
 /// 把查到的 CAA 归成设置页显示的状态。只有整条 `issue` 都限定到本机账号（`issuer` 点名当前

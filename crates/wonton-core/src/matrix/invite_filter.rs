@@ -26,6 +26,34 @@ use super::{Matrix, MatrixError, api};
 
 pub use wonton_protocol::INVITE_FILTER_EVENT as INVITE_FILTER_TYPE;
 
+/// 一个具体的 Matrix 用户 ID：只有它能写进 `allowed_users`。MSC4155 的名单按通配匹配、不分大小写（ruma
+/// `invite_permission_config.rs` 的 `matches` 用 `WildMatch`），而用户 ID 的旧语法允许 localpart 带 `*`、`?`，
+/// 原样写进去时批一次 `@*:example.org` 就放开一整台服务器。所以先按 Matrix 规范解析（含 255 字节上限、
+/// 只许可见 ASCII），再拒掉这两个通配字符。
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExactUserId(String);
+
+impl ExactUserId {
+    /// 不是一个具体用户时返回没有。
+    pub fn parse(raw: &str) -> Option<Self> {
+        // 长度单独再查一次：ruma 的 `compat-arbitrary-length-ids` 打开时 `parse` 不查。
+        if raw.len() > 255 || raw.contains(['*', '?']) {
+            return None;
+        }
+        ruma_common::UserId::parse(raw).ok()?;
+        Some(Self(raw.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// 冒号后面的服务器名（可能带端口）；localpart 不能含冒号，第一个冒号就是分界。
+    pub fn server_name(&self) -> &str {
+        self.0.split_once(':').map_or("", |(_, server)| server)
+    }
+}
+
 /// 临时替账号登录的设备名，写完就吊销。
 const DEVICE_NAME: &str = "Wonton 核心（邀请过滤）";
 
@@ -112,7 +140,7 @@ fn wanted_content(stored: Option<&Value>, restricted: bool, server: &str) -> Opt
 
 /// 批准过的人合进现有内容：核心要的三样照写，名单里追加，别的原样保留。
 /// 已经在名单里的不重复加；账号还没有账号数据时从受限内容起步。
-fn approved_from(existing: Option<&Value>, server: &str, users: &[String]) -> Value {
+fn approved_from(existing: Option<&Value>, server: &str, users: &[ExactUserId]) -> Value {
     let mut merged = existing.map_or_else(
         || restricted_content(server),
         |existing| restricted_from(existing, server),
@@ -122,8 +150,8 @@ fn approved_from(existing: Option<&Value>, server: &str, users: &[String]) -> Va
         .map(str::to_owned)
         .collect();
     for user in users {
-        if !allowed.iter().any(|present| present == user) {
-            allowed.push(user.clone());
+        if !allowed.iter().any(|present| present == user.as_str()) {
+            allowed.push(user.as_str().to_owned());
         }
     }
     merged["allowed_users"] = json!(allowed);
@@ -136,7 +164,7 @@ impl Matrix {
     pub async fn allow_invitees(
         &self,
         localpart: &str,
-        users: &[String],
+        users: &[ExactUserId],
     ) -> Result<(), MatrixError> {
         if users.is_empty() {
             return Ok(());
@@ -251,6 +279,34 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn exact(raw: &str) -> ExactUserId {
+        ExactUserId::parse(raw).unwrap()
+    }
+
+    #[test]
+    fn only_a_concrete_user_id_can_be_approved() {
+        let long = format!("@{}:example.org", "a".repeat(250));
+        for raw in [
+            "@*:*",
+            "@*:example.org",
+            "@b?b:example.org",
+            "@bob:*",
+            "bob:example.org",
+            "@bob",
+            "@bob:example.org\u{202e}",
+            long.as_str(),
+        ] {
+            assert_eq!(ExactUserId::parse(raw), None, "{raw}");
+        }
+        for raw in ["@bob:example.org", "@Bob.Old:example.org:8448", "@a:[::1]"] {
+            assert_eq!(ExactUserId::parse(raw).map(|id| id.0), Some(raw.to_owned()));
+        }
+        assert_eq!(
+            exact("@bob:example.org:8448").server_name(),
+            "example.org:8448"
+        );
+    }
+
     #[test]
     fn restricted_content_allows_local_and_blocks_everything_else() {
         assert_eq!(
@@ -313,7 +369,7 @@ mod tests {
             approved_from(
                 Some(&existing),
                 "home.test",
-                &["@b:y".to_owned(), "@a:x".to_owned()]
+                &[exact("@b:y"), exact("@a:x")]
             ),
             json!({
                 "enabled": true,
@@ -328,7 +384,7 @@ mod tests {
 
     #[test]
     fn relaxation_keeps_approvals() {
-        let approved = approved_from(None, "home.test", &["@b:y".to_owned()]);
+        let approved = approved_from(None, "home.test", &[exact("@b:y")]);
         assert_eq!(
             relaxed_from(&approved, "home.test"),
             Some(json!({"enabled": true, "allowed_users": ["@b:y"]})),

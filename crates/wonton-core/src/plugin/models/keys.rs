@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    Manifest, ModelVars, Permission, PluginId, PluginPackage, StoreError, create_private_dir,
-    read_json, remove_file, write_json,
+    Languages, Manifest, ModelVars, Permission, PluginId, PluginPackage, StoreError,
+    create_private_dir, read_json, remove_file, write_json,
 };
 
 /// 凭据名 → 值。
@@ -34,12 +34,22 @@ pub(in crate::plugin) struct KeyFile {
     pub(in crate::plugin) revoke_pending: bool,
 }
 
+/// 还没对上结局的凭据写命令：exec、容器和使用方。落盘，重启或断连后靠它判断。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(super) struct PendingCommand {
+    pub(super) exec_id: String,
+    pub(super) container_id: String,
+    pub(super) consumer: String,
+}
+
 /// 使用方的凭据，每个插件一个 JSON 文件（0600）。卸载时连同网关里的凭据一起删掉。
 pub struct ModelKeyStore {
     pub(in crate::plugin) dir: PathBuf,
     /// 默认路由的探测跨安装、启动与巡检串行（见 `model_health`）：不发并发的计费请求。
     pub(in crate::plugin) probe_lock: tokio::sync::Mutex<()>,
     pub(in crate::plugin) probe: tokio::sync::Mutex<super::model_health::ProbeSchedule>,
+    /// 凭据命令串行：确认上一条的结局后才发下一条（见 `run_command`）。
+    pub(super) commands: tokio::sync::Mutex<()>,
 }
 
 impl KeyFile {
@@ -55,6 +65,7 @@ impl ModelKeyStore {
             dir,
             probe_lock: tokio::sync::Mutex::new(()),
             probe: tokio::sync::Mutex::default(),
+            commands: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -78,6 +89,23 @@ impl ModelKeyStore {
 
     pub(super) fn remove(&self, id: &PluginId) -> Result<(), StoreError> {
         remove_file(&self.path(id))
+    }
+
+    fn pending_path(&self) -> PathBuf {
+        self.dir.join("commands").join("pending.json")
+    }
+
+    pub(super) fn pending(&self) -> Result<Option<PendingCommand>, StoreError> {
+        read_json(&self.pending_path())
+    }
+
+    pub(super) fn save_pending(&self, pending: &PendingCommand) -> Result<(), StoreError> {
+        create_private_dir(&self.dir.join("commands"))?;
+        write_json(&self.pending_path(), pending)
+    }
+
+    pub(super) fn clear_pending(&self) -> Result<(), StoreError> {
+        remove_file(&self.pending_path())
     }
 
     /// 记着凭据的使用方。
@@ -115,18 +143,34 @@ impl ModelKeyStore {
     }
 
     /// 详情页轻提示的依据：使用方的凭据是否就绪、记下的签发问题和路由探测结论。
-    /// 组装在 `model_health`；KeyFile 的字段不外泄。
+    /// 组装在 `model_health`；KeyFile 的字段不外泄。`langs` 用来现场写“结果未定”的说明。
     pub(in crate::plugin) fn hint_basis(
         &self,
         id: &PluginId,
+        langs: &Languages,
     ) -> (
         bool,
         Option<String>,
         Option<super::model_health::RouteProbe>,
     ) {
-        match self.load(id) {
-            Ok(file) => (!file.keys.is_empty(), file.problem, file.route),
-            Err(_) => (false, None, None),
+        match (self.load(id), self.pending()) {
+            (Ok(file), Ok(pending)) => {
+                let pending_problem = pending
+                    .filter(|command| command.consumer == id.as_str())
+                    .map(|_| {
+                        crate::l10n::text(
+                            langs,
+                            "plugin-settings-models-command-outcome-unknown",
+                            &[],
+                        )
+                    });
+                (
+                    !file.keys.is_empty(),
+                    file.problem.or(pending_problem),
+                    file.route,
+                )
+            }
+            (Err(error), _) | (_, Err(error)) => (false, Some(error.to_string()), None),
         }
     }
 

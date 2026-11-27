@@ -99,11 +99,8 @@ impl PluginManager {
         if container.store_dir.is_some() {
             Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
         }
-        if let Err(error) = self
-            .engine
-            .create_container(&container.name, container.body.clone())
-            .await
-        {
+        let body = self.with_bot_volumes(container, plan, undo).await?;
+        if let Err(error) = self.engine.create_container(&container.name, body).await {
             // 超时只说明没等到回答，结果不确定：Docker 可能建出了本次的容器，也可能回的是
             // 409 之类的失败而回答丢了。等它落下来、核对归属（同启动前的 check_ownership）
             // 才记账，别人的同名容器不记账，回滚不去动它；窗口里始终没看到的，把「是否已创建

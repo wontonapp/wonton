@@ -209,7 +209,14 @@ gateway-install-card-setting = 请求里填的设置：{ $title } = { $value }
 gateway-install-changed = 卡片发出后 { $id } 的权限、设备或设置已经改过，没有升级。请重新发起。
 clients-switch-container = 核心没有运行在容器里，无法接入入口网络
 clients-switch-domain = 请先配置域名和有效证书，再打开入口
-clients-switch-lan = 局域网入口还没开放：局域网转发容器尚未就绪
+clients-switch-lan = 还没检测过这台主机的局域网地址，请稍后再试
+clients-switch-lan-selection = 选不出局域网地址，无法开放局域网入口：{ $reason }
+clients-switch-lan-not-private = 这台主机的局域网地址（{ $addresses }）不是私有 IPv4 地址，局域网入口只能开在 10.x、172.16–31.x、192.168.x 上
+clients-switch-lan-wide-subnet = 局域网地址所在的网段 { $subnet } 超出了私有地址范围，无法只放行局域网里的设备
+clients-switch-lan-unknown-subnet = 不知道局域网地址 { $address } 所在的网段，无法只放行局域网里的设备
+clients-switch-lan-record-wrong = 局域网域名指向了 { $found }，请在 DNS 服务商处把记录改成：{ $record }
+clients-switch-lan-record-missing = 还没有局域网域名的记录，请在 DNS 服务商处添加：{ $record }
+clients-switch-lan-record-failed = 查不到局域网域名的记录，请稍后再试；需要的记录是：{ $record }（{ $error }）
 clients-switch-setup = 请先在应用网页完成首次注册
 clients-switch-app-unavailable = 应用没有运行，无法检查首次注册状态
 clients-switch-credentials = 应用还没有成功发过一次密码

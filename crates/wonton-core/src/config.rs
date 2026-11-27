@@ -94,6 +94,8 @@ pub struct Config {
     /// 启动器声明的宣告地址（`WONTON_ANNOUNCE_ADDRESSES`，ADR-0019）：设了就不再自动选，端口绑通配地址、告诉手机用它。
     /// 每项是私有地址，可以带前缀（直连网段用）。
     pub announce_addresses: Option<Vec<Announced>>,
+    /// 第三方客户端的局域网入口在宿主上发布的端口（`WONTON_CLIENT_PORT`，ADR-0021），默认 8483。
+    pub client_port: std::num::NonZeroU16,
     /// 出网插件走的代理（`WONTON_EGRESS_PROXY`，ADR-0023）。设了就只用它，App 里不能改。
     pub egress_proxy: Option<ProxyAddress>,
     /// 安装脚本检测到的代理（`WONTON_EGRESS_PROXY_DETECTED`）：只作初值，App 里能改。
@@ -292,6 +294,12 @@ impl Config {
             host_udev,
             lan_addresses,
             announce_addresses,
+            client_port: parse(
+                &get,
+                "WONTON_CLIENT_PORT",
+                std::num::NonZeroU16::new(crate::entry_containers::DEFAULT_CLIENT_PORT)
+                    .expect("默认端口不是 0"),
+            )?,
             egress_proxy: proxy_address(&get, "WONTON_EGRESS_PROXY")?,
             egress_proxy_detected: proxy_address(&get, "WONTON_EGRESS_PROXY_DETECTED")?,
             doh_url: doh_url(&get)?,

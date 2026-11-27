@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::clients::lan_forward::LanState;
 use crate::plugin::docker::Engine;
 use crate::plugin::names::Instance;
 
@@ -16,6 +17,8 @@ use crate::plugin::names::Instance;
 mod create;
 /// 错误类型和把内部错误归成入口错误。
 mod error;
+/// 局域网转发：两张网络、容器和它的 HAProxy 配置。
+mod lan_forward;
 /// 网络接入：compose 项目网络、固定地址和别名。
 mod network;
 mod options;
@@ -33,10 +36,13 @@ pub use reload::reload_haproxy;
 /// 组件的标签值，也是镜像 `wonton.core.components` 里声明的名字。
 pub const ENTRY_COMPONENT: &str = "entry";
 pub const CONNECTOR_COMPONENT: &str = "connector";
+pub const LAN_FORWARD_COMPONENT: &str = "lan-forward";
 
 pub const ENTRY_EDGE_ALIAS: &str = "entry-edge.wonton.internal";
 pub const ENTRY_CLIENTS_ALIAS: &str = "entry.wonton.internal";
 pub const CONNECTOR_ALIAS: &str = "connector.wonton.internal";
+/// 入口在 `lanfwd` 上的名字：局域网前端绑在它上面（[`crate::entry_haproxy::LAN_BIND`]）。
+pub const ENTRY_LANFWD_ALIAS: &str = "entry-lanfwd.wonton.internal";
 
 /// 入口 HAProxy 主进程的管理地址：只有核心和入口在 `clients` 网络上，这个端口不出那个网络。
 pub const ENTRY_RELOAD_ADDR: &str = "entry.wonton.internal:8404";
@@ -46,6 +52,9 @@ pub const CONNECTOR_RELOAD_ADDR: &str = "connector.wonton.internal:8404";
 /// 连接器把公网 TCP 转发接进入口的端口（路由器和自建 frps 都用）。
 const CONNECTOR_PORT: u32 = 8443;
 
+/// 局域网转发在宿主上发布的默认端口（`WONTON_CLIENT_PORT`）。
+pub const DEFAULT_CLIENT_PORT: u16 = 8483;
+
 #[derive(Clone)]
 pub struct EntryContainers {
     engine: Engine,
@@ -53,8 +62,10 @@ pub struct EntryContainers {
     data_dir: PathBuf,
     instance: Instance,
     core_container: Option<String>,
-    /// C8 的局域网转发容器是否已接入。C7 默认关闭，避免生成不可达的局域网前端。
-    lan_forward_available: bool,
+    /// 局域网入口用哪个地址、`*.lan` 记录对不对，由局域网检测更新（[`crate::clients::lan_forward`]）。
+    lan: std::sync::Arc<std::sync::Mutex<LanState>>,
+    /// 局域网转发在宿主上发布的端口。
+    client_port: u16,
     /// 连接器发布的地址和端口；空时看 `WONTON_ENTRY_BIND`/`WONTON_ENTRY_PORT`。
     binding: Option<(String, String)>,
     operation: std::sync::Arc<tokio::sync::Mutex<Option<crate::entry_haproxy::Model>>>,
@@ -80,7 +91,8 @@ impl EntryContainers {
             data_dir,
             instance,
             core_container,
-            lan_forward_available: false,
+            lan: std::sync::Arc::new(std::sync::Mutex::new(LanState::Unknown)),
+            client_port: DEFAULT_CLIENT_PORT,
             binding: None,
             operation: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             reload_addr: ENTRY_RELOAD_ADDR.to_owned(),
@@ -94,9 +106,9 @@ impl EntryContainers {
         self.binding = Some((bind.to_owned(), port.to_owned()));
         self
     }
-    /// 测试和后续局域网转发实现用：入口容器接入局域网转发网络后才可设为 true。
-    pub fn with_lan_forward_available(mut self, available: bool) -> Self {
-        self.lan_forward_available = available;
+    #[must_use]
+    pub fn with_client_port(mut self, port: u16) -> Self {
+        self.client_port = port;
         self
     }
 
@@ -107,8 +119,16 @@ impl EntryContainers {
         self
     }
 
-    pub fn lan_forward_available(&self) -> bool {
-        self.lan_forward_available
+    pub fn lan(&self) -> LanState {
+        self.lan.lock().expect("局域网入口状态锁").clone()
+    }
+
+    pub(crate) fn set_lan(&self, state: LanState) {
+        *self.lan.lock().expect("局域网入口状态锁") = state;
+    }
+
+    pub fn client_port(&self) -> u16 {
+        self.client_port
     }
 
     pub fn core_in_container(&self) -> bool {

@@ -68,3 +68,47 @@ async fn a_removed_member_can_explicitly_delete_data_that_was_kept() {
         assert_eq!(data.join("memory").exists(), keep_bot_data);
     }
 }
+
+/// 改角色后的成员同步在家庭群那步失败（这里是读写 Matrix 资料失败）：后面的私人 Bot 还没轮到收紧，也要按新角色
+/// 收紧，接口照样报 503；核心重启后照样失败也不放宽，上游恢复后显式重试按持久角色收尾，Bot 身份不变。
+#[tokio::test]
+async fn a_failed_member_sync_still_takes_write_access_away_from_the_private_bot() {
+    let mut bed = Bed::start().await;
+    let (id, _) = bed.pending("alice", true);
+    let reply = bed.approve(&id).await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
+    let bot = bed.bot("alice");
+    let container =
+        crate::plugin::names::Instance::default().bot_container("app-echo", "bot", &bot.bot);
+    assert_eq!(home_mount(&bed, &bot)["ReadOnly"], false);
+    let read_only = |bed: &Bed| {
+        assert!(bed.docker.containers().contains(&container));
+        assert_eq!(home_mount(bed, &bot)["ReadOnly"], true);
+        assert_eq!(bed.bot("alice"), bot);
+    };
+
+    bed.fake.state().refuse_profile = true;
+    let reply = bed
+        .call(
+            Method::PUT,
+            &wonton_protocol::role_path("family"),
+            json!({"name": "Private members", "permissions": {"private_bot": true, "ai": "read_only"}}),
+        )
+        .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "{}",
+        reply.text()
+    );
+    read_only(&bed);
+
+    bed.reopen().await;
+    assert!(bed.gateway.sync_members().await.is_err());
+    read_only(&bed);
+
+    bed.fake.state().refuse_profile = false;
+    let reply = bed.retry().await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
+    read_only(&bed);
+}

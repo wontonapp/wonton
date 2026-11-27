@@ -303,6 +303,10 @@ plugin-settings-models-connect-first = 先在“模型设置”接入模型，Bo
 plugin-settings-models-not-ready = 模型网关 { $provider } 未就绪：{ $error }
 plugin-settings-models-command-rejected = 模型网关 { $provider } 拒绝了凭据命令（{ $command }，退出码 { $code }）：{ $stderr }
 
+plugin-settings-models-command-outcome-unknown = 模型网关上一次凭据命令的结果还没确定
+plugin-settings-models-credential-container-missing = 模型网关 { $gateway } 的凭据容器不存在
+plugin-settings-models-credential-missing = 模型网关使用方 { $id } 缺少凭据 { $name }
+
 # ── 商店索引（storefront）──────────────────────────────────────────────────
 
 plugin-settings-store-index-fetch-failed = 取不到官方索引：{ $error }
