@@ -82,7 +82,7 @@ fun WontonSearchField(value: String, onValueChange: (String) -> Unit, prompt: St
     )
 }
 
-/** 筛选用的小胶囊：选中的用重点色。图形比按钮矮，命中区还是 48。 */
+/** 筛选用的小胶囊：选中的用强调色。图形比按钮矮，命中区还是 48。 */
 @Composable
 fun WontonChip(title: String, isSelected: Boolean, onClick: () -> Unit) {
     val colors = WontonTheme.colors
@@ -96,7 +96,7 @@ fun WontonChip(title: String, isSelected: Boolean, onClick: () -> Unit) {
             Modifier.heightIn(min = WontonTheme.size.chip)
                 .then(
                     if (isSelected) {
-                        Modifier.accentFill(CircleShape)
+                        Modifier.emphasisFill(CircleShape)
                     } else {
                         Modifier.background(colors.surfaceSubtle.toColor(), CircleShape)
                     },
@@ -107,7 +107,7 @@ fun WontonChip(title: String, isSelected: Boolean, onClick: () -> Unit) {
             Text(
                 title,
                 style = WontonTheme.typography.supporting,
-                color = (if (isSelected) colors.textOnAccentFill else colors.textPrimary).toColor(),
+                color = (if (isSelected) colors.onPrimary else colors.textPrimary).toColor(),
             )
         }
     }

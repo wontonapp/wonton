@@ -62,7 +62,7 @@ import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.LocalWontonTopInset
-import app.wonton.ui.design.accentFill
+import app.wonton.ui.design.emphasisFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Info
@@ -189,7 +189,7 @@ private fun StoreEntry(upgradeCount: Int, onClick: () -> Unit) {
         Modifier.padding(horizontal = WontonTheme.spacing.pageInset)
             .padding(top = LocalWontonTopInset.current + WontonTheme.spacing.pageInset, bottom = WontonTheme.spacing.s8)
             .fillMaxWidth()
-            .accentFill(shape).clickable(role = Role.Button, onClick = onClick)
+            .emphasisFill(shape).clickable(role = Role.Button, onClick = onClick)
             .heightIn(min = WontonTheme.size.target)
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
@@ -199,17 +199,17 @@ private fun StoreEntry(upgradeCount: Int, onClick: () -> Unit) {
             WontonIcon.Store,
             // 装饰：右边就是“去应用商店”。
             contentDescription = null,
-            modifier = Modifier.size(WontonTheme.size.icon), tint = colors.accentInkOnFill.toColor(),
+            modifier = Modifier.size(WontonTheme.size.icon), tint = colors.onPrimary.toColor(),
         )
         Text(
             stringResource(R.string.store_title), Modifier.weight(1f), style = WontonTheme.typography.body,
-            color = colors.textOnAccentFill.toColor(),
+            color = colors.onPrimary.toColor(),
         )
         if (upgradeCount > 0) {
             Text(
                 pluralStringResource(R.plurals.launcher_updates_available, upgradeCount, upgradeCount),
                 style = WontonTheme.typography.supporting,
-                color = colors.textOnAccentFill.toColor(),
+                color = colors.onPrimary.toColor(),
             )
         }
     }

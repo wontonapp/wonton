@@ -3,7 +3,7 @@
   "version": "1.0",
   "strings": {
     "appearance.collapsed": {
-      "comment": "Accessibility value of the More row while the extra colors are hidden.",
+      "comment": "Accessibility value of an expandable row or text while it is collapsed.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -28,36 +28,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "折りたたみ"
-          }
-        }
-      }
-    },
-    "appearance.colorValue": {
-      "comment": "Accessibility label of the color input field for a hex value like #RRGGBB.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Color value"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "颜色值"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "顏色值"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "カラーコード"
           }
         }
       }
@@ -178,36 +148,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "セリフ"
-          }
-        }
-      }
-    },
-    "appearance.more": {
-      "comment": "Row that expands the extra color swatches and the color input field.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "More"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更多"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更多"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "その他"
           }
         }
       }

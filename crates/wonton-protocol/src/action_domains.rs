@@ -5,7 +5,7 @@ use crate::{
     EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview,
     MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest,
     NotificationCategory, OnboardingTip, PluginAudience, PushEndpoint, PushMethod,
-    PutDomainRequest, PutIngressRequest, RelaySettingsAction, Rgb, SecretString, ShareGrantUpdate,
+    PutDomainRequest, PutIngressRequest, RelaySettingsAction, SecretString, ShareGrantUpdate,
     TabRef, TextSize, ThemeMode, UploadSource,
 };
 
@@ -357,8 +357,6 @@ pub enum PluginAction {
 pub enum SettingsAction {
     /// App 使用的语言在第一项，后接系统语言偏好（BCP 47）；壳在启动和语言改变时发送。客户端详情用第一项，服务器按列表挑插件文字。
     SetLanguages { languages: Vec<String> },
-    /// 把重点色换成这个颜色。任何颜色都可以，读字的颜色由核心推导。
-    SetAccentColor { color: Rgb },
     /// 选明暗。
     SetThemeMode { mode: ThemeMode },
     /// 选字号。

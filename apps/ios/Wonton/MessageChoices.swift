@@ -74,11 +74,11 @@ private struct ChoiceButton: View {
                 ChoiceLabel(option: option)
                 progress
             }
-            // 没选的是半透明的入气泡色、重点色的字；选中的换成重点色的实底（ADR-0109 第 9 节）。
-            .foregroundStyle(Color(option.chosen ? colors.textOnAccentFill : colors.accentInk))
+            // 没选的是半透明的入气泡色、`primary` 的字；选中的换成 `primary` 的实底（ADR-0109 第 9 节、ADR-0130）。
+            .foregroundStyle(Color(option.chosen ? colors.onPrimary : colors.primary))
             .padding(.horizontal, WontonTheme.spacing.s8)
             .frame(maxWidth: .infinity, minHeight: WontonTheme.size.choiceButton)
-            .background(shape.fill(option.chosen ? Color(colors.accentFill) : palette.choiceFill))
+            .background(shape.fill(option.chosen ? Color(colors.primary) : palette.choiceFill).chatLift(palette))
             .opacity(isPassedOver ? WontonTheme.ratio.secondaryContent : 1)
             .contentShape(Rectangle())
         }
@@ -96,7 +96,7 @@ private struct ChoiceButton: View {
             WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconTiny)
                 .foregroundStyle(Color(colors.danger))
         case .idle, .other:
-            // 选中只靠重点色的底：半格宽里再加一个勾，“approve once”这样的字就放不下了。
+            // 选中只靠强调色的底：半格宽里再加一个勾，“approve once”这样的字就放不下了。
             EmptyView()
         }
     }

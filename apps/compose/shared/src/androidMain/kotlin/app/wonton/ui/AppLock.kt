@@ -113,7 +113,7 @@ private fun AppLockScreen(needsDeviceLock: Boolean, onUnlock: () -> Unit, onOpen
             WontonIcon.Lock,
             contentDescription = null,
             Modifier.size(WontonTheme.size.detailIcon),
-            tint = colors.accentInk.toColor(),
+            tint = colors.primary.toColor(),
         )
         Spacer(Modifier.height(WontonTheme.spacing.s16))
         Text(

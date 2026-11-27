@@ -142,7 +142,7 @@ struct HomeView: View {
         NavigationLink(value: AppsRoute.store) {
             HStack(spacing: WontonTheme.spacing.s12) {
                 WontonIcon.store.view()
-                    .foregroundStyle(Color(colors.accentInkOnFill))
+                    .foregroundStyle(Color(colors.onPrimary))
                 Text(.Store.storeTitle)
                     .wontonText(WontonTheme.typography.body)
                 Spacer(minLength: 0)
@@ -153,11 +153,11 @@ struct HomeView: View {
                         .multilineTextAlignment(.trailing)
                 }
             }
-            .foregroundStyle(Color(colors.textOnAccentFill))
+            .foregroundStyle(Color(colors.onPrimary))
             .padding(.horizontal, WontonTheme.spacing.s16)
             .padding(.vertical, WontonTheme.spacing.s12)
             .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
-            .accentFill(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
+            .emphasisFill(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
             .contentShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
         }
         .buttonStyle(.plain)

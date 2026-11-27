@@ -75,7 +75,7 @@ fun AgentRunRowView(
             LinearProgressIndicator(
                 progress = { run.progress },
                 Modifier.fillMaxWidth(),
-                color = WontonTheme.colors.accentInk.toColor(),
+                color = WontonTheme.colors.primary.toColor(),
             )
         }
         if (run.state !is AgentRunState.Other && run.choices.isNotEmpty()) {
@@ -174,7 +174,7 @@ private fun StatusLine(run: TimelineContent.AgentRun, onOpenCard: (String) -> Un
         }
         if (cardId != null) {
             // 装饰：整行可点，箭头只表示能过去。
-            Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = colors.accentInk.toColor())
+            Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = colors.primary.toColor())
         }
     }
 }
@@ -221,7 +221,7 @@ private fun Mark(run: TimelineContent.AgentRun, colors: ThemeColors) {
             } else {
                 CircularProgressIndicator(
                     Modifier.size(WontonTheme.size.iconSmall).testTag("agentRunWorkingMark"),
-                    color = colors.accentInk.toColor(),
+                    color = colors.primary.toColor(),
                 )
             }
         AgentRunState.Waiting ->
@@ -261,7 +261,7 @@ private fun statusText(run: TimelineContent.AgentRun): String = when (run.state)
 
 private fun statusInk(run: TimelineContent.AgentRun, colors: ThemeColors) = when (run.state) {
     AgentRunState.Working -> colors.textSecondary
-    AgentRunState.Waiting -> colors.accentInk
+    AgentRunState.Waiting -> colors.primary
     AgentRunState.Done -> colors.textSecondary
     AgentRunState.Failed -> when {
         run.end is AgentRunEnd.Cancelled -> colors.textSecondary
@@ -279,7 +279,7 @@ private const val PAIR = 2
 @Composable
 private fun Asking(run: TimelineContent.AgentRun, onAnswerChoice: (String) -> Unit) {
     val colors = WontonTheme.colors
-    val ink = colors.accentInk.toColor()
+    val ink = colors.primary.toColor()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -324,7 +324,7 @@ private fun AskingChip(
 ) {
     val colors = WontonTheme.colors
     val canAnswer = waiting && !answered && choice.send != ChoiceSend.Sending
-    val fill = if (choice.chosen) colors.accentFill.toColor() else null
+    val fill = if (choice.chosen) colors.primary.toColor() else null
     val side = if (waiting || choice.chosen) ink else colors.textSecondary.toColor()
     val shape = RoundedCornerShape(WontonTheme.radii.pill)
     val background = if (fill != null) Modifier.background(fill, shape) else Modifier
@@ -342,7 +342,7 @@ private fun AskingChip(
         Text(
             choice.label,
             style = WontonTheme.typography.supporting,
-            color = if (choice.chosen) colors.textOnAccentFill.toColor() else side,
+            color = if (choice.chosen) colors.onPrimary.toColor() else side,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

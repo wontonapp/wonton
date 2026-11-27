@@ -43,8 +43,8 @@ struct AgentRunChoices: View {
 
     private func label(_ choice: AgentRunChoice, canAnswer: Bool) -> some View {
         let ink = choice.chosen
-            ? Color(colors.textOnAccentFill)
-            : canAnswer ? Color(colors.accentInk) : Color(colors.textSecondary)
+            ? Color(colors.onPrimary)
+            : canAnswer ? Color(colors.primary) : Color(colors.textSecondary)
         return HStack(spacing: WontonTheme.spacing.s4) {
             Text(choice.label)
                 .wontonText(WontonTheme.typography.supporting)
@@ -60,7 +60,7 @@ struct AgentRunChoices: View {
         .padding(.horizontal, WontonTheme.spacing.s12)
         .frame(minHeight: WontonTheme.size.chip)
         .background(
-            choice.chosen ? Color(colors.accentFill) : .clear, in: Capsule()
+            choice.chosen ? Color(colors.primary) : .clear, in: Capsule()
         )
         .overlay(
             Capsule().strokeBorder(ink, lineWidth: WontonTheme.size.hairline)

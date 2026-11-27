@@ -45,7 +45,7 @@ struct MessageMeta: View {
 
     private var ink: Color {
         if onMedia { return .white }
-        return Color(message.isOwn ? colors.accentInkOnFill : colors.textSecondary)
+        return Color(message.isOwn ? colors.onPrimary : colors.textSecondary)
     }
 
     /// 发送失败不在这里：红色感叹号画在气泡旁边。更新的核心给出的不认识的状态不画。

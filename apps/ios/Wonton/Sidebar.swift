@@ -226,7 +226,7 @@ struct SidebarPanel: View {
             Spacer(minLength: 0)
             Button(String(localized: .Sidebar.sidebarAll)) { openDestination(.allApps) }
                 .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.accentInk))
+                .foregroundStyle(Color(colors.primary))
                 .buttonStyle(.plain)
         }
         .padding(.horizontal, WontonTheme.spacing.s12)

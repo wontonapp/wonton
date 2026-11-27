@@ -85,7 +85,7 @@ struct TimelineRow: View {
                 edge
                 Text(.Chat.timelineReadMarker)
                     .wontonText(WontonTheme.typography.caption)
-                    .foregroundStyle(Color(colors.accentInk))
+                    .foregroundStyle(Color(colors.primary))
                 edge
             }
         case let .sideChat(card):
@@ -269,8 +269,8 @@ private struct MessageBubble: View {
             // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。
             .padding(.top, flushesPrevious ? 0 : WontonTheme.spacing.bubbleInsetY)
             .padding(.bottom, flushesNext ? 0 : WontonTheme.spacing.bubbleInsetY)
-        // 气泡是内容：纯色、不透明，不描边、不叠颗粒，也不铺玻璃（ADR-0107、ADR-0109 第 9 节）。
-        body.background(shape.fill(message.isOwn ? Color(colors.accentFill) : palette.incoming))
+        // 气泡是内容：纯色、不透明，不描边、不叠颗粒，也不铺玻璃（ADR-0107、ADR-0109 第 9 节）；靠投影浮在背景上（ADR-0130）。
+        body.background(shape.fill(message.isOwn ? Color(colors.primary) : palette.incoming).chatLift(palette))
             // 整只气泡是一个容器：走查按条目定位，里面的引用、正文各自照旧查得到。
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("message.\(itemId)")
@@ -285,7 +285,7 @@ private struct MessageBubble: View {
                 if showsSender, !message.isOwn {
                     Text(message.senderName)
                         .wontonText(WontonTheme.typography.senderName)
-                        .foregroundStyle(Color(colors.accentInk))
+                        .foregroundStyle(Color(colors.primary))
                         .lineLimit(1)
                 }
                 if let quote = message.reply {
@@ -294,7 +294,7 @@ private struct MessageBubble: View {
                     } label: {
                         ReplyQuoteView(
                             quote: quote, core: core, ink: textColor,
-                            accent: Color(message.isOwn ? colors.accentInkOnFill : colors.accentInk),
+                            emphasis: Color(message.isOwn ? colors.onPrimary : colors.primary),
                             isLoading: isJumping
                         )
                             .contentShape(Rectangle())
@@ -388,7 +388,7 @@ private struct MessageBubble: View {
     }
 
     private var textColor: Color {
-        Color(message.isOwn ? colors.textOnAccentFill : colors.textPrimary)
+        Color(message.isOwn ? colors.onPrimary : colors.textPrimary)
     }
 }
 

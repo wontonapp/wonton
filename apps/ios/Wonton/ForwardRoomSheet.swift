@@ -141,9 +141,9 @@ struct ForwardRoomSheet: View {
                     .foregroundStyle(Color(colors.textPrimary))
                 Spacer(minLength: 0)
                 ZStack {
-                    Circle().strokeBorder(Color(isSelected ? colors.accentInk : colors.separator), lineWidth: 1.5)
+                    Circle().strokeBorder(Color(isSelected ? colors.primary : colors.separator), lineWidth: 1.5)
                     if isSelected {
-                        Circle().fill(Color(colors.accentInk))
+                        Circle().fill(Color(colors.primary))
                         WontonIcon.check.view(size: WontonTheme.size.iconTiny).foregroundStyle(Color(colors.canvas))
                     }
                 }

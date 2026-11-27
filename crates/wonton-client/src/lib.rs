@@ -63,7 +63,7 @@ mod subscription;
 pub(crate) mod test_hooks;
 mod widget;
 
-pub use appearance::{accent_hex, default_appearance, parse_accent};
+pub use appearance::default_appearance;
 pub use chat::TimelineSubscription;
 pub use chat::bot_current_avatar;
 pub use client::{ClientCore, ShareInSubscription};

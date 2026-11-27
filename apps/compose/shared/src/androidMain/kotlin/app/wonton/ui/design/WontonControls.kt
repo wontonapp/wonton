@@ -2,7 +2,6 @@ package app.wonton.ui.design
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -38,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageShader
@@ -239,16 +239,17 @@ private fun Modifier.drawNoise(brush: Brush, shape: Shape) = drawWithCache {
     }
 }
 
-/** 重点色的填充：纸质的颗粒盖在颜色上，有描边令牌时加描边。 */
+/** 强调色的填充：纸质的颗粒盖在 `primary` 上（ADR-0130）。 */
 @Composable
-fun Modifier.accentFill(shape: Shape, border: Boolean = true): Modifier {
-    val colors = WontonTheme.colors
-    val stroke = colors.accentFillBorder?.takeIf { border }
-    return background(colors.accentFill.toColor(), shape)
-        .noise(shape)
-        .then(
-            if (stroke != null) Modifier.border(WontonTheme.size.hairline, stroke.toColor(), shape) else Modifier,
-        )
+fun Modifier.emphasisFill(shape: Shape): Modifier =
+    background(WontonTheme.colors.primary.toColor(), shape).noise(shape)
+
+/** 浮在同色底上的一层（气泡）靠投影分开（ADR-0130）。深色底上同样浓度看不出来，深色另取一档。 */
+@Composable
+fun Modifier.lift(shape: Shape): Modifier {
+    val alpha = if (WontonTheme.isDark) WontonTheme.ratio.shadowDark else WontonTheme.ratio.shadow
+    val color = Color.Black.copy(alpha = alpha)
+    return shadow(WontonTheme.size.shadowY, shape, clip = false, ambientColor = color, spotColor = color)
 }
 
 /** 根页面只显示连接状态和操作，页面标题留给读屏。 */

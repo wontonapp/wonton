@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 附件面板选了照片、转发面板选了会话以后，面板底下的那一条（ADR-0109 第 9 节）：左边一块玻璃的附言框，
-/// 右边重点色的圆形发送键，键角上标选了几个。贴着面板底，键盘弹起时跟着上来。
+/// 右边强调色的圆形发送键，键角上标选了几个。贴着面板底，键盘弹起时跟着上来。
 struct CaptionSendBar: View {
     let placeholder: String
     @Binding var text: String
@@ -61,7 +61,7 @@ struct CaptionSendBar: View {
             .foregroundStyle(Color(colors.canvas))
             .padding(.horizontal, WontonTheme.spacing.s4)
             .frame(minWidth: WontonTheme.size.iconSmall, minHeight: WontonTheme.size.iconSmall)
-            .background(Capsule().fill(Color(colors.accentInk)))
+            .background(Capsule().fill(Color(colors.primary)))
             .overlay(Capsule().strokeBorder(Color(colors.canvas), lineWidth: 1.5))
             .accessibilityHidden(true)
     }

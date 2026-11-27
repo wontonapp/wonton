@@ -47,7 +47,7 @@ struct FloatingDatePill: View {
     }
 }
 
-/// 跳到原消息后整行背景闪一次重点色，按 `motion.jumpHighlight` 淡出（ADR-0109 第 4 节）。
+/// 跳到原消息后整行背景闪一次强调色，按 `motion.jumpHighlight` 淡出（ADR-0109 第 4 节）。
 struct JumpHighlight: View {
     /// 每跳到这一行一次换一个值；不是这一行时为空。
     let trigger: Int?
@@ -55,7 +55,7 @@ struct JumpHighlight: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        Color(colors.accentInk)
+        Color(colors.primary)
             .opacity(isLit ? WontonTheme.ratio.jumpHighlight : 0)
             .task(id: trigger) {
                 guard trigger != nil else { return }
@@ -99,7 +99,7 @@ struct ScrollToBottomButton: View {
                 .foregroundStyle(Color(colors.textPrimary))
                 .frame(width: WontonTheme.size.chatControl, height: WontonTheme.size.chatControl)
                 .chatGlass(in: Circle(), interactive: true)
-                // 数字骑在圆钮的上沿：重点色的实底，和玻璃分得开。
+                // 数字骑在圆钮的上沿：强调色的实底，和玻璃分得开。
                 .overlay(alignment: .top) {
                     if count > 0 {
                         Text(count > Self.badgeMax ? "\(Self.badgeMax)+" : String(count))
@@ -108,7 +108,7 @@ struct ScrollToBottomButton: View {
                             .foregroundStyle(Color(colors.canvas))
                             .padding(.horizontal, WontonTheme.spacing.s4 + 2)
                             .frame(minWidth: WontonTheme.size.iconSmall, minHeight: WontonTheme.size.iconSmall)
-                            .background(Color(colors.accentInk), in: Capsule())
+                            .background(Color(colors.primary), in: Capsule())
                             .fixedSize()
                             .offset(y: -WontonTheme.size.iconSmall / 2)
                     }
@@ -139,12 +139,12 @@ struct SenderInitial: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        // 重点色的实底：压在聊天背景和玻璃上都分得清。
+        // 强调色的实底：压在聊天背景和玻璃上都分得清。
         Text(name.prefix(1).uppercased())
             .wontonText(WontonTheme.typography.senderName)
             .foregroundStyle(Color(colors.canvas))
             .frame(width: size, height: size)
-            .background(Circle().fill(Color(colors.accentInk)))
+            .background(Circle().fill(Color(colors.primary)))
             .accessibilityHidden(true)
     }
 }

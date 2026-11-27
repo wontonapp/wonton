@@ -35,7 +35,7 @@ struct WontonSearchField: View {
     }
 }
 
-/// 筛选用的小胶囊：选中的用重点色。图形比按钮矮，命中区还是 48。
+/// 筛选用的小胶囊：选中的用强调色。图形比按钮矮，命中区还是 48。
 struct WontonChip: View {
     let title: String
     let isSelected: Bool
@@ -46,12 +46,12 @@ struct WontonChip: View {
         Button(action: action) {
             Text(title)
                 .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(isSelected ? colors.textOnAccentFill : colors.textPrimary))
+                .foregroundStyle(Color(isSelected ? colors.onPrimary : colors.textPrimary))
                 .padding(.horizontal, WontonTheme.spacing.s12)
                 .frame(minHeight: WontonTheme.size.chip)
                 .background {
                     if isSelected {
-                        Color.clear.accentFill(Capsule())
+                        Color.clear.emphasisFill(Capsule())
                     } else {
                         Capsule().fill(Color(colors.surfaceSubtle))
                     }

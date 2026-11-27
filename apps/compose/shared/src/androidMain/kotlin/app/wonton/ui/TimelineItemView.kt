@@ -73,7 +73,8 @@ import app.wonton.protocol.TimelineMessage
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.accentFill
+import app.wonton.ui.design.emphasisFill
+import app.wonton.ui.design.lift
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.Checks
@@ -127,7 +128,7 @@ fun TimelineItemView(
     }
     val highlight = if (flash.value > 0f) {
         Modifier.background(
-            WontonTheme.colors.accentFill.toColor().copy(alpha = FLASH_ALPHA * flash.value),
+            WontonTheme.colors.primary.toColor().copy(alpha = WontonTheme.ratio.jumpHighlight * flash.value),
             RoundedCornerShape(WontonTheme.radii.control),
         )
     } else {
@@ -174,7 +175,7 @@ fun TimelineItemView(
                 Text(
                     stringResource(R.string.timeline_new_messages_below),
                     style = WontonTheme.typography.caption,
-                    color = WontonTheme.colors.accentInk.toColor(),
+                    color = WontonTheme.colors.primary.toColor(),
                 )
                 NoteEdge()
             }
@@ -325,11 +326,9 @@ fun BubbleSurface(
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
     val shape = bubbleShape(isOwn, joinsPrevious, joinsNext)
-    val fill = if (isOwn) {
-        Modifier.accentFill(shape)
-    } else {
-        Modifier.background(colors.surfaceSubtle.toColor(), shape)
-    }
+    val fill = Modifier.lift(shape).then(
+        if (isOwn) Modifier.emphasisFill(shape) else Modifier.background(colors.surfaceSubtle.toColor(), shape),
+    )
     // 尾巴占掉的那一边让出宽度，文字不压在尾巴上。
     val tail = (if (joinsNext) 0.dp else WontonTheme.size.bubbleTail)
     val reserve = footerReserve(message, LocalContext.current.resources)
@@ -346,7 +345,7 @@ fun BubbleSurface(
         .padding(horizontal = WontonTheme.spacing.s12)
         .padding(top = if (flushesPrevious) 0.dp else WontonTheme.spacing.s8)
         .padding(bottom = bottom)
-    val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
+    val content = if (isOwn) colors.onPrimary else colors.textPrimary
     // 纯图片没有文字行，时间压在图上的胶囊里；有说明文字的图片把它放进最后一行说明。
     val overImage = message.body is MessageContent.Image && (message.body as MessageContent.Image).image.caption == null
     val styledBody: @Composable () -> Unit = {
@@ -434,7 +433,7 @@ internal fun footerReserve(message: TimelineMessage, resources: Resources): Stri
 private fun MessageFooter(message: TimelineMessage, modifier: Modifier, inBody: Boolean) {
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.caption
-    val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
+    val color = (if (message.isOwn) colors.onPrimary else colors.textSecondary).toColor()
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         if (message.edited) {
             Text(
@@ -511,8 +510,6 @@ private fun TimeCapsule(message: TimelineMessage, modifier: Modifier) {
 internal val TimelineItem.endsRun: Boolean
     get() = message?.let { it.run == MessageRun.ALONE || it.run == MessageRun.LAST } == true
 
-/** 气泡后面闪光的不透明度，只在跳转落到这一条时用。 */
-private const val FLASH_ALPHA = 0.16f
 
 /** 脚注里钟表的轻重：和正文的墨色有区分。 */
 private const val FOOTER_ICON_ALPHA = 0.7f

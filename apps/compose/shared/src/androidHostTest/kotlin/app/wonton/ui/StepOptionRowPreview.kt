@@ -25,7 +25,7 @@ internal fun StepOptionRowStatesPreview() {
         ) {
             // 未选中。
             StepOptionRow(title = "Photos", selected = false, onSelect = {}, multiple = true)
-            // 中性选中：只靠勾选标志，不铺重点色。
+            // 中性选中：只靠勾选标志，不铺强调色。
             StepOptionRow(
                 title = "Files", selected = true, onSelect = {}, multiple = true,
                 neutralSelection = true,

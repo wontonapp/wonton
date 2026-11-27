@@ -35,7 +35,7 @@ extension EnvironmentValues {
     }
 }
 
-/// 把外观交给下面的所有界面。主按钮和链接用 `primary`：重点色只留给选中、自己的气泡、占位图和角标。
+/// 把外观交给下面的所有界面。没有重点色：强调一律用 `primary`，浅色是黑、深色是白（ADR-0130）。
 struct WontonThemeRoot<Content: View>: View {
     let appearance: AppearanceViewModel
     @ViewBuilder let content: Content
