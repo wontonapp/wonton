@@ -61,6 +61,7 @@ mod test_hooks;
 mod test_support;
 mod timeline;
 mod tool_policy;
+mod transfers;
 #[cfg(feature = "ui-fake")]
 mod ui_fake;
 #[cfg(feature = "ui-fake")]
