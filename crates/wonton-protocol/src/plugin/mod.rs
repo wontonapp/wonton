@@ -577,6 +577,8 @@ pub struct PluginProblem {
 pub enum PluginFailure {
     /// 连不上家里的服务器。
     TransportUnavailable,
+    /// 还没配对家里的服务器：先配对再试，不是连接失败。
+    NotPaired,
     /// 家里的服务器不认这台设备，或者不让它做这件事。
     Unauthorized,
     /// 家里的服务器连不上插件的来源（如 GitHub）。

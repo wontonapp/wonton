@@ -32,6 +32,8 @@ plugins-api-server-status = 自宅サーバーからHTTP { $status }が返され
 
 plugins-api-not-connected = 自宅サーバーに接続してからもう一度お試しください。
 
+plugins-api-not-paired = 先に自宅サーバーとペアリングしてから、もう一度お試しください。
+
 plugins-api-server-too-old = 自宅サーバー { $version } は古すぎます。この機能には { $minimum } 以降が必要です。
 
 # インストール・アップデート・アンインストールのタスク（crates/wonton-client/src/plugins/tasks.rs）。

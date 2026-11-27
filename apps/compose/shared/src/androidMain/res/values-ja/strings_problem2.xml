@@ -29,6 +29,8 @@
     <string name="problem_store_other_title">アプリの一覧が不完全な可能性があります</string>
     <!-- Problem title: the source is answering too many requests. -->
     <string name="problem_store_rate_limited_title">リクエストが多すぎます</string>
+    <!-- Next step under the not-paired problem: scan the home server's QR code, then retry. -->
+    <string name="problem_not_paired_next_step">自宅サーバーに表示された QR コードでこのスマートフォンをペアリングしてから、もう一度お試しください。</string>
     <!-- Next step under the can't-reach-the-server problem. -->
     <string name="problem_transport_unavailable_next_step">ネットワークを確認して、接続後にもう一度お試しください。</string>
     <!-- Next step: update the home server first. Used when the server is too old. -->
