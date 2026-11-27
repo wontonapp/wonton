@@ -156,10 +156,10 @@ pub use clients::{
     NewPasswordRequest, PASSWORD_ID_HEADER, PASSWORD_PENDING_HEADER, PasswordSummary,
     PasswordValue, PendingChange, PendingChangeKind, PendingOp, ProbeResult, PublicAccess,
     PublicItem, PublicReach, PublicRuleMode, PublicRules, PublicSwitchState, PutDomainRequest,
-    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, clients_ban_path, clients_domain_path,
-    clients_entry_path, clients_guest_path, clients_guests_path, clients_ingress_path,
-    clients_password_path, clients_passwords_path, clients_path, clients_public_access_path,
-    clients_status_path, dns_providers_path,
+    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, SuffixProblem, clients_ban_path,
+    clients_domain_path, clients_entry_path, clients_guest_path, clients_guests_path,
+    clients_ingress_path, clients_password_path, clients_passwords_path, clients_path,
+    clients_public_access_path, clients_status_path, dns_providers_path, suffix_problem,
 };
 pub use composer::{
     AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerMention,

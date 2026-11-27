@@ -35,7 +35,7 @@ mod view_model;
 
 pub use domain::{
     CaaState, CertificateState, CredentialEntry, DnsProviderPreset, DomainSettings, LanRecordState,
-    PutDomainRequest,
+    PutDomainRequest, SuffixProblem, suffix_problem,
 };
 pub use entries::{
     ClientAuthKind, ClientsPlugin, EntryBlock, EntryEffect, EntryKind, EntrySwitch, PublicRuleMode,

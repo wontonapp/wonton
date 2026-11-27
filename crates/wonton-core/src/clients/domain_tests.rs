@@ -866,3 +866,69 @@ async fn a_published_certificate_writes_the_config_before_reloading() {
     assert!(names.contains(&"example.test"), "记录：{seen:?}");
     assert!(!names.contains(&"old.example.test"), "记录：{seen:?}");
 }
+
+/// 证书还新、给的就是这个名字、上一次没失败：再保存一次不该重新签一张。
+/// 换名字时旧证书虽然新也不算数（`reset_prepared` 已经把身份删了）。
+#[tokio::test]
+async fn a_fresh_certificate_skips_the_repeat_issue() {
+    use std::sync::atomic::Ordering;
+    let dir = tempfile::tempdir().unwrap();
+    settings(dir.path(), Some("example.test"));
+    let clients = domain(dir.path());
+    clients
+        .apply(|store| {
+            *store = super::Store {
+                suffix: Some("example.test".into()),
+                provider: Some("httpreq".into()),
+                credentials: [("HTTPREQ_TOKEN".into(), "a-token".into())].into(),
+                env_file: None,
+                terms_accepted: true,
+                last_error: None,
+            };
+            Ok(())
+        })
+        .await
+        .unwrap();
+    certificate(dir.path());
+    let snapshot = clients.effective().unwrap();
+    assert_eq!(snapshot.suffix.as_deref(), Some("example.test"));
+    assert!(snapshot.last_error.is_none());
+    let certs = dir.path().join("entry/certs");
+    assert!(certs.join("site.key").is_file(), "key 没写出来");
+    let names = crate::entry_certificate::published_names(&certs.join("site.pem"));
+    assert_eq!(names, ["example.test"], "SAN 没读到");
+    assert!(
+        clients
+            .not_after_ms()
+            .is_some_and(|at| at > super::now_ms() + 30 * 86_400_000),
+        "到期时间不够远：{:?}",
+        clients.not_after_ms()
+    );
+    assert!(clients.fresh(&snapshot), "先决条件就该是新证书");
+    let quiet = clients.engine.recorded_creations().len();
+    clients.pending.fetch_add(1, Ordering::SeqCst);
+    clients
+        .clone()
+        .run_issue(clients.effective().unwrap())
+        .await;
+    assert_eq!(
+        clients.engine.recorded_creations().len(),
+        quiet,
+        "证书还新且覆盖这个名字，不该再起 lego"
+    );
+    // 换了名字：旧的 SAN 不覆盖，必须重新签。
+    clients
+        .update(|store| store.suffix = Some("neu.example.test".into()))
+        .await
+        .unwrap();
+    clients.pending.fetch_add(1, Ordering::SeqCst);
+    clients
+        .clone()
+        .run_issue(clients.effective().unwrap())
+        .await;
+    assert_eq!(
+        clients.engine.recorded_creations().len(),
+        quiet + 1,
+        "换名字后该照常走签发"
+    );
+}

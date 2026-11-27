@@ -39,7 +39,6 @@ pub(crate) struct ClientsDomainLink {
     client: Mutex<Option<(ProxySettings, reqwest::Client)>>,
     /// 同一时刻只跑一次请求；保存成功后的刷新排在正在跑的后面。
     queue: tokio::sync::Mutex<()>,
-    selected: Mutex<Option<Selection>>,
     /// 服务器上现在存着的服务商代码：重试时沿用，“其他”时也有。
     saved_provider: Mutex<Option<String>>,
     /// 取到过一份设置：换了语言要重新取，“详情”是核心按 App 的语言写的。
@@ -62,7 +61,6 @@ impl ClientsDomainLink {
             languages: Mutex::new(Vec::new()),
             client: Mutex::new(None),
             queue: tokio::sync::Mutex::new(()),
-            selected: Mutex::new(None),
             saved_provider: Mutex::new(None),
             fetched: AtomicBool::new(false),
             served: Mutex::new(None),
@@ -160,7 +158,6 @@ impl ClientsDomainLink {
                 Selection::Other => Vec::new(),
             }
         };
-        *lock(&self.selected) = Some(selection);
         self.view.send_modify(|view| {
             view.suffix = suffix;
             view.selected_provider = selected_provider;
@@ -224,7 +221,6 @@ impl ClientsDomainLink {
                 let dirty =
                     lock(&self.served).is_some() && !self.form_matches(&served_suffix, &selection);
                 *lock(&self.saved_provider) = domain.provider.clone();
-                *lock(&self.selected) = Some(selection.clone());
                 *lock(&self.served) = Some((served_suffix, selection.clone()));
                 let mut view = build(domain, presets, &selection);
                 // 正在填的表单不被刷新冲掉；干净的表单换语言或换设备时整页跟着服务器走。
@@ -266,7 +262,6 @@ impl ClientsDomainLink {
             };
             (credential_vars, desec, selected_provider, other_provider)
         };
-        *lock(&self.selected) = Some(selection);
         self.view.send_modify(|view| {
             view.selected_provider = selected_provider;
             view.other_provider = other_provider;
@@ -302,13 +297,14 @@ impl ClientsDomainLink {
             if suffix.is_empty() {
                 return Err(invalid(text("clients-domain-suffix", &[])));
             }
-            if !suffix.bytes().all(|byte| {
-                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
-            }) || suffix.starts_with('.')
-                || suffix.ends_with('.')
-                || suffix.contains("..")
-            {
-                return Err(invalid(text("clients-domain-suffix-invalid", &[])));
+            match wonton_protocol::suffix_problem(&suffix) {
+                None => {}
+                Some(wonton_protocol::SuffixProblem::Invalid) => {
+                    return Err(invalid(text("clients-domain-suffix-invalid", &[])));
+                }
+                Some(wonton_protocol::SuffixProblem::Ip) => {
+                    return Err(invalid(text("clients-domain-suffix-ip", &[])));
+                }
             }
             Some(suffix)
         } else {

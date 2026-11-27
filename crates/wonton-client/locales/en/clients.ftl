@@ -3,6 +3,7 @@ clients-domain-terms = Accept the Let's Encrypt subscriber agreement first
 clients-domain-suffix = Enter a domain
 
 clients-domain-suffix-invalid = Use lowercase letters, digits, “-” and “.”
+clients-domain-suffix-ip = Enter a domain name, not an IP address
 
 clients-domain-provider = Choose a DNS provider
 

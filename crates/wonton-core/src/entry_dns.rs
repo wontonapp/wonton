@@ -103,25 +103,6 @@ pub fn caa_state(records: &[CaaIssue], account_uri: &str, caa_identity: &str) ->
     }
 }
 
-/// `*.lan.<domain>` 现在的 A 记录；没有记录是空列表。
-pub async fn lan_a(domain: &str, servers: &[String]) -> anyhow::Result<Vec<Ipv4Addr>> {
-    let resolver = resolver(servers)?;
-    let name = format!("*.lan.{domain}.");
-    let records = match resolver.lookup(name, RecordType::A).await {
-        Ok(records) => records,
-        Err(NetError::Dns(DnsError::NoRecordsFound(_))) => return Ok(Vec::new()),
-        Err(error) => return Err(error).context("查询局域网 A 记录失败"),
-    };
-    Ok(records
-        .answers()
-        .iter()
-        .filter_map(|record| match &record.data {
-            RData::A(address) => Some(address.0),
-            _ => None,
-        })
-        .collect())
-}
-
 /// 当前 ACME 服务对应的 CAA 身份（`issue` 里点名的那家 CA）。Let's Encrypt 生产/staging 的
 /// 身份都是 letsencrypt.org；Pebble（Boulder 的测试实现）是 pebble。认不出的 directory 返回
 /// None：设置页显示 Unknown，签发路径拒绝下单——失败即停，不猜。

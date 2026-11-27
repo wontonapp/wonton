@@ -62,6 +62,14 @@ impl LanState {
         )
     }
 
+    /// 选中的地址：域名设置页上“这条记录该指向哪里”。
+    pub(crate) fn target(&self) -> Option<&EntryAddress> {
+        match self {
+            Self::Selected { address, .. } => Some(address),
+            _ => None,
+        }
+    }
+
     /// 域名设置页上的 `lan_record`。
     pub(crate) fn record_state(&self) -> LanRecordState {
         match self {

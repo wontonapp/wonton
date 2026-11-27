@@ -26,7 +26,7 @@ pub async fn domain(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> 
         return unavailable(&langs);
     };
     match clients.view().await {
-        Ok(view) => no_store(Json(with_lan_record(&gateway, view)).into_response()),
+        Ok(view) => no_store(Json(with_lan(&gateway, view)).into_response()),
         Err(error) => failure(
             ClientsFailure::Other,
             &l10n::text(
@@ -38,10 +38,13 @@ pub async fn domain(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> 
     }
 }
 
-/// `*.lan` 记录对不对由局域网检测查（[`crate::clients::lan_forward`]），不在域名设置里。
-fn with_lan_record(gateway: &Gateway, mut view: DomainSettings) -> DomainSettings {
+/// `*.lan` 记录和目标地址都取自局域网检测（[`crate::clients::lan_forward`]），
+/// 页面和打开入口时的判定同源，不在域名设置里各查一套。
+fn with_lan(gateway: &Gateway, mut view: DomainSettings) -> DomainSettings {
     if let Some(entry) = &gateway.entry {
-        view.lan_record = entry.lan().record_state();
+        let state = entry.lan();
+        view.lan_record = state.record_state();
+        view.lan_target = state.target().map(|target| target.address.to_string());
     }
     view
 }
@@ -79,7 +82,7 @@ pub async fn save_domain(
             &l10n::text(&langs, "clients-domain-read-failed", &[]),
         );
     };
-    let mut response = no_store(Json(with_lan_record(&gateway, view)).into_response());
+    let mut response = no_store(Json(with_lan(&gateway, view)).into_response());
     if saved.suffix_changed {
         response.headers_mut().insert(
             SUFFIX_CHANGED_HEADER,

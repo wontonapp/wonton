@@ -135,3 +135,34 @@ pub struct DnsProviderPreset {
     /// 默认推荐的那一家，App 排在最前。
     pub recommended: bool,
 }
+
+/// 后缀哪里不合规。规则集中在这里：核心挑文案、客户端提前拦，都调这一份。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SuffixProblem {
+    /// 空、太长、不是点分的合法标签，或者有 ASCII 以外的字符。
+    Invalid,
+    /// 是个 IP 字面量（IPv4 或 IPv6）；入口只按 DNS 名字签。
+    Ip,
+}
+
+/// 检查一个已经小写、去掉末尾点之后的后缀；合规是 `None`。
+///
+/// 先判 IP 再判字符：IPv6 带冒号，先走字符集就永远走不到 [`SuffixProblem::Ip`]。
+pub fn suffix_problem(suffix: &str) -> Option<SuffixProblem> {
+    if suffix.parse::<std::net::IpAddr>().is_ok() {
+        return Some(SuffixProblem::Ip);
+    }
+    let labels_ok = !suffix.is_empty()
+        && suffix.len() <= 253
+        && suffix.contains('.')
+        && suffix.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+                && label
+                    .bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+        });
+    (!labels_ok).then_some(SuffixProblem::Invalid)
+}

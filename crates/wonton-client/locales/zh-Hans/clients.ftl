@@ -3,6 +3,7 @@ clients-domain-terms = 先勾选 Let's Encrypt 的订户协议
 clients-domain-suffix = 填一个域名
 
 clients-domain-suffix-invalid = 只能用小写字母、数字、“-”和“.”
+clients-domain-suffix-ip = 填域名，不是 IP 地址
 
 clients-domain-provider = 选一个 DNS 服务商
 
