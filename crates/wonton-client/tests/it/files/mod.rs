@@ -3,6 +3,7 @@
 
 mod download;
 mod download_resume;
+mod transfers;
 mod upload;
 mod upload_resume;
 
