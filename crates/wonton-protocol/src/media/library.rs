@@ -9,9 +9,9 @@
 //! 这个人看不到或改不了某一条是 `permission_denied`，条目不在了是 `media_gone`，上游把这两种说成 400 的，
 //! 提供方也要照这样归类。写操作逐条判断，做不了的那几条进 [`LibraryActionResult::failed`]，不连累整批。
 
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 
+use super::provider::segment;
 use super::{MediaKind, Timestamp, known_or_other};
 
 /// 相册浏览各路径的前缀；提供方的路径和核心给客户端的 `/_wonton/api/media/library/…` 后半段相同。
@@ -29,35 +29,24 @@ pub const PATH_LIBRARY_PEOPLE: &str = "/library/people";
 /// `POST`：用户在原生页上的写操作，体是 [`LibraryAction`]。
 pub const PATH_LIBRARY_ACTIONS: &str = "/library/actions";
 
-/// 编号和取值里留原样的字符：RFC 3986 的 unreserved，其余百分号转义（编号由提供方发，可能带 `/`）。
-const UNRESERVED: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'.')
-    .remove(b'_')
-    .remove(b'~');
-
-fn escape(value: &str) -> String {
-    utf8_percent_encode(value, UNRESERVED).to_string()
-}
-
 /// 一个月的条目：`month` 是 `YYYY-MM`（按拍摄时间、提供方所在时区）。
 pub fn timeline_bucket_path(month: &str) -> String {
-    format!("{PATH_LIBRARY_TIMELINE}/{}", escape(month))
+    format!("{PATH_LIBRARY_TIMELINE}/{}", segment(month))
 }
 
 /// 一个相册和它的条目。
 pub fn album_path(id: &str) -> String {
-    format!("{PATH_LIBRARY_ALBUMS}/{}", escape(id))
+    format!("{PATH_LIBRARY_ALBUMS}/{}", segment(id))
 }
 
 /// 一条的详情（EXIF、地点、人物）。
 pub fn library_item_path(id: &str) -> String {
-    format!("{PATH_LIBRARY}/items/{}", escape(id))
+    format!("{PATH_LIBRARY}/items/{}", segment(id))
 }
 
 /// 一个人物的头像（提供方裁好的脸）。
 pub fn person_thumbnail_path(id: &str) -> String {
-    format!("{PATH_LIBRARY_PEOPLE}/{}/thumbnail", escape(id))
+    format!("{PATH_LIBRARY_PEOPLE}/{}/thumbnail", segment(id))
 }
 
 /// 一条的字节，`Range` 原样过。条件请求命中回 304、`Range` 越界回 416，都不是失败。
@@ -65,7 +54,7 @@ pub fn library_content_path(id: &str, rendition: &Rendition) -> String {
     format!(
         "{}/content?rendition={}",
         library_item_path(id),
-        escape(rendition.as_str())
+        segment(rendition.as_str())
     )
 }
 
@@ -343,7 +332,7 @@ impl SearchQuery {
         ];
         let query: Vec<String> = pairs
             .into_iter()
-            .filter_map(|(name, value)| value.map(|value| format!("{name}={}", escape(&value))))
+            .filter_map(|(name, value)| value.map(|value| format!("{name}={}", segment(&value))))
             .collect();
         if query.is_empty() {
             return PATH_LIBRARY_SEARCH.to_owned();
@@ -487,6 +476,7 @@ mod tests {
             "/library/items/a1/content?rendition=live"
         );
         assert_eq!(album_path("a/b c"), "/library/albums/a%2Fb%20c");
+        assert_eq!(album_path(".."), "/library/albums/%2E%2E");
         assert_eq!(
             library_content_path("../x", &Rendition::Other("h dr?".into())),
             "/library/items/..%2Fx/content?rendition=h%20dr%3F"

@@ -479,6 +479,10 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/tasks/{id}/resume` | `POST` | 无 | `MediaTask` |
 | `/tasks/{id}/cancel` | `POST` | 无 | `MediaTask` |
 | `/tasks/{id}/retry` | `POST` | 无（终态才允许，设 `retry_of`） | `MediaTask` |
+| `/tasks/{id}/progress` | `POST` | `{done, total?}`（下载由设备报；上传由核心按偏移算） | `204` |
+| `/tasks/{id}/complete` | `POST` | 无（下载写完、改好名） | `MediaTask` |
+| `/tasks/{id}/failure` | `POST` | `MediaFailure`（设备那边的失败，退避由核心按类别定） | `MediaTask` |
+| `/tasks/{id}/items/{item}/failure` | `POST` | `MediaFailure`（上传的一项在设备那边失败，其余照常） | `MediaTask` |
 | `/sessions` | `POST` | `PlaybackRequest`（含 `position_ms`、`person`、`device`、`profile`） | `PlaybackSession`（`plan` 已填） |
 | `/sessions` | `GET` | 无（query: `person?`） | `{sessions: Vec<PlaybackSession>}` |
 | `/sessions/{id}` | `GET` | 无 | `PlaybackSession` |
@@ -493,12 +497,31 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/tasks/{id}/items/{item}/content` | `GET` | 原始字节，`Range` 原样 | 字节流（206/200） |
 | `/sessions/{id}/stream` | `GET` | 原始字节 | 字节流（206/200） |
 | `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
+| `/items` | `GET` | 无（query 同提供方的 `GET /items`，`kind` 必填） | `{items, cursor?}`，核心转给这个种类的提供方 |
+| `/items/{id}/artwork` | `GET` | 无（query: `kind`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork` |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
 | `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
 
 `{item}` 是 `UploadItem.item_id`；`(task,item) → upload_id` 的映射只在核心，客户端不记。
 
 命令体是 `DeviceCommand` 与 `MediaAction`，类型定义在上面 `media/view.rs` 一处，这里不重复。
+
+请求体与响应体的字段在 `wonton-protocol` 的 `media/api.rs`（核心接口）和 `media/provider.rs`（提供方契约），这里不重复。
+
+播放计划里的流地址：提供方给的 `stream` 只取路径和查询串，核心按这个提供方的 `media_source` 服务地址去取（主机名不认），请求带同样的凭据与 `X-Wonton-User`；给客户端的计划里 `stream` 换成 `/sessions/{id}/stream`，`origin_stream` 不下发。
+
+### 选哪个提供方
+
+`media_source` 可以同时有几个提供方（相册、音乐、影视各一个），核心按这次的操作和条目种类选：
+
+- 在跑的提供方里，运行时自报（`GET /_wonton/capabilities`）的 `operations` 含这次的操作、`kinds` 含条目的种类；上传只看 `upload`，不看种类。
+- 合格的有几个时，取主人在能力设置里给 `media_source` 定的默认；默认不合格或没定，按能力设置里的提供方顺序取第一个。一个都没有回 `plugin_unavailable`。
+- 上传项和播放会话一建好就记下提供方（上传项连同 `upload_id`），之后的续写、进度、停止都发给它；换提供方只影响新建的。
+
+### 核心对提供方的凭据
+
+核心是使用方，凭据按人各一把：名字是 `wonton-core.media.<人>`，第一次替这个人调某个提供方时现签（执行它的 `credentials.issue`），存在核心数据目录、只有核心读得到。
+每个请求带 `Authorization: Bearer <这把>` 和 `X-Wonton-User: <人>`。这个人不在插件的可用范围里就不签，回 `permission_denied`。退出家庭时先 `POST /revoke {name}`，再执行 `credentials.revoke`，最后删掉这把。
 
 `/streams` 不在服务端 API 里：是客户端核本机的回环（见 ADR 正文第 2 节）。服务端只给 `POST /sessions/{id}/cast-url`，回一个绑 LAN 的一次性绝对地址。
 

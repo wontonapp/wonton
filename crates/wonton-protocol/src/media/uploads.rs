@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::Timestamp;
+use super::provider::segment;
 
 /// `POST`：建备份任务前问提供方哪些校验和已经在这个人的库里。
 pub const PATH_UPLOADS_CHECK: &str = "/uploads/check";
@@ -17,12 +18,12 @@ pub const CHECKSUM_SHA1_PREFIX: &str = "sha1:";
 
 /// 收尾回 `item_id` 的路径。
 pub fn upload_finish_path(upload_id: &str) -> String {
-    format!("{}/{upload_id}/finish", super::PATH_UPLOADS)
+    format!("{}/{}/finish", super::PATH_UPLOADS, segment(upload_id))
 }
 
 /// 一条上传的路径（`HEAD` 查偏移、`PATCH` 续写、`DELETE` 放弃）。
 pub fn upload_path(upload_id: &str) -> String {
-    format!("{}/{upload_id}", super::PATH_UPLOADS)
+    format!("{}/{}", super::PATH_UPLOADS, segment(upload_id))
 }
 
 /// `POST /uploads` 的体，由核心按任务里的 `UploadItem` 补出来。
@@ -58,6 +59,12 @@ pub struct UploadFinished {
     pub duplicate: bool,
 }
 
+/// 当前已收字节。`PATCH /uploads/{id}` 成功（200）和偏移对不上（409）都回它；核心的上传路由也回它。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UploadOffset {
+    pub upload_offset: u64,
+}
+
 /// `POST /uploads/check` 的体。一次最多 1000 个，多的分批问。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct UploadCheck {
@@ -89,6 +96,7 @@ mod tests {
         assert_eq!(PATH_UPLOADS_CHECK, "/uploads/check");
         assert_eq!(upload_path("u1"), "/uploads/u1");
         assert_eq!(upload_finish_path("u1"), "/uploads/u1/finish");
+        assert_eq!(upload_path("a/b?c"), "/uploads/a%2Fb%3Fc");
         assert_eq!(UPLOAD_OFFSET_HEADER, "Upload-Offset");
     }
 

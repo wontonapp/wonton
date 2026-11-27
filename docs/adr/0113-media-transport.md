@@ -363,9 +363,9 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | --- | --- | --- |
 | `GET /_wonton/capabilities` | 探测 | 返回 `operations`（`upload`/`download`/`playback`/`list`/`library`）与 `kinds`（`photo`/`video`/`audio`）；核心据它决定哪些操作可用 |
 | `GET /items?kind=&q=&album=&artist=&series=&from=&to=&cursor=` | 列条目 | 分页列这个人能看到的条目，给 Agent 找内容；按 `title` 排，`cursor` 在同一次查询的参数下稳定；回 `items` 与下一页 `cursor` |
-| `POST /uploads` | 开始上传 | 体带 `item`（相对路径、大小、校验和、拍摄时间）；返回 `upload_id` 与已收字节数（为 0 或断点位置） |
+| `POST /uploads` | 开始上传 | 体是 `UploadStart`（相对路径、大小、校验和、拍摄时间）；返回 `upload_id` 与已收字节数（为 0 或断点位置） |
 | `HEAD /uploads/{id}` | 查断点 | 返回 `Upload-Offset`；不存在时 404，核心从头开始 |
-| `PATCH /uploads/{id}` | 续传 | 体是从 `Upload-Offset` 起的字节，`Content-Range` 校验；冲突回 409 并给当前偏移 |
+| `PATCH /uploads/{id}` | 续传 | 体是从 `Upload-Offset` 起的字节，`Content-Range` 校验；成功回 200、冲突回 409，都带当前偏移（`UploadOffset`） |
 | `POST /uploads/{id}/finish` | 收尾 | 提供方校验后入库，返回 `item_id`；收尾时才发现重复回 `duplicate: true`（第 9 节） |
 | `POST /uploads/check` | 去重检查 | 体带校验和（一次最多 1000 个），回已在这个人库里的那些和它们的 `item_id`（第 9 节） |
 | `DELETE /uploads/{id}` | 放弃 | 幂等 |
@@ -375,6 +375,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `POST /playback/{session}/stopped` | 结束 | 带最终位置与原因 |
 | `GET /items/{id}/segments` | 章节/片头片尾 | 回 `segments`（类型、起点、终点）；没有就 404。plan 里带了就以 plan 为准，起播后新抓到的以新抓的为准 |
 | `GET /items/{id}/download` | 下离线 | 支持 `Range`/`If-Range`，回 206 与 `Content-Range` |
+| `GET /items/{id}/artwork` | 封面、海报、缩略图 | 回图片字节，带 `Content-Type`；没有就 404。原生页的浏览靠它和 `list`，手机连不到 `artwork_url` 里提供方的内部地址 |
 | `/library/…` | 相册浏览 | 声明了 `library` 操作的提供方实现，路径和回包见第 9 节的表 |
 | `POST /revoke` | 收回 | 体只带 `name`；提供方只注销上游凭据、停掉上游会话（任务表在核心，核心自己取消任务、结束会话） |
 
