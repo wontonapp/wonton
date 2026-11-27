@@ -11,7 +11,7 @@
 
 ## 合并门槛和合后测试
 
-PR 合并前等的是快检查：格式、Clippy、detekt、SwiftLint、行数门禁、编译、不依赖 Docker 的单元测试和截图比对
+PR 合并前等的是快检查：格式、Clippy、detekt、SwiftLint、行数门禁、编译、不依赖 Docker 的单元测试
 （`gate.yml` 调用的 `lint`、`rust`、`ios`、`android`），目标是十分钟内出结果；另加只在改到相关路径时才跑的 Docker 集成测试
 （见下面的 `rust-docker.yml`，中位二十几分钟），跑完才合。其它慢的挪到合进 `main` 之后跑，不挡合并：
 
@@ -27,14 +27,14 @@ PR 合并前等的是快检查：格式、Clippy、detekt、SwiftLint、行数�
 - `ios-size.yml`：Release App 体积门禁。要编一份 release 核心、归档一份 App（冷缓存十几分钟），只按 `push` 到 main 的
   iOS 路径、每天定时和手动触发；失败留 dSYM 和体积报告，供还原崩溃栈。
 - `main-image.yml`：核心镜像构建。
-- `nightly-ui.yml`：两端的界面测试（XCUITest、设备上的 androidTest），只定时和手动。
+- `ui-smoke.yml`：两端的 UI 冒烟（XCUITest、设备上的 androidTest），只手动，见下面“UI 冒烟”。
 - `release.yml`：版本标签发布核心及组件镜像；手动触发仅接受 main，按 `component` 单独发布远端 MCP 连接器，
   只写 `main-<短提交号>`，不更新核心版本或 stable。只发连接器用 `gh workflow run release.yml --ref main -f component=remote-mcp`；
   组件发布仍须先取得对应范围的许可。
 
 合后的测试红了，谁合的谁 30 分钟内修，修不好 revert（见 AGENTS.md“Git 与协作”）。快慢的分界按“能不能十分钟内
-出结果”定：新加的测试要起容器、走界面流程（UI 测试）或要构建镜像的，放进合后的工作流，不放进必需检查；
-Docker 集成测试例外：新加的 Docker 测试进 `rust-docker` 套件，改到相关路径的 PR 合并前跑，UI 测试和镜像构建仍放合后。
+出结果”定：新加的测试要起容器或要构建镜像的，放进合后的工作流，不放进必需检查；
+Docker 集成测试例外：新加的 Docker 测试进 `rust-docker` 套件，改到相关路径的 PR 合并前跑，镜像构建仍放合后。
 
 ## 必需检查：gate 汇总
 
@@ -73,8 +73,7 @@ Docker 集成测试例外：新加的 Docker 测试进 `rust-docker` 套件，�
   把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把 Rust、Docker、Android、iOS 和体积门禁
   全量跑一遍兜底。
 - 打标签（`labeled`）不进 `ios.yml`、`android.yml`：那会用一次标签事件重跑整轮日常作业，而且跳过的那轮会把之前
-  失败的必需检查盖成“通过”。重录统一走 `snapshots-record.yml`，只在标签是 `record-snapshots` 时跑一个作业，
-  不算必需检查。
+  失败的必需检查盖成“通过”。
 - `test-images.yml` 每周一 02:00 UTC 把测试和镜像构建要拉的上游镜像复制到 `ghcr.io/<owner>/test-images`
   （`scripts/mirror-test-images.sh` + crane copy，digest 原样保留），也可以手动触发。托管 runner 的
   出口 IP 拉不动 Docker Hub 和 ECR Public（实测 `registry:2` 返回 toomanyrequests、构建基础镜像 429），
@@ -88,25 +87,6 @@ Docker 集成测试例外：新加的 Docker 测试进 `rust-docker` 套件，�
   （5 s、15 s 退避），这是基础设施重试，测试本身不重试；预拉用带摘要的引用、测试建容器也用它，
   本机有就不再联网。还拉不到时整个作业失败，日志里是
   `::error::基础设施失败：拉不到镜像 <镜像>（重试 3 次）`，和断言失败分开。
-
-## 界面参考图（Android）
-
-- `apps/compose/shared` 的 host test 里有 Paparazzi 截图测试（Apache-2.0，版本钉在
-  `gradle/libs.versions.toml`）。它按布局在 JVM 上把 `@Preview` 渲染成 PNG，不加载 Rust 的 .so；预览自己带
-  固定假数据。参考图在 `apps/compose/shared/src/androidHostTest/snapshots/`，直接进 git，不用 LFS。
-- 比对跑在 android 工作流的构建作业里（`verifyPaparazziAndroidMain`），不新开作业：同一个 PR 上的新检查放进
-  已有作业，规则集的必需检查列表不用动。设备固定成 PIXEL_5、语言 en、浅色，另有深色的一份；参考图在 Linux
-  runner 上生成，本机字体不同也可能有差异，以 CI 的为准。
-- 比对失败时差异图和报告作为 `paparazzi-<运行次数>` 产物留 7 天，下载下来看差在哪。
-- 重录：本地 `cd apps/compose && ./gradlew :shared:recordPaparazziAndroidMain` 后提交 `snapshots/` 下的
-  PNG，和预览一起提交。
-- 或者在 PR 上打 `record-snapshots` 标签，`snapshots-record` 工作流跑 `recordPaparazziAndroidMain`、
-  把新图提交到分支头，然后摘掉标签。它是单独的工作流、不是必需检查：打标签不会起一整轮 android 构建，也不会
-  取消正在跑的那轮，草稿 PR 上也照跑；重录这一轮红或跳过，不会把之前失败的必需检查盖成通过。录制和提交都由
-  它做，新图怎么过一遍比对见 iOS 一节的“重录推回之后”。外部 PR 的分支
-  在别人仓库里推不进去：标签照样摘掉，图放在这次的 paparazzi 产物里，作者下载后自己提交。
-- 标签用完就摘：GitHub 不会给已经贴着的标签再发一次 `labeled`，留着就发不出下一轮重录。摘标签是单独一步、
-  只看标签（外部 PR 也摘），不跟着提交步骤的成败走。
 
 ## Release APK 体积（`android-size.yml`）
 
@@ -127,36 +107,14 @@ Docker 集成测试例外：新加的 Docker 测试进 `rust-docker` 套件，�
 以 `!cancelled()` 开头、再看开关；汇总用 `always()`，判断成功、跳过或失败都照常报告。范围判断失败会让汇总
 变红，不会伪装成没改动。
 
-## iOS 单测和截图测试
+## iOS 单测
 
-`ios.yml` 的“模拟器构建”作业用 `build-for-testing` 加 `test-without-building`，在固定型号
-（`SIMULATOR_NAME`）和这台机器上挑出来的系统版本的模拟器上只跑 `WontonTests`，包括 `SnapshotTests`
-（pointfreeco/swift-snapshot-testing，MIT，钉版本，只进测试目标不链接 App）。UI 测试在夜跑里跑，这个作业
-不编。参考图在 `apps/ios/WontonTests/__Snapshots__/`，直接进 git，不用 LFS。
+`ios.yml` 的“模拟器构建”作业用 `build-for-testing` 加 `test-without-building`，在 `SIMULATOR_NAME` 型号、
+这台机器上挑出来的系统版本的模拟器上只跑 `WontonTests`；UI 冒烟这个作业不编。
 
 - 系统版本不写死：作业有 27.1 就用 27.1，没有用机器上最新的 iOS 版本（自托管 mini 没有 27.0，装运行时要
-  sudo；托管镜像有）。`nightly-ui`、`snapshots-record` 同一个口径。换成另一个版本时参考图要打 record-snapshots 重录。
-- 参考图绑定型号标识（`SIMULATOR_MODEL`，即测试进程里的 `SIMULATOR_MODEL_IDENTIFIER`）和系统版本，外观、
-  语言（en、US）和时区（UTC）钉在 scheme 和测试里。换了型号或系统要整体重录，只换图不换参数会一直红。
-  工作流是参考运行时的唯一来源：测试步骤用 `TEST_RUNNER_SNAPSHOT_MODEL`、`TEST_RUNNER_SNAPSHOT_OS` 把它交给
-  测试进程（xcodebuild 只转发 `TEST_RUNNER_` 前缀），再加 `TEST_RUNNER_SNAPSHOT_ENFORCE=1`。测试按型号和
-  系统版本核对，不符就整类失败，变量没交到也失败，不会出现改了工作流没人知道、CI 一路绿的情况。本机没有
-  这些变量时只跳过，跳过原因里写清参考组合和当前组合。
-- 每个用例默认 10 秒、最多 60 秒，失败不自动重试。
-- 录制模式靠 scheme 的环境变量切：`Wonton` 是 `SNAPSHOT_TESTING_RECORD=never`（只比较，缺一张参考图也直接红，
-  不在 CI 里悄悄补图），`WontonSnapshots` 是 `all`。xcodebuild 步骤的 `env` 传不进模拟器里跑的 App，只有 scheme
-  的环境变量进得去。
-- 比较失败时“失败时存测试结果包”一步把 `.xcresult` 存成产物，保留 7 天；新图和差异图是里面的附注。
-- 重录在 `snapshots-record.yml`：在 PR 上打 `record-snapshots` 标签（草稿 PR 的事件不跑日常作业，但重录作业
-  照跑）。作业用 `WontonSnapshots` scheme 把参考图全部重画，提交回分支并摘掉标签。录制那一轮本身是红的
-  （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准；它不算必需检查。录完逐个核对
-  现有参考图都出了“已录制”：运行时不对或一张没录就失败，不提交、不摘标签，留着看日志后重打。
-- 重录推回之后：`GITHUB_TOKEN` 推的提交照常触发 `pull_request`，但仓库要求外部贡献者的运行先批准
-  （`all_external_contributors`），github-actions[bot] 也算外部，`gate` 停在 `action_required`、
-  分支头上没有必需检查。`snapshots-record.yml` 末尾的 `checks` 作业用同一个令牌批准这次运行；分支头已经
-  不是重录推的提交（有人在那之后推过）时不处理。`workflow_dispatch` 重新触发不行：实测手动运行的检查不进
-  PR 的检查汇总，规则集不认。外部 fork 的 PR 令牌推不回对方的分支：图存成 `ios-snapshots` 产物，作者自己取。
-- 新增截图用 `WontonTests/SnapshotFixtures`（Debug 专用）搭界面，只放有代表性的界面，不逐页全录。
+  sudo；托管镜像有）。`ui-smoke` 同一个口径。
+- 每个用例默认 10 秒、最多 60 秒，失败不自动重试。失败时“失败时存测试结果包”一步把 `.xcresult` 存成产物，保留 7 天。
 
 ## 缓存
 
@@ -213,30 +171,23 @@ iOS 是 XCFramework 和 Swift 绑定，Android 是 .so 和 Kotlin 绑定。键�
 - 所有 `actions/checkout` 都带 `persist-credentials: false`，不在工作区留 git 凭据。
 - 第三方 action 固定到提交 SHA（行尾注释写版本号）；SwiftLint、XcodeGen、gitleaks、crane、actionlint
   这类下载的二进制都校验 sha256。
-- 不用 `pull_request_target`；artifact 只留测试输出，保留 7 天（夜跑的截图、录屏为查失败留 14 天，体积门禁失败时的符号和映射表也是 14 天）。
+- 不用 `pull_request_target`；artifact 只留测试输出，保留 7 天（UI 冒烟的录屏和测试报告留 14 天，体积门禁失败时的符号和映射表也是 14 天）。
 
-## 界面测试夜跑（`nightly-ui.yml`）
+## UI 冒烟（`ui-smoke.yml`）
 
-两端的界面测试每晚在模拟器上各跑一遍，只定时和手动触发，不挂 PR、不设必需检查。时间沿用
-`ios.yml` 和 `android.yml` 的定时（一个工作流两条 cron，作业按 `github.event.schedule` 分开），不另占窗口。
+每端几条冒烟（启动到首页、侧栏、进聊天发一条、打开一个应用、进设置），只看到没到、崩没崩，不看界面细节；
+用例在 `apps/ios/WontonUITests`、`apps/compose/androidApp/src/androidTest`。只手动触发，不定时、不挂 PR、
+不设必需检查：发版前跑一次；改了启动、导航的分支上作者自己跑：
+`gh workflow run ui-smoke.yml --ref <分支> [-f platform=ios|android]`（不填两端都跑）。用的是分支上的工作流文件。
+公开仓库的托管 macOS 分钟免费，但组织同时最多 5 个 macOS 作业。
 
-- iOS 只开一台模拟器跑全部 `WontonUITests`；要两台的用例（粘贴的对方视角、好友两端）在工作流里排除或
-  `XCTSkip`。要后端的用例没有配对码时 `XCTSkip`，不静默通过。手动触发可以填 `pairing_code`，把开发栈的
-  配对码带进来（经 `TEST_RUNNER_PAIRING_CODE`，见 `apps/ios/scripts/ui-test.sh`）。
-- 不需要后端的用例：全新安装落在配对页，和用 `WONTON_UI_FAKE` 假数据的首屏、侧边栏、主入口导航
-  （`MainNavigationUITests`）、插件页的出口（`PluginExitUITests`）、面板网页的手势（`PanelGestureUITests`）、房间的通话入口（`CallEntryUITests`，
-  Android 是 `CallEntryTest`）。假数据入口整个
-  在 cargo feature `ui-fake` 后面（`crates/wonton-client`）：Debug 构建默认带上，Release 不带；夜跑在
-  构建时显式传开关（iOS 的 `WONTON_UI_FAKE=1`、Android 的 `-Pwonton.uiFake=1`），壳的调用在 `#if DEBUG`
-  里，生产 Release 包编不进去。
+- 不要后端：用 `WONTON_UI_FAKE` 的假数据（Android 的首屏和前后台用例用真核心、不配对）。假数据入口整个在
+  cargo feature `ui-fake` 后面（`crates/wonton-client`）：Debug 构建默认带上，Release 不带；冒烟在构建时显式传开关
+  （iOS 的 `WONTON_UI_FAKE=1`、Android 的 `-Pwonton.uiFake=1`），壳的调用在 `#if DEBUG` 里，生产 Release 包编不进去。
 - Android 在 `ubuntu-24.04` 上开 KVM，用 `ReactiveCircus/android-emulator-runner`（Apache-2.0）起一台
-  x86_64 模拟器跑 `connectedDebugAndroidTest`；首屏用例不依赖服务端。
-- 用例的时限由 xcodebuild 的 `-test-timeouts-enabled YES` 和 Gradle 自己的超时兜底，不加测试重试。
-- 失败自动开 issue（标题 `夜跑失败：<端> <测试>`）；同一条测试已经有开着的同名 issue 就在上面留言，不重复开。
-  解析不到失败用例（构建或前置步骤挂了）时报一条作业级 issue。截图、录屏和测试报告（iOS 的 `.xcresult`、
-  `simctl io recordVideo`；Android 的 `screenrecord`、测试报告）存成产物保留 14 天。
-- 连续两周稳定、这期间的失败都查清是真问题之后，再把“启动到首屏 + 一个关键流程”挪进 PR 的必需检查。
-  挪的时候放进已有作业的步骤里、作业名不改，规则集不用动。
+  x86_64 模拟器跑 `connectedDebugAndroidTest`。
+- 用例的时限由 xcodebuild 的 `-test-timeouts-enabled YES` 和 Gradle 自己的超时兜底，不加测试重试。录屏和测试报告
+  （iOS 的 `.xcresult`、`simctl io recordVideo`；Android 的 `screenrecord`、测试报告）存成产物保留 14 天。
 
 ## 已知边界
 

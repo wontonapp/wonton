@@ -174,15 +174,6 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 
 图片上传进度未知不等于 0%：已知比例时显示线性条，未知时显示转圈。
 
-## 首次打开走查
-
-`WontonUITests/FirstRunWalkthroughUITests` 走一遍新用户路径（配对页输入码、交接和备份层、引导、列表、和 Hermes 的第一句、
-长按菜单、`/`、侧栏），浅色和深色各一例，每步留截图。两例都是新设备（每例换数据目录），**每例要一个码**，一例只给它一个码时
-那一例会 `XCTSkip`；没有一个码时整类跳过。
-
-用 `mini-walkthrough.sh up <名字> <检出> --host <机>` 起栈和模拟器（`<机>` 是开发机名），`build` 一次，再 `test <名字> FirstRunWalkthroughUITests`
-（它的 `test` 会按用例数现取码）。已知软失败在 `knownIssues` 里放行，新问题照红。
-
 ## 检查
 
 ```bash
@@ -191,92 +182,23 @@ swiftlint lint --strict --config apps/ios/.swiftlint.yml apps/ios
 
 函数体超过 100 行即报错。CI 见 `.github/workflows/ios.yml`。
 
-配对链接回归在 `WontonTests/PairingLinkTests`（真实核心，临时数据目录）和 `WontonUITests/PairingLinkUITests`。
-界面用例通过 Debug 环境变量 `WONTON_DEV_DATA_SUFFIX` 使用独立的 App 数据目录，不读取或改动其他用例的配对信息。
-
-连接详情的 UDP 流向默认收起，没有流向时不显示。展开后列出插件、端口、收发包数和超长丢弃；
-发送缓冲丢弃只在核心给出大于零的连接级计数时显示，未知不伪装成零（ADR-0072）。
-`UdpFlowsUITests` 使用 Debug 固定 ViewModel 检查收放、空列表和完整无符号计数；不需要配对栈，也不代表 UDP 传输实测。
+单测在 `WontonTests`。`WontonUITests` 只有几条冒烟（启动、侧栏、聊天发一条、打开应用、设置），不要后端，
+用 `WONTON_UI_FAKE` 的假数据，核心要带假数据入口编（`WONTON_UI_FAKE=1 apps/ios/scripts/build-core.sh debug`）；
+每条用例经 Debug 环境变量 `WONTON_DEV_DATA_SUFFIX` 用自己的数据目录。不挂 PR，发版前或改了启动、导航时手动跑：
 
 ```bash
 xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
   -destination 'platform=iOS Simulator,name=<模拟器名称>' \
-  -only-testing:WontonTests/PairingLinkTests \
-  -only-testing:WontonUITests/PairingLinkUITests CODE_SIGNING_ALLOWED=NO
+  -only-testing:WontonUITests CODE_SIGNING_ALLOWED=NO
 ```
 
-扫码反馈回归在 `WontonTests/QRScannerTests` 和 `WontonUITests/PairingScanUITests`。后者自动启用
-Debug 专用环境变量 `WONTON_UI_TEST_SCAN_INJECTION=1`，显示标识为 `pairing-inject-scan` 的按钮；
-按钮把配对输入框中的码交给真正的 `scanned()` 回调和客户端核心，不模拟连接进展或网络结果。
-手动走查也可在 Debug 启动环境中开启此变量，粘贴码或用深链接预填后点该按钮；不要同时设置自动配对变量
-`WONTON_DEV_PAIRING_CODE`。模拟器能验证进度、失败和重扫，但不能验证相机识别或真实触感。
+界面长什么样用模拟器截图验收，不写钉死界面细节的自动化测试（AGENTS.md“测试”）。
 
-```bash
-apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
-  -only-testing:WontonTests/QRScannerTests \
-  -only-testing:WontonUITests/PairingScanUITests
-```
+连接详情的 UDP 流向默认收起，没有流向时不显示。展开后列出插件、端口、收发包数和超长丢弃；
+发送缓冲丢弃只在核心给出大于零的连接级计数时显示，未知不伪装成零（ADR-0072）。
 
-不提供后端码时，上述界面类验证核心当场拒绝、不可达服务器的连接进度和失败、同码重新扫描；
-`testSuppliedServerCode` 则跳过。提供 `PAIRING_CODE` 时该方法走真实服务器，默认期待成功；
-用已用过或过期的真实码验证失败时，额外传 `TEST_RUNNER_PAIRING_SCAN_EXPECT_FAILURE=1`。
-截图保留为 XCTest attachments。分开构建和运行时，用 `test-without-building -xctestrun <构建产物里的测试清单>`
-指向自己那次构建保存的测试包，不依赖下一次构建名额的缓存目录；配对码在构建完成后生成，避免等待期间过期。
-
-要后端的界面用例（好友、粘贴、安装行、图片查看、Bot 资料）用 `apps/ios/scripts/ui-test.sh` 跑：配对码只经环境变量
-`PAIRING_CODE` 传进去，没给就 XCTSkip，给了但不像配对码就直接失败。
-
-配对后的交接前置共用 `UITestBackend.settleKeyHandoff`：等真实 ViewModel 结束 `Checking`，有交接页就从
-“手边没有别的设备”进入备份页并返回，有恢复提醒就关提醒；不假定交接页必出现，也不以一段静默时间判成功。
-测试启动时经 `passPairingCode` 设置 `WONTON_UI_TEST_STATE=1`；自行启动的调用方也要设置。Debug 只读 AX 标识
-只暴露登录、同步和交接类别，不含密钥、不改核心状态；真正验证 SAS 交接的 `KeyHandoffUITests` 不调用跳过前置。
-
-`KeyHandoffUITests`（加设备时交接密钥，ADR-0087）和 `SasResetUITests`（没有可信设备时用恢复密钥或重置，ADR-0076）
-要一台在跑“添加设备”的旧设备和准备好的账号状态。旧设备按 [`deploy/dev/core/README.md`](../../deploy/dev/core/README.md)
-的“交接聊天密钥”一节用 `key-handoff-old-device` 示例扮演：
-
-- 示例的 `KEY_HANDOFF_HISTORY_TEXT` 必须和传给用例的 `HISTORY_TEXT` 是同一串：不设时示例自己按时间戳生成，
-  两边必然对不上，明文断言也就作废。用例没拿到 `HISTORY_TEXT` 会打印一行。恢复和重置两条的 `RECOVERY_KEY`
-  取示例写在码文件旁的 `.recovery`。
-- 码从哪来：示例把给新设备的邀请码写进你传给它的码文件（示例页开着时会自动接第一个确认请求），也可以现取
-  `dev.sh pair <地址>` 的码。一条用例一个码；`PAIRING_CODE` 给逗号分隔的一串，只有前一个已用/过期、用例退回
-  失败面时才用下一个，跑整个类时给够条数。
-- 两条恢复路径跑前先把设备删掉：`dev.sh devices` 看设备 ID，逐个 `dev.sh revoke <ID>`（含示例那台）；
-  重置那条用上一台已删、手里的密钥已作废的状态。栈在别的机器上时这两个命令要在那套栈上跑
-  （`ssh <机>-stack dev <栈名> devices` / `revoke <ID>`），在调用机直接跑会打到本机 Docker。
-- 交接那条要比较两端表情：示例打出 `表情：` 那行后，把后面的 7 个符号（一个空格分隔，用例按空格拆）写进 App 容器的
-  `Documents/sas-emoji.txt`。用例只等 120 秒，得用命令写；在开发机上跑时这三条经 `ssh mini-ios light <名字> -- …` 执行：
-
-```bash
-symbols=$(grep '^表情：' <示例日志> | tail -n 1 | sed 's/^表情：//')
-appdir=$(xcrun simctl get_app_container <UDID> app.wonton.ios data)
-printf '%s' "$symbols" > "$appdir/Documents/sas-emoji.txt"
-```
-
-粘贴板要过 iOS 的粘贴许可，读不到。用例从屏幕一次取 7 个符号按纵坐标排，和文件按序比对。
-
-```bash
-TEST_RUNNER_KEY_HANDOFF=1 TEST_RUNNER_HISTORY_TEXT='<历史>' PAIRING_CODE='<码>,<码>' \
-  apps/ios/scripts/ui-test.sh <UDID> test -only-testing:WontonUITests/KeyHandoffUITests
-TEST_RUNNER_RECOVERY_KEY='<恢复密钥>' TEST_RUNNER_HISTORY_TEXT='<历史>' PAIRING_CODE='<码>,<码>' \
-  apps/ios/scripts/ui-test.sh <UDID> test -only-testing:WontonUITests/SasResetUITests
-```
-
-断言依赖的截图是 `handoff-compare`、`history-undecryptable`、`history-decrypted`、`new-key`，留在 xcresult 里。
-
-```bash
-PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
-  -only-testing:WontonUITests/BotProfileUITests
-```
-
-端口映射走查 `PortMappingUITests` 要在开发栈安装 `whoami` 示例并声明一个同号 TCP 隧道端口，
-以 `TEST_RUNNER_PORT_MAPPING_TEST_PORT=<端口>` 和新的配对码运行；栈先完成引导。
-用例实际请求回环端口，检查开页、进后台、回前台和关页的可达性，并附上详情页截图；不把状态文案当作网络验证。
-
-界面截图回归在 `WontonTests/SnapshotTests`：真实界面配固定假数据（同目录的 `SnapshotFixtures`，Debug 专用），逐像素比较
-`WontonTests/__Snapshots__/` 下的参考图。参考图绑定模拟器型号标识（`SIMULATOR_MODEL_IDENTIFIER`）和系统版本，
-语言、地区和时区由 scheme 钉住。工作流用 `TEST_RUNNER_SNAPSHOT_MODEL`、`TEST_RUNNER_SNAPSHOT_OS` 把参考型号和
-版本交给测试：对的照常比，不对在 CI 上失败。本机没有这两个变量时整类跳过，跳过原因里写着参考图录在哪、当前是什么。
-怎么重录、失败产物在哪见 [`.github/workflows/README.md`](../../.github/workflows/README.md)。新增截图先挑有代表性的界面，不逐页全录。
+手动走查扫码：Debug 启动环境里设 `WONTON_UI_TEST_SCAN_INJECTION=1`，配对页多一个标识为 `pairing-inject-scan`
+的按钮，把配对输入框中的码交给真正的 `scanned()` 回调和客户端核心，不模拟连接进展或网络结果；粘贴码或用深链接预填后点它。
+不要同时设置自动配对变量 `WONTON_DEV_PAIRING_CODE`。模拟器能看进度、失败和重扫，看不了相机识别和真实触感。
 
 Bundle ID `app.wonton.ios` 是临时的，上架前确定正式的。

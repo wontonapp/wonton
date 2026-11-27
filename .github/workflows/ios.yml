@@ -1,8 +1,7 @@
 name: ios
 
-# 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建：在固定型号和系统版本的模拟器上
-# 跑 WontonTests（单测和截图测试，不跑 UI 测试，不签名）。
-# 重录参考图不在这个工作流里：另开 snapshots-record.yml，只在打 record-snapshots 标签时跑，见 workflows/README.md。
+# 托管 macOS（仓库公开后 macOS 分钟免费）：SwiftLint，和一次模拟器构建：在模拟器上跑 WontonTests（单测，
+# 不跑 UI 冒烟，不签名）。UI 冒烟只手动跑，见 ui-smoke.yml。
 #
 # 改动范围分两半（模拟器构建要十几分钟，2026-11-12 实测 PR 上中位 13 分钟，PR 只等十分钟内出结果的快检查）：
 # - PR 上：改到 Swift 这边或导出给 Swift 的接口（apps/ios、设计生成、wonton-protocol、wonton-client）时由 gate.yml 调用，
@@ -97,14 +96,8 @@ jobs:
     timeout-minutes: 70
     env:
       XCODEGEN_VERSION: "2.46.0"
-      # 设备取装机列表里的普通 iPhone，模拟器名字带空格，走变量拼进 -destination。
-      # `SIMULATOR_MODEL` 是型号标识（SIMULATOR_MODEL_IDENTIFIER），iPhone18,3 就是 iPhone 17；测试按它和
-      # 系统版本核对，不符就在 CI 上失败。系统版本不写死，下一步按机器挑；测试步骤把两个值和 enforce 开关交给测试进程。
-      # 参考图绑定这个组合，换了就整体重录（打 record-snapshots 标签）。
+      # 设备取装机列表里的普通 iPhone，模拟器名字带空格，走变量拼进 -destination。系统版本不写死，下一步按机器挑。
       SIMULATOR_NAME: iPhone 17
-      SIMULATOR_MODEL: "iPhone18,3"
-      # 截图测试并行会同时开好几个窗口、失败时也不好定位，单台模拟器顺序跑；日期按 UTC、en_US 排版，参考图才可复现。
-      TZ: UTC
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -145,7 +138,7 @@ jobs:
       - name: 挑这台机器上有的模拟器运行时
         run: |
           # 自托管 mini 没有 iOS 27.0 运行时（装运行时要 sudo，mini 没配免密），托管镜像有；有 27.1 就用 27.1，
-          # 没有就取机器上最新的 iOS 版本。参考图跟着这里挑出的版本录（record-snapshots），换机器要重录。
+          # 没有就取机器上最新的 iOS 版本。
           version=$(xcrun simctl list runtimes -j | python3 -c '
           import json, sys
           runtimes = json.load(sys.stdin)["runtimes"]
@@ -163,7 +156,7 @@ jobs:
       - name: 后台启动模拟器
         run: |
           # 设备的 CoreSimulator 库是按用户分的，还可能留着上一轮坏掉的设备：先全停，按名字找到的先擦掉再用。
-          # 机器上没这个型号就退到这个运行时支持的第一种 iPhone；后面一律按 UDID 指定目标。型号标识从设备本身取。
+          # 机器上没这个型号就退到这个运行时支持的第一种 iPhone；后面一律按 UDID 指定目标。
           xcrun simctl shutdown all || true
           runtime="com.apple.CoreSimulator.SimRuntime.iOS-$(echo "$SIMULATOR_OS" | tr . -)"
           IFS=$'\t' read -r name type <<EOF
@@ -198,8 +191,6 @@ jobs:
             udid=$(xcrun simctl create "$name" "$type" "$runtime")
             xcrun simctl boot "$udid"
           fi
-          model=$(xcrun simctl getenv "$udid" SIMULATOR_MODEL_IDENTIFIER || true)
-          echo "SIMULATOR_MODEL=${model:-$SIMULATOR_MODEL}" >> "$GITHUB_ENV"
           echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
           nohup xcrun simctl bootstatus "$udid" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
@@ -239,7 +230,7 @@ jobs:
           key: ${{ steps.core.outputs.key }}
       - name: 生成 Xcode 工程
         run: xcodegen generate --spec apps/ios/project.yml
-      # 只编 WontonTests：UI 测试（WontonUITests）在夜跑里跑，这里不编。
+      # 只编 WontonTests：UI 冒烟（WontonUITests）不挂 PR，这里不编。
       - name: 构建测试
         run: |
           xcodebuild -version
@@ -256,15 +247,9 @@ jobs:
         run: |
           xcrun simctl bootstatus "$SIMULATOR_UDID" -b
           cat "$RUNNER_TEMP/simulator-boot.log"
-      # 录制模式由 scheme 的环境变量切（`Wonton` 是 never）：只比较、缺图也报错，不在 CI 里悄悄补图；
-      # 重录在 snapshots-record.yml。每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
-      - name: 单元测试和截图测试
-        env:
-          TEST_RUNNER_SNAPSHOT_ENFORCE: "1"
+      # 每个用例 10 秒够，卡住最多 60 秒；失败不加自动重试，先把原因查清。
+      - name: 单元测试
         run: |
-          # 运行时和型号是上一步按机器挑的，不进 `${{ env }}`，交给测试进程得用 shell 变量。
-          export TEST_RUNNER_SNAPSHOT_MODEL="$SIMULATOR_MODEL"
-          export TEST_RUNNER_SNAPSHOT_OS="$SIMULATOR_OS"
           xcodebuild test-without-building \
             -project apps/ios/Wonton.xcodeproj \
             -scheme Wonton \
@@ -272,15 +257,12 @@ jobs:
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -only-testing:WontonTests \
             -parallel-testing-enabled NO \
-            -testLanguage en \
-            -testRegion US \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 10 \
             -maximum-test-execution-time-allowance 60 \
             -resultBundlePath "$RUNNER_TEMP/Tests.xcresult" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             CODE_SIGNING_ALLOWED=NO
-      # 对比失败的新图和差异图作为附注在 .xcresult 里。
       - name: 失败时存测试结果包
         if: ${{ failure() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

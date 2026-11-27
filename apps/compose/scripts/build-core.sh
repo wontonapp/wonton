@@ -5,7 +5,7 @@
 # 用法：build-core.sh <jniLibs 输出目录> <Kotlin 输出目录> <符号输出目录> <debug|release> <minSdk> <auto|1|0> <ABI...>
 # 第 3 个目录放剥符号之前的 .so，给崩溃分析用，不进 APK。
 # 第 6 个参数是假数据入口（cargo feature ui-fake）：auto 按 debug/release 开关（Debug 带上，Release 不带），
-# 1/0 强制；夜跑的 UI 测试传 1。
+# 1/0 强制；UI 冒烟传 1。
 #
 # 要能在 macOS 自带的 bash 3.2 下运行：不要展开可能为空的数组（set -u 会报 unbound variable）。
 set -euo pipefail

@@ -31,7 +31,6 @@ androidx-test-junit = "1.3.0"
 androidx-test-rules = "1.7.0"
 androidx-test-runner = "1.7.0"
 androidx-test-orchestrator = "1.6.1"
-paparazzi = "2.0.0-alpha05.1"
 compose-ui-test-manifest = "1.12.0-beta01"
 android-compileSdk = "37"
 android-minSdk = "29"
@@ -106,5 +105,3 @@ compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "
 detekt = { id = "dev.detekt", version.ref = "detekt" }
 # Apache-2.0。构建时把 Gradle 依赖和它们的许可证文本收进 res/raw，关于页的开源许可列表用它。
 aboutlibraries = { id = "com.mikepenz.aboutlibraries.plugin.android", version.ref = "aboutlibraries" }
-# Apache-2.0。在 JVM 上按布局渲染界面并比对参考图。
-paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }

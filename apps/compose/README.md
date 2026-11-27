@@ -167,8 +167,7 @@ adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<�
 桌面项，重装后重新启用。实际菜单容量由桌面决定，`adb shell dumpsys shortcut` 可查看动态、固定和停用状态。
 
 桌面小组件在 `shared/.../ui/widget/`（Glance，Apache-2.0）：每次画都从数据目录读核心写的 `widget/snapshot.json`，不调核心；
-`WontonApplication` 在核心起来时订阅“写下了一份”并 `updateAll`。界面接 `WidgetState`（快照、颜色、此刻、点了去哪），
-截图测试用写死的假快照（`androidHostTest/.../widget/WidgetSnapshotsTest.kt`）。
+`WontonApplication` 在核心起来时订阅“写下了一份”并 `updateAll`。界面接 `WidgetState`（快照、颜色、此刻、点了去哪）。
 
 ## 聊天（开发）
 
@@ -181,58 +180,6 @@ Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将
 
 聊天列表右下角的 Material 3 加号按钮进入“发起私聊”；列表底部留出按钮空间，最后一行可以滚动到按钮上方。
 
-## 首次打开走查
-
-`androidTest/.../FirstRunWalkthroughTest`（`light`/`dark` 两个阶段）从没配对、没走过引导的设备开始走一遍新用户路径：
-配对页输入配对码、交接和备份层、引导、空列表、和 Hermes 的第一句、长按菜单、`/`、侧栏各入口，每步留一张截图。
-用真核心和真入口，不走 `ui-fake`。
-
-- 栈：开发栈（`remote-dev.sh`/`stack-slot.sh` 起的），**别连正式安装**；配对码从自己那套栈现取（10 分钟、单次）。
-- 两个 APK 必须同一台机器上编：本机和验证机的 debug keystore 不同，混着装会签名不符、`am instrument` 直接被拒。
-- `ssh <机>-stack` / `remote-dev.sh --host <机>` 里的 `<机>` 是开发机名，下面命令同理。
-- 没传 `-e code` 时用例 `Assume` 跳过（nightly 的安卓作业不带参数，见 `nightly-ui.yml`）。
-- 已知软失败在用例的 `knownIssues` 里放行（现在只有“没配模型时 `/` 没有命令菜单”），新问题照红。
-- 截图由用例写进设备相册 `Pictures/WontonUITests/`；侧栏只验入口存在和点得开，进页面以后的内容属于各页面自己的测试。
-
-```bash
-code=$(ssh <机>-stack dev <栈名> pair <机局域网地址>:<端口> | grep -o 'wonton://pair[^[:space:]]*' | tail -1)
-adb shell "am instrument -w -r -e class app.wonton.android.FirstRunWalkthroughTest \
-  -e phase light -e code '$code' app.wonton.android.test/androidx.test.runner.AndroidJUnitRunner"
-```
-
-## 加设备交接与恢复走查
-
-连开发栈的界面走查在 `androidApp/src/androidTest`。`SasWalkTest` 跑加设备交接（配对 → SAS → 历史解密）和没有可信设备时的
-两条恢复路径（ADR-0087、ADR-0076），栈按 [`deploy/dev/core/README.md`](../../deploy/dev/core/README.md) 的
-“交接聊天密钥”一节备好旧设备（`key-handoff-old-device` 示例，用户名不同时用 `KEY_HANDOFF_BOT_USER` 指定它的用户 ID）。
-
-- 每跑一次成一个新设备：配对码只能用一次，配对页也只在没配对的 App 上出现。每条用例单独 `am instrument` 一次，
-  跑前 `adb shell pm clear app.wonton.android`，现取一个新码。
-- 交接那条要比两端表情：示例打出 `表情：` 那行后，把后面的 7 个符号（一个空格分隔，用例按空格拆）写进
-  `/sdcard/Android/data/app.wonton.android/files/sas-emoji.txt`。用例只等 120 秒，得用命令写：
-
-```bash
-symbols=$(grep '^表情：' <示例日志> | tail -n 1 | sed 's/^表情：//')
-printf '%s' "$symbols" | adb -s <串号> shell 'cat > /sdcard/Android/data/app.wonton.android/files/sas-emoji.txt'
-```
-
-  也可以先把符号存成文件再 `adb -s <串号> push <文件> /sdcard/Android/data/app.wonton.android/files/sas-emoji.txt`。
-- 恢复和重置两条先 `dev.sh devices` 看设备 ID，逐个 `dev.sh revoke <ID>`（含示例那台）；重置那条用上一台已删、
-  钥匙作废的状态，`RECOVERY_KEY_B64` 取示例写在码文件旁的 `.recovery`。栈不在本机时这两个命令经
-  `ssh <机>-stack dev <栈名> devices` / `revoke <ID>` 在那套栈上跑，别在调用机直接跑。
-- 历史必须两端同一串：示例的 `KEY_HANDOFF_HISTORY_TEXT` 和 `HISTORY_TEXT_B64` 解出来的要完全一致，不设时示例
-  自己按时间戳造一句，明文断言必红。
-- 历史和密钥都经 base64 传，照这样拼参数：
-
-```bash
-CODE_B64=$(printf %s '<码>' | base64 -w0)
-HISTORY_B64=$(printf %s '<历史>' | base64 -w0)
-RECOVERY_KEY_B64=$(printf %s '<恢复密钥>' | base64 -w0)
-adb shell am instrument -w -e PAIRING_CODE_B64 "$CODE_B64" -e HISTORY_TEXT_B64 "$HISTORY_B64" \
-  -e RECOVERY_KEY_B64 "$RECOVERY_KEY_B64" \
-  -e class app.wonton.android.SasWalkTest#<用例> app.wonton.android.test/androidx.test.runner.AndroidJUnitRunner
-```
-
 ## 检查
 
 ```bash
@@ -241,6 +188,10 @@ adb shell am instrument -w -e PAIRING_CODE_B64 "$CODE_B64" -e HISTORY_TEXT_B64 "
 
 规则在 `config/detekt.yml`：函数超过 100 行即失败。detekt 没有文件行数规则，文件行数由仓库的
 `scripts/check-file-size.sh` 检查（不算空行和注释，超过 800 行警告、超过 2000 行失败）。CI 见 `.github/workflows/android.yml`。
+
+`androidApp/src/androidTest` 只有几条冒烟（首屏、前后台、侧栏、聊天发一条、打开应用、设置），不挂 PR，发版前或改了启动、
+导航时在模拟器上手动跑（`./gradlew -Pwonton.uiFake=1 :androidApp:connectedDebugAndroidTest`，CI 见
+`.github/workflows/ui-smoke.yml`）。界面长什么样用截图验收，不写钉死界面细节的自动化测试（AGENTS.md“测试”）。
 
 包名 `app.wonton.*` 是临时的，上架前确定正式的。
 

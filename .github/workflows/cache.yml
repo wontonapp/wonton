@@ -294,7 +294,7 @@ jobs:
       - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
         run: |
           rustup toolchain install
-          # 夜跑在 x86_64 模拟器上跑，缓存里两套 ABI 都要（见下面的两个构建步骤）。
+          # UI 冒烟在 x86_64 模拟器上跑，缓存里两套 ABI 都要（见下面的两个构建步骤）。
           rustup target add aarch64-linux-android x86_64-linux-android
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
@@ -318,8 +318,8 @@ jobs:
             apps/compose/shared/build/generated/jniLibs/buildRustCore
             apps/compose/shared/build/generated/uniffi/kotlin
           key: ${{ steps.core.outputs.key }}
-      - name: 编译 Rust 核心（模拟器的 x86_64；夜跑机器用）
-        # 夜跑在 x86_64 模拟器上跑，ABI 和上面的手机包不同，缓存里两套都要有。
+      - name: 编译 Rust 核心（模拟器的 x86_64；UI 冒烟用）
+        # UI 冒烟在 x86_64 模拟器上跑，ABI 和上面的手机包不同，缓存里两套都要有。
         working-directory: apps/compose
         run: ./gradlew :shared:buildRustCore -Pwonton.abis=x86_64
       - name: 编译 Rust 核心（release；android-size.yml 的 APK 体积作业用）

@@ -5,8 +5,6 @@ plugins {
     alias(libs.plugins.android.kmp.library)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.detekt)
-    // Apache-2.0。截图测试只在 JVM 的 host test 里跑，不加载 Rust 的 .so。
-    alias(libs.plugins.paparazzi)
 }
 
 /** 编译 Rust 客户端核心（cargo-ndk）并生成 Kotlin 绑定，输出交给 AGP 和 Kotlin 编译。 */
@@ -123,7 +121,7 @@ kotlin {
         minSdk = libs.versions.android.minSdk.get().toInt()
         // 噪点贴图（ADR-0026）。
         androidResources { enable = true }
-        // 截图测试（Paparazzi）在 JVM 上按布局渲染，要读资源；targetSdk 和 App 一致。
+        // host test 断言里用资源 ID；targetSdk 和 App 一致。
         withHostTest {
             isIncludeAndroidResources = true
             targetSdk { version = release(libs.versions.android.targetSdk.get().toInt()) }
@@ -175,7 +173,7 @@ kotlin {
                 implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")
             }
         }
-        // 截图测试（Paparazzi）。预览自己带固定假数据，这里只要断言用的 JUnit。
+        // host test 只跑纯逻辑，不加载 Rust 的 .so。
         getByName("androidHostTest") {
             dependencies {
                 implementation(libs.junit)
