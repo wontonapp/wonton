@@ -32,8 +32,12 @@ use wonton_protocol::media::{
 };
 
 use super::api::{MediaApi, checked, failure, unreachable};
+use crate::l10n::text;
 
 const DIR: &str = "media-downloads";
+/// 写完的文件放在下载目录的这个子目录里：和记录（`<任务>.json`）、半截（`<任务>.part`）分开，
+/// 提供方给什么扩展名都撞不上它们。
+const FILES: &str = "files";
 /// 进度最多这么久报一次（第 3 节：传输每 1 秒一次）。
 const REPORT_EVERY: Duration = Duration::from_secs(1);
 /// 这么久收不到一块就算断了。
@@ -48,7 +52,7 @@ pub(crate) struct Record {
     pub(crate) etag: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) total: Option<u64>,
-    /// 写完后的文件名（在下载目录里）；写完前为空。
+    /// 写完后的文件相对下载目录的路径；写完前为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) file: Option<String>,
 }
@@ -146,7 +150,7 @@ impl Downloads {
         let downloads = self.clone();
         let handle = runtime.spawn(async move {
             if let Err(failure) = downloads.run(&api, task, item).await {
-                tracing::warn!(%task, code = ?failure.code, error = %failure.message, "下载没完成");
+                tracing::warn!(%task, code = ?failure.code, error = %failure.message, "download did not finish");
             }
         });
         running.insert(task, handle.abort_handle());
@@ -187,7 +191,7 @@ impl Downloads {
                 Fetched::Done(path) => Ok(path),
                 Fetched::Restart => Err(failure(
                     MediaFailureCode::Protocol,
-                    "核心从头给的字节也接不上",
+                    text("video-download-restart-mismatch", &[]),
                 )),
             }
         }
@@ -199,7 +203,7 @@ impl Downloads {
             }
             Err(failure) => {
                 if let Err(report) = api.post_empty(&task_failure_path(task), failure).await {
-                    tracing::warn!(%task, error = %report.message, "下载没成，也没能报给核心");
+                    tracing::warn!(%task, error = %report.message, "download failed and the failure could not be reported to the core");
                 }
             }
         }
@@ -221,7 +225,14 @@ impl Downloads {
             file: None,
         });
         if let Some(file) = &record.file {
-            return Ok(Fetched::Done(self.dir.join(file)));
+            let path = self.dir.join(file);
+            if path.exists() {
+                return Ok(Fetched::Done(path));
+            }
+            // 写完的文件被外面删了（系统清理、备份还原）：当没下过，从头再下。
+            record.file = None;
+            record.etag = None;
+            record.total = None;
         }
         std::fs::create_dir_all(&self.dir).map_err(|e| local(&e))?;
         let part = self.part(task);
@@ -245,16 +256,21 @@ impl Downloads {
         }
         let response = checked(response).await?;
         let range = header(&response, CONTENT_RANGE).and_then(|v| content_range(&v));
-        let start = match (response.status() == StatusCode::PARTIAL_CONTENT, range) {
+        let partial = response.status() == StatusCode::PARTIAL_CONTENT;
+        // 没要 Range 时源也可以回 206，只要从 0 起就是整份。
+        let expected = resume.as_ref().map_or(0, |(have, _)| *have);
+        let start = match (partial, range) {
             (false, _) => 0,
-            (true, Some((start, _))) if resume.as_ref().is_some_and(|(have, _)| *have == start) => {
-                start
-            }
+            (true, Some((start, _))) if start == expected => start,
             (true, _) => return self.restart(&part, &mut record),
         };
+        if start == 0 {
+            // 先清空半截再记新源的 ETag：记录里的 ETag 必须描述半截里的字节，清不掉就别换。
+            std::fs::File::create(&part).map_err(|e| local(&e))?;
+        }
         record.etag = header(&response, ETAG);
         record.total = match range {
-            Some((_, total)) if start > 0 => total,
+            Some((_, total)) if partial => total,
             _ => response.content_length(),
         };
         self.write_record(&record)?;
@@ -266,11 +282,12 @@ impl Downloads {
         if record.total.is_some_and(|total| total != done) {
             return Err(failure(
                 MediaFailureCode::TransportUnavailable,
-                "下载中断：字节没收全，下次接着下",
+                text("video-download-incomplete", &[]),
             ));
         }
-        let name = format!("{task}.{ext}");
+        let name = format!("{FILES}/{task}.{ext}");
         let target = self.dir.join(&name);
+        std::fs::create_dir_all(self.dir.join(FILES)).map_err(|e| local(&e))?;
         tokio::fs::rename(&part, &target)
             .await
             .map_err(|e| local(&e))?;
@@ -334,8 +351,13 @@ impl Downloads {
     pub(crate) fn remove(&self, item_id: &str) -> Result<(), MediaFailure> {
         for record in self.records().into_iter().filter(|r| r.item.id == item_id) {
             self.stop(record.task);
-            let mut paths = vec![self.part(record.task), self.record_path(record.task)];
-            paths.extend(record.file.map(|file| self.dir.join(file)));
+            // 先删写完的文件再删记录：删到一半失败时记录还在，下次还找得到它。
+            let mut paths: Vec<PathBuf> = record
+                .file
+                .map(|file| self.dir.join(file))
+                .into_iter()
+                .collect();
+            paths.extend([self.part(record.task), self.record_path(record.task)]);
             for path in paths {
                 match std::fs::remove_file(&path) {
                     Ok(()) => {}
@@ -375,7 +397,10 @@ async fn receive(
         let chunk = chunk.map_err(|e| {
             failure(
                 MediaFailureCode::TransportUnavailable,
-                format!("下载中断：{e}"),
+                text(
+                    "video-download-interrupted",
+                    &[("reason", e.to_string().into())],
+                ),
             )
         })?;
         file.write_all(&chunk).await.map_err(|e| local(&e))?;
@@ -395,7 +420,10 @@ async fn receive(
 fn stalled() -> MediaFailure {
     failure(
         MediaFailureCode::TransportUnavailable,
-        format!("下载中断：{} 秒没有收到数据", STALL.as_secs()),
+        text(
+            "video-download-stalled",
+            &[("seconds", STALL.as_secs().into())],
+        ),
     )
 }
 
@@ -468,3 +496,7 @@ fn local(error: &std::io::Error) -> MediaFailure {
 #[cfg(test)]
 #[path = "download_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "download_edge_tests.rs"]
+mod edge_tests;

@@ -28,6 +28,7 @@ const BACKDROP_WIDTH: u32 = 1600;
 const LOGO_WIDTH: u32 = 600;
 const PERSON_WIDTH: u32 = 240;
 
+/// 一张卡是什么：电影、剧、季、单集、其他视频或文件夹。决定点进去是详情还是海报墙。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum VideoEntryKind {
     Movie,
@@ -73,6 +74,7 @@ pub struct VideoEntry {
     pub item: Option<MediaItemRef>,
 }
 
+/// 片库装的是什么，壳按它挑图标。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum VideoLibraryKind {
     Movies,
@@ -81,6 +83,7 @@ pub enum VideoLibraryKind {
     Other,
 }
 
+/// 一个片库（提供方里的“电影”“剧集”这类顶层分组）；点进去是这个库的海报墙。
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct VideoLibrary {
     pub id: String,
@@ -89,6 +92,7 @@ pub struct VideoLibrary {
     pub count: Option<u32>,
 }
 
+/// 首页的哪一排。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum VideoShelfKind {
     Resume,
@@ -96,6 +100,7 @@ pub enum VideoShelfKind {
     Latest,
 }
 
+/// 首页的一排卡。
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct VideoShelf {
     pub kind: VideoShelfKind,
@@ -111,6 +116,7 @@ pub struct VideoHome {
     pub partial_failure: Option<MediaFailure>,
 }
 
+/// 海报墙的排序。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum)]
 pub enum VideoSort {
     #[default]
@@ -136,6 +142,7 @@ pub struct VideoWallQuery {
     pub source: Option<String>,
 }
 
+/// 海报墙的一页。`cursor` 为空是没有下一页了。
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct VideoWall {
     pub entries: Vec<VideoEntry>,
@@ -143,6 +150,7 @@ pub struct VideoWall {
     pub total: Option<u32>,
 }
 
+/// 演职员在这部片子里做什么。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum VideoRole {
     Actor,
@@ -152,6 +160,7 @@ pub enum VideoRole {
     Other,
 }
 
+/// 详情里的一位演职员；`photo` 是本机回环上的头像地址。
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct VideoPerson {
     pub name: String,
@@ -160,6 +169,7 @@ pub struct VideoPerson {
     pub photo: Option<String>,
 }
 
+/// 片源的规格（清晰度、HDR、编码、声道、大小），详情里画成小标。
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct VideoMediaInfo {
     pub width: Option<u32>,
@@ -198,6 +208,7 @@ pub struct VideoActionResult {
     pub failed: Vec<VideoActionFailure>,
 }
 
+/// 一批动作里没成的那一条和原因。
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct VideoActionFailure {
     pub id: String,
@@ -384,11 +395,13 @@ fn media_info(info: &MediaInfo) -> VideoMediaInfo {
     }
 }
 
-fn shelf_kind(shelf: &Shelf) -> VideoShelfKind {
+/// 认不得的排（新版本的提供方加的）不画：画成哪一排都是错的。
+fn shelf_kind(shelf: &Shelf) -> Option<VideoShelfKind> {
     match shelf {
-        Shelf::NextUp => VideoShelfKind::NextUp,
-        Shelf::Latest => VideoShelfKind::Latest,
-        Shelf::Resume | Shelf::Other(_) => VideoShelfKind::Resume,
+        Shelf::Resume => Some(VideoShelfKind::Resume),
+        Shelf::NextUp => Some(VideoShelfKind::NextUp),
+        Shelf::Latest => Some(VideoShelfKind::Latest),
+        Shelf::Other(_) => None,
     }
 }
 
@@ -431,10 +444,14 @@ pub(crate) fn home(
     let mut rows = Vec::new();
     for (shelf, page) in shelves {
         match page {
-            Ok(page) if !page.entries.is_empty() => rows.push(VideoShelf {
-                kind: shelf_kind(&shelf),
-                entries: mapper.entries(&page.entries),
-            }),
+            Ok(page) if !page.entries.is_empty() => {
+                if let Some(kind) = shelf_kind(&shelf) {
+                    rows.push(VideoShelf {
+                        kind,
+                        entries: mapper.entries(&page.entries),
+                    });
+                }
+            }
             Ok(_) => {}
             Err(failure) => {
                 partial_failure.get_or_insert(failure);
