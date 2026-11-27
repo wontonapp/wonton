@@ -43,7 +43,7 @@ nginx 终结 TCP 443 的 TLS，再按 `Upgrade` 反代到中继；中继自己�
 
 我们选（b）：nginx 照旧占用 443 并终结 TLS，新增一个精确 `server_name` 块，按 WebSocket Upgrade 反代到中继的回环 HTTP 端口。
 现有 server 块一个都不动；证书由 certbot 单独签 `$DOMAIN` 这一张证书。
-核实过上游 iroh-relay 1.4.1 的 relay 协议就是标准 RFC 6455 WebSocket upgrade（`src/server/http_server.rs` 校验
+核实过上游 iroh-relay 1.4.1（1.5.0 的 `http_server.rs` 同样）的 relay 协议就是标准 RFC 6455 WebSocket upgrade（`src/server/http_server.rs` 校验
 `Upgrade: websocket`），nginx 用 `proxy_http_version 1.1` + `Upgrade`/`Connection` 能代理；`test/relay-e2e.sh`
 就是用这份 nginx 配置实跑 101、30 秒吞吐和错令牌拒绝。
 
@@ -105,7 +105,7 @@ DOMAIN=relay.example.com bash install.sh --email ops@example.com   # 装服务�
   `relayserver_bytes_sent_total` / `relayserver_bytes_recv_total`、`relayserver_connects_total` /
   `relayserver_disconnects_total`、`relayserver_send_packets_dropped_total`。
 - 健康检查：`curl --noproxy '*' http://127.0.0.1:8742/healthz`（200）。
-- **令牌默认不进日志**：systemd 单元默认 `RUST_LOG=info`（`EnvironmentFile` 里同名变量可覆盖），journal 里 grep 不到令牌。上游 1.4.1 在 debug/trace 下
+- **令牌默认不进日志**：systemd 单元默认 `RUST_LOG=info`（`EnvironmentFile` 里同名变量可覆盖），journal 里 grep 不到令牌。上游 1.4.1 在 debug/trace 下（1.5 未逐条复核）
   启动时会 dump 整份配置、包含令牌，开 debug 排错时别把日志原样贴出去。
   验收：`journalctl -u wonton-iroh-relay | grep -F -- "$(cut -d= -f2 /etc/wonton-iroh-relay/relay.env)"` 应无输出。
 
@@ -193,7 +193,7 @@ cloud/iroh-relay/test/domain-required-test.sh
 
 超了怎么如实提示：
 
-- iroh-relay 1.4.1 没有全局接纳控制/排队（`accept_conn_limit` 还是 TODO）。所有流共享出口，超了就是 QUIC
+- iroh-relay 1.4.1 没有全局接纳控制/排队（1.5 未复核）（`accept_conn_limit` 还是 TODO）。所有流共享出口，超了就是 QUIC
   拥塞控制分带宽：每条流都变慢、RTT 变高、丢包重传，新连接更难建。它不会拒绝新通话，只会让所有人一起变差。
 - 运维：对出口设 4 Mbps（5 Mbps 的 80%）告警，表达式 `rate(relayserver_bytes_sent_total[1m]) * 8 > 4e6`，
   告警文字写"中继出口打满（拥塞，不是故障）"；`relayserver_send_packets_dropped_total` 在涨说明已经在丢。
@@ -234,5 +234,5 @@ cloud/iroh-relay/test/domain-required-test.sh
 
 ## 版本和许可
 
-- 固定上游 `iroh-relay v1.4.1`（和仓库 `Cargo.lock` 的 iroh 1.4.1 同版本），官方 release asset，sha256 校验，见 `release.env`。
+- 固定上游 `iroh-relay v1.5.0`（与仓库 `Cargo.lock` 的 iroh 1.5.0 同版本，ADR-0048；README 里标 1.4.1 的行为描述是当时实测，1.5 未逐条复核），官方 release asset，sha256 校验，见 `release.env`。
 - 上游许可：MIT OR Apache-2.0。二进制原样分发，未改源码。
