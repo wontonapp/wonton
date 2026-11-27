@@ -38,6 +38,7 @@ help = { phosphor = "question" }
 home = { phosphor = "house", fill = true }
 image = { phosphor = "image", fill = true }
 imageBroken = { phosphor = "image-broken" }
+inbox = { phosphor = "bell" }
 info = { phosphor = "info" }
 leave = { phosphor = "record" }
 list = { phosphor = "list" }

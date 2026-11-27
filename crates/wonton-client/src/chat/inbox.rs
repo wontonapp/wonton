@@ -2,7 +2,7 @@
 //! [`InboxViewModel`]。确认卡片在核心的收件箱里是 `confirm` 条目（`c-<卡片 id>`），只带摘要；能回答的卡片本身
 //! 来自确认卡片列表，这里按卡片 ID 合进条目。
 //!
-//! 没有要回答的东西时 `counts.needing` 是 0，铃铛不画数字；卡片答完、过期、被撤回，核心的列表跟着变，计数
+//! 没有能回答的东西时 `counts.needing` 是 0，铃铛不画数字；卡片答完、过期、被撤回，核心的列表跟着变，计数
 //! 跟着减。取不到时留上次的列表、如实带着问题，退避重试；[`ChatAction::RetryInbox`](wonton_protocol::ChatAction::RetryInbox)
 //! 立即重试。
 
@@ -170,10 +170,13 @@ pub(crate) fn compose(
         })
         .collect();
     let contact_requests = cards.contact_requests.clone();
-    list.counts.needing = list
-        .counts
-        .needing
-        .saturating_add(u32::try_from(contact_requests.len()).unwrap_or(u32::MAX));
+    let answerable = list
+        .items
+        .iter()
+        .filter(|item| item.needs_answer && answerable_in_app(item.kind))
+        .count()
+        + contact_requests.len();
+    list.counts.needing = u32::try_from(answerable).unwrap_or(u32::MAX);
     InboxViewModel {
         entries,
         contact_requests,
@@ -181,6 +184,12 @@ pub(crate) fn compose(
         problem: problem.or_else(|| cards.problem.clone()),
         list,
     }
+}
+
+/// 铃铛只数 App 里能就地回答的条目（主人 2026-11-27）：`choice`、带问题的 `recap`、带动作的 `page` 在壳里
+/// 只画摘要行、答不了，计进去就是一个点不掉的数字。壳能答哪一类了，就在这里加上它。
+fn answerable_in_app(kind: InboxType) -> bool {
+    kind == InboxType::Confirm
 }
 
 fn transport(message: String) -> ChatProblem {

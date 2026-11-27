@@ -178,7 +178,7 @@ struct SidebarPanel: View {
                                 badgeLabel: String(inbox.needing ?? 0),
                                 selected: false
                             ) {
-                                WontonIcon.notify.view()
+                                WontonIcon.inbox.view()
                             } action: { openDestination(.inbox) }
                         }
                         SidebarRow(

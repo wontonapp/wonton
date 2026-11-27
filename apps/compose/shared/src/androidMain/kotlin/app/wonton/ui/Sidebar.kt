@@ -78,8 +78,8 @@ import app.wonton.ui.icons.Apps
 import app.wonton.ui.icons.Chat
 import app.wonton.ui.icons.ChatFill
 import app.wonton.ui.icons.Compose
+import app.wonton.ui.icons.Inbox
 import app.wonton.ui.icons.List
-import app.wonton.ui.icons.Notify
 import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.Store
 import app.wonton.ui.icons.WontonIcon
@@ -398,7 +398,7 @@ internal fun SidebarPanel(
                 onClick = { onGo(SidebarDestination.Inbox) },
                 icon = {
                     Icon(
-                        WontonIcon.Notify,
+                        WontonIcon.Inbox,
                         // 装饰：行的文字在右边。
                         contentDescription = null,
                         Modifier.size(ROW_ICON),

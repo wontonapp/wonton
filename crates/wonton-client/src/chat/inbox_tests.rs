@@ -37,6 +37,16 @@ fn confirm_item(card: &str, status: InboxStatus) -> InboxListItem {
     }
 }
 
+fn choice_item(id: &str) -> InboxListItem {
+    InboxListItem {
+        id: id.into(),
+        kind: InboxType::Choice,
+        title: "周末去哪？".into(),
+        question_count: 1,
+        ..confirm_item("unused", InboxStatus::Pending)
+    }
+}
+
 fn card(id: &str, state: ConfirmationState) -> ConfirmationView {
     let card: ConfirmationCard = serde_json::from_value(serde_json::json!({
         "id": id,
@@ -134,5 +144,26 @@ fn a_card_missing_from_the_card_list_leaves_only_the_summary() {
         None,
     );
     assert!(view.entries[0].card.is_none());
+    assert_eq!(view.list.counts.needing, 1);
+}
+
+#[test]
+fn a_question_the_app_cannot_answer_is_listed_but_not_counted() {
+    let view = compose(
+        Some(&list(
+            vec![
+                choice_item("q-1"),
+                confirm_item("install", InboxStatus::Pending),
+            ],
+            2,
+            3,
+        )),
+        &loaded(
+            vec![card("install", ConfirmationState::Pending)],
+            Vec::new(),
+        ),
+        None,
+    );
+    assert_eq!(view.entries.len(), 2);
     assert_eq!(view.list.counts.needing, 1);
 }

@@ -822,8 +822,8 @@ pub struct InboxPageView {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct InboxViewModel {
-    /// 核心给的列表（顺序、版本）。`counts.needing` 已加上 [`Self::contact_requests`] 的条数：联系人请求
-    /// 不在核心的收件箱里，但同样等主人回答，铃铛要算上它们。
+    /// 核心给的列表（顺序、版本）。`counts.needing` 由客户端核心重算：只数 App 里能就地回答的条目，再加上
+    /// [`Self::contact_requests`] 的条数（联系人请求不在核心的收件箱里，但同样等主人回答）。
     pub list: InboxList,
     /// 页面上画的条目，顺序同 `list.items`。
     pub entries: Vec<InboxEntry>,

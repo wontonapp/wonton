@@ -46,6 +46,7 @@ enum WontonIcon: String {
     case image
     case imageFill
     case imageBroken
+    case inbox
     case info
     case leave
     case list

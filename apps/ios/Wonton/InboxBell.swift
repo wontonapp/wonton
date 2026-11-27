@@ -9,7 +9,7 @@ struct InboxBell: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        WontonIconButton(icon: .notify, label: label, action: open)
+        WontonIconButton(icon: .inbox, label: label, action: open)
             .overlay(alignment: .topTrailing) {
                 if let count = inbox.needing, count > 0 {
                     Text("\(count)")

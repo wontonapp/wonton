@@ -18,7 +18,7 @@ import app.wonton.protocol.InboxViewModel
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Notify
+import app.wonton.ui.icons.Inbox
 import app.wonton.ui.icons.WontonIcon
 
 /** 铃铛上的数：等你回答的条数。还没取到、或最近一次没取成时不确定，是 null，不当成 0。 */
@@ -37,7 +37,7 @@ internal fun InboxBell(needing: Int?, onOpen: () -> Unit) {
         Modifier.testTag("inbox-bell")
             .then(if (state != null) Modifier.semantics { stateDescription = state } else Modifier),
     ) {
-        WontonIconButton(WontonIcon.Notify, stringResource(R.string.inbox_title), onOpen)
+        WontonIconButton(WontonIcon.Inbox, stringResource(R.string.inbox_title), onOpen)
         if (count != null) {
             Box(
                 Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = 4.dp)
