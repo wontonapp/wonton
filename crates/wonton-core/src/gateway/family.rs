@@ -70,9 +70,8 @@ pub async fn invite(
     {
         return denied;
     }
-    let invited_by = peer
-        .clone()
-        .and_then(|peer| gateway.device_person(Some(peer.0)))
+    let invited_by = gateway
+        .device_person(peer.map(|peer| peer.0))
         .map(|person| {
             if person.is_owner() {
                 gateway.owner.owner().display_name

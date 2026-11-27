@@ -350,7 +350,7 @@ fn joining(outcome: JoinOutcome) -> PairResponse {
     PairResponse::Joining {
         outcome,
         role: None,
-        invited_by: _,
+        invited_by: None,
     }
 }
 

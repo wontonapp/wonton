@@ -29,8 +29,9 @@ async fn changing_an_invited_members_role_updates_the_request_and_the_invitees_v
     assert_eq!(role.id, "child");
     assert_eq!(role.people, 1);
     let install = role
-        .abilities
-        .iter()
+        .permissions
+        .abilities()
+        .into_iter()
         .find(|ability| ability.item == PermissionItem::InstallApps)
         .expect("加入页要带装应用这一项");
     assert_eq!(install.state, JoinAbilityState::NeedsAdmin);

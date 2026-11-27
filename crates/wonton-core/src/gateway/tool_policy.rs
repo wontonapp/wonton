@@ -164,9 +164,7 @@ pub async fn danger(
     method: Method,
     Path((id, caller)): Path<(String, String)>,
 ) -> Response {
-    if let Some(denied) =
-        permissions::require(&gateway, peer.clone(), &headers, PermissionItem::Owner)
-    {
+    if let Some(denied) = permissions::require(&gateway, peer, &headers, PermissionItem::Owner) {
         return denied;
     }
     let granted = match granted(&gateway, peer, &headers, &id) {

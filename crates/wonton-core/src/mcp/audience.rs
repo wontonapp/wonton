@@ -367,7 +367,7 @@ impl Bus {
     ) -> Result<(Ticket, Ticket), Refusal> {
         let caller = crate::plugin::PluginId::parse("app.wonton.core")
             .expect("core plugin identifier is valid");
-        let (mut first, on_behalf) = self.with_requester_line(first, &requester);
+        let (first, on_behalf) = self.with_requester_line(first, &requester);
         let audience = Audience {
             recipients: Recipients::Admins(self.plugin_admins()),
             on_behalf,

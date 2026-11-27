@@ -106,6 +106,29 @@ impl PluginManager {
         plugin
     }
 
+    /// 清单声明的页签和图标；没有清单、没有页签或图标坏了就是空的。
+    fn listed_tabs(entry: &Entry, langs: &Languages) -> Vec<PluginTab> {
+        let Some(listed) = entry.listed.as_ref() else {
+            return Vec::new();
+        };
+        let Some(tabs) = listed.manifest.tabs.as_ref() else {
+            return Vec::new();
+        };
+        tabs.iter()
+            .zip(&listed.tab_icons)
+            .filter_map(|(tab, (icon, selected))| {
+                Some(PluginTab {
+                    id: tab.id.clone(),
+                    title: langs.pick_owned(&tab.title),
+                    icon: icon.as_ref()?.tab_image(),
+                    icon_selected: selected.as_ref().map(IconSource::tab_image),
+                    path: tab.path.clone(),
+                    layout: manifest_tabs::layout(&tab.layout)?,
+                })
+            })
+            .collect()
+    }
+
     /// 列表里的一项，还没填 Bot。
     pub(in crate::plugin) fn listing(
         &self,
@@ -121,26 +144,7 @@ impl PluginManager {
         let (upgrade, mut notices) =
             self.upgrades
                 .listing(id, &entry.version, &entry.status, langs);
-        let tabs = entry
-            .listed
-            .as_ref()
-            .and_then(|listed| listed.manifest.tabs.as_ref().map(|tabs| (listed, tabs)))
-            .map(|(listed, tabs)| {
-                tabs.iter()
-                    .zip(&listed.tab_icons)
-                    .filter_map(|(tab, (icon, selected))| {
-                        Some(PluginTab {
-                            id: tab.id.clone(),
-                            title: langs.pick_owned(&tab.title),
-                            icon: icon.as_ref()?.tab_image(),
-                            icon_selected: selected.as_ref().map(IconSource::tab_image),
-                            path: tab.path.clone(),
-                            layout: manifest_tabs::layout(&tab.layout)?,
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let tabs = Self::listed_tabs(entry, langs);
         if entry.status == PluginStatus::Running {
             notices.extend(self.oom_notices(id, langs));
         }

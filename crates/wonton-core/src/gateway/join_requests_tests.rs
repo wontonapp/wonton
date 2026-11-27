@@ -139,9 +139,9 @@ async fn joining_waits_for_an_administrator_and_then_pairs_only_the_claiming_end
     assert_eq!(
         pair(&stranger, &code, "Another phone").await.unwrap(),
         PairResponse::Joining {
-            invited_by: _,
             outcome: JoinOutcome::CodeUsed,
             role: None,
+            invited_by: None,
         }
     );
     let (status, body) = call(
@@ -200,7 +200,6 @@ async fn ordinary_members_cannot_list_or_decide_requests_and_rejection_voids_the
     assert!(matches!(
         pair(&endpoint, &code, "Guest phone").await.unwrap(),
         PairResponse::Joining {
-            invited_by: _,
             outcome: JoinOutcome::Pending,
             ..
         }
@@ -228,17 +227,17 @@ async fn ordinary_members_cannot_list_or_decide_requests_and_rejection_voids_the
     assert_eq!(
         pair(&endpoint, &code, "Retry").await.unwrap(),
         PairResponse::Joining {
-            invited_by: _,
             outcome: JoinOutcome::Rejected,
             role: None,
+            invited_by: None,
         }
     );
     assert_eq!(
         pair(&endpoint, &code, "Retry again").await.unwrap(),
         PairResponse::Joining {
-            invited_by: _,
             outcome: JoinOutcome::CodeUsed,
             role: None,
+            invited_by: None,
         }
     );
     assert_eq!(
