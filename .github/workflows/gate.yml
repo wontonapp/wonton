@@ -56,7 +56,11 @@ jobs:
           echo "ios=false" >> "$GITHUB_OUTPUT"
           echo "android=false" >> "$GITHUB_OUTPUT"
           echo "docker=false" >> "$GITHUB_OUTPUT"
-      # MIT
+      # dispatch 没有 PR 事件负载，paths-filter 的 base/ref 模式要读本地 git，得先检出。两个 action 都是 MIT。
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         if: github.event_name != 'push'
