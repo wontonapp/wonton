@@ -50,7 +50,7 @@ flowchart LR
 
   ClientCore <-->|"iroh 隧道"| Core
   Core <-->|"iroh 隧道 · 设备密钥"| DeviceAgent
-  React -->|"PWA：HTTPS/WSS（家名子域名，中继只按 SNI 转发）"| Core
+  React -->|"PWA：HTTPS/WSS（家名子域名；在家走局域网入口，在外中继只按 SNI 转发）"| Core
   Core -->|"WSS 字节（每用户内部网络）"| WebSession
   Core --> Tuwunel
   Agent <--> Tuwunel
