@@ -23,7 +23,7 @@ mod tabs;
 mod web;
 mod widget;
 
-pub use agent::{AgentProtocol, AgentSkills, AgentSpec};
+pub use agent::{AgentModels, AgentProtocol, AgentSkills, AgentSpec};
 pub use clients::{
     AppAuth, AuthFailure, ClientsAuth, ClientsHttp, ClientsPublic, ClientsSpec, ClientsTcp,
     CredentialsAuth, GatewayAuth,
