@@ -15,4 +15,132 @@
         <item quantity="one">%1$d step</item>
         <item quantity="other">%1$d steps</item>
     </plurals>
+    <!-- Title of the page where the owner connects an AI model to their assistant. -->
+    <string name="agent_models_title">Model</string>
+    <!-- Shown where the model in use would be, when the assistant has no model yet. -->
+    <string name="agent_models_none">No model connected yet</string>
+    <!-- Button that sends a short real request to check the model in use works. -->
+    <string name="agent_models_test">Test it</string>
+    <!-- Note under the test button: testing costs a tiny real request. -->
+    <string name="agent_models_test_note">Testing sends one short real request, which the provider may charge for.</string>
+    <!-- Status line while the model test is running. -->
+    <string name="agent_models_test_running">Testing…</string>
+    <!-- Result line: the model test got a real reply. -->
+    <string name="agent_models_test_ok">It works</string>
+    <!-- Result line: the model test got a real reply. %1$s is the reply time in seconds, e.g. 1.2. -->
+    <string name="agent_models_test_ok_latency">It works · replied in %1$s s</string>
+    <!-- Result line: the provider refused the saved key or sign-in during the test. -->
+    <string name="agent_models_test_rejected">The provider didn\'t accept the key or sign-in. Sign in again or save a new key.</string>
+    <!-- Result line: the home server could not reach the provider during the test. -->
+    <string name="agent_models_test_unreachable">Couldn\'t reach the provider. Check your home server\'s network and test again.</string>
+    <!-- Result line: the provider answered the test with an error, such as no credit left or the model being unavailable. -->
+    <string name="agent_models_test_upstream">The provider returned an error. You may be out of credit, or this model may be unavailable.</string>
+    <!-- Result line: the test could not run because no model is chosen. -->
+    <string name="agent_models_test_no_model">Choose a model first</string>
+    <!-- Result line: the model test did not pass for a reason this app version does not know. -->
+    <string name="agent_models_test_other">The test didn\'t pass</string>
+    <!-- Label that expands the rest of the provider list. -->
+    <string name="agent_models_more">More</string>
+    <!-- Placeholder of the search field over the provider list. -->
+    <string name="agent_models_search">Search providers</string>
+    <!-- Shown when the assistant offers no other providers. -->
+    <string name="agent_models_no_providers">No other providers</string>
+    <!-- Shown when a search over providers or models finds nothing. -->
+    <string name="agent_models_no_match">Nothing matches</string>
+    <!-- State of a provider that has a saved key or a signed-in account. -->
+    <string name="agent_models_connected">Connected</string>
+    <!-- Title of the dialog asking to confirm an expensive model. %1$s is the model name. -->
+    <string name="agent_models_confirm_title">Use %1$s?</string>
+    <!-- Button that makes the selected model the one the assistant uses. -->
+    <string name="agent_models_use">Use this one</string>
+    <!-- Marks the model the assistant is using now in the model list. -->
+    <string name="agent_models_in_use">In use</string>
+    <!-- Button that removes the saved key or sign-in for this provider. -->
+    <string name="agent_models_disconnect">Disconnect</string>
+    <!-- Title of the dialog confirming disconnecting a provider. %1$s is the provider name. -->
+    <string name="agent_models_disconnect_title">Disconnect %1$s?</string>
+    <!-- Body of the dialog confirming disconnecting a provider. -->
+    <string name="agent_models_disconnect_message">The key or sign-in saved in this assistant will be removed.</string>
+    <!-- Section title over the list of models a provider offers. -->
+    <string name="agent_models_models">Models</string>
+    <!-- Shown when a connected provider offers no models. -->
+    <string name="agent_models_models_empty">This provider has no models to choose from</string>
+    <!-- Status line while the model list of a provider is loading. -->
+    <string name="agent_models_models_loading">Getting models…</string>
+    <!-- Placeholder of the search field over a provider's models. %1$d is how many models there are. -->
+    <string name="agent_models_models_search">Search %1$d models</string>
+    <!-- Button that starts signing in to a provider in the in-app browser. -->
+    <string name="agent_models_login">Sign in</string>
+    <!-- Button that starts signing in to a provider again. -->
+    <string name="agent_models_login_again">Sign in again</string>
+    <!-- Notice: the owner declined the sign-in on the provider's page. -->
+    <string name="agent_models_login_denied">Sign-in was declined on the provider\'s page</string>
+    <!-- Notice: the sign-in took too long and expired. -->
+    <string name="agent_models_login_expired">Sign-in took too long and expired</string>
+    <!-- Notice: the provider sign-in failed. -->
+    <string name="agent_models_login_failed">Sign-in didn\'t go through</string>
+    <!-- Clipboard label for a copied sign-in code. Not shown in the app. -->
+    <string name="agent_models_login_code_label">Sign-in code</string>
+    <!-- Shown when the provider asks for a sign-in method this app version cannot open. -->
+    <string name="agent_models_login_unsupported">Update Wonton to sign in this way</string>
+    <!-- Button under a sign-in code: copies the code and opens the provider's sign-in page. -->
+    <string name="agent_models_login_copy_open">Copy code and open sign-in page</string>
+    <!-- Button that opens the provider's sign-in page again. -->
+    <string name="agent_models_login_open">Open sign-in page</string>
+    <!-- Status line while waiting for the owner to approve the sign-in in the browser. -->
+    <string name="agent_models_login_waiting">Waiting for you to approve in the browser</string>
+    <!-- Label and placeholder of the field for a provider API key. -->
+    <string name="agent_models_key">API key</string>
+    <!-- Button that opens the provider's page for creating an API key. -->
+    <string name="agent_models_key_get">Get a key</string>
+    <!-- Button offered after returning from the provider's page with a key on the clipboard. -->
+    <string name="agent_models_key_paste">Paste the key you just copied</string>
+    <!-- Shown under the key field: the provider refused this key, nothing was saved. -->
+    <string name="agent_models_key_rejected">The provider didn\'t accept this key. Check it and save again.</string>
+    <!-- Shown under the key field: the key was saved, but this provider cannot check keys in advance. -->
+    <string name="agent_models_key_unverified">Saved. This provider can\'t check keys in advance, so test after choosing a model.</string>
+    <!-- Label and placeholder of the field for a custom provider's service address. -->
+    <string name="agent_models_base_url">Service address</string>
+    <!-- Shown under a field the assistant said was filled in wrong. -->
+    <string name="agent_models_field_invalid">This doesn\'t look right</string>
+    <!-- Problem title on the model page: the phone cannot reach the home server. -->
+    <string name="agent_models_problem_transport">Can\'t reach your home server</string>
+    <!-- What to do next, under the model page problem title when the phone cannot reach the home server. -->
+    <string name="agent_models_problem_transport_next">Check your network and try again.</string>
+    <!-- Problem title on the model page: this person is not allowed to change this assistant's model. -->
+    <string name="agent_models_problem_forbidden">You can\'t change this assistant\'s model</string>
+    <!-- What to do next, under the model page problem title when this person is not allowed to change this assistant's model. -->
+    <string name="agent_models_problem_forbidden_next">Ask the owner of your home server for model settings access.</string>
+    <!-- Problem title on the model page: the assistant app is not installed, or it no longer has this assistant. -->
+    <string name="agent_models_problem_not_installed">This assistant isn\'t installed</string>
+    <!-- What to do next, under the model page problem title when the assistant app is not installed, or it no longer has this assistant. -->
+    <string name="agent_models_problem_not_installed_next">Install the assistant app from the store, then try again.</string>
+    <!-- Problem title on the model page: the assistant has not finished starting. -->
+    <string name="agent_models_problem_not_ready">The assistant is still starting</string>
+    <!-- What to do next, under the model page problem title when the assistant has not finished starting. -->
+    <string name="agent_models_problem_not_ready_next">Wait a moment and try again.</string>
+    <!-- Problem title on the model page: this assistant app cannot have its model set up in the app. -->
+    <string name="agent_models_problem_unsupported">This assistant can\'t connect a model here</string>
+    <!-- What to do next, under the model page problem title when this assistant app cannot have its model set up in the app. -->
+    <string name="agent_models_problem_unsupported_next">Open the assistant\'s own page from Apps to set up its model.</string>
+    <!-- Problem title on the model page: the provider or the sign-in in progress no longer exists. -->
+    <string name="agent_models_problem_not_found">That provider or sign-in is gone</string>
+    <!-- What to do next, under the model page problem title when the provider or the sign-in in progress no longer exists. -->
+    <string name="agent_models_problem_not_found_next">Go back, refresh the list and start again.</string>
+    <!-- Problem title on the model page: something entered was not accepted. -->
+    <string name="agent_models_problem_invalid_input">Something you entered isn\'t right</string>
+    <!-- What to do next, under the model page problem title when something entered was not accepted. -->
+    <string name="agent_models_problem_invalid_input_next">Check what you entered and try again.</string>
+    <!-- Problem title on the model page: the assistant hit an error handling the request. -->
+    <string name="agent_models_problem_upstream">The assistant ran into an error</string>
+    <!-- What to do next, under the model page problem title when the assistant hit an error handling the request. -->
+    <string name="agent_models_problem_upstream_next">Try again in a moment.</string>
+    <!-- Problem title on the model page: the app and the home server versions do not match. -->
+    <string name="agent_models_problem_protocol">Wonton and your home server don\'t match</string>
+    <!-- What to do next, under the model page problem title when the app and the home server versions do not match. -->
+    <string name="agent_models_problem_protocol_next">Update the app and your home server, then try again.</string>
+    <!-- Problem title on the model page: a reason this app version does not know. -->
+    <string name="agent_models_problem_other">That didn\'t work</string>
+    <!-- What to do next, under the model page problem title when a reason this app version does not know. -->
+    <string name="agent_models_problem_other_next">Try again. If it keeps failing, update Wonton.</string>
 </resources>

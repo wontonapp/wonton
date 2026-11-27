@@ -8,4 +8,132 @@
     <plurals name="agent_run_steps">
         <item quantity="other">%1$d ステップ</item>
     </plurals>
+    <!-- Title of the page where the owner connects an AI model to their assistant. -->
+    <string name="agent_models_title">モデル</string>
+    <!-- Shown where the model in use would be, when the assistant has no model yet. -->
+    <string name="agent_models_none">モデルはまだ接続されていません</string>
+    <!-- Button that sends a short real request to check the model in use works. -->
+    <string name="agent_models_test">テストする</string>
+    <!-- Note under the test button: testing costs a tiny real request. -->
+    <string name="agent_models_test_note">テストでは短いリクエストを実際に1回送ります。料金がかかる場合があります。</string>
+    <!-- Status line while the model test is running. -->
+    <string name="agent_models_test_running">テスト中…</string>
+    <!-- Result line: the model test got a real reply. -->
+    <string name="agent_models_test_ok">使えます</string>
+    <!-- Result line: the model test got a real reply. %1$s is the reply time in seconds, e.g. 1.2. -->
+    <string name="agent_models_test_ok_latency">使えます · 応答まで%1$s秒</string>
+    <!-- Result line: the provider refused the saved key or sign-in during the test. -->
+    <string name="agent_models_test_rejected">プロバイダーがキーまたはログインを受け付けませんでした。ログインし直すか、新しいキーを保存してください。</string>
+    <!-- Result line: the home server could not reach the provider during the test. -->
+    <string name="agent_models_test_unreachable">プロバイダーに接続できませんでした。ホームサーバーのネットワークを確認して、もう一度テストしてください。</string>
+    <!-- Result line: the provider answered the test with an error, such as no credit left or the model being unavailable. -->
+    <string name="agent_models_test_upstream">プロバイダーがエラーを返しました。残高不足か、このモデルが利用できない可能性があります。</string>
+    <!-- Result line: the test could not run because no model is chosen. -->
+    <string name="agent_models_test_no_model">先にモデルを選んでください</string>
+    <!-- Result line: the model test did not pass for a reason this app version does not know. -->
+    <string name="agent_models_test_other">テストに通りませんでした</string>
+    <!-- Label that expands the rest of the provider list. -->
+    <string name="agent_models_more">その他</string>
+    <!-- Placeholder of the search field over the provider list. -->
+    <string name="agent_models_search">プロバイダーを検索</string>
+    <!-- Shown when the assistant offers no other providers. -->
+    <string name="agent_models_no_providers">ほかのプロバイダーはありません</string>
+    <!-- Shown when a search over providers or models finds nothing. -->
+    <string name="agent_models_no_match">一致するものがありません</string>
+    <!-- State of a provider that has a saved key or a signed-in account. -->
+    <string name="agent_models_connected">接続済み</string>
+    <!-- Title of the dialog asking to confirm an expensive model. %1$s is the model name. -->
+    <string name="agent_models_confirm_title">%1$sを使いますか？</string>
+    <!-- Button that makes the selected model the one the assistant uses. -->
+    <string name="agent_models_use">これを使う</string>
+    <!-- Marks the model the assistant is using now in the model list. -->
+    <string name="agent_models_in_use">使用中</string>
+    <!-- Button that removes the saved key or sign-in for this provider. -->
+    <string name="agent_models_disconnect">接続を解除</string>
+    <!-- Title of the dialog confirming disconnecting a provider. %1$s is the provider name. -->
+    <string name="agent_models_disconnect_title">%1$sの接続を解除しますか？</string>
+    <!-- Body of the dialog confirming disconnecting a provider. -->
+    <string name="agent_models_disconnect_message">このアシスタントに保存したキーまたはログインが削除されます。</string>
+    <!-- Section title over the list of models a provider offers. -->
+    <string name="agent_models_models">モデル</string>
+    <!-- Shown when a connected provider offers no models. -->
+    <string name="agent_models_models_empty">このプロバイダーには選べるモデルがありません</string>
+    <!-- Status line while the model list of a provider is loading. -->
+    <string name="agent_models_models_loading">モデルを取得中…</string>
+    <!-- Placeholder of the search field over a provider's models. %1$d is how many models there are. -->
+    <string name="agent_models_models_search">%1$d個のモデルを検索</string>
+    <!-- Button that starts signing in to a provider in the in-app browser. -->
+    <string name="agent_models_login">ログイン</string>
+    <!-- Button that starts signing in to a provider again. -->
+    <string name="agent_models_login_again">もう一度ログイン</string>
+    <!-- Notice: the owner declined the sign-in on the provider's page. -->
+    <string name="agent_models_login_denied">プロバイダーのページでログインが拒否されました</string>
+    <!-- Notice: the sign-in took too long and expired. -->
+    <string name="agent_models_login_expired">時間切れでログインできませんでした</string>
+    <!-- Notice: the provider sign-in failed. -->
+    <string name="agent_models_login_failed">ログインできませんでした</string>
+    <!-- Clipboard label for a copied sign-in code. Not shown in the app. -->
+    <string name="agent_models_login_code_label">ログインコード</string>
+    <!-- Shown when the provider asks for a sign-in method this app version cannot open. -->
+    <string name="agent_models_login_unsupported">この方法でログインするにはWontonをアップデートしてください</string>
+    <!-- Button under a sign-in code: copies the code and opens the provider's sign-in page. -->
+    <string name="agent_models_login_copy_open">コードをコピーしてログインページを開く</string>
+    <!-- Button that opens the provider's sign-in page again. -->
+    <string name="agent_models_login_open">ログインページを開く</string>
+    <!-- Status line while waiting for the owner to approve the sign-in in the browser. -->
+    <string name="agent_models_login_waiting">ブラウザでの承認を待っています</string>
+    <!-- Label and placeholder of the field for a provider API key. -->
+    <string name="agent_models_key">APIキー</string>
+    <!-- Button that opens the provider's page for creating an API key. -->
+    <string name="agent_models_key_get">キーを取得</string>
+    <!-- Button offered after returning from the provider's page with a key on the clipboard. -->
+    <string name="agent_models_key_paste">コピーしたキーを貼り付け</string>
+    <!-- Shown under the key field: the provider refused this key, nothing was saved. -->
+    <string name="agent_models_key_rejected">プロバイダーがこのキーを受け付けませんでした。確認してもう一度保存してください。</string>
+    <!-- Shown under the key field: the key was saved, but this provider cannot check keys in advance. -->
+    <string name="agent_models_key_unverified">保存しました。このプロバイダーはキーを事前に確認できないため、モデルを選んでからテストしてください。</string>
+    <!-- Label and placeholder of the field for a custom provider's service address. -->
+    <string name="agent_models_base_url">サービスのアドレス</string>
+    <!-- Shown under a field the assistant said was filled in wrong. -->
+    <string name="agent_models_field_invalid">入力内容が正しくありません</string>
+    <!-- Problem title on the model page: the phone cannot reach the home server. -->
+    <string name="agent_models_problem_transport">ホームサーバーに接続できません</string>
+    <!-- What to do next, under the model page problem title when the phone cannot reach the home server. -->
+    <string name="agent_models_problem_transport_next">ネットワークを確認して、もう一度お試しください。</string>
+    <!-- Problem title on the model page: this person is not allowed to change this assistant's model. -->
+    <string name="agent_models_problem_forbidden">このアシスタントのモデルは変更できません</string>
+    <!-- What to do next, under the model page problem title when this person is not allowed to change this assistant's model. -->
+    <string name="agent_models_problem_forbidden_next">ホームサーバーの管理者にモデル設定の権限を依頼してください。</string>
+    <!-- Problem title on the model page: the assistant app is not installed, or it no longer has this assistant. -->
+    <string name="agent_models_problem_not_installed">このアシスタントはインストールされていません</string>
+    <!-- What to do next, under the model page problem title when the assistant app is not installed, or it no longer has this assistant. -->
+    <string name="agent_models_problem_not_installed_next">ストアからアシスタントのアプリをインストールして、もう一度お試しください。</string>
+    <!-- Problem title on the model page: the assistant has not finished starting. -->
+    <string name="agent_models_problem_not_ready">アシスタントを起動中です</string>
+    <!-- What to do next, under the model page problem title when the assistant has not finished starting. -->
+    <string name="agent_models_problem_not_ready_next">少し待ってから、もう一度お試しください。</string>
+    <!-- Problem title on the model page: this assistant app cannot have its model set up in the app. -->
+    <string name="agent_models_problem_unsupported">このアシスタントはここではモデルを接続できません</string>
+    <!-- What to do next, under the model page problem title when this assistant app cannot have its model set up in the app. -->
+    <string name="agent_models_problem_unsupported_next">「アプリ」からアシスタントのページを開いてモデルを設定してください。</string>
+    <!-- Problem title on the model page: the provider or the sign-in in progress no longer exists. -->
+    <string name="agent_models_problem_not_found">そのプロバイダーまたはログインは見つかりません</string>
+    <!-- What to do next, under the model page problem title when the provider or the sign-in in progress no longer exists. -->
+    <string name="agent_models_problem_not_found_next">戻ってリストを更新し、やり直してください。</string>
+    <!-- Problem title on the model page: something entered was not accepted. -->
+    <string name="agent_models_problem_invalid_input">入力内容に誤りがあります</string>
+    <!-- What to do next, under the model page problem title when something entered was not accepted. -->
+    <string name="agent_models_problem_invalid_input_next">入力内容を確認して、もう一度お試しください。</string>
+    <!-- Problem title on the model page: the assistant hit an error handling the request. -->
+    <string name="agent_models_problem_upstream">アシスタントでエラーが発生しました</string>
+    <!-- What to do next, under the model page problem title when the assistant hit an error handling the request. -->
+    <string name="agent_models_problem_upstream_next">しばらくしてから、もう一度お試しください。</string>
+    <!-- Problem title on the model page: the app and the home server versions do not match. -->
+    <string name="agent_models_problem_protocol">Wontonとホームサーバーのバージョンが合いません</string>
+    <!-- What to do next, under the model page problem title when the app and the home server versions do not match. -->
+    <string name="agent_models_problem_protocol_next">アプリとホームサーバーをアップデートして、もう一度お試しください。</string>
+    <!-- Problem title on the model page: a reason this app version does not know. -->
+    <string name="agent_models_problem_other">うまくいきませんでした</string>
+    <!-- What to do next, under the model page problem title when a reason this app version does not know. -->
+    <string name="agent_models_problem_other_next">もう一度お試しください。繰り返す場合はWontonをアップデートしてください。</string>
 </resources>

@@ -5,8 +5,6 @@
         <item quantity="one">%1$d card needs your approval</item>
         <item quantity="other">%1$d cards need your approval</item>
     </plurals>
-    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
-    <string name="onboarding_problem_model_gateway_not_ready">The model gateway isn\'t ready. Try again or skip this step.</string>
     <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
     <string name="onboarding_problem_plugin_egress_proxy_unavailable">The server\'s Internet proxy isn\'t working. Check it and try again.</string>
     <!-- Problem title while installing: no local network address is available for the app. -->
@@ -17,4 +15,8 @@
     <string name="onboarding_problem_store_disabled">The recommendation source is off. You can skip.</string>
     <!-- Kind label above a review row: the apps that will be installed. -->
     <string name="onboarding_review_section_apps">Apps to install</string>
+    <!-- Label over the assistant's name in the review step of setup. -->
+    <string name="onboarding_review_section_assistant">Your assistant</string>
+    <!-- Second line of the model row in the review step: the model was never tested. -->
+    <string name="onboarding_review_model_untested">Not tested yet</string>
 </resources>
