@@ -72,8 +72,14 @@ impl PinnedPeerCert {
 pub enum PeerVerification {
     /// 钉住的叶（轮换期间新旧都在）：根库只放它们，SPKI 必须是其中一个，名字照校。
     Pinned(Vec<PinnedPeerCert>),
-    /// 旧记录还没有 pin：只校名字，证书不在任何根库里也放行（ADR-0112 §5b）。
-    Pending,
+    /// 旧记录还没有 pin：只校名字，证书不在任何根库里也放行（ADR-0112 §5b）。窗口起点是配对时的核心
+    /// 版本，`expired` 是窗口已经到期（到期仍放行，但如实报“对端还没升级”）。
+    Pending {
+        /// 窗口起点的核心版本；老记录还没补上时为空。
+        since_version: Option<String>,
+        /// 窗口已经到期。
+        expired: bool,
+    },
 }
 
 /// 按本机 Tuwunel 要连的服务器名出一张证书（本机 CA 签）。
@@ -82,12 +88,17 @@ pub type LocalCertificateIssuer = Arc<dyn Fn(&str) -> anyhow::Result<TlsAcceptor
 /// 按对方服务器名给出钉住的叶；`None` = 旧记录待钉。
 pub type PeerPinLookup = Arc<dyn Fn(&str) -> Option<PeerVerification> + Send + Sync>;
 
+/// 待钉窗口里握手成功时把对方的叶交给核心（升级专用 TOFU，ADR-0112 §5b）：服务器名和整张证书 DER。
+pub type PinSeen = Arc<dyn Fn(&str, Vec<u8>) + Send + Sync>;
+
 /// 出站两段握手要的本地材料。
 pub struct ForwarderTls {
     /// 按 CONNECT 的目标名给本机 Tuwunel 出示证书（本机 CA 签）。
     pub local_certificates: LocalCertificateIssuer,
     /// 按对方服务器名给出钉证书；`None` = 待钉。
     pub peer_pin: PeerPinLookup,
+    /// 待钉握手成功时把对方的叶交给核心按 TOFU 钉住；`None` = 不钉。
+    pub pin_seen: Option<PinSeen>,
 }
 
 impl fmt::Debug for ForwarderTls {
@@ -101,7 +112,7 @@ pub(super) fn client_config(verification: &PeerVerification) -> Result<Arc<Clien
     let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
     let verifier: Arc<dyn ServerCertVerifier> = match verification {
         PeerVerification::Pinned(pins) => Arc::new(PinnedVerifier::new(pins, &provider)?),
-        PeerVerification::Pending => Arc::new(PendingVerifier {
+        PeerVerification::Pending { .. } => Arc::new(PendingVerifier {
             algorithms: provider.signature_verification_algorithms,
         }),
     };

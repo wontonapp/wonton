@@ -14,12 +14,16 @@ use rcgen::KeyPair;
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use tokio_rustls::TlsAcceptor;
-use wonton_tunnel::federation::{ForwarderTls, PeerPinLookup};
+use wonton_tunnel::federation::{ForwarderTls, PeerPinLookup, PinSeen};
 
 use crate::peer_tls;
 
 /// 出站转发器要的 TLS 材料。`dir` 是 `WONTON_PEER_TLS_DIR`（装机生成的 `secrets/peer-tls`）。
-pub fn forwarder(dir: &Path, peer_pin: PeerPinLookup) -> anyhow::Result<ForwarderTls> {
+pub fn forwarder(
+    dir: &Path,
+    peer_pin: PeerPinLookup,
+    pin_seen: Option<PinSeen>,
+) -> anyhow::Result<ForwarderTls> {
     for name in [peer_tls::CA_CERT, peer_tls::CA_KEY] {
         let path = dir.join(name);
         anyhow::ensure!(path.is_file(), "配对联邦的证书材料缺少 {}", path.display());
@@ -28,6 +32,7 @@ pub fn forwarder(dir: &Path, peer_pin: PeerPinLookup) -> anyhow::Result<Forwarde
     Ok(ForwarderTls {
         local_certificates: Arc::new(move |name| acceptor(&dir, name)),
         peer_pin,
+        pin_seen,
     })
 }
 
@@ -101,5 +106,29 @@ mod tests {
         let mut buf = [0u8; 2];
         server.read_exact(&mut buf).await.unwrap();
         assert_eq!(&buf, b"hi");
+    }
+
+    /// TOFU 回调真的接进 `ForwarderTls`：待钉握手成功时核心拿得到服务器名和整张叶。
+    #[test]
+    fn the_tofu_sink_is_wired_into_the_forwarder() {
+        let root = tempfile::tempdir().unwrap();
+        let secrets = root.path().join("secrets");
+        let mut report = crate::install::Report::default();
+        peer_tls::ensure(&secrets, "home.example", None, &mut report).unwrap();
+        let dir = peer_tls::dir(&secrets);
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink: PinSeen = {
+            let seen = seen.clone();
+            Arc::new(move |name: &str, der: Vec<u8>| {
+                seen.lock().unwrap().push((name.to_owned(), der));
+            })
+        };
+
+        let tls = forwarder(&dir, Arc::new(|_| None), Some(sink)).unwrap();
+        (tls.pin_seen.as_ref().expect("TOFU 回调接上了"))("friend.example", vec![1, 2, 3]);
+        assert_eq!(
+            seen.lock().unwrap()[0],
+            ("friend.example".to_owned(), vec![1, 2, 3])
+        );
     }
 }

@@ -22,7 +22,7 @@ pub use outbound::{FederationForwarder, OutboundErrors, ServerLookup};
 pub use peer::{PeerStates, PeerStatus};
 pub use server::FederationProtocol;
 pub use tls::{
-    ForwarderTls, LocalCertificateIssuer, PeerPinLookup, PeerVerification, PinnedPeerCert,
+    ForwarderTls, LocalCertificateIssuer, PeerPinLookup, PeerVerification, PinSeen, PinnedPeerCert,
 };
 
 /// 联邦协议的 ALPN，和隧道（`wonton/tunnel/0`）、配对（`wonton/pair/0`）挂在同一个 endpoint 上：

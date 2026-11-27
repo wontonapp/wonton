@@ -977,3 +977,84 @@ async fn expired_windows_are_reported_and_pinned_ones_are_not() {
         "钉住就不报"
     );
 }
+
+/// 复审补测：`tls_verification` 要把落下的 pin 读出来交给隧道；否则生产里恒 `None`、永远走待钉。
+#[tokio::test]
+async fn review_tls_verification_returns_the_pinned_certificate() {
+    use wonton_tunnel::federation::PeerVerification;
+
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let b = TestCore::start("Alice", "b.example.internal").await;
+    pair(&a, &b).await;
+    let cert = certificate("a.example.internal");
+    b.peers.on_certificate(a.id_endpoint(), &cert, false);
+
+    match b.peers.tls_verification("a.example.internal") {
+        Some(PeerVerification::Pinned(pins)) => {
+            assert_eq!(pins.len(), 1);
+            assert_eq!(pins[0].spki_sha256(), cert.spki_sha256_bytes().unwrap());
+        }
+        other => panic!("有 pin 时应回 Pinned，实际 {other:?}"),
+    }
+    assert!(
+        b.peers
+            .tls_verification("unknown.example.internal")
+            .is_none(),
+        "没配对的查不到"
+    );
+}
+
+/// 还没 pin 的已配对记录：`tls_verification` 回带窗口信息的待钉，并如实给出窗口起点（开发构建不算到期）。
+#[tokio::test]
+async fn tls_verification_reports_the_pending_window() {
+    use wonton_tunnel::federation::PeerVerification;
+
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let b = TestCore::start("Alice", "b.example.internal").await;
+    pair(&a, &b).await;
+    b.peers
+        .lock()
+        .peers
+        .get_mut("a.example.internal")
+        .unwrap()
+        .pin_state = PinState::Pending {
+        since_version: "0.8.0".to_owned(),
+    };
+
+    match b.peers.tls_verification("a.example.internal") {
+        Some(PeerVerification::Pending {
+            since_version,
+            expired,
+        }) => {
+            assert_eq!(since_version.as_deref(), Some("0.8.0"));
+            assert!(!expired, "开发构建的版本不可排序，按没到期");
+        }
+        other => panic!("没 pin 时应回待钉，实际 {other:?}"),
+    }
+}
+
+/// 钉住状态但 pin 数据坏了：fail-closed 成空根库，不回一条宽一点的待钉。
+#[tokio::test]
+async fn tls_verification_fails_closed_on_a_broken_pin() {
+    use wonton_tunnel::federation::PeerVerification;
+
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let b = TestCore::start("Alice", "b.example.internal").await;
+    pair(&a, &b).await;
+    {
+        let mut inner = b.peers.lock();
+        let record = inner.peers.get_mut("a.example.internal").unwrap();
+        record.pin_state = PinState::Pinned;
+        record.peer_pin = vec![super::PeerPin {
+            certificate: PeerCertificate {
+                der: "YmFk".to_owned(),
+                spki_sha256: "00".repeat(32),
+            },
+            pinned_at_ms: 1,
+        }];
+    }
+    match b.peers.tls_verification("a.example.internal") {
+        Some(PeerVerification::Pinned(pins)) => assert!(pins.is_empty(), "坏 pin 清空根库"),
+        other => panic!("钉住的记录应回 Pinned，实际 {other:?}"),
+    }
+}

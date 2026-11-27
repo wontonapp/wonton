@@ -34,7 +34,9 @@ use wonton_protocol::{
     PeerCode, PeerRequestRow, PeerRow, PeerStatus, PeersView, RejectedPeerRow, SecretString,
 };
 use wonton_tunnel::Allowlist;
-use wonton_tunnel::federation::{PeerStates, PeerStatus as FederationStatus, PeerVerification};
+use wonton_tunnel::federation::{
+    PeerStates, PeerStatus as FederationStatus, PeerVerification, PinnedPeerCert,
+};
 use wonton_tunnel::peer_pair::{PeerIdentity, PeerPairingCode};
 use wonton_tunnel::relays::canonical_url;
 
@@ -438,15 +440,51 @@ impl Peers {
         (record.phase == Phase::Paired).then(|| (record.endpoint_id, record.endpoint_addr()))
     }
 
-    /// 出站 TLS 的对端校验材料（ADR-0112）：钉住的叶，轮换期新旧都在。
+    /// 出站 TLS 的对端校验材料（ADR-0112）：钉住的叶（轮换期新旧都在），或按窗口如实报“待钉”。
     ///
-    /// 还没落 pin 的旧记录、以及刚配对还没收到对方证书的记录都回 `None`，握手按“待钉”只校名字
-    /// （ADR-0112 §5b）；pin 字段由配对和轮换维护，这里只读。
+    /// 还没落 pin 的旧记录、以及刚配对还没收到对方证书的记录按 §5b 走待钉：带上窗口起点和是否到期
+    /// （到期仍只校名字放行，不直接断），不恒 `None`。`Pinned` 的每条记录都必须自洽（DER 和 SPKI 指纹
+    /// 对得上），一条坏数据就 fail-closed 成空根库，不让坏记录悄悄少一张 pin。
     pub fn tls_verification(&self, server_name: &str) -> Option<PeerVerification> {
         let peers = self.lock();
         let record = peers.peers.get(server_name)?;
-        (record.phase == Phase::Paired).then_some(())?;
-        None
+        if record.phase != Phase::Paired {
+            return None;
+        }
+        match &record.pin_state {
+            PinState::Pending { since_version } => Some(PeerVerification::Pending {
+                since_version: (!since_version.is_empty()).then(|| since_version.clone()),
+                expired: record
+                    .pin_state
+                    .window_expired(crate::build_info::version()),
+            }),
+            PinState::Pinned => {
+                let mut pins = Vec::with_capacity(record.peer_pin.len());
+                let mut broken = false;
+                for pin in &record.peer_pin {
+                    match pin
+                        .certificate
+                        .der_bytes()
+                        .zip(pin.certificate.spki_sha256_bytes())
+                        .map(|(der, spki)| PinnedPeerCert::from_parts(der, spki))
+                    {
+                        Some(Ok(pin)) => pins.push(pin),
+                        Some(Err(error)) => {
+                            tracing::error!(server = %server_name, %error, "钉住的证书坏了，fail-closed");
+                            broken = true;
+                        }
+                        None => {
+                            tracing::error!(server = %server_name, "钉住的证书编码坏了，fail-closed");
+                            broken = true;
+                        }
+                    }
+                }
+                if broken {
+                    pins.clear();
+                }
+                Some(PeerVerification::Pinned(pins))
+            }
+        }
     }
 
     /// 这次的配对握手里要发给对方的身份。主人的显示名现取，主人改资料后不用重启核心。

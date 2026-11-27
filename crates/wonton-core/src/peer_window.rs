@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::peers::{PeerPin, Phase, PinState, window_expired};
 use anyhow::Context as _;
 use serde::Deserialize;
 
@@ -39,7 +40,7 @@ pub(crate) fn window_state(
         serde_json::from_str(&text).with_context(|| format!("解析 {}", path.display()))?;
     let mut state = WindowState::default();
     for record in stored.peers.values() {
-        if record.phase != Some(crate::peers::Phase::Paired) {
+        if record.phase != Some(Phase::Paired) {
             continue;
         }
         // 钉住的状态且有 pin 才算真钉住；配了 pinned 却没 pin、或没有 pin_state 的老记录都还要窗口。
@@ -67,48 +68,12 @@ struct Stored {
 
 #[derive(Deserialize, Default)]
 struct Record {
-    phase: Option<crate::peers::Phase>,
+    phase: Option<Phase>,
     /// 核心写的是 `[{der, spki_sha256, pinned_at_ms}]`（`PeerPin`）；这里只关心有没有。
     #[serde(default)]
-    peer_pin: Vec<serde_json::Value>,
+    peer_pin: Vec<PeerPin>,
     /// `pinned` 或 `{"pending":{"since_version":…}}`；老记录没有这个字段。
     pin_state: Option<PinState>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum PinState {
-    Pinned,
-    Pending {
-        #[serde(default)]
-        since_version: String,
-    },
-}
-
-/// 待钉窗口是否已到期（ADR-0112 §5b：窗口 = 两个核心版本）。`since_version` 是窗口起点，`current_version`
-/// 是现在的核心版本：次版本涨到起点 +2（或主版本更大）就到期；主版本相同、次版本没涨够时没到期，降级
-/// （当前比起点旧）也没到期。
-///
-/// 开发构建（`dev`、`dev+<sha>`）没有可比的版本：任意一端不是 `主.次[.补]` 一律按**没到期**算——窗口
-/// 保持打开，放宽着也不断线；日志里如实报不知道先后。
-///
-/// 和 `peers::pin::window_expired` 同一条判据；合并后换成那一个（见 PR #1123 的提交）。
-fn window_expired(since_version: &str, current_version: &str) -> bool {
-    let (Some((since_major, since_minor)), Some((current_major, current_minor))) =
-        (major_minor(since_version), major_minor(current_version))
-    else {
-        return false;
-    };
-    current_major > since_major
-        || (current_major == since_major && current_minor >= since_minor + 2)
-}
-
-/// `主.次` 两个数字；补丁号可省。开发构建和非数字版本回 `None`。
-fn major_minor(version: &str) -> Option<(u64, u64)> {
-    let mut parts = version.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = parts.next()?.parse().ok()?;
-    Some((major, minor))
 }
 
 /// Tuwunel 配置里那一行。
@@ -336,6 +301,81 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("core")).unwrap();
         std::fs::write(dir.path().join("core/peers.json"), "not json").unwrap();
         assert!(window_state(Some(dir.path()), "0.9.0").is_err());
+    }
+
+    fn record(pin_state: PinState, pins: Vec<PeerPin>) -> crate::peers::PeerRecord {
+        crate::peers::PeerRecord {
+            server_name: "old.example".to_owned(),
+            endpoint_id: iroh::SecretKey::generate().public(),
+            relays: Vec::new(),
+            addrs: Vec::new(),
+            owner_user_id: "@o:old.example".to_owned(),
+            owner_display_name: "Old".to_owned(),
+            paired_at_ms: 1,
+            phase: Phase::Paired,
+            last_connected_ms: None,
+            peer_pin: pins,
+            pin_state,
+        }
+    }
+
+    fn signed_pin() -> PeerPin {
+        let key = rcgen::KeyPair::generate().unwrap();
+        let params = rcgen::CertificateParams::new(vec!["old.example".to_owned()]).unwrap();
+        let certificate = wonton_tunnel::peer_pair::PeerCertificate::from_der(
+            params.self_signed(&key).unwrap().der().to_vec(),
+        )
+        .unwrap();
+        PeerPin {
+            certificate,
+            pinned_at_ms: 1,
+        }
+    }
+
+    fn write_record(dir: &Path, record: crate::peers::PeerRecord) {
+        std::fs::create_dir_all(dir.join("core")).unwrap();
+        std::fs::write(
+            dir.join("core/peers.json"),
+            serde_json::json!({ "peers": { "old.example": record } }).to_string(),
+        )
+        .unwrap();
+    }
+
+    /// 真实序列化→读取：用 `Peers` 落盘同一套类型（`PeerRecord`/`PeerPin`/`PinState`）serde 出来的记录，
+    /// 窗口判据读得懂（测试夹具不再手写形状）。
+    #[test]
+    fn the_reader_understands_the_records_the_core_serializes() {
+        let dir = tempfile::tempdir().unwrap();
+        write_record(
+            dir.path(),
+            record(
+                PinState::Pending {
+                    since_version: "0.8.0".to_owned(),
+                },
+                Vec::new(),
+            ),
+        );
+        assert_eq!(
+            window_state(Some(dir.path()), "0.9.0").unwrap(),
+            WindowState {
+                needed: true,
+                expired: 0
+            }
+        );
+        assert_eq!(
+            window_state(Some(dir.path()), "0.10.0").unwrap(),
+            WindowState {
+                needed: false,
+                expired: 1
+            }
+        );
+
+        let dir = tempfile::tempdir().unwrap();
+        write_record(dir.path(), record(PinState::Pinned, vec![signed_pin()]));
+        assert_eq!(
+            window_state(Some(dir.path()), "0.10.0").unwrap(),
+            WindowState::default()
+        );
     }
 
     fn toml_dir() -> (tempfile::TempDir, std::path::PathBuf) {

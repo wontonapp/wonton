@@ -302,7 +302,21 @@ async fn terminate_tls(
             return;
         }
     };
-    let verification = (tls.peer_pin)(name).unwrap_or(PeerVerification::Pending);
+    let verification = (tls.peer_pin)(name).unwrap_or(PeerVerification::Pending {
+        since_version: None,
+        expired: false,
+    });
+    if let PeerVerification::Pending {
+        since_version,
+        expired: true,
+    } = &verification
+    {
+        warn!(
+            server = %name,
+            since_version = since_version.as_deref().unwrap_or("unknown"),
+            "federation outbound: the pinning window expired, the peer has not upgraded; accepting by name"
+        );
+    }
     let config = match tls::client_config(&verification) {
         Ok(config) => config,
         Err(err) => {
@@ -337,6 +351,17 @@ async fn terminate_tls(
             return;
         }
     };
+    // 待钉窗口里握手成功：把对方的叶交给核心按升级专用 TOFU 钉住（ADR-0112 §5b）。
+    if matches!(verification, PeerVerification::Pending { .. })
+        && let Some(pin_seen) = &tls.pin_seen
+        && let Some(leaf) = peer_tls
+            .get_ref()
+            .1
+            .peer_certificates()
+            .and_then(|certificates| certificates.first())
+    {
+        pin_seen(name, leaf.as_ref().to_vec());
+    }
     if let Err(err) = tcp.write_all(ESTABLISHED).await {
         debug!(server = %name, "federation outbound: failed to answer the CONNECT: {err}");
         peer_tls.get_mut().0.abort();

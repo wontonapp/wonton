@@ -65,9 +65,9 @@ use wonton_core::upgrade::compose_images;
 use wonton_core::upgrade::docker_host::DockerHost;
 use wonton_core::upgrade::service::{UpgradeConfig, Upgrades};
 use wonton_tunnel::federation::{
-    FEDERATION_ALPN, FederationForwarder, FederationProtocol, PeerPinLookup,
+    FEDERATION_ALPN, FederationForwarder, FederationProtocol, PeerPinLookup, PinSeen,
 };
-use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerPairProtocol};
+use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerCertificate, PeerPairProtocol};
 
 /// 联邦转发组件对每台对方服务器的探活周期和超时。Tuwunel 的联邦请求是并发的，断了的连接靠下一次
 /// 使用或探活重连（ADR-0050）。
@@ -134,7 +134,19 @@ async fn open_peers_and_federation(
         .map(|dir| {
             let pin_peers = peers.clone();
             let pins: PeerPinLookup = Arc::new(move |name: &str| pin_peers.tls_verification(name));
-            federation_tls::forwarder(dir, pins)
+            let tofu_peers = peers.clone();
+            let pin_seen: PinSeen =
+                Arc::new(
+                    move |name: &str, der: Vec<u8>| match PeerCertificate::from_der(der) {
+                        Ok(certificate) => {
+                            tofu_peers.tofu_pin(name, &certificate);
+                        }
+                        Err(error) => {
+                            tracing::warn!(server = %name, %error, "握手里的证书解析不了，不钉");
+                        }
+                    },
+                );
+            federation_tls::forwarder(dir, pins, Some(pin_seen))
         })
         .transpose()?;
     let forwarder = FederationForwarder::bind(

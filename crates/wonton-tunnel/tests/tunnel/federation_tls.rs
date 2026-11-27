@@ -38,7 +38,7 @@ use tokio_rustls::{
 use wonton_tunnel::{
     federation::{
         FEDERATION_ALPN, FederationForwarder, ForwarderTls, PeerStates, PeerStatus,
-        PeerVerification, PinnedPeerCert, ServerLookup,
+        PeerVerification, PinSeen, PinnedPeerCert, ServerLookup,
     },
     off_workers,
     wire::{Request, Status},
@@ -278,6 +278,15 @@ impl AsyncWrite for StreamIo {
 
 /// 本机转发器：查找表里只有 B。`pins` 决定这台服务器的校验严格度。
 async fn start_forwarder(peer: &TlsPeer, pins: PeerPins) -> FederationForwarder {
+    start_forwarder_with(peer, pins, None).await
+}
+
+/// 同 [`start_forwarder`]，另给一个待钉握手成功时的 TOFU 回调。
+async fn start_forwarder_with(
+    peer: &TlsPeer,
+    pins: PeerPins,
+    pin_seen: Option<PinSeen>,
+) -> FederationForwarder {
     let lookup: ServerLookup = {
         let (id, addr) = (peer.id, peer.addr.clone());
         Arc::new(move |name: &str| (name == B_NAME).then(|| (id, addr.clone())))
@@ -285,6 +294,7 @@ async fn start_forwarder(peer: &TlsPeer, pins: PeerPins) -> FederationForwarder 
     let tls = ForwarderTls {
         local_certificates: TEST_CA.with(|ca| ca.local_certificates()),
         peer_pin: pins,
+        pin_seen,
     };
     let (_paired, paired) = watch::channel(BTreeSet::from([B_NAME.to_owned()]));
     FederationForwarder::bind(
@@ -307,6 +317,16 @@ fn pinned_to(cert: &CertificateDer<'static>) -> PeerPins {
 }
 
 fn pending() -> PeerPins {
+    Arc::new(|_: &str| {
+        Some(PeerVerification::Pending {
+            since_version: Some("0.8.0".to_owned()),
+            expired: false,
+        })
+    })
+}
+
+/// 记录查不到：出站按 `unwrap_or` 的待钉缺省走。
+fn unknown() -> PeerPins {
     Arc::new(|_: &str| None)
 }
 
@@ -461,13 +481,172 @@ async fn accepts_any_certificate_for_the_name_when_pending() {
     assert_eq!(forwarder.outbound_errors().tls_failed, 0);
 }
 
-/// 待钉时名字仍然要校：证书是 C 的，CONNECT 的是 B，失败。
+/// 待钉时名字仍然要校：证书是 C 的，CONNECT 的是 B，失败。记录查不到也按待钉缺省走。
 #[tokio::test]
 async fn rejects_another_name_when_pending() {
     let (leaf, key) = cert_for(C_NAME).unwrap();
     let peer = TlsPeer::start(server_acceptor(vec![leaf], key).unwrap()).await;
-    let forwarder = start_forwarder(&peer, pending()).await;
+    let forwarder = start_forwarder(&peer, unknown()).await;
     let (tcp, status) = connect(forwarder.listen_addr(), B_NAME).await;
     assert_eq!(status, 502);
     closed_after(tcp).await;
+}
+
+/// 一张 2000–2001 年的过期叶，链和名字都对。
+fn expired_leaf(
+    name: &str,
+) -> Result<(CertificateDer<'static>, PrivateKeyDer<'static>), rcgen::Error> {
+    let key = KeyPair::generate()?;
+    let mut params = leaf_params(name)?;
+    params.not_before = rcgen::date_time_ymd(2000, 1, 1);
+    params.not_after = rcgen::date_time_ymd(2001, 1, 1);
+    let leaf = params.self_signed(&key)?;
+    Ok((
+        leaf.der().clone(),
+        PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
+    ))
+}
+
+/// 同 [`expired_leaf`]，但叶由测试 CA 签、链里带 CA：根库钉 CA 时链能过，只剩有效期这一关。
+fn expired_leaf_signed_by_ca(ca: &TestCa, name: &str) -> TlsAcceptor {
+    let key = KeyPair::generate().unwrap();
+    let mut params = leaf_params(name).unwrap();
+    params.not_before = rcgen::date_time_ymd(2000, 1, 1);
+    params.not_after = rcgen::date_time_ymd(2001, 1, 1);
+    let leaf = params.signed_by(&key, &ca.issuer).unwrap();
+    server_acceptor(
+        vec![leaf.der().clone(), ca.cert.clone()],
+        PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
+    )
+    .unwrap()
+}
+
+/// 钉的是 CA 时链能过、叶的 SPKI 却不同：证明根库之外确实单独比了 SPKI。
+#[tokio::test]
+async fn rejects_a_chain_that_validates_but_has_another_spki() {
+    let ca = TEST_CA.with(|ca| ca.clone());
+    let key = KeyPair::generate().unwrap();
+    let leaf = leaf_params(B_NAME)
+        .unwrap()
+        .signed_by(&key, &ca.issuer)
+        .unwrap();
+    let acceptor = server_acceptor(
+        vec![leaf.der().clone(), ca.cert.clone()],
+        PrivatePkcs8KeyDer::from(key.serialize_der()).into(),
+    )
+    .unwrap();
+    let peer = TlsPeer::start(acceptor).await;
+    let forwarder = start_forwarder(&peer, pinned_to(&ca.cert.clone())).await;
+
+    let (tcp, status) = connect(forwarder.listen_addr(), B_NAME).await;
+    assert_eq!(status, 502);
+    closed_after(tcp).await;
+    let PeerStatus::Offline { last_error, .. } = wait_offline(&forwarder, B_NAME).await else {
+        panic!("不是离线状态");
+    };
+    assert_eq!(last_error.code(), "peer-certificate");
+    assert!(
+        format!("{last_error}").contains("does not match the pinned key"),
+        "{last_error}"
+    );
+}
+
+/// 钉住的链上叶过期：握手失败并报“过期”，不放行。
+#[tokio::test]
+async fn rejects_an_expired_peer_certificate_under_a_pin() {
+    let ca = TEST_CA.with(|ca| ca.clone());
+    let peer = TlsPeer::start(expired_leaf_signed_by_ca(&ca, B_NAME)).await;
+    let forwarder = start_forwarder(&peer, pinned_to(&ca.cert.clone())).await;
+
+    let (tcp, status) = connect(forwarder.listen_addr(), B_NAME).await;
+    assert_eq!(status, 502);
+    closed_after(tcp).await;
+    let PeerStatus::Offline { last_error, .. } = wait_offline(&forwarder, B_NAME).await else {
+        panic!("不是离线状态");
+    };
+    assert!(format!("{last_error}").contains("expired"), "{last_error}");
+}
+
+/// 待钉也看有效期：过期叶不放行。
+#[tokio::test]
+async fn rejects_an_expired_peer_certificate_when_pending() {
+    let (leaf, key) = expired_leaf(B_NAME).unwrap();
+    let peer = TlsPeer::start(server_acceptor(vec![leaf], key).unwrap()).await;
+    let forwarder = start_forwarder(&peer, pending()).await;
+
+    let (tcp, status) = connect(forwarder.listen_addr(), B_NAME).await;
+    assert_eq!(status, 502);
+    closed_after(tcp).await;
+    let PeerStatus::Offline { last_error, .. } = wait_offline(&forwarder, B_NAME).await else {
+        panic!("不是离线状态");
+    };
+    assert!(format!("{last_error}").contains("expired"), "{last_error}");
+}
+
+/// 待钉窗口已经到期：仍然放行（如实报“对端还没升级”），不直接断。
+#[tokio::test]
+async fn accepts_by_name_when_the_pending_window_expired() {
+    let ca = TEST_CA.with(|ca| ca.clone());
+    let (leaf, key) = cert_for(B_NAME).unwrap();
+    let peer = TlsPeer::start(server_acceptor(vec![leaf], key).unwrap()).await;
+    let expired: PeerPins = Arc::new(|_: &str| {
+        Some(PeerVerification::Pending {
+            since_version: Some("0.8.0".to_owned()),
+            expired: true,
+        })
+    });
+    let forwarder = start_forwarder(&peer, expired).await;
+
+    let (tcp, status) = connect(forwarder.listen_addr(), B_NAME).await;
+    assert_eq!(status, 200);
+    let mut tls = tuwunel_tls(&ca, B_NAME, tcp).await;
+    tls.write_all(PAYLOAD).await.unwrap();
+    tls.shutdown().await.unwrap();
+}
+
+/// `Pinned` 是空列表（pin 记录坏了被清空）：根库空，fail-closed 回 502。
+#[tokio::test]
+async fn rejects_when_the_pin_list_is_empty() {
+    let (leaf, key) = cert_for(B_NAME).unwrap();
+    let peer = TlsPeer::start(server_acceptor(vec![leaf], key).unwrap()).await;
+    let empty: PeerPins = Arc::new(|_: &str| Some(PeerVerification::Pinned(Vec::new())));
+    let forwarder = start_forwarder(&peer, empty).await;
+
+    let (tcp, status) = connect(forwarder.listen_addr(), B_NAME).await;
+    assert_eq!(status, 502);
+    closed_after(tcp).await;
+    assert_eq!(forwarder.outbound_errors().tls_failed, 1);
+}
+
+/// 待钉握手成功时把对方的叶交给 TOFU 回调（核心据此钉住，不用等配对通道送证书）。
+#[tokio::test]
+async fn a_pending_handshake_hands_the_peer_leaf_to_the_tofu_sink() {
+    let ca = TEST_CA.with(|ca| ca.clone());
+    let (leaf, key) = cert_for(B_NAME).unwrap();
+    let leaf_der = leaf.clone();
+    let peer = TlsPeer::start(server_acceptor(vec![leaf], key).unwrap()).await;
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink: PinSeen = {
+        let seen = seen.clone();
+        Arc::new(move |name: &str, der: Vec<u8>| {
+            seen.lock().unwrap().push((name.to_owned(), der));
+        })
+    };
+    let forwarder = start_forwarder_with(&peer, pending(), Some(sink)).await;
+
+    let (tcp, status) = connect(forwarder.listen_addr(), B_NAME).await;
+    assert_eq!(status, 200);
+    let mut tls = tuwunel_tls(&ca, B_NAME, tcp).await;
+    tls.write_all(PAYLOAD).await.unwrap();
+    tls.shutdown().await.unwrap();
+    timeout(WAIT, async {
+        while seen.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("等待 TOFU 回调超时");
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(seen[0].0, B_NAME);
+    assert_eq!(seen[0].1, leaf_der.as_ref());
 }
