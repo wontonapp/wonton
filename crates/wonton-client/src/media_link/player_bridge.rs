@@ -11,7 +11,7 @@ use tokio::time::Instant;
 use wonton_protocol::media::provider::{PlaybackProgress, PlaybackStopped};
 use wonton_protocol::media::{
     ControlOp, MediaFailureCode, PlaybackSession, PlaybackSessionId, Queue, QueueMode, StopReason,
-    Timestamp,
+    TaskState, Timestamp,
 };
 
 /// 播放中两次位置上报至少隔这么久（ADR-0113 第 4 节）。
@@ -119,11 +119,8 @@ impl Bridge {
         wall_clock: Timestamp,
     ) -> Decision {
         let position_ms = event.position_ms();
-        if let Some(reason) = &session.stop_reason {
-            return self.after_stop(session.id, reason, event, position_ms);
-        }
-        if session.state.is_terminal() {
-            return Decision::nothing();
+        if let Some(reason) = stopped_because(session) {
+            return self.after_stop(session.id, &reason, event, position_ms);
         }
         let progress = || {
             Report::Progress(PlaybackProgress {
@@ -175,6 +172,22 @@ impl Bridge {
             reason: reason.clone(),
         }))
     }
+}
+
+/// 会话停了没有、为什么停。停了的会话按协议都带着原因；没带原因却已经是终态的（旧核心、别家实现），按终态
+/// 推一个原因，照样补报最后位置，不把断点丢掉。核心对已停的会话只把位置往后推，推的原因不会改掉什么。
+fn stopped_because(session: &PlaybackSession) -> Option<StopReason> {
+    if let Some(reason) = &session.stop_reason {
+        return Some(reason.clone());
+    }
+    if !session.state.is_terminal() {
+        return None;
+    }
+    Some(match session.state {
+        TaskState::Done | TaskState::Partial => StopReason::Finished,
+        TaskState::Failed(_) => StopReason::Error,
+        _ => StopReason::User,
+    })
 }
 
 /// 一项放完：单曲循环回到开头；队列里后面还有（或整列循环）就换下一项，由核心换会话的条目、重取计划；

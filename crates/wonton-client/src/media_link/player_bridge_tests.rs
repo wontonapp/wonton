@@ -5,8 +5,8 @@ use std::time::Duration;
 use tokio::time::Instant;
 use wonton_protocol::media::provider::{PlaybackProgress, PlaybackStopped};
 use wonton_protocol::media::{
-    ControlOp, MediaFailureCode, MediaItemRef, MediaKind, PlaybackSession, PlaybackSessionId,
-    Queue, QueueMode, StopReason, TaskState,
+    ControlOp, MediaFailure, MediaFailureCode, MediaItemRef, MediaKind, PlaybackSession,
+    PlaybackSessionId, Queue, QueueMode, StopReason, TaskState,
 };
 
 use super::player_bridge::{Bridge, PlayerCommand, PlayerEvent, Report};
@@ -245,4 +245,111 @@ fn a_taken_over_session_gets_the_last_position_once_and_nothing_else() {
         report_at(&mut bridge, &session, None, start, 900, &stopped),
         None
     );
+}
+
+#[test]
+fn an_empty_queue_or_one_not_playing_from_it_ends_the_session() {
+    let mut bridge = Bridge::default();
+    let session = session(None);
+    let start = Instant::now();
+    let done = PlayerEvent::Finished {
+        position_ms: 200_000,
+    };
+    let empty = Queue {
+        entries: Vec::new(),
+        cursor: None,
+        ..queue(0, 0, QueueMode::RepeatAll)
+    };
+    assert_eq!(
+        report_at(&mut bridge, &session, Some(&empty), start, 0, &done),
+        stop(200_000, StopReason::Finished)
+    );
+    // 队列里有歌，但这首不是从队列里放的：没有“下一项”可言。
+    let elsewhere = Queue {
+        cursor: None,
+        ..queue(3, 0, QueueMode::Sequential)
+    };
+    assert_eq!(
+        report_at(&mut bridge, &session, Some(&elsewhere), start, 0, &done),
+        stop(200_000, StopReason::Finished)
+    );
+}
+
+#[test]
+fn a_taken_over_session_gets_one_last_position_whatever_the_player_reports_first() {
+    let start = Instant::now();
+    let failed = PlayerEvent::Failed {
+        position_ms: 30_000,
+        code: MediaFailureCode::TransportUnavailable,
+        message: "loopback closed".into(),
+    };
+    let seeked = PlayerEvent::Seeked {
+        position_ms: 45_000,
+    };
+    let paused = PlayerEvent::Paused {
+        position_ms: 45_000,
+    };
+
+    let mut bridge = Bridge::default();
+    let taken = session(Some(StopReason::TakenOver));
+    assert_eq!(
+        report_at(&mut bridge, &taken, None, start, 0, &seeked),
+        stop(45_000, StopReason::TakenOver)
+    );
+    for later in [&failed, &paused, &seeked] {
+        assert_eq!(
+            report_at(&mut bridge, &taken, None, start, 100, later),
+            None
+        );
+    }
+
+    let mut bridge = Bridge::default();
+    let again = session(Some(StopReason::TakenOver));
+    assert_eq!(
+        report_at(&mut bridge, &again, None, start, 0, &failed),
+        stop(30_000, StopReason::TakenOver)
+    );
+    assert_eq!(
+        report_at(&mut bridge, &again, None, start, 100, &seeked),
+        None
+    );
+}
+
+#[test]
+fn a_finished_session_without_a_stop_reason_still_keeps_the_last_position() {
+    let start = Instant::now();
+    let stopped = PlayerEvent::Stopped {
+        position_ms: 30_000,
+    };
+    let cases = [
+        (TaskState::Done, StopReason::Finished),
+        (
+            TaskState::Failed(MediaFailure {
+                code: MediaFailureCode::UpstreamError,
+                message: "provider gone".into(),
+                retry_after_secs: None,
+            }),
+            StopReason::Error,
+        ),
+        (TaskState::Cancelled, StopReason::User),
+    ];
+    for (state, reason) in cases {
+        let mut bridge = Bridge::default();
+        let session = PlaybackSession {
+            state,
+            ..session(None)
+        };
+        assert_eq!(
+            report_at(&mut bridge, &session, None, start, 0, &playing(29_000)),
+            None
+        );
+        assert_eq!(
+            report_at(&mut bridge, &session, None, start, 500, &stopped),
+            stop(30_000, reason)
+        );
+        assert_eq!(
+            report_at(&mut bridge, &session, None, start, 900, &stopped),
+            None
+        );
+    }
 }
