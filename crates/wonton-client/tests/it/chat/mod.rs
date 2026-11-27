@@ -1,11 +1,11 @@
 //! 聊天的行为测试：只经导出给原生壳的接口（`ClientCore`、`Action`、订阅）驱动，手机经隧道和本地代理登录主人
 //! 的 Matrix 账号、和 Bot 聊天，重启后会话和加密都还在。
 //!
-//! 每个测试用 Docker 起一台一次性的 Tuwunel，所以标了 `#[ignore]`：
 //! `cargo test -p wonton-client --test it chat:: -- --include-ignored`（`scripts/check.sh` 有 Docker 时自动运行）。
 
 mod agent_run;
 mod ask_agent;
+mod ask_target;
 mod bot_profile;
 pub mod bot_profile_support;
 mod card_plugin_refresh;

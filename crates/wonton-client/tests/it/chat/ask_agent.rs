@@ -1,7 +1,7 @@
 //! Siri、快捷指令的“问 Bot”：一句话直接发给默认 Agent。
 
 use serde_json::json;
-use wonton_client::{Action, CoreError, MessageContent, RoomMembership, TimelineContent};
+use wonton_client::{Action, MessageContent, RoomMembership, TimelineContent};
 
 use wonton_matrix::OwnedUserId;
 
@@ -13,15 +13,29 @@ use super::support::{Home, OWNER, Phone, Timeline};
 async fn asking_joins_the_bots_chat_and_sends_the_question() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
-    // 还没配对、没有默认 Agent 时如实拒绝，不悄悄丢掉这句话。
-    assert!(matches!(
-        phone.dispatch(Action::Chat {
+    // 还没配对、没有默认 Agent 时也回执失败，不悄悄丢掉这句话；dispatch 本身不再同步报错。
+    phone
+        .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::AskAgent {
-                text: "明天下雨吗".to_owned()
-            }
-        }),
-        Err(CoreError::NotReady { .. })
-    ));
+                text: "明天下雨吗".to_owned(),
+                room_id: None,
+                request_id: None,
+            },
+        })
+        .expect("AskAgent 在未连接时也接单");
+    phone
+        .wait_chat("回执说还没就绪", |view| {
+            view.ask
+                .as_ref()
+                .is_some_and(|receipt| {
+                    receipt.state == wonton_protocol::AskState::Failed
+                        && receipt.problem.as_ref().is_some_and(|problem| {
+                            problem.reason == wonton_protocol::AskFailure::BotNotReady
+                        })
+                })
+                .then_some(())
+        })
+        .await;
 
     let home = Home::start(&[phone.device_id()]).await;
     home.set_onboarding(json!({
@@ -68,6 +82,8 @@ async fn asking_joins_the_bots_chat_and_sends_the_question() {
         .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::AskAgent {
                 text: "  明天下雨吗 ".to_owned(),
+                room_id: None,
+                request_id: None,
             },
         })
         .unwrap();

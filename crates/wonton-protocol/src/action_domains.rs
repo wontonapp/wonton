@@ -121,10 +121,19 @@ pub enum ChatAction {
     StartDirectChat {
         user_id: String,
     },
-    /// 把一句话发给默认 Bot（Siri、快捷指令的“问 Bot”）：和它的私聊还没有就先建。壳随后按
-    /// [`OnboardingViewModel::default_bot_user_id`](crate::OnboardingViewModel::default_bot_user_id) 打开这个私聊。
+    /// 把一句话发给默认 Bot（Siri、快捷指令的“问 Bot”）：哪个 Bot、发到哪个房间由核心解析，结果写进
+    /// [`ChatViewModel::ask`](crate::ChatViewModel::ask)。`text` 为空时只解析目标、打开那个私聊，不发消息。
+    ///
+    /// `room_id` 是壳当前所在的房间，原样带上：只有它是呼叫者可用 Bot 的私聊，或者本人 Bot 的主房间时才用它。
+    /// `request_id` 由壳生成，用来把回执对上同一次动作；核心不解释它。
     AskAgent {
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        room_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        request_id: Option<u32>,
     },
     /// 点了消息下的选项按钮（[`MessageChoice`](crate::MessageChoice)，ADR-0109）或 AgentRun 的选项：以本人身份给 `item_id`
     /// 那条加 `key` 这个表情（`m.annotation`），不往聊天里发消息。进展在那个选项的 [`ChoiceSend`](crate::ChoiceSend)；

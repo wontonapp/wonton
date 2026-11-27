@@ -50,12 +50,12 @@ impl Target {
 }
 
 impl EntryContainers {
-    /// 有联邦或者任何一个打开的入口就要入口容器；有入口就要连接器。
+    /// 有联邦就要入口容器；连接器随总开关。
     ///
-    /// 入口的开关（ADR-0021）和 ADR-0090 的总开关要等设置里有开关以后才可能关掉它；
-    /// 连接器的两种做法（frpc / 路由器转发）按设置里的家名服务选。
-    pub(super) fn wanted(target: &Target) -> (bool, bool) {
+    /// 入口容器不随总开关停：配对过的服务器经 8449 的联邦不受总开关影响（ADR-0090:52），关掉时只清空
+    /// 公网前端的证书列表。连接器的两种做法（frpc / 路由器转发）按设置里的家名服务选。
+    pub(super) fn wanted(target: &Target, public: bool) -> (bool, bool) {
         let federation = !crate::matrix::federation_config::is_private(&target.domain);
-        (federation, true)
+        (federation, public)
     }
 }

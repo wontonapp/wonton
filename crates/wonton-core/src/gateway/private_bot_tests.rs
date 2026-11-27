@@ -114,19 +114,21 @@ async fn own_ready_identity_survives_matching_reservation_and_role_closure() {
     assert_eq!(identity.bot, reference);
     assert_eq!(identity.user_id, "@mia-bot:test");
 
-    rig.home.members.set_role("mia", "friend").unwrap();
+    rig.home.members.set_role("mia", "admin").unwrap();
     let role_closed = rig.read(MY_PRIVATE_BOT_PATH).await;
     assert_eq!(role_closed.status, StatusCode::OK, "{}", role_closed.text());
     assert_eq!(role_closed.json(), reply.json());
 }
 
+/// 不要私人 Bot 的人（角色里没有，或者自己没选）是“不适用”，和“有私人 Bot 但还没建好”分开：
+/// 前者用默认 Bot，后者等建好。
 #[tokio::test]
-async fn absence_is_distinct_from_unreserved_or_reserved_creation() {
+async fn no_private_bot_is_not_applicable_and_pending_is_distinct() {
     let none = Rig::start(false, None, None).await;
     let reply = none.read(MY_PRIVATE_BOT_PATH).await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
     assert_eq!(reply.json()["requester_user_id"], "@mia:test");
-    assert_eq!(reply.json()["result"]["state"], "absent");
+    assert_eq!(reply.json()["result"]["state"], "not_applicable");
 
     let no_matrix = send_as(
         &none.home.app,
@@ -285,7 +287,7 @@ async fn invalid_or_unknown_home_room_keeps_verified_identity_without_a_target()
     assert_eq!(unknown.status, StatusCode::OK, "{}", unknown.text());
     assert_eq!(unknown.json()["result"]["user_id"], "@mia-bot:test");
     assert!(unknown.json()["result"]["home_room"].is_null());
-    assert!(unknown.json()["result"]["room_problem"].is_null());
+    assert_eq!(unknown.json()["result"]["room_problem"], "missing");
 }
 
 #[test]

@@ -36,6 +36,7 @@ fn tab(view: &BotView, path: Option<&str>) -> TabRef {
 
 fn publish(rig: &Rig, bots: Vec<BotView>) {
     rig.chat.send_replace(ChatViewModel {
+        ask: None,
         bots,
         ..empty_chat()
     });

@@ -45,6 +45,7 @@ chat-ask-invalid-bot-id = デフォルトのエージェントのIDの形式が�
 # 既存のダイレクトチャットのルームIDを解析できない場合に表示します。
 chat-ask-invalid-room-id = ダイレクトチャットのルームIDが無効です。
 
+
 chat-invalid-action = チャット操作ではありません
 
 # シェルからコアの知らない回答が渡されたときに表示します。
@@ -99,3 +100,7 @@ chat-op-agent-answer-failed = 選択肢に回答できませんでした：{ $er
 
 # 附言没进发送队列或没被服务器收下，转发也没发。
 chat-forward-comment-failed = コメントを送信できなかったため、転送しませんでした：{ $error }
+chat-ask-failed-not-in-room = このルームは Bot とのダイレクトチャットではありません。
+chat-ask-failed-contact-required = この Bot はまだあなたを連絡先として登録していません。
+chat-ask-failed-forbidden = Bot がこのメッセージを受け取りませんでした。
+chat-ask-failed-not-ready = まだ準備できていません。

@@ -128,3 +128,12 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = Not sent: the home server refused it. ({ $error })
+
+chat-ask-failed-no-bot = There is no Bot you can ask.
+chat-ask-failed-bot-not-ready = This Bot isn't ready yet.
+chat-ask-failed-bot-problem = This Bot's home room is broken.
+chat-ask-failed-read-only-room = This is a notification channel and doesn't reach a Bot.
+chat-ask-failed-transport = Can't reach your home server.
+chat-ask-failed-upstream = Your home server had a problem.
+chat-ask-failed-other = The message couldn't be sent.
+chat-ask-target-missing = No target.

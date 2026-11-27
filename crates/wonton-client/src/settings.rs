@@ -695,6 +695,7 @@ mod tests {
     /// 引导前后都不会变的一份聊天状态。
     fn chat_view_model() -> ChatViewModel {
         ChatViewModel {
+            ask: None,
             chat_layout_default: Default::default(),
             account: wonton_protocol::ChatAccount::SignedOut,
             sync: wonton_protocol::ChatSync::Idle,

@@ -159,6 +159,17 @@ impl Home {
             Some("wonton-core".into()),
         )
         .with_reload_addr(reload_addr);
+        let access = Arc::new(
+            crate::entry_access::EntryAccess::open(install.join("core/entry-access.json")).unwrap(),
+        );
+        access
+            .save(wonton_protocol::PublicAccess { enabled: true })
+            .unwrap();
+        let entry = Arc::new(crate::entry_access::EntryAdmin::new(
+            access,
+            Some(Arc::new(entry)),
+            install.clone(),
+        ));
         let gateway = gateway(&h)
             .with_clients(Some(domain))
             .with_entry(Some(entry))

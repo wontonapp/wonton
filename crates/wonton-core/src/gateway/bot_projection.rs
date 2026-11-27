@@ -7,7 +7,7 @@ use hyper::{HeaderMap, StatusCode};
 use ruma_common::UserId;
 use wonton_protocol::{
     BotChatAvailability, BotKeeper, BotRef, ContactState, DefaultBotVisibility, InstalledPlugin,
-    MemberStatus, Onboarding, PluginDetail,
+    MemberStatus, Onboarding, OwnPrivateBotResult, PluginDetail,
 };
 
 use super::api::{self, error_response};
@@ -67,6 +67,13 @@ pub(super) fn identity(
         };
         Some((member, role))
     };
+    // 有本人私人 Bot 的人，默认 Agent 就是它：引导、插件详情、桌面小组件三处同一条。
+    // 角色里没有私人 Bot、或者自己选了不要的人拿到的结果是 NotApplicable，继续走插件的默认 Bot。
+    if !person.is_owner()
+        && let Some(answer) = private_bot_identity(gateway, peer, headers, person, id)?
+    {
+        return Ok(answer);
+    }
     let has_record = matches!(
         &facts.contact,
         PersonContactFacts::Record(PersonContactRecordRead::Person { .. })
@@ -118,6 +125,38 @@ pub(super) fn identity(
     }
     api::current_requester(gateway, peer.map(Extension), headers, expected)?;
     visible_identity(confirmed.user_id, caller_user_id)
+}
+
+/// 本人私人 Bot 作为默认 Agent 的投影；只有身份已经核实（Ready）才用它。
+/// 角色里没有私人 Bot、还没建好、读不出来都继续看插件的默认 Bot，不让一次读取把插件列表打成错误。
+fn private_bot_identity(
+    gateway: &Gateway,
+    peer: Option<TunnelPeer>,
+    headers: &HeaderMap,
+    expected: &Person,
+    plugin: &PluginId,
+) -> Result<Option<(Option<String>, DefaultBotVisibility)>, Box<Response>> {
+    let Ok((_, result)) =
+        super::private_bot::result_for_person(gateway, peer.map(Extension), headers, expected)
+    else {
+        return Ok(None);
+    };
+    let OwnPrivateBotResult::Ready(identity) = result else {
+        return Ok(None);
+    };
+    // 私人 Bot 只属于它自己的插件；别的插件继续用自己的默认 Bot，免得多份 Bot 视图全指向同一个用户。
+    if identity.bot.plugin_id != plugin.as_str() {
+        return Ok(None);
+    }
+    // 和用默认 Bot 时一样，在交出身份前后各核一次请求者。
+    if let Some(denied) = api::plugin_denied(gateway, peer.map(Extension), headers) {
+        return Err(Box::new(denied));
+    }
+    api::current_requester(gateway, peer.map(Extension), headers, expected)?;
+    Ok(Some((
+        Some(identity.user_id),
+        DefaultBotVisibility::Visible,
+    )))
 }
 
 fn visible_identity(

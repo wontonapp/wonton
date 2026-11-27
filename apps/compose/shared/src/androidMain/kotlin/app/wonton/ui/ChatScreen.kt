@@ -190,7 +190,23 @@ fun ChatRoute(
     }
 
     viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.Chat(ChatAction.DismissChatProblem)) } }
+    AskFailureHost(navigation, core) { rejection = it }
     rejection?.let { ProblemDialog(it) { rejection = null } }
+}
+
+/** 问 Bot 的失败提示；没有失败时什么都不画，ChatRoute 里不用再开一个分支。 */
+@Composable
+private fun AskFailureHost(
+    navigation: ChatNavigation,
+    core: ClientCore,
+    onRejected: (Problem) -> Unit,
+) {
+    val failure = navigation.ask.askFailure ?: return
+    AskFailureDialog(
+        failure = failure,
+        onRetry = { navigation.ask.retryAsk(core)?.let(onRejected) },
+        onDismiss = { navigation.ask.askFailure = null },
+    )
 }
 
 @Composable
