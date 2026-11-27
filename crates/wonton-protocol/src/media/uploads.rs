@@ -58,6 +58,12 @@ pub struct UploadFinished {
     pub duplicate: bool,
 }
 
+/// 当前已收字节。`PATCH /uploads/{id}` 成功（200）和偏移对不上（409）都回它；核心的上传路由也回它。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UploadOffset {
+    pub upload_offset: u64,
+}
+
 /// `POST /uploads/check` 的体。一次最多 1000 个，多的分批问。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct UploadCheck {
