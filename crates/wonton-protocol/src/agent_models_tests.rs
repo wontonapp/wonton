@@ -30,7 +30,12 @@ fn command_input_is_one_flat_json_object_with_op() {
 fn every_op_has_a_snake_case_name() {
     let ops = [
         (ModelsOp::Catalog, "catalog"),
-        (ModelsOp::Disconnect { provider: "x".into() }, "disconnect"),
+        (
+            ModelsOp::Disconnect {
+                provider: "x".into(),
+            },
+            "disconnect",
+        ),
         (
             ModelsOp::LoginStart {
                 provider: "x".into(),
@@ -38,7 +43,12 @@ fn every_op_has_a_snake_case_name() {
             },
             "login_start",
         ),
-        (ModelsOp::LoginPoll { session: "s".into() }, "login_poll"),
+        (
+            ModelsOp::LoginPoll {
+                session: "s".into(),
+            },
+            "login_poll",
+        ),
         (
             ModelsOp::LoginFinish {
                 session: "s".into(),
@@ -46,8 +56,18 @@ fn every_op_has_a_snake_case_name() {
             },
             "login_finish",
         ),
-        (ModelsOp::LoginCancel { session: "s".into() }, "login_cancel"),
-        (ModelsOp::Models { provider: "x".into() }, "models"),
+        (
+            ModelsOp::LoginCancel {
+                session: "s".into(),
+            },
+            "login_cancel",
+        ),
+        (
+            ModelsOp::Models {
+                provider: "x".into(),
+            },
+            "models",
+        ),
         (
             ModelsOp::Select {
                 provider: "x".into(),
@@ -66,7 +86,12 @@ fn every_op_has_a_snake_case_name() {
         model: "m".into(),
         confirmed: false,
     };
-    assert!(serde_json::to_value(unconfirmed).unwrap().get("confirmed").is_none());
+    assert!(
+        serde_json::to_value(unconfirmed)
+            .unwrap()
+            .get("confirmed")
+            .is_none()
+    );
 }
 
 #[test]
@@ -116,7 +141,10 @@ fn api_key(url: Option<&str>) -> ModelAuth {
 #[test]
 fn catalog_only_lets_https_key_pages_through() {
     let good = ModelCatalog {
-        providers: vec![provider("a", vec![api_key(Some("https://example.com/keys"))])],
+        providers: vec![provider(
+            "a",
+            vec![api_key(Some("https://example.com/keys"))],
+        )],
         current: None,
     };
     assert!(good.check().is_ok());
@@ -167,7 +195,10 @@ fn login_url_must_be_https_and_interval_is_clamped() {
         interval,
     };
     assert_eq!(
-        login("https://example.com/device", 0).checked().unwrap().interval,
+        login("https://example.com/device", 0)
+            .checked()
+            .unwrap()
+            .interval,
         MIN_LOGIN_POLL_SECS
     );
     assert_eq!(
@@ -208,8 +239,14 @@ fn paths_encode_ids_into_single_segments() {
         agent_model_login_finish_path("p", "b", "a/b"),
         "/_wonton/api/bots/p/b/models/logins/a%2Fb/finish"
     );
-    assert_eq!(agent_model_current_path("p", "b"), "/_wonton/api/bots/p/b/models/current");
-    assert_eq!(agent_model_test_path("p", "b"), "/_wonton/api/bots/p/b/models/test");
+    assert_eq!(
+        agent_model_current_path("p", "b"),
+        "/_wonton/api/bots/p/b/models/current"
+    );
+    assert_eq!(
+        agent_model_test_path("p", "b"),
+        "/_wonton/api/bots/p/b/models/test"
+    );
     assert_eq!(
         agent_model_login_start_path("p", "b", "nous"),
         "/_wonton/api/bots/p/b/models/providers/nous/login"

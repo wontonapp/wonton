@@ -100,6 +100,18 @@ pub use agent_chain::{
     ChainRefusal, ChainTurnGrant, ChainTurnReport, SESSION_HEADER, WONTON_BOT_HEADER,
     WONTON_ON_BEHALF_OF_HEADER, agent_chain_stop_path,
 };
+pub use agent_models::{
+    AgentModelsFailure, BaseUrlField, EXIT_INVALID_INPUT, EXIT_NOT_READY, EXIT_UNKNOWN_TARGET,
+    FinishModelLogin, KeyCheck, KeyCheckResult, LoginState, MAX_LOGIN_POLL_SECS,
+    MAX_MODEL_PROVIDERS, MAX_MODELS_ID_CHARS, MAX_MODELS_OUTPUT_BYTES, MAX_MODELS_TEXT_CHARS,
+    MAX_PROVIDER_MODELS, MIN_LOGIN_POLL_SECS, MODEL_LOGIN_REDIRECT_URI, MODELS_TEST_TIMEOUT_SECS,
+    MODELS_TIMEOUT_SECS, ModelAuth, ModelCatalog, ModelChoice, ModelList, ModelLogin,
+    ModelLoginState, ModelOption, ModelProvider, ModelSelection, ModelTest, ModelTestResult,
+    ModelsCommandInput, ModelsInvalidInput, ModelsOp, ModelsOutputProblem, SaveModelKey,
+    SelectModel, StartModelLogin, agent_model_current_path, agent_model_list_path,
+    agent_model_login_finish_path, agent_model_login_path, agent_model_login_start_path,
+    agent_model_provider_path, agent_model_test_path, agent_models_path, is_browser_url,
+};
 pub use agent_outbox::{
     OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult, SEND_MESSAGE_TOOL,
     SendMessageRequest,
@@ -205,18 +217,6 @@ pub use egress::{
     EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState, EgressProbe, EgressProblem,
     EgressProxyProvider, EgressProxySettings, EgressProxySource, EgressProxyUpdate, EgressRestart,
     EgressViewModel, LanWebuiUpdate,
-};
-pub use agent_models::{
-    AgentModelsFailure, BaseUrlField, EXIT_INVALID_INPUT, EXIT_NOT_READY, EXIT_UNKNOWN_TARGET,
-    FinishModelLogin, KeyCheck, KeyCheckResult, LoginState, MAX_LOGIN_POLL_SECS,
-    MAX_MODEL_PROVIDERS, MAX_MODELS_ID_CHARS, MAX_MODELS_OUTPUT_BYTES, MAX_MODELS_TEXT_CHARS,
-    MAX_PROVIDER_MODELS, MIN_LOGIN_POLL_SECS, MODEL_LOGIN_REDIRECT_URI, MODELS_TEST_TIMEOUT_SECS,
-    MODELS_TIMEOUT_SECS, ModelAuth, ModelCatalog, ModelChoice, ModelList, ModelLogin,
-    ModelLoginState, ModelOption, ModelProvider, ModelSelection, ModelTest, ModelTestResult,
-    ModelsCommandInput, ModelsInvalidInput, ModelsOp, ModelsOutputProblem, SaveModelKey,
-    SelectModel, StartModelLogin, agent_model_current_path, agent_model_list_path,
-    agent_model_login_finish_path, agent_model_login_path, agent_model_login_start_path,
-    agent_model_provider_path, agent_model_test_path, agent_models_path, is_browser_url,
 };
 pub use error::{CoreError, set_core_error_formatter};
 pub use family::FAMILY_ROOM_SYNC_PATH;
