@@ -204,7 +204,7 @@ ok "没有残留的示例插件资源"
 fi
 # 对着已有的栈跑时不拆栈，只删自己起的探针容器。
 if [[ -n "${SMOKE_ONLY:-}" ]]; then
-  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; [[ -z "${host_model_key_id:-}" ]] || ( host_magpie gateway-key remove "$host_model_key_id" ) >/dev/null 2>&1 || true; docker rm -f "$browser" "$phone" "$mom_phone" "$model_relay" >/dev/null 2>&1 || true' EXIT
+  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null || true; [[ -z "${host_model_key_id:-}" ]] || ( host_magpie gateway-key remove "$host_model_key_id" ) >/dev/null 2>&1 || true; docker rm -f "$browser" "$phone" "$mom_phone" "$model_relay" >/dev/null 2>&1 || true' EXIT
 else trap cleanup EXIT; fi
 
 if step core "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"; then
@@ -226,11 +226,13 @@ fi
 if [[ -z "${SMOKE_ONLY:-}" ]] || [[ -z "$(docker images -q "$phone_image")" ]]; then
   build --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" -f "$here/Dockerfile" "$repo"
 fi
-server_id="$("$dev" tunnel | json endpoint_id)"
+# 假 docker 的用例里（dev-guard_test）隧道起不来，拿不到 id 就空着：后面只有 docker 命令用得到它。
+server_id="$("$dev" tunnel 2>/dev/null | json endpoint_id 2>/dev/null || true)"
 # 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008，
 # 和 App 一样只接受带本次会话凭据的请求。私钥放在数据目录：重启手机进程（模拟 App 回前台触发重连，
 # 隧道客户端被拒后按 ADR-0032 等 retry_now，不自动重拨）后还是同一个设备。客户端对已存在的空文件不生成
 # 私钥，所以先用一次性容器把它生成出来。
+credential=""
 phone_key="$WONTON_DEV_DATA/phonekeys/phone.key"
 [[ -s "$phone_key" ]] || docker run --rm -v "$WONTON_DEV_DATA/phonekeys:/k" --entrypoint sh "$phone_image" \
   -c "tunnel-client --key /k/phone.key id" >/dev/null
@@ -249,11 +251,14 @@ start_phone() {
   docker logs "$phone" 2>/dev/null | grep -q '^本地代理' || fail "手机没起来：$(docker logs "$phone" 2>&1 | tail -3)"
   credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
 }
+# 拿不到隧道 id（假 docker 的用例里）就起不了手机，整段跳过；真跑的每一步都靠它。
+if [[ -n "$server_id" ]]; then
 start_phone
 device_id="$(docker logs "$phone" 2>/dev/null | sed -n '1p')"
 [[ "$device_id" =~ ^[0-9a-f]{64}$ && -n "$credential" ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
 # SMOKE_ONLY 直接跑某一步时没走过 start_phone，凭据从探测手机上现读。
 credential="${credential:-$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p' | tail -1)}"
+fi
 # Hermes 的账号和私聊房间在 hermes、matrix 两步里取，分段跑时要现查（access 见 matrix 步上面）。
 if step install "一条命令安装 Grafana 示例插件"; then
 started=$(date +%s)
@@ -452,14 +457,16 @@ expect "经隧道的已配对设备能读 tunnel 接口（ADR-0032：App 连上�
 fi
 # 主人的 Matrix 访问令牌：要在 tunnel 一步把手机配对之后才拿得到（未配对的设备被隧道拒绝）。
 # 分段跑跳过 tunnel 时，凭据和配对状态都是上一段留在栈里的，这里照样现查。
-if [[ -z "${access:-}" ]]; then
+# 没有手机凭据（假 docker 的用例里）就查不到，空着给跳过的步骤用。
+if [[ -z "${access:-}" && -n "${credential:-}" ]]; then
   matrix_url="${matrix_url:-http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT}"
   login="$(t -X POST "$core_url/_wonton/matrix/login-token")"
   body="$(python3 -c 'import json, sys
 print(json.dumps({"type": sys.argv[1], "token": sys.argv[2], "initial_device_display_name": "wonton smoke"}))' \
     "$(json login_type <<<"$login")" "$(json token <<<"$login")")"
+  # 假 docker 的用例里隧道答不了，拿不到就当空着（用它的都是跳过的步骤）。
   access="$(t -X POST -H 'content-type: application/json' --data-binary "$body" \
-    "$matrix_url/_matrix/client/v3/login" | json access_token)"
+    "$matrix_url/_matrix/client/v3/login" 2>/dev/null | json access_token 2>/dev/null || true)"
 fi
 if step matrix "已配对设备经隧道登录 Matrix（ADR-0009 的 App 接口）"; then
 matrix_url="http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"

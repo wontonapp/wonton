@@ -38,6 +38,12 @@ pending_cards() { latest_card | tr ' ' '\n' | awk 'prev != "" && $0 == "pending"
 # 分段跑对着保留下来的栈时，前面几步的变量都没有：凭据、Hermes 的账号和私聊、主人的 Matrix 令牌现查一次。
 # 放在这里而不是加载时：它要用 start_phone 起出来的凭据，也要用上面的 chains。
 seed_smoke_only() {
+  # 没有手机凭据（假 docker 的用例里隧道起不来）就查不到，留着空给跳过的步骤用。
+  if [[ -z "${credential:-}" ]]; then
+    hermes_user="${hermes_user:-}"
+    hermes_room="${hermes_room:-}"
+    return
+  fi
   # 房间先看链的记录（核心一侧，不用 Matrix 令牌），再看主人的 m.direct，最后看 Hermes 的日志。
   if [[ -z "${hermes_room:-}" ]]; then
     # 手机重起过，上一轮的会话 Cookie 还留在罐里，会让 Matrix 请求按旧会话认人（M_UNKNOWN_TOKEN）。
@@ -211,11 +217,15 @@ print(next((c["state"] for c in json.load(sys.stdin)["contacts"] if c["user_id"]
 if [[ -n "${SMOKE_ONLY:-}" ]]; then
 seed_smoke_only
 # 上一次被中断的轮次没报结束，会话还挂在跑着的链上，再说一句话就会被核心拒（“已登记在别的链上”）：先都停掉。
-for chain in $(t "$core_url/_wonton/api/agent/chains" | python3 -c 'import json, sys
-for row in json.load(sys.stdin)["chains"]:
-    if row["status"] == "running":
-        print(row["chain"])'); do
-  t -X POST "$core_url/_wonton/api/agent/chains/$chain/stop" >/dev/null ||
+# 用 owner 令牌问一次就够（假 docker 的用例里拿不到，按没有链处理）。
+running="$("$dev" api GET /_wonton/api/agent/chains 2>/dev/null || true)"
+for chain in $(python3 -c 'import json, sys
+try:
+    rows = json.load(sys.stdin)["chains"]
+except Exception:
+    rows = []
+print("\n".join(r["chain"] for r in rows if r["status"] == "running"))' <<<"$running"); do
+  "$dev" api POST "/_wonton/api/agent/chains/$chain/stop" >/dev/null ||
     fail "停不掉上一次留下的链 $chain"
 done
 if ! docker inspect "$model_relay" >/dev/null 2>&1; then
