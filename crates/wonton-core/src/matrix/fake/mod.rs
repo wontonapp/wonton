@@ -5,6 +5,7 @@
 
 mod account;
 mod http;
+mod media;
 mod rooms;
 mod state;
 
@@ -12,10 +13,8 @@ use std::sync::Arc;
 
 use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
-use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Path, State};
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::extract::DefaultBodyLimit;
+use axum::http::StatusCode;
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use base64::Engine as _;
@@ -29,7 +28,7 @@ use self::account::{
     get_profile, get_room_account_data, login, logout, put_account_data, put_room_account_data,
     query_user, register, set_profile, sync, whoami,
 };
-use self::http::{Reply, auth, error, ok, reply};
+use self::media::{download, upload};
 use self::rooms::{
     directory_room, get_direct, join, joined_members, member_state, membership, put_direct,
     send_message,
@@ -37,44 +36,6 @@ use self::rooms::{
 pub use self::state::*;
 
 use crate::config::MatrixConfig;
-
-async fn upload(State(fake): State<Fake>, headers: HeaderMap, body: Bytes) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).map(|(user, _)| {
-        let content_type = headers
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default()
-            .to_owned();
-        state.media.push((content_type, body.to_vec()));
-        let id = state.next("media");
-        state.media_uploaders.push(user);
-        let index = state.media.len() - 1;
-        state
-            .media_ids
-            .insert(format!("mxc://{SERVER}/{id}"), index);
-        ok(json!({"content_uri": format!("mxc://{SERVER}/{id}")}))
-    }))
-}
-
-async fn download(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Path((server, id)): Path<(String, String)>,
-) -> Response {
-    let mut state = fake.state();
-    let (user, _) = match auth(&state, &headers) {
-        Ok(auth) => auth,
-        Err(error) => return error.into_response(),
-    };
-    state.media_downloaders.push(user);
-    let url = format!("mxc://{server}/{id}");
-    let Some(index) = state.media_ids.get(&url) else {
-        return error(StatusCode::NOT_FOUND, "M_NOT_FOUND").into_response();
-    };
-    let (content_type, data) = &state.media[*index];
-    ([("content-type", content_type.clone())], data.clone()).into_response()
-}
 
 /// 空状态的假服务器和一张新签发密钥的私钥 PEM。
 fn new_fake() -> (Fake, String) {
