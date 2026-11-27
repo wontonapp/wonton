@@ -188,11 +188,11 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
         canPop(navigation) || dismissing(navigation) != nil
     }
 
-    /// 旁聊盖着时外面房间的栈不退（`keepsRoomOnSideChat`）；盖子里自己的栈照常退。
+    /// 旁聊盖着时外面房间的栈不退（`suppressesEdgePop`）；盖子里自己的栈照常退。
     private func canPop(_ navigation: UINavigationController) -> Bool {
         navigation.viewControllers.count > 1
             && navigation.transitionCoordinator?.isAnimated != true
-            && (dismiss != nil || !UINavigationController.keepsRoomOnSideChat)
+            && (dismiss != nil || !UINavigationController.suppressesEdgePop)
     }
 
     /// 根页上、标过能关的盖子：返回要关掉的那个盖子。
