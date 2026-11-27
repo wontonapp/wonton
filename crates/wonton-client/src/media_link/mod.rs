@@ -163,11 +163,14 @@ impl MediaLink {
 
     pub(crate) fn dispatch(self: &Arc<Self>, action: MediaAction) -> Result<(), CoreError> {
         match action {
-            MediaAction::StartUpload { .. } | MediaAction::StartDownload { .. } => {
-                Err(CoreError::NotReady {
-                    reason: "upload and download bytes belong to the transfer executor, which this client core does not have yet".into(),
-                })
-            }
+            MediaAction::StartUpload { .. }
+            | MediaAction::StartDownload { .. }
+            | MediaAction::Backup { .. }
+            // 壳发来的这几种动作：执行器归 ADR-0113 的 M18（上传、`backup`）和 M19（下载、`delete_offline`），
+            // 这一版如实报未就绪，不当成做了。
+            | MediaAction::DeleteOffline { .. } => Err(CoreError::NotReady {
+                reason: "this client core cannot run uploads, downloads, backups or offline deletions yet; the transfer executor is not built".into(),
+            }),
             // 新核心发的新动作，这一版跳过（AGENTS.md 的向前兼容）。
             MediaAction::Other(_) => Ok(()),
             action => {
@@ -218,6 +221,8 @@ impl MediaLink {
             }
             MediaAction::StartUpload { .. }
             | MediaAction::StartDownload { .. }
+            | MediaAction::Backup { .. }
+            | MediaAction::DeleteOffline { .. }
             | MediaAction::Other(_) => {}
         }
         Ok(())

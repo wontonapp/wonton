@@ -346,6 +346,8 @@ pub enum MediaAction {
     Control { session: PlaybackSessionId, ctl: ControlOp },
     Stop { session: PlaybackSessionId, reason: StopReason },
     Queue { person: Person, revision: Revision, op: QueueOp },
+    Backup { kinds: Vec<MediaKind> },            // 设备建上传任务，回执带 `task`；客户端核执行归 M18
+    DeleteOffline { items: Vec<MediaItemRef> },  // 删完照常 `PUT /offline`；客户端核执行归 M19
     Other(String), // 新动作，旧壳跳过这一条、同批其他照常执行
 }
 
@@ -507,7 +509,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/library/{rest}`、`/catalog/{rest}` | `GET`、`POST` | 同提供方的 `/library/…`、`/catalog/…`（第 9、10 节）；可带 `source` | 提供方的回包原样回；核心按 `library`+`photo`、`catalog`+`video` 选提供方，路径原样转、去掉 `source`，`.`、`..`、空段回 `protocol` |
 | `/items/{id}/artwork` | `GET` | 无（query: `kind`，可选 `source`、`type`、`width`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork`，`type`、`width` 原样带过去 |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
-| `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
+| `/commands/{id}/ack` | `POST` | `{seq, ok, failure?, task?}`（`task` 是设备为这条命令建的任务，`backup` 才带） | `204`（幂等） |
 | `/offline` | `PUT` | `{bytes}`：这台设备的离线副本现在一共占多少 | `QuotaView`；这台设备那份记成 `bytes`，别的设备那份不动（规则见 `OfflineUsage`） |
 | `/quota` | `GET` | 无 | `QuotaView`：这个人的两本账，上传是各提供方之和、离线是各设备之和 |
 
@@ -578,7 +580,7 @@ pub fn media_loopback(&self) -> String;
 | --- | --- | --- |
 | `wonton__media_status` | `{kind?, person?}` | 任务与会话列表，带进度与失败原因 |
 | `wonton__backup_now` | `{device?, kinds?}` | `MediaTask` |
-| `wonton__media_download` | `{device, item, kind}` | `MediaTask` |
+| `wonton__media_download` | `{device, item}`（种类在 `item.kind`） | `MediaTask` |
 | `wonton__media_play` | `{device?, item, kind, person?}` | `PlaybackSession` |
 | `wonton__media_control` | `{session, ctl: ControlOp}` | `PlaybackSession` |
 | `wonton__media_queue` | `{op: QueueOp\|read, revision?}` | `Queue` |
@@ -587,6 +589,9 @@ pub fn media_loopback(&self) -> String;
 | `wonton__media_delete` | `{device, items: Vec<MediaItemRef>}` | `204` |
 
 `person` 只能填本轮 `speakers` 里的人；共享 Bot 省略则取唯一说话人，多人必填。
+
+工具名和失败体在 `wonton-protocol` 的 `media/tools.rs`。要设备动手的工具（备份、下载、开播、删离线副本）经命令通道发：设备睡着就推一条
+`{"server", "media_command": {"seq"}}`（`MediaCommandPush`）叫醒它，30 秒没回执回 `{code: "device_no_response", message, reasons}`。
 
 ## 事件名与载荷（只加不改）
 

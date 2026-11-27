@@ -2,12 +2,12 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::MediaItemRef;
 use super::known_or_other;
 use super::session::{
     PlaybackPlan, PlaybackSession, PlaybackSessionId, Queue, QueueMode, Revision,
 };
 use super::task::{ItemState, MediaFailure, Person, Progress, TaskId, TaskKind, TaskState};
+use super::{MediaItemRef, MediaKind};
 
 /// 播放控制动作。新版本新加的动作落在 `Other`，只留原值，载荷丢弃。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,6 +168,15 @@ pub enum MediaAction {
         revision: Revision,
         op: QueueOp,
     },
+    /// 立即跑一次备份（`wonton__backup_now`）：设备照自己的备份设置挑出还没传的，建一个上传任务，回执的
+    /// `task` 带它。`kinds` 空着是这台设备上开了备份的全部种类。
+    Backup {
+        kinds: Vec<MediaKind>,
+    },
+    /// 删掉这台设备上这几项的离线副本（`wonton__media_delete`）。删完设备照常 `PUT /offline` 报一次占用。
+    DeleteOffline {
+        items: Vec<MediaItemRef>,
+    },
     /// 新版本新加的动作，原值在里，载荷丢弃。
     Other(String),
 }
@@ -199,6 +208,12 @@ enum KnownMediaAction {
         revision: Revision,
         op: QueueOp,
     },
+    Backup {
+        kinds: Vec<MediaKind>,
+    },
+    DeleteOffline {
+        items: Vec<MediaItemRef>,
+    },
 }
 
 impl From<KnownMediaAction> for MediaAction {
@@ -218,6 +233,8 @@ impl From<KnownMediaAction> for MediaAction {
                 revision,
                 op,
             },
+            KnownMediaAction::Backup { kinds } => Self::Backup { kinds },
+            KnownMediaAction::DeleteOffline { items } => Self::DeleteOffline { items },
         }
     }
 }
@@ -258,6 +275,14 @@ impl Serialize for MediaAction {
                 map.serialize_entry("revision", revision)?;
                 map.serialize_entry("op", op)?;
             }
+            Self::Backup { kinds } => {
+                map.serialize_entry("kind", "backup")?;
+                map.serialize_entry("kinds", kinds)?;
+            }
+            Self::DeleteOffline { items } => {
+                map.serialize_entry("kind", "delete_offline")?;
+                map.serialize_entry("items", items)?;
+            }
             Self::Other(raw) => map.serialize_entry("kind", raw)?,
         }
         map.end()
@@ -274,7 +299,14 @@ impl<'de> Deserialize<'de> for MediaAction {
             .ok_or_else(|| serde::de::Error::missing_field("kind"))?;
         let known = matches!(
             kind.as_str(),
-            "start_upload" | "start_download" | "playback" | "control" | "stop" | "queue"
+            "start_upload"
+                | "start_download"
+                | "playback"
+                | "control"
+                | "stop"
+                | "queue"
+                | "backup"
+                | "delete_offline"
         );
         if known {
             KnownMediaAction::deserialize(value)
@@ -285,6 +317,17 @@ impl<'de> Deserialize<'de> for MediaAction {
         }
     }
 }
+
+/// 叫醒睡着的设备去取命令的推送（ADR-0113 第 5 节）。明文是 `{"server": …, "media_command": {"seq": N}}`，
+/// 只带 `seq`、不带命令内容：设备醒来照常 `GET /commands` 拉，命令只从那里来。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct MediaCommandPush {
+    pub seq: u64,
+}
+
+/// 推送明文里 [`MediaCommandPush`] 那一段的字段名。
+pub const MEDIA_COMMAND_PUSH_FIELD: &str = "media_command";
 
 /// 核发给设备的命令，`command_id` 幂等，`seq` 单调。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -411,6 +454,26 @@ mod tests {
                 person: "Alice".into(),
                 revision: 4,
                 op: QueueOp::Clear,
+            },
+            MediaAction::Backup {
+                kinds: vec![MediaKind::Photo],
+            },
+            MediaAction::Backup { kinds: Vec::new() },
+            MediaAction::DeleteOffline {
+                items: vec![crate::media::MediaItemRef {
+                    id: "v1".into(),
+                    kind: MediaKind::Video,
+                    title: "第一集".into(),
+                    artist: None,
+                    album: None,
+                    artwork_url: None,
+                    duration_ms: None,
+                    series: None,
+                    index: None,
+                    played: false,
+                    starred: false,
+                    source: None,
+                }],
             },
         ];
         for action in actions {
