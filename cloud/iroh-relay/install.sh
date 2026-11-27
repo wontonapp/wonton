@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # 在公网 Ubuntu 主机上装 iroh 中继：TCP 443 由 nginx 终结 TLS 后反代，中继只监听回环，
 # UDP 7842 的 QUIC 地址发现直接对公网（安全组要放行 7842/udp，下面启动后会自检）。按 cloud/iroh-relay/README.md 的部署一节使用。
+# 本文件里的 808cbd.com 是真实部署域；换域改 DOMAIN/OWNER_DOMAIN。
 #
 # 可以重复跑：已有的 config.toml、令牌、证书都不覆盖；同版本二进制不重下。
 #   bash install.sh                                  # 装服务 + vhost + 签 relay.808cbd.com 的证书

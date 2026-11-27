@@ -36,8 +36,8 @@
 
 换真实域时，改动集中在安装脚本顶部的 `DOMAIN`（只有换掉主域才连 `OWNER_DOMAIN` 一起改）和 nginx vhost 的 `server_name`；`DOMAIN` 还会流到推送地址来源 `relay.json`，一起改。证书目录 `/etc/letsencrypt/live/$DOMAIN`、certbot 的 `-d` 都从 `DOMAIN` 推出来，不用单独改。带域名的 vhost 文件名被脚本按字面引用，改域时文件名和引用一起改。
 
-- iroh relay：`DOMAIN` / `OWNER_DOMAIN`（[install.sh:22](../cloud/iroh-relay/install.sh#L22)）、`server_name`（[relay.808cbd.com.conf:7](../cloud/iroh-relay/nginx/relay.808cbd.com.conf#L7)）。
-- push relay：`DOMAIN` / `OWNER_DOMAIN`（[install.sh:20](../cloud/push-relay/install.sh#L20)）、`server_name`（[push.808cbd.com.conf:6](../cloud/push-relay/nginx/push.808cbd.com.conf#L6)）、推送地址来源（[relay.json:5](../cloud/push-relay/relay.json#L5)）。
+- iroh relay：`DOMAIN` / `OWNER_DOMAIN`（[install.sh:23](../cloud/iroh-relay/install.sh#L23)）、`server_name`（[relay.808cbd.com.conf:8](../cloud/iroh-relay/nginx/relay.808cbd.com.conf#L8)）。
+- push relay：`DOMAIN` / `OWNER_DOMAIN`（[install.sh:21](../cloud/push-relay/install.sh#L21)）、`server_name`（[push.808cbd.com.conf:7](../cloud/push-relay/nginx/push.808cbd.com.conf#L7)）、推送地址来源（[relay.json:5](../cloud/push-relay/relay.json#L5)）。relay.json 的 `origin` 也是真实值；JSON 不能写注释，只能改值。
 - 一次看全其他硬编码：`rg -n '808cbd\.com' cloud crates`（`uninstall.sh`、`cert-deploy-hook.sh`、`verify.sh` 和 bootstrap vhost 里也有）。
 
 `omarchy.online` 不是 Wonton 的域，换 Wonton 域不用动它；只有整台机换域才一起改，见 [iroh README](../cloud/iroh-relay/README.md)。

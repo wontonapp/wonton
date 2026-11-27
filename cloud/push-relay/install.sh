@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 在公网主机上装推送中继。可以重复跑：已有的配置、密钥和证书都不覆盖。
+# 本文件里的 808cbd.com 是真实部署域；换域改 DOMAIN/OWNER_DOMAIN。
 #
 #   bash install.sh                 # 装服务 + vhost + 签 push.808cbd.com 的证书
 #   bash install.sh --no-cert       # 只装服务，不碰证书
