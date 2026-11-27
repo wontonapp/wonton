@@ -77,11 +77,14 @@ run_container() {
     if [[ $_rc == 124 ]]; then
       # 客户端超时了，容器可能还是建成了：等它现身，省得下一次撞自己的名。
       for _ in $(seq 30); do
-        if _out="$(docker inspect -f '{{.Id}}' "$_name" 2>/dev/null)"; then
+        _rc=0
+        _out="$(timeout 15 docker inspect -f '{{.Id}}' "$_name" 2>/dev/null)" || _rc=$?
+        if [[ $_rc == 0 ]]; then
           timeout 60 docker start "$_name" >/dev/null 2>&1 || true
           printf '%s\n' "$_out"
           return 0
         fi
+        [[ $_rc == 124 ]] && continue 2
         sleep 2
       done
       continue
@@ -90,9 +93,11 @@ run_container() {
       printf '%s\n' "$_out" >&2
       return 1
     }
-    # 占着名字的那个删不掉时先挪开：改名字只动元数据，不用等它停。
-    timeout 30 docker rm -f "$_name.stale" >/dev/null 2>&1 || true
-    timeout 30 docker rename "$_name" "$_name.stale" >/dev/null 2>&1 || true
+    # 占着名字的那个删不掉时先挪开：改名字只动元数据，不用等它停；目标带序号，免得挪到一半的也撞名。
+    # 挪开的进程还活着，会继续占着本地代理的固定端口（18008 等），杀掉才算把位置让出来。
+    if timeout 30 docker rename "$_name" "$_name.stale.$_try" >/dev/null 2>&1; then
+      timeout 20 docker kill "$_name.stale.$_try" >/dev/null 2>&1 || true
+    fi
     sleep 1
   done
   printf '%s\n' "$_out" >&2
