@@ -49,4 +49,9 @@
     <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
     <string name="chat_status_reconnecting">再接続しています…</string>
     <string name="chat_plugin_starting">エージェントを起動中…</string>
+    <string name="chat_ask_failed_no_bot">質問できる Bot がありません。</string>
+    <string name="chat_ask_failed_bot_problem">この Bot のホームルームが壊れています。</string>
+    <string name="chat_ask_failed_not_in_room">このルームは Bot とのダイレクトチャットではありません。</string>
+    <string name="chat_ask_failed_forbidden">Bot がこのメッセージを受け取りませんでした。</string>
+    <string name="chat_ask_failed_not_ready">まだ準備できていません。</string>
 </resources>

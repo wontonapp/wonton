@@ -213,6 +213,8 @@ struct Core {
     sync_recording_released: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
+    /// 本人的私人 Bot 接口应答：没有就是没有这个接口（404）。
+    own_private_bot: Mutex<Option<Value>>,
     /// `GET /_wonton/api/me` 的资料，`PUT` 改名字和邮箱。
     me: Mutex<Value>,
     /// “添加设备”发的配对码（`POST /_wonton/api/pairing-codes`），隧道起来后填上；每次要码换一个新 secret。
@@ -303,6 +305,7 @@ impl Core {
             sync_recording_held: watch::Sender::new(None),
             sync_recording_released: watch::Sender::new(false),
             onboarding: Mutex::default(),
+            own_private_bot: Mutex::default(),
             me: Mutex::new(serde_json::json!({
                 "user_id": OWNER,
                 "username": "owner",
@@ -448,6 +451,11 @@ impl Home {
     /// 设置假核心的引导状态；没设置时引导接口回 404。
     pub fn set_onboarding(&self, onboarding: Value) {
         *self.core.onboarding.lock().unwrap() = Some(onboarding);
+    }
+
+    /// 设置假核心的“本人私人 Bot”应答；没设置时这个接口回 404，客户端显示读取问题。
+    pub fn set_own_private_bot(&self, own_private_bot: Value) {
+        *self.core.own_private_bot.lock().unwrap() = Some(own_private_bot);
     }
 
     /// 设置假核心的已装列表应答；没设置时这个接口回 404。

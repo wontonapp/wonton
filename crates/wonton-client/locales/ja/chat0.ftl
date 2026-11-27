@@ -116,3 +116,12 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = 送れませんでした：自宅サーバーに拒否されました。（{ $error }）
+
+chat-ask-failed-no-bot = 質問できる Bot がありません。
+chat-ask-failed-bot-not-ready = この Bot はまだ準備できていません。
+chat-ask-failed-bot-problem = この Bot のホームルームが壊れています。
+chat-ask-failed-read-only-room = ここは通知チャンネルで、Bot には届きません。
+chat-ask-failed-transport = 家のサーバーに接続できません。
+chat-ask-failed-upstream = 家のサーバーでエラーが起きました。
+chat-ask-failed-other = メッセージを送信できませんでした。
+chat-ask-target-missing = 目標がありません。

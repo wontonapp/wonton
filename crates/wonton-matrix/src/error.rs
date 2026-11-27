@@ -8,6 +8,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     encryption_sync_service, notification_client, room_list_service, sync_service, timeline,
 };
+use wonton_protocol::GatewayRefusal;
 
 /// 本 crate 的结果类型。
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -88,6 +89,16 @@ impl Error {
         match self {
             Self::Forbidden { errcode, message } => Self::Unauthorized { errcode, message },
             other => other,
+        }
+    }
+
+    /// 网关拒绝的类别：网关在 403 响应体的 `errcode` 里写 [`GatewayRefusal`]；普通 403 或别的错误为空。
+    /// Matrix SDK 读不到响应头，`errcode` 是唯一带得回来的类别。
+    #[must_use]
+    pub fn gateway_refusal(&self) -> Option<GatewayRefusal> {
+        match self {
+            Self::Forbidden { errcode, .. } => GatewayRefusal::from_errcode(errcode),
+            _ => None,
         }
     }
 }
