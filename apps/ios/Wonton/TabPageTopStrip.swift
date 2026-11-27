@@ -52,13 +52,13 @@ extension TabWebSession {
     }
 
     #if DEBUG
-    /// 界面测试的假数据没有隧道，整页里加载得出来的只有公网网页；设了这个，它照应用页排（没有胶囊、注入取色脚本），
-    /// `PageInsetsUITests` 才量得到真网页在应用页上的位置和顶条的颜色。
+    /// 假数据没有隧道，整页里加载得出来的只有公网网页；设了这个，它照应用页排（没有胶囊、注入取色脚本），
+    /// 走查才看得到真网页在应用页上的位置和顶条的颜色。
     static let urlAsAppPage = ProcessInfo.processInfo.environment["WONTON_UI_URL_AS_APP_PAGE"] == "1"
     #endif
 
     /// 建 WebView 时装通道。插件页的脚本在 `configure` 里和别的用户脚本一起装（那里会先清空）；
-    /// 界面测试里照应用页排的公网网页不走那一段，脚本在这里装。
+    /// 走查里照应用页排的公网网页不走那一段，脚本在这里装。
     func installTopColorChannel(_ controller: WKUserContentController) {
         guard reportsTopColor else { return }
         controller.add(WeakTabMessageHandler(self), name: "wontonPageColor")

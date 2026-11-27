@@ -83,8 +83,8 @@ extension TabWebSession: WKNavigationDelegate {
             } catch { problem = error.problem }
         }
         #if DEBUG
-        // 夜跑的网页媒体权限用例（wonton-media-capture-test）：真插件页没有现成的麦克风入口，
-        // XCUITest 也执行不了网页脚本，页面加载完在页面里要一次麦克风，出壳的询问弹窗。
+        // 网页媒体权限的走查（wonton-media-capture-test）：真插件页没有现成的麦克风入口，
+        // 页面加载完在页面里要一次麦克风，出壳的询问弹窗。
         if ProcessInfo.processInfo.arguments.contains("wonton-media-capture-test") {
             // 首句实锤插件页的安全上下文（*.wonton.localhost 按安全上下文算）；结果看走查日志里的 "Wonton media probe"。
             webView.evaluateJavaScript(

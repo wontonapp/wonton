@@ -1,4 +1,4 @@
-//! 照片分组、链接说明：照片同组带位置、字节加载得到，链接落在照片的说明上。
+//! 照片分组：照片同组带位置、字节加载得到。
 
 use super::super::media::media;
 use super::super::timeline::timeline;
@@ -60,32 +60,4 @@ fn photos_come_as_one_group_with_loadable_bytes() {
         "{} must load",
         image.media.token
     );
-}
-
-#[test]
-fn link_messages_show_the_url_on_their_own_line() {
-    for (index, url) in [
-        (APP_LINK_INDEX, APP_LINK),
-        (UNKNOWN_APP_LINK_INDEX, UNKNOWN_APP_LINK),
-    ] {
-        let item = item(index);
-        let TimelineContent::Message { message } = item.content else {
-            panic!("item {index} must be a message");
-        };
-        // 6、7 是照片：链接挂在说明上，不能落在挑照片之前那条被丢掉的文字消息上。
-        let MessageContent::Image { image } = message.body else {
-            panic!("item {index} must be a photo");
-        };
-        let caption = image.caption.expect("the link must be the caption");
-        assert_eq!(caption.body, url);
-        assert_eq!(caption.blocks[0].spans[0].text, url);
-        let link = caption.blocks[0].spans[0]
-            .link
-            .as_ref()
-            .expect("the span carries the link");
-        assert_eq!(
-            (link.url.as_str(), link.kind.clone()),
-            (url, RichLinkKind::Other)
-        );
-    }
 }

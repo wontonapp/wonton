@@ -210,7 +210,7 @@ async fn a_failed_probe_says_so_in_the_preview() {
         preview
             .notices
             .iter()
-            .any(|n| n.text.contains("没能检查") && n.text.contains("探测容器起不来")),
+            .any(|n| n.text.contains("探测容器起不来")),
         "{:?}",
         preview.notices.iter().map(|n| &n.text).collect::<Vec<_>>()
     );

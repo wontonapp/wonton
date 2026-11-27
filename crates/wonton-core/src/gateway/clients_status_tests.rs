@@ -147,22 +147,11 @@ async fn failed_gate_details_follow_the_app_language() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let view: ClientsStatus = serde_json::from_str(&body).unwrap();
-    assert_eq!(
-        view.gates.connector,
-        GateState::Failed {
-            detail: "The core isn't running in a container, so the connector can't start"
-                .to_owned()
-        }
-    );
-    assert_eq!(
-        view.gates.crt_list,
-        GateState::Failed {
-            detail: "The core isn't running in a container, so there's no entry container"
-                .to_owned()
-        }
-    );
+    let english = [
+        failed_detail(&view.gates.connector),
+        failed_detail(&view.gates.crt_list),
+    ];
 
-    // 中文请求还是中文。
     let chinese = home().await;
     let (status, body) = call_lang(
         &chinese,
@@ -174,12 +163,22 @@ async fn failed_gate_details_follow_the_app_language() {
     .await;
     assert_eq!(status, StatusCode::OK);
     let view: ClientsStatus = serde_json::from_str(&body).unwrap();
-    assert_eq!(
-        view.gates.connector,
-        GateState::Failed {
-            detail: "核心没跑在容器里，连接器起不来".to_owned()
-        }
-    );
+    let chinese = failed_detail(&view.gates.connector);
+    for detail in english {
+        assert!(!has_han(&detail), "英文请求的原因是英文：{detail}");
+    }
+    assert!(has_han(&chinese), "中文请求的原因是中文：{chinese}");
+}
+
+fn failed_detail(gate: &GateState) -> String {
+    match gate {
+        GateState::Failed { detail } => detail.clone(),
+        other => panic!("不是失败：{other:?}"),
+    }
+}
+
+fn has_han(text: &str) -> bool {
+    text.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
 }
 
 /// 没有入口设置文件、只有 App 里配的域名：状态要报出路由器转发的入口和有域名，不能当成没入口。

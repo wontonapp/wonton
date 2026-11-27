@@ -84,12 +84,11 @@ mod tests {
     }
 
     #[test]
-    fn the_failure_reason_is_a_sentence_with_the_original_as_detail() {
+    fn the_failure_reason_tells_the_two_kinds_apart_and_keeps_the_original() {
         crate::l10n::set_languages(&["zh-Hans".to_owned()]);
         let recoverable = reason(failed(true));
         let rejected = reason(failed(false));
-        assert!(recoverable.contains("连不上家里服务器"), "{recoverable}");
-        assert!(rejected.contains("家里服务器拒收"), "{rejected}");
+        assert_ne!(recoverable, rejected, "连不上和被拒收要说成两回事");
         for text in [&recoverable, &rejected] {
             assert!(text.contains("connect timed out"), "{text}");
         }

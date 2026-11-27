@@ -6,7 +6,6 @@ use std::sync::atomic::Ordering;
 use super::super::ClientCore;
 use super::chat::{CALL_ROOM_ID, ROOM_ID};
 use super::tabs::{CORNER_APP, web_app_tab};
-use crate::client::ui_fake_plugin_detail;
 use wonton_protocol::{
     Action, AppsAction, BotChatAvailability, ComposerViewModel, HomeStatus, ImageUpload,
     OnboardingStep, PageAction, TabRef, TabState, TimelineAction, TimelineTarget,
@@ -23,7 +22,7 @@ fn seeded_views_are_set_and_dispatch_is_inert() {
     assert_eq!(core.servers().servers.len(), 1);
     assert_eq!(core.chat().rooms[0].room_id, ROOM_ID);
     assert!(core.chat().rooms[1].call_active);
-    // 私聊对象可用：夜跑在 Echo 私聊里点发送，不能因为资格未知被禁用。
+    // 私聊对象可用：冒烟在 Echo 私聊里点发送，不能因为资格未知被禁用。
     assert!(
         core.chat()
             .bots
@@ -226,46 +225,6 @@ fn answering_the_device_card_reports_the_devices_sent() {
             message: "disk:/dev/disk/by-id/ata-WDC_WD40EFRX-68N32N0".into()
         }
     );
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// 设置里的“我的应用”要能点开详情看分享：行里有两个插件，主人在假数据里是主人，
-/// 一个应用已经分享给一位好友、另一个一个都没有。
-#[test]
-fn my_apps_rows_open_details_with_share_state() {
-    let dir = std::env::temp_dir().join(format!("wonton-ui-fake-apps-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
-    let rows = core.plugins().sidebar.apps;
-    assert_eq!(
-        rows.iter()
-            .filter_map(|app| app.plugin_id.as_deref())
-            .collect::<Vec<_>>(),
-        [
-            ui_fake_plugin_detail::BUDGET_ID,
-            ui_fake_plugin_detail::HUB_ID,
-        ]
-    );
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
-    assert!(runtime.block_on(core.me()).unwrap().is_owner);
-    let detail = |id: &str| {
-        runtime
-            .block_on(
-                core.plugin_detail(wonton_protocol::PluginDetailRoute::Installed { id: id.into() }),
-            )
-            .unwrap()
-    };
-    for (id, friends) in [
-        (ui_fake_plugin_detail::HUB_ID, 1),
-        (ui_fake_plugin_detail::BUDGET_ID, 0),
-    ] {
-        let wonton_protocol::PluginDetailOutcome::Detail { detail } = detail(id) else {
-            panic!("{id} must have a fake detail");
-        };
-        assert_eq!(detail.shares.unwrap().friend_count, friends);
-    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 

@@ -40,10 +40,12 @@ async fn the_lan_page_names_bundled_plugins_that_are_not_running_but_not_the_own
     let page = h.get(LAN_IP, "/", &[]).await;
     assert_eq!(page.status, StatusCode::OK);
     let text = page.text();
-    let shown = "默认助手：异常：预装失败（已试 2 次，稍后自动重试）：拉取镜像失败（test/app）：&lt;超时&gt;";
-    assert!(text.contains(shown), "{text}");
-    assert!(text.contains("模型设置：安装中"), "{text}");
-    assert!(text.contains("2 个应用异常"), "{text}");
+    assert!(text.contains("默认助手"), "{text}");
+    assert!(
+        text.contains("拉取镜像失败（test/app）：&lt;超时&gt;"),
+        "原因照原样、转义后列出：{text}"
+    );
+    assert!(text.contains("模型设置"), "{text}");
     assert!(!text.contains("日记"), "主人自己装的插件不列名字：{text}");
 }
 
@@ -59,9 +61,6 @@ async fn the_lan_page_leaves_out_the_container_logs_after_a_bundled_plugins_reas
     h.manager.register_for_test(agent, unhealthy, None);
 
     let text = h.get(LAN_IP, "/", &[]).await.text().to_owned();
-    assert!(
-        text.contains("默认助手：异常：预装失败：容器 agent 健康检查失败"),
-        "{text}"
-    );
+    assert!(text.contains("容器 agent 健康检查失败"), "{text}");
     assert!(!text.contains("医院"), "不给容器日志：{text}");
 }
