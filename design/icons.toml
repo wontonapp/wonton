@@ -17,19 +17,19 @@ integrity = "sha512-Nkgn0vaPujk/IjehYPyubgA18OQbgLN/ECCnk06LUgyeIbpMjOfM/BRHEi40
 base = "#5393FF"
 
 # 图标的主色，浅色和深色页面各一个：浅色页面上取深一档，不然浅面在白底上发灰；深色页面上取亮一档。
-# 各自对那一边的页面底和卡片底都要有 3:1（生成时检查）。
+# 各自对那一边的页面底、卡片底和强调填充（选中、主按钮、自己的气泡、插件占位图的底）都要有 3:1，生成时检查。
 [palette]
-blue = { light = "#0D66F3", dark = "#2D7AF5" }
-green = { light = "#158046", dark = "#189150" }
-orange = { light = "#B55215", dark = "#CD5D18" }
-red = { light = "#DA1F25", dark = "#E44348" }
-purple = { light = "#7452EF", dark = "#8567F1" }
-pink = { light = "#CD2D6D", dark = "#D74A83" }
-teal = { light = "#0B7D73", dark = "#0D8E82" }
-amber = { light = "#9B6308", dark = "#B07109" }
-indigo = { light = "#4D62E7", dark = "#6274EA" }
-sky = { light = "#1076AD", dark = "#1385C4" }
-slate = { light = "#536074", dark = "#6F8098" }
+blue = { light = "#0D66F3", dark = "#5794F7" }
+green = { light = "#158046", dark = "#1CAB5E" }
+orange = { light = "#B55215", dark = "#E7752F" }
+red = { light = "#DA1F25", dark = "#EA6E72" }
+purple = { light = "#7452EF", dark = "#9C84F4" }
+pink = { light = "#CD2D6D", dark = "#E0719D" }
+teal = { light = "#0B7D73", dark = "#0FA799" }
+amber = { light = "#9B6308", dark = "#D0840A" }
+indigo = { light = "#4D62E7", dark = "#7F8EEE" }
+sky = { light = "#1076AD", dark = "#169DE6" }
+slate = { light = "#58667B", dark = "#8896AA" }
 
 [icons]
 add = { bare = true, kubai = "circle-plus", color = "blue", phosphor = "plus" }

@@ -46,8 +46,9 @@ VALKYRIE_URL = (
 VALKYRIE_SHA256 = "5929fb15395059e566c51dcdb2bed98a2d2e92ad8d344f8186d3b701be6533b3"
 
 KUBAI = DESIGN / "kubai"
-# 浅色、深色下的页面底和卡片底：crates/wonton-client/src/appearance/derive.rs 的 canvas 和 surfaceSubtle。
-ICON_BACKGROUNDS = {"light": ["#FFFFFF", "#F4F4F4"], "dark": ["#0E0E0E", "#262626"]}
+# 浅色、深色下图标会落在上面的底：crates/wonton-client/src/appearance/themes.rs 的 canvas、surfaceSubtle
+# 和 primary（选中、主按钮、自己的气泡、插件占位图用它做实底）。
+ICON_BACKGROUNDS = {"light": ["#FFFFFF", "#F4F4F4", "#111111"], "dark": ["#0E0E0E", "#262626", "#454545"]}
 # WCAG 1.4.11 对图形的最低要求。
 ICON_MIN_CONTRAST = 3.0
 # OKLab 彩度小于它的是白、黑、灰，换色时不动。按彩度不按通道差：角标的深灰底（#33363D）通道差有 10，

@@ -91,15 +91,25 @@ class PlainSvgTest(unittest.TestCase):
 
 class PaletteTest(unittest.TestCase):
     def test_enough_contrast_passes(self):
-        design.check_palette({"blue": {"light": "#0D66F3", "dark": "#2D7AF5"}})
+        design.check_palette({"blue": {"light": "#0D66F3", "dark": "#5794F7"}})
 
     def test_too_pale_on_light_pages_fails(self):
         with self.assertRaises(SystemExit):
-            design.check_palette({"pink": {"light": "#FEEBEA", "dark": "#2D7AF5"}})
+            design.check_palette({"pink": {"light": "#FEEBEA", "dark": "#5794F7"}})
 
     def test_too_dark_on_dark_pages_fails(self):
         with self.assertRaises(SystemExit):
-            design.check_palette({"rose": {"light": "#9B494A", "dark": "#9B494A"}})
+            design.check_palette({"rose": {"light": "#0D66F3", "dark": "#9B494A"}})
+
+    def test_too_dark_on_the_black_emphasis_fill_fails(self):
+        # 对白底够，对浅色下黑的强调填充不够。
+        with self.assertRaises(SystemExit):
+            design.check_palette({"navy": {"light": "#1F2A44", "dark": "#5794F7"}})
+
+    def test_too_dark_on_the_gray_emphasis_fill_fails(self):
+        # 对深色页面底够，对深色下 #454545 的强调填充不够。
+        with self.assertRaises(SystemExit):
+            design.check_palette({"blue": {"light": "#0D66F3", "dark": "#2D7AF5"}})
 
 
 class BareTest(unittest.TestCase):
