@@ -2,6 +2,7 @@
 //! 本机。真实的 tusd 和核心的行为见 `wonton-core` 的 `gateway::files_upload_tests`。
 
 mod download;
+mod download_resume;
 mod upload;
 mod upload_resume;
 
