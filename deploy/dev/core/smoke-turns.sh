@@ -313,8 +313,19 @@ asking=$!
 card_id="$(pending_card)" || fail "Hermes 发私聊没有发确认卡片：$(cat "$asked")"
 chain="$(new_chain "$before" "$(mxid owner)" "$hermes_room")" || fail "链列表里没有这一轮：$(chains)"
 expect "卡片等着时主人停掉这一轮" "$(stop_chain "$chain")" stopped
+# 探针掉登录会重发一次：重发的消息另开一条链、再发一张卡片；按卡片断言，不拿弃掉的那一轮说事。
+retried=""
+for _ in $(seq 10); do
+  retried="$(comm -13 <(printf '%s\n' "$before" | sort) <(chain_ids 3 | grep -vxF "$chain" | sort) | head -1)"
+  [[ -n "$retried" ]] && break
+  sleep 2
+done
+if [[ -n "$retried" ]]; then
+  stop_chain "$retried" >/dev/null || true
+  echo '   · 探针设备被服务器丢了、重发了一轮（那条链也停掉了）' >&2
+fi
 for _ in $(seq 30); do [[ "$(card_state "$card_id")" != pending ]] && break; sleep 1; done
-[[ "$(card_state "$card_id")" != pending ]] || fail "停链以后卡片还在等主人回答（停的链 $chain，卡片 $card_id，链列表：$(chains)；发消息的审计：$(docker exec "$core" sh -c "grep '\"send_message\"' '$WONTON_DEV_DATA/core/audit.jsonl' | tail -3")）"
+[[ "$(card_state "$card_id")" != pending ]] || fail "停链以后卡片还在等主人回答（停的链 $chain${retried:+ / 重发 $retried}，卡片 $card_id，链列表：$(chains)；发消息的审计：$(docker exec "$core" sh -c "grep 'wonton__send_message' '$WONTON_DEV_DATA/core/audit.jsonl' | tail -3")）"
 ok "停链以后卡片撤回了（$(latest_card)）"
 [[ "$(answer_with approve "$card_id")" != 200 ]] || fail "撤回的卡片还能批准"
 ok "撤回的卡片批准不了"

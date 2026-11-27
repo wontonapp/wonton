@@ -248,6 +248,9 @@ deploy/dev/core/smoke.sh        # 本机 Docker；要设 WONTON_SMOKE_MODEL（�
 DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 ```
 
+冒烟自己给核心开 `RUST_LOG=wonton_core=debug`（外面已经设了则照用），失败时日志里才有卡片认链那几行；
+对着保留下来的栈分段跑时核心的级别是它启动时定的，手工起栈记得同样导出 `RUST_LOG=wonton_core=debug`。
+
 用独立的 compose 项目、端口（18481，隧道 18483）和临时数据目录，依次验证：一条命令安装 Grafana 示例插件并通过
 健康检查；插件不暴露端口、只在自己的网络里、访问不到 Hydra 的管理端口；未登录的请求被拒；登录核心
 一次后打开插件自动登录（Grafana 里是 `owner`、管理员角色）；已配对设备经隧道打开插件不用登录、直接是

@@ -41,6 +41,9 @@ export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18481}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18483}"
 export WONTON_DEV_DOMAIN="${WONTON_DEV_DOMAIN:-wonton.localhost}" WONTON_DEV_DATA="${WONTON_DEV_DATA:-/tmp/wonton-smoke}"
 if [[ -z "${SMOKE_ONLY:-}" ]]; then dev_guard_check "$WONTON_DEV_PROJECT"; fi
+# 失败时最要紧的是卡片认没认到链：这三行是 debug 级，冒烟自己给核心开 debug（info 看不到），
+# 别的级别照旧由外面给。
+export RUST_LOG="${RUST_LOG:-wonton_core=debug}"
 # 核心镜像和隧道客户端镜像用同一个提交号构建，共用 Dockerfile 里的编译阶段。
 WONTON_BUILD_COMMIT="$("$dev" commit)"
 export WONTON_BUILD_COMMIT

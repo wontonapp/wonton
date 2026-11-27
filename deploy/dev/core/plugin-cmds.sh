@@ -26,10 +26,11 @@ preview_read() {
   # 装不了（架构不对等）时预览里可以没有 id、标题这些：先讲 blocked，缺字段不该先死在取字段上。
   blocked="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("blocked") or "")' <<<"$preview" 2>/dev/null || true)"
   [[ -z "$blocked" ]] || die "这台主机上装不了：$blocked"
-  GRANTS="$(json_field permissions <<<"$preview" 2>/dev/null | python3 -c 'import json,sys
-print(",".join(p["permission"] for p in json.load(sys.stdin)))' 2>/dev/null || true)"
   PLUGIN_ID="$(json_field id <<<"$preview" 2>/dev/null || true)"
   [[ -n "$PLUGIN_ID" ]] || die "预览里没有插件 ID：$preview"
+  GRANTS="$(json_field permissions <<<"$preview" | python3 -c 'import json,sys
+print(",".join(p["permission"] for p in json.load(sys.stdin)))')" ||
+    die "预览里的权限读不出来：$preview"
   echo "插件：$PLUGIN_ID（$(json_field title <<<"$preview" 2>/dev/null || echo ？)）" >&2
   echo "需要的权限：${GRANTS:-无}" >&2
   python3 -c 'import json,sys
@@ -45,10 +46,24 @@ secret_header() {
   hdrs+=(-H "Wonton-Plugin-Secrets: $(python3 -c 'import base64,json,sys;print(base64.urlsafe_b64encode(json.dumps(json.loads(sys.argv[1])).encode()).decode().rstrip("="))' "$2")")
 }
 
-# 插件装着没有：安装接口对已装的插件报错退出，复跑时改走升级（换容器，不吊销 Bot 的设备）。
+# 插件装着没有：0 装了、1 没装、2 问不到。安装接口对已装的插件报错退出，复跑时改走升级（换容器，不吊销
+# Bot 的设备）；一次瞬时错误不能当成“没装”（那样复跑会撞 already installed），再问一次，仍不行报原因。
 plugin_installed() {
-  api GET /_wonton/api/plugins | python3 -c 'import json, sys
-sys.exit(0 if any(p["id"] == sys.argv[1] for p in json.load(sys.stdin)["plugins"]) else 3)' "$1"
+  local out answer
+  out="$(api GET /_wonton/api/plugins)" || out="$(api GET /_wonton/api/plugins)" ||
+    die "查不到已装插件列表：$out"
+  answer="$(python3 -c 'import json, sys
+try:
+    rows = json.load(sys.stdin)["plugins"]
+except (ValueError, KeyError):
+    print("unknown")
+    raise SystemExit(0)
+print("yes" if sys.argv[1] in [row.get("id") for row in rows] else "no")' "$1" <<<"$out")"
+  case "$answer" in
+    yes) return 0 ;;
+    no) return 1 ;;
+    *) die "读不懂已装插件列表：$out" ;;
+  esac
 }
 
 install() {

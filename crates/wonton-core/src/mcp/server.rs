@@ -192,8 +192,9 @@ struct ForeignSession<'a> {
 }
 
 /// `wonton-session` 只在账本确认归属后采用；会话与链必须来自同一条登记。
-/// 链停了、会话也不在跑时算没有链：停链只撤走当时挂着的卡片，之后的工具调用再挂上去
-/// 就没人撤了（卡片一直等人答），所以从这里就断开。
+/// 链停了、会话也不在跑时照样把链交出去（记一条审计）：停链只撤得走当时挂着的卡片，
+/// 之后到工具调用再开卡片时，靠这条链在绑卡那刻认出“已经停了”并当场撤回；从这里断开的话，
+/// 卡片会一直等人答，主人批了还会真发出去。
 pub(super) fn chain_session(
     bus: &Bus,
     caller: &Caller,
@@ -224,7 +225,7 @@ pub(super) fn chain_session(
             bot: &info.bot.bot,
             chain: &info.chain,
         });
-        return None;
+        return Some((info.chain, session.to_owned()));
     }
     bus.audit.record(&ForeignSession {
         caller: caller.id.as_str(),
