@@ -99,14 +99,14 @@ impl RelayView {
     /// 从连接信息或配对码读回来的表项要过这一关：地址里不许藏令牌（令牌单独放），令牌不能是空的，
     /// 而且得是 https，令牌不走明文。
     pub fn validate(&self) -> Result<(), String> {
+        if self.url.scheme() != "https" {
+            return Err(format!("{}：中继地址要用 https", wire_url_text(&self.url)));
+        }
         if !self.url.username().is_empty() || self.url.password().is_some() {
             return Err(format!(
                 "{}：地址里不能带 userinfo，令牌要单独放",
                 wire_url_text(&self.url)
             ));
-        }
-        if self.url.scheme() != "https" {
-            return Err(format!("{}：中继地址要用 https", wire_url_text(&self.url)));
         }
         if let Some(token) = &self.token
             && token.expose().is_empty()
