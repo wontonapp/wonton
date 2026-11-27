@@ -88,6 +88,12 @@ pub fn session_stream_path(session: PlaybackSessionId) -> String {
     format!("{}/stream", session_path(session))
 }
 
+/// `GET /sessions/{id}/items/{item}/stream`：队列里另一项的流（无缝播放、预取），`item` 是
+/// `MediaItemRef.id`，不在这个人的队列里回 `media_gone`。
+pub fn session_item_stream_path(session: PlaybackSessionId, item: &str) -> String {
+    format!("{}/items/{}/stream", session_path(session), segment(item))
+}
+
 pub fn session_cast_url_path(session: PlaybackSessionId) -> String {
     format!("{}/cast-url", session_path(session))
 }

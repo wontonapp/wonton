@@ -500,6 +500,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/tasks/{id}/uploads/{item}` | `PATCH` | 从偏移起的字节，带 `Content-Range`；核心按 `(task,item)` 查 `upload_id` 转发 | `{upload_offset}`；偏移不符 409 带当前偏移 |
 | `/tasks/{id}/items/{item}/content` | `GET` | 原始字节，`Range` 原样 | 字节流（206/200） |
 | `/sessions/{id}/stream` | `GET` | 原始字节 | 字节流（206/200） |
+| `/sessions/{id}/items/{item}/stream` | `GET` | 原始字节；`item` 必须在这个人的队列里 | 字节流（206/200）；不在队列里回 `media_gone`。核心按会话的设备档向同一提供方要这一项的计划，计划记到过期，不改会话 |
 | `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
 | `/items` | `GET` | 无（query 同提供方的 `GET /items`，`kind` 必填） | `{items, cursor?}`，核心转给这个种类的提供方 |
 | `/items/{id}/artwork` | `GET` | 无（query: `kind`，可选 `source`、`type`、`width`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork`，`type`、`width` 原样带过去 |

@@ -29,6 +29,10 @@ pub enum TaskServiceError {
     Transition(#[from] IllegalTransition),
     #[error("任务 {task} 连续两次被别处改掉，没能落库")]
     ConcurrentChange { task: TaskId },
+    #[error("任务 {task} 不是上传，没有逐项条目")]
+    NotUpload { task: TaskId },
+    #[error("任务 {task} 里没有 {item} 这一项")]
+    ItemNotFound { task: TaskId, item: String },
 }
 
 /// 任务的状态机，落库到 [`Store`]。
@@ -161,8 +165,12 @@ impl TaskService {
         Ok(())
     }
 
+    pub(super) fn store(&self) -> &Store {
+        &self.store
+    }
+
     /// 读、改、带状态与计数比较再写；写不动说明被别处改了，重读重来一次。
-    fn change(
+    pub(super) fn change(
         &self,
         id: TaskId,
         mut change: impl FnMut(&mut MediaTask) -> Result<(), TaskServiceError>,
@@ -182,7 +190,11 @@ impl TaskService {
         Err(TaskServiceError::ConcurrentChange { task: id })
     }
 
-    fn move_to(&self, task: &mut MediaTask, to: TaskState) -> Result<(), TaskServiceError> {
+    pub(super) fn move_to(
+        &self,
+        task: &mut MediaTask,
+        to: TaskState,
+    ) -> Result<(), TaskServiceError> {
         task.state = task.state.clone().transition(to)?;
         Ok(())
     }

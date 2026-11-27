@@ -20,10 +20,12 @@ use wonton_protocol::media::TaskId;
 use wonton_protocol::media::view::{QuotaEntry, QuotaView};
 use wonton_protocol::media::{PlaybackSessionId, Queue};
 
+mod routes;
 mod schema;
 mod sessions;
 mod tasks;
 
+pub use routes::UploadBinding;
 use schema::{QueueRow, classify, migrate, queue_row};
 pub use sessions::StoredSession;
 
@@ -266,6 +268,37 @@ impl Store {
         )
         .map_err(|source| self.db_error(source))?;
         Ok(())
+    }
+
+    /// 只在库里的版本还是 `expected` 时写（没有行算第 0 版）；写上了回真，别处先改了回假。
+    pub fn save_queue_cas(
+        &self,
+        person: &str,
+        queue: &Queue,
+        expected: u64,
+    ) -> Result<bool, MediaStoreError> {
+        let conn = self.conn()?;
+        let changed = conn
+            .execute(
+                "INSERT INTO queue (person, revision, entries, cursor, mode, sleep_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(person) DO UPDATE SET
+                     revision = excluded.revision, entries = excluded.entries,
+                     cursor = excluded.cursor, mode = excluded.mode,
+                     sleep_at_ms = excluded.sleep_at_ms
+                 WHERE queue.revision = ?",
+                params![
+                    person,
+                    queue.revision,
+                    self.json("entries", &queue.entries)?,
+                    queue.cursor.map(|value| value as i64),
+                    self.json("mode", &queue.mode)?,
+                    queue.sleep_at_ms,
+                    expected,
+                ],
+            )
+            .map_err(|source| self.db_error(source))?;
+        Ok(changed == 1)
     }
 
     /// 两本账的用量与上限，上传跨提供方、离线跨设备各自合计；没记过账的人是两项零，不建行。
