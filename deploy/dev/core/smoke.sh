@@ -250,14 +250,15 @@ start_phone() {
   done
   docker logs "$phone" 2>/dev/null | grep -q '^本地代理' || fail "手机没起来：$(docker logs "$phone" 2>&1 | tail -3)"
   credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
-  # 监听先出来、隧道才连得上：连上以前经代理的请求没有回应，或者代理报
-  # transport-unavailable / upstream-unavailable；核心起得来以前是 upstream-unavailable
-  # 或核心自己的 not_ready。后面的「未登记的设备被隧道拒绝」要等这些都过去才问得到 403。
-  # 分段跑时手机可能已经配对过，所以不放行只看 403。
+  # 监听先出来、隧道才连得上，核心端口也是随后才通：这两样没好时经代理的请求没有回应，
+  # 或者代理报 transport-unavailable / upstream-unavailable（x-wonton-tunnel-error 的码、
+  # x-wonton-error 的类别）。核心的 /_wonton/health 是静态 200，隧道通了就是就绪。
+  # 后面的「未登记的设备被隧道拒绝」要等这些都过去才问得到 403；分段跑时手机可能已经
+  # 配对过，所以不放行只看 403。
   local reply
   proxy_ready() {
     [[ -n "$reply" ]] &&
-      ! grep -qE 'x-wonton-(tunnel-)?error: (transport-|tunnel-|upstream-)unavailable|not_ready' <<<"$reply"
+      ! grep -qE 'x-wonton-(tunnel-)?error: (transport|tunnel|upstream)-unavailable' <<<"$reply"
   }
   for _ in $(seq 60); do
     reply="$(t -o /dev/null -D - "$core_url/_wonton/health" 2>/dev/null || true)"
