@@ -19,7 +19,7 @@ pub(crate) struct RoomSubscriptions {
     /// 每份独立主对话或旁聊由 ChatRoom 的存活引用计数。
     focused: BTreeMap<OwnedRoomId, usize>,
     /// 加入后同步还标着“受邀”、临时订阅的房间，见 [`MatrixSession::until_joined`]。
-    joining: BTreeSet<OwnedRoomId>,
+    pub(super) joining: BTreeSet<OwnedRoomId>,
     /// 上一次发给 SDK 的并集。名单没变就不发：SDK 收到订阅变化会取消在飞的同步请求，一次名单没变的
     /// 重发是无害的浪费，一次名单真变大的重发在 Tuwunel 上能把别的在飞请求顶成 `M_UNKNOWN_POS`（#370）。
     applied: BTreeSet<OwnedRoomId>,

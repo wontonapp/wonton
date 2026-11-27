@@ -1,6 +1,9 @@
 //! 房间输入框里的草稿。
 
-use matrix_sdk::{ComposerDraft, ComposerDraftType, ruma::EventId};
+use matrix_sdk::{
+    ComposerDraft, ComposerDraftType,
+    ruma::{EventId, RoomId},
+};
 
 use crate::{Draft, MatrixSession, Result};
 

@@ -3,7 +3,7 @@
 use matrix_sdk::{
     Room, RoomState,
     ruma::{
-        OwnedRoomId, RoomId, UserId,
+        OwnedRoomId, OwnedUserId, UserId,
         api::{
             client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
             error::ErrorKind,

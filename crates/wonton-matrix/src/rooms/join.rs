@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use matrix_sdk::{
     Room, RoomState,
-    ruma::{RoomId, api::client::membership::join_room_by_id},
+    ruma::{OwnedRoomId, RoomId, api::client::membership::join_room_by_id},
 };
 
 use crate::{Error, MatrixSession, Result};
