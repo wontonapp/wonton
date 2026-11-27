@@ -134,6 +134,7 @@ impl ClientCore {
             Action::Pages { action } => self.page_action(&scope, action),
             Action::Peers { action } => scope.peers.dispatch(action),
             Action::BotContacts { action } => scope.bot_contacts.dispatch(action),
+            Action::AgentModels { action } => scope.agent_models.dispatch(action),
             Action::Family { action } => scope.family.dispatch(action),
             Action::Friends { action } => scope.friends.dispatch(action),
             Action::Sharing { action } => self.dispatch_sharing(&scope, action),

@@ -9,13 +9,14 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
-    FamilyViewModel, FriendsViewModel, HomeViewModel, MyAvatarProblem, OnboardingViewModel,
-    PagesViewModel, PeersViewModel, PluginsViewModel, ServersViewModel, SettingsViewModel,
-    TransfersViewModel,
+    AgentChainsViewModel, AgentModelsViewModel, BotContactsViewModel, ChatViewModel,
+    ConfirmationsViewModel, CoreError, FamilyViewModel, FriendsViewModel, HomeViewModel,
+    MyAvatarProblem, OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel,
+    ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
+use crate::agent_models::AgentModelsLink;
 use crate::app_lock::AppLockLink;
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
@@ -54,6 +55,7 @@ pub(crate) struct Scope {
     pub(crate) friends: Arc<FriendsLink>,
     pub(crate) family: Arc<FamilyLink>,
     pub(crate) bot_contacts: Arc<BotContactsLink>,
+    pub(crate) agent_models: Arc<AgentModelsLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
     /// 要跨源隔离的插件网页交给系统浏览器时用的回环入口（ADR-0033）。
@@ -83,6 +85,7 @@ pub(crate) struct Views {
     pub(crate) friends: watch::Sender<FriendsViewModel>,
     pub(crate) family: watch::Sender<FamilyViewModel>,
     pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
+    pub(crate) agent_models: watch::Sender<AgentModelsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -102,6 +105,7 @@ impl Views {
             friends: scope.friends.sender(),
             family: scope.family.sender(),
             bot_contacts: scope.bot_contacts.sender(),
+            agent_models: scope.agent_models.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -371,6 +375,11 @@ impl Scope {
             home.clone(),
             views.map(|v| v.bot_contacts.clone()),
         );
+        let agent_models = AgentModelsLink::new(
+            handle.clone(),
+            home.clone(),
+            views.map(|v| v.agent_models.clone()),
+        );
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             home,
@@ -388,6 +397,7 @@ impl Scope {
             friends: people.1,
             family: people.2,
             bot_contacts,
+            agent_models,
             settings: people.3,
             shared_apps,
             browser,
@@ -413,6 +423,7 @@ impl Scope {
         self.onboarding.set_languages(languages.to_vec());
         self.peers.set_languages(languages.to_vec());
         self.bot_contacts.set_languages(languages.to_vec());
+        self.agent_models.set_languages(languages.to_vec());
     }
 
     pub(crate) fn backgrounded(&self) {

@@ -13,6 +13,7 @@ mod action;
 mod action_domains;
 mod agent_chain;
 mod agent_models;
+mod agent_models_view;
 mod agent_outbox;
 mod agent_permission;
 mod agent_run;
@@ -108,6 +109,11 @@ pub use agent_models::{
     SelectModel, StartModelLogin, agent_model_current_path, agent_model_list_path,
     agent_model_login_finish_path, agent_model_login_path, agent_model_login_start_path,
     agent_model_provider_path, agent_model_test_path, agent_models_path, is_browser_url,
+};
+pub use agent_models_view::{
+    AgentModelsAction, AgentModelsProblem, AgentModelsReason, AgentModelsState,
+    AgentModelsViewModel, ModelConfirm, ModelKeyForm, ModelListState, ModelLoginBrowser,
+    ModelLoginProgress, ModelProviderPage, ModelProviderRow, ModelTestState,
 };
 pub use agent_outbox::{
     OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult, SEND_MESSAGE_TOOL,

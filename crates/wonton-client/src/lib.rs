@@ -25,6 +25,7 @@ uniffi::setup_scaffolding!();
 
 mod about;
 mod agent_chains;
+mod agent_models;
 #[cfg(target_os = "android")]
 mod android;
 mod app_lock;
@@ -88,12 +89,12 @@ pub use plugin_choices::{
 };
 pub use sharing::discover_share_source;
 pub use subscription::{
-    AgentChainsSubscription, AgentStopSubscription, AppLockSubscription, AppearanceSubscription,
-    BotContactsSubscription, ChatSubscription, ComposerSubscription, ConfirmationsSubscription,
-    FamilySubscription, FriendsSubscription, HomeSubscription, OnboardingSubscription,
-    PagesSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
-    SessionListSubscription, SettingsSubscription, TransfersSubscription, UnreadSubscription,
-    WidgetSnapshotSubscription,
+    AgentChainsSubscription, AgentModelsSubscription, AgentStopSubscription, AppLockSubscription,
+    AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
+    ConfirmationsSubscription, FamilySubscription, FriendsSubscription, HomeSubscription,
+    OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
+    ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
+    UnreadSubscription, WidgetSnapshotSubscription,
 };
 pub use widget::read_widget_snapshot;
 // 本人私人 Bot 的三件套在公共面上显式钉名；FFI 的 Swift/Kotlin 枚举由 derive 生成，

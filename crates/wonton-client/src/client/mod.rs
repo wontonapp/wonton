@@ -38,6 +38,7 @@ use wonton_protocol::{AvatarImage, AvatarKind};
 pub use share_in::ShareInSubscription;
 
 mod agent_chains;
+mod agent_models;
 mod bot_contacts;
 mod browser;
 mod composer;
