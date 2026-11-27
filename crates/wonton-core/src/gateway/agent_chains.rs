@@ -27,6 +27,9 @@ use crate::mcp::Caller;
 use crate::plugin::PluginId;
 
 /// 拒绝的说明文字放在这个响应头里，和 `refused` 用同一个：调用方按 `X-Wonton-Detail` 取。
+///
+/// 值是 UTF-8 字节（HTTP 头在客户端多按 latin-1 落成字符串，取回来要收回字节再按 UTF-8 解，
+/// 例如 Python 的 `value.encode("latin-1").decode("utf-8")`）。
 pub(super) const DETAIL_HEADER: &str = "X-Wonton-Detail";
 
 /// 请求体的上限：一轮的报告就是几个 ID，再大是调用方的错。

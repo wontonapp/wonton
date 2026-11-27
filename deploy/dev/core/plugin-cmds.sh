@@ -23,16 +23,18 @@ preview_package() {
 # 两个变量跨函数用，调用方接着拿去发请求；装不了（blocked）时退出。
 preview_read() {
   local preview="$1" blocked
-  GRANTS="$(json_field permissions <<<"$preview" | python3 -c 'import json,sys
-print(",".join(p["permission"] for p in json.load(sys.stdin)))')"
-  PLUGIN_ID="$(json_field id <<<"$preview")"
-  echo "插件：$PLUGIN_ID（$(json_field title <<<"$preview")）" >&2
+  # 装不了（架构不对等）时预览里可以没有 id、标题这些：先讲 blocked，缺字段不该先死在取字段上。
+  blocked="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("blocked") or "")' <<<"$preview" 2>/dev/null || true)"
+  [[ -z "$blocked" ]] || die "这台主机上装不了：$blocked"
+  GRANTS="$(json_field permissions <<<"$preview" 2>/dev/null | python3 -c 'import json,sys
+print(",".join(p["permission"] for p in json.load(sys.stdin)))' 2>/dev/null || true)"
+  PLUGIN_ID="$(json_field id <<<"$preview" 2>/dev/null || true)"
+  [[ -n "$PLUGIN_ID" ]] || die "预览里没有插件 ID：$preview"
+  echo "插件：$PLUGIN_ID（$(json_field title <<<"$preview" 2>/dev/null || echo ？)）" >&2
   echo "需要的权限：${GRANTS:-无}" >&2
   python3 -c 'import json,sys
-for notice in json.load(sys.stdin)["notices"]:
+for notice in json.load(sys.stdin).get("notices") or []:
     print("提示：" + notice["text"])' <<<"$preview" >&2
-  blocked="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["blocked"] or "")' <<<"$preview")"
-  [[ -z "$blocked" ]] || die "这台主机上装不了：$blocked"
 }
 
 # 密钥放头里，查询串会进日志：把 Wonton-Plugin-Secrets 追加进 $1 命名的头数组，值为空时不加。
@@ -55,9 +57,10 @@ install() {
   [[ -e "$file" ]] || die "找不到插件包：$file"
   type="$(package_type "$file")"
   preview="$(preview_package "$file")" || die "预览失败：$preview"
-  # 已装过的插件，安装预览就是 blocked（already installed）：先取 ID，装了就走升级。
-  PLUGIN_ID="$(json_field id <<<"$preview")"
-  if plugin_installed "$PLUGIN_ID"; then
+  # 已装过的插件，安装预览就是 blocked（already installed）：先取 ID，装了就走升级。预览里没有 id（无效包）
+  # 就留给下面的 preview_read 打印原因，别先死在取字段上。
+  PLUGIN_ID="$(json_field id <<<"$preview" 2>/dev/null || true)"
+  if [[ -n "$PLUGIN_ID" ]] && plugin_installed "$PLUGIN_ID"; then
     echo "$PLUGIN_ID 已经装过，改走升级" >&2
     out="$(upgrade "$file" "$yes" "$secrets" 2>&1)" || {
       if grep -q 'nothing to update' <<<"$out"; then

@@ -105,9 +105,6 @@ hermes_models() {
   docker exec "$hermes" sh -c "curl -fsS --max-time 30 -H 'Authorization: Bearer $hermes_key' '$model_url/models'" |
     python3 -c 'import json, sys; print(" ".join(sorted(m["id"] for m in json.load(sys.stdin)["data"])))'
 }
-plugin_state() {
-  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
-}
 # 主人的一台新设备经隧道在私聊里发话，收 Hermes 的回答：$1 输出文件，其余是探针参数。
 # 新设备偶发 404 M_NOT_FOUND（登录后服务器说没见过这台设备）：用同一台重发一次，不重发已发过的旧消息。
 probe_in_hermes_room() {
@@ -165,7 +162,7 @@ answer_with() { t -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: a
 audited() {
   python3 -c 'import json, re, sys
 lines = [json.loads(line) for line in sys.stdin if line.strip()]
-sys.exit(not any(re.fullmatch(sys.argv[1], l["tool"]) and l["decision"] == sys.argv[2] for l in lines))' "$1" "$2" <<<"$audit"
+sys.exit(not any(l.get("tool") and re.fullmatch(sys.argv[1], l["tool"]) and l.get("decision") == sys.argv[2] for l in lines))' "$1" "$2" <<<"$audit"
 }
 song_task() {
   if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then
@@ -457,8 +454,9 @@ expect "经隧道的已配对设备能读 tunnel 接口（ADR-0032：App 连上�
 fi
 # 主人的 Matrix 访问令牌：要在 tunnel 一步把手机配对之后才拿得到（未配对的设备被隧道拒绝）。
 # 分段跑跳过 tunnel 时，凭据和配对状态都是上一段留在栈里的，这里照样现查。
-# 没有手机凭据（假 docker 的用例里）就查不到，空着给跳过的步骤用。
-if [[ -z "${access:-}" && -n "${credential:-}" ]]; then
+# 只在分段跑、而且这一轮不跑 matrix 一步时提前取（全量跑里 matrix 就在 hermes 前面，自己会登录；
+# 没有手机凭据（假 docker 的用例里）也取不到）。
+if [[ -z "${access:-}" && -n "${credential:-}" && -n "${SMOKE_ONLY:-}" && ",$SMOKE_ONLY," != *,matrix,* ]]; then
   matrix_url="${matrix_url:-http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT}"
   login="$(t -X POST "$core_url/_wonton/matrix/login-token")"
   body="$(python3 -c 'import json, sys
@@ -728,7 +726,6 @@ fi
 # 停链、出箱和说话人（ADR-0061 第 10 节）：smoke-turns.sh。放在 files 之前：files 一步最后卸载 Hermes。
 # shellcheck source=deploy/dev/core/smoke-turns.sh
 source "$here/smoke-turns.sh"
-seed_smoke_only
 hermes_user="${hermes_user:-}"
 hermes_room="${hermes_room:-}"
 if step files "Bot 存文件（ADR-0027）：主人按路径批准一次，Hermes 就能往里存，Navidrome 看得到"; then

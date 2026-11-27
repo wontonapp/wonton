@@ -60,7 +60,7 @@ seed_smoke_only() {
       sleep 2
     done
     [[ -n "$hermes_room" ]] ||
-      hermes_room="$(docker logs "$hermes" 2>&1 | grep -o '![A-Za-z0-9_-]\{10,\}' | tail -1)"
+      hermes_room="$(docker logs "$hermes" 2>&1 | grep -oE '![A-Za-z0-9_-]{10,}:[A-Za-z0-9.-]+' | tail -1)"
     [[ -n "$hermes_room" ]] || hermes_room="$(hermes_env MATRIX_HOME_ROOM)"
     [[ -n "$hermes_room" ]] ||
       fail "查不到和 $hermes_user 的私聊：链 $(chains 20)；m.direct $direct_body"
@@ -282,6 +282,8 @@ ok "停链以后主人再说一句，Hermes 照常回答"
 rm -f "$said"
 
 fi
+# 单独重跑这一步要在新栈上、或离开上一次超过 30 分钟：放行时段还在时，第一条（本来要拒绝的）会直接放行、
+# 不出卡片，pending_card 会白等；speaker 开头也按“没有放行时段”断言不发卡片。
 if step outbox "Bot 发私聊（wonton__send_message）：主人批准后经出箱发到家人手里，拒绝的和停了链的不发"; then
 family_join
 asked="$(mktemp)"

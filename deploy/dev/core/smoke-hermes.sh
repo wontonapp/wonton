@@ -8,24 +8,34 @@ hermes_reply() {
   python3 -c 'import sys
 print(sys.stdin.read().partition("第 1 轮：收到明文的回复：")[2].strip())' <"$1"
 }
-# 用量日志：宿主 CLI 在单机布局下和服务是同一份；这里 serve 跑在自己的容器里（宿主网络），日志在容器内，
-# 宿主那份停在旧文件上。宿主这份没有行时，用带这次凭据名的容器日志（先到先得），都不行再用宿主这份。
+# 用量日志：serve 跑在自己的容器里，日志也在容器内、一直在写；宿主 CLI 在单机布局下和服务是同一份，
+# 这里却是几百 MB 的旧文件（读一次 30 秒以上）。先问宿主网络里那个 magpie（同机别的验证栈的 *-magpie 排在
+# 后面），一个带这次凭据名的优先；都不行才退回宿主 CLI。判据只到秒，带上凭据名才不会绿在别人的调用上。
 model_usage() {
-  local csv candidate host_csv fallback=""
-  host_csv="$(host_magpie usage --last 15m --csv 2>/dev/null)"
-  [[ "$(wc -l <<<"$host_csv")" -gt 1 ]] && { printf '%s\n' "$host_csv"; return; }
-  for candidate in ${WONTON_SMOKE_HOST_MAGPIE:-} $(docker ps --format '{{.Names}}' | grep -E '(^|-)magpie$'); do
+  local csv candidate host_csv fallback="" seen=" "
+  local -a candidates=()
+  [[ -z ${WONTON_SMOKE_HOST_MAGPIE:-} ]] || candidates+=("$WONTON_SMOKE_HOST_MAGPIE")
+  while read -r candidate; do
+    [[ -z $candidate || $seen == *" $candidate "* ]] || { candidates+=("$candidate"); seen+="$candidate "; }
+  done < <(docker ps --filter network=host --format '{{.Names}}' 2>/dev/null | grep -E '(^|-)magpie$')
+  while read -r candidate; do
+    [[ $seen == *" $candidate "* ]] || { candidates+=("$candidate"); seen+="$candidate "; }
+  done < <( { docker ps --format '{{.Names}}' 2>/dev/null | grep -Ex 'magpie'; docker ps --format '{{.Names}}' 2>/dev/null | grep -E -- '-magpie$'; } )
+  for candidate in "${candidates[@]}"; do
     csv="$(docker exec "$candidate" magpie usage --last 15m --csv 2>/dev/null)" || continue
     [[ "$(wc -l <<<"$csv")" -gt 1 ]] || continue
-    [[ -n "$fallback" ]] || fallback="$csv"
+    [[ -n $fallback ]] || fallback="$csv"
     if [[ "$csv" == *"${host_model_key_name:-}"* ]]; then printf '%s\n' "$csv"; return; fi
   done
-  printf '%s\n' "${fallback:-$host_csv}"
+  host_csv="$(host_magpie usage --last 15m --csv 2>/dev/null)"
+  [[ "$(wc -l <<<"$host_csv")" -le 1 ]] || fallback="$host_csv"
+  printf '%s\n' "$fallback"
 }
 # <回复文件> <本轮开始的 epoch 秒> <第几轮>：用量按开始时间取增量（request_id 实测为空，靠不住）。
 expect_model_reply() {
-  local usage deadline=$((SECONDS + 30))
-  # 用量行比回复晚一点落盘（实测回复先到、CSV 里还没有这一行）：最多等 30 秒，只重读用量，不重发对话。
+  local usage deadline=$((SECONDS + 90))
+  # 用量行比回复晚一点落盘（实测回复先到、CSV 里还没有这一行），宿主那份旧日志第一次读要 30 秒以上：
+  # 留 90 秒，只重读用量，不重发对话。
   while :; do
     usage="$(model_usage)" || fail "读取 magpie 用量失败"
     python3 -c 'import csv, datetime, io, sys
