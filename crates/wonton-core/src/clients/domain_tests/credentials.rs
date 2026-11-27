@@ -32,7 +32,7 @@ async fn credentials_accept_backslash_and_dollar_but_not_single_quote() {
     put.credentials[0].value = SecretString::new("it's");
     assert!(matches!(
         domain(dir.path()).save(put).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
 }
 #[tokio::test]
@@ -43,7 +43,7 @@ async fn first_provider_requires_credentials() {
     put.credentials.clear();
     assert!(matches!(
         clients.save(put).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
     assert!(!dir.path().join("entry/domain.json").exists());
 }
@@ -59,7 +59,7 @@ async fn changed_provider_requires_its_own_credentials() {
     put.credentials.clear();
     assert!(matches!(
         clients.save(put).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
     assert_eq!(
         fs::read(dir.path().join("entry/domain.json")).unwrap(),

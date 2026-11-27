@@ -9,7 +9,10 @@ async fn put_domain_requires_terms() {
     let mut put = request(None);
     put.accept_terms = false;
     let error = domain(dir.path()).save(put).await.err().unwrap();
-    assert!(matches!(error, DomainError::Invalid(_)), "{error}");
+    assert!(
+        matches!(error, DomainError::Invalid(_) | DomainError::InvalidKey(_)),
+        "{error}"
+    );
 }
 #[tokio::test]
 async fn provider_name_charset_only() {
@@ -19,7 +22,7 @@ async fn provider_name_charset_only() {
     put.provider = "Cloudflare_DNS".into();
     assert!(matches!(
         domain(dir.path()).save(put.clone()).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
     // 核心不按服务商分支：不在任何预设里的代码照样收下。
     put.provider = "notapreset1".into();
@@ -37,6 +40,6 @@ async fn external_certificate_conflicts() {
     fs::write(path, serde_json::to_vec(&settings).unwrap()).unwrap();
     assert!(matches!(
         domain(dir.path()).save(request(None)).await,
-        Err(DomainError::Conflict(_))
+        Err(DomainError::Conflict(_) | DomainError::ConflictKey(_))
     ));
 }

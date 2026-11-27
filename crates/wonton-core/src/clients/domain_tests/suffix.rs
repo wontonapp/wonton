@@ -10,7 +10,7 @@ async fn suffix_fixed_when_server_name_set() {
     let mut put = request(Some("other.example.test"));
     assert!(matches!(
         clients.save(put.clone()).await,
-        Err(DomainError::Conflict(_))
+        Err(DomainError::Conflict(_) | DomainError::ConflictKey(_))
     ));
     put.suffix = None;
     assert!(clients.save(put).await.is_ok());

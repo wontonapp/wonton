@@ -38,7 +38,7 @@ async fn queued_issue_skips_when_settings_changed_before_the_lock() {
     let quiet = clients.engine.recorded_creations().len();
     // 旧任务此刻拿到锁：设置已变，必须跳过，不能按 A 起 lego。
     clients.pending.fetch_add(1, Ordering::SeqCst);
-    clients.clone().run_issue(stale).await;
+    clients.clone().run_issue(stale, false).await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet,
@@ -47,7 +47,7 @@ async fn queued_issue_skips_when_settings_changed_before_the_lock() {
     // 对照：按现状排的任务照常签（测试引擎在起容器那步失败，但“试图起”发生）。
     let fresh = clients.effective().unwrap();
     clients.pending.fetch_add(1, Ordering::SeqCst);
-    clients.clone().run_issue(fresh).await;
+    clients.clone().run_issue(fresh, false).await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet + 1,
@@ -90,7 +90,7 @@ async fn queued_issue_runs_even_after_last_error_changed() {
         .unwrap();
     let quiet = clients.engine.recorded_creations().len();
     clients.pending.fetch_add(1, Ordering::SeqCst);
-    clients.clone().run_issue(queued).await;
+    clients.clone().run_issue(queued, false).await;
     assert_eq!(
         clients.engine.recorded_creations().len(),
         quiet + 1,

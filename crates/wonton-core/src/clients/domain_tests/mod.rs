@@ -6,7 +6,7 @@ use std::path::Path;
 
 use wonton_protocol::{CaaState, CredentialEntry, PutDomainRequest, SecretString};
 
-use super::{DNS_ENV_FILE, Domain, DomainError, Store, dotenv_names, dotenv_value};
+use super::{DNS_ENV_FILE, Domain, DomainError, Store, dotenv_names, dotenv_value, now_ms};
 use crate::entry_containers::EntryContainers;
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
@@ -69,6 +69,24 @@ fn request(suffix: Option<&str>) -> PutDomainRequest {
         }],
         accept_terms: true,
     }
+}
+
+/// 一份能解析的证书准备状态；`prepare` 会读它并和当前域名/服务商比对。
+fn prepared(dir: &Path, domain: &str, provider: &str) {
+    let path = dir.join("entry/prepared.json");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        path,
+        serde_json::json!({
+            "domain": domain,
+            "directory_url": "https://pebble.test:14000/dir",
+            "include_lan": true,
+            "provider": provider,
+            "account_uri": "https://pebble.test:14000/acct/1",
+        })
+        .to_string(),
+    )
+    .unwrap();
 }
 
 fn certificate(dir: &Path) {
