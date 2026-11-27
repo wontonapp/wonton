@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "onboard"]
 # 带补丁的第三方 crate 不算我们的成员，见 vendor/README.md。
 exclude = ["vendor/matrix-sdk", "vendor/matrix-sdk-ui"]
 
