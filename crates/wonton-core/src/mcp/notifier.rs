@@ -82,6 +82,7 @@ mod tests {
 
     fn card(choices: Vec<CardChoice>) -> ConfirmationCard {
         ConfirmationCard {
+            on_behalf: None,
             id: "card".into(),
             state: ConfirmationState::Pending,
             title: "Hermes 想安装 Grafana".into(),

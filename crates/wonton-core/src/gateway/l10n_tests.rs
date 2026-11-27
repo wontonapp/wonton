@@ -38,6 +38,7 @@ async fn device_languages_are_recorded_under_the_person() {
     let h = Harness::start(None).await;
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             username: "alice".into(),
             user_id: "@alice:wonton.localhost".into(),
             display_name: "爱丽丝".into(),

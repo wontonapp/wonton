@@ -236,6 +236,7 @@ async fn onboarding_marks_other_peoples_private_bot_absent_for_a_family_admin() 
     h.manager.bot_for_test(&agent.manifest.id, OWNER_BOT);
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             role_id: "admin".into(),
             wants_private_bot: false,
             ..MemberRecord::for_test("mia")

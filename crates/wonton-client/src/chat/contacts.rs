@@ -229,6 +229,8 @@ mod tests {
 
     fn bot(title: &str, user: &str, availability: BotChatAvailability) -> BotView {
         BotView {
+            shared: false,
+            danger: None,
             user_id: user.to_owned(),
             bot: wonton_protocol::BotRef {
                 plugin_id: "app.bot".into(),

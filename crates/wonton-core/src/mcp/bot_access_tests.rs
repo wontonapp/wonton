@@ -148,6 +148,7 @@ async fn keeper_role_and_bot_switch_both_gate_tools_without_reopening_the_sessio
     let role = people.roles.create(&draft).unwrap();
     s.members
         .invite(crate::members::MemberRecord {
+            invited_by: None,
             role_id: role.id.clone(),
             ..crate::members::MemberRecord::for_test("alice")
         })
@@ -223,6 +224,7 @@ async fn unresolved_keepers_and_missing_roles_do_not_inherit_owner_access() {
     let s = notes_setup().await;
     s.members
         .invite(crate::members::MemberRecord {
+            invited_by: None,
             role_id: "missing".into(),
             ..crate::members::MemberRecord::for_test("alice")
         })

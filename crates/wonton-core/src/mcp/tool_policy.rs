@@ -22,6 +22,7 @@ pub enum PolicyChange<'a> {
     AllowAll { caller: &'a str },
     Always { plugin: &'a str, caller: &'a str },
     ReadOnly { plugin: &'a str, tool: &'a str },
+    Danger { plugin: &'a str, caller: &'a str },
 }
 
 impl<'a> PolicyChange<'a> {
@@ -30,6 +31,7 @@ impl<'a> PolicyChange<'a> {
             Self::AllowAll { caller } => policy.set_allow_all(caller, enabled),
             Self::Always { plugin, caller } => policy.set_always(plugin, caller, enabled),
             Self::ReadOnly { plugin, tool } => policy.set_read_only(plugin, tool, enabled),
+            Self::Danger { plugin, caller } => policy.set_danger(plugin, caller, enabled),
         }
     }
 
@@ -38,6 +40,7 @@ impl<'a> PolicyChange<'a> {
             Self::AllowAll { caller } => ("allow_all", None, Some(caller), None),
             Self::Always { plugin, caller } => ("always", Some(plugin), Some(caller), None),
             Self::ReadOnly { plugin, tool } => ("read_only", Some(plugin), None, Some(tool)),
+            Self::Danger { plugin, caller } => ("danger", Some(plugin), Some(caller), None),
         };
         PolicyRecord {
             policy,
@@ -64,6 +67,14 @@ impl Bus {
                 caller: caller.to_string(),
                 name: cards::text(title),
                 enabled: policy.is_always(name, caller.as_str()),
+            });
+        let danger = callers
+            .iter()
+            .filter(|_| declares_mcp)
+            .map(|(caller, title)| BotSwitch {
+                caller: caller.to_string(),
+                name: cards::text(title),
+                enabled: policy.is_danger(name, caller.as_str()),
             });
         let allow_all =
             callers
@@ -96,6 +107,7 @@ impl Bus {
             tools,
             tools_error,
             always: always.collect(),
+            danger: danger.collect(),
             allow_all: allow_all.collect(),
             windows,
             problem: policy.problem(),

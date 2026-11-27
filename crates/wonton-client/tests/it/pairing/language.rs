@@ -271,7 +271,10 @@ async fn assert_other_failures_refresh(phone: &Phone, home: &Home) {
     let view = phone
         .wait_for(|view| matches!(view.pairing, Some(PairingStatus::JoinPending { .. })))
         .await;
-    let Some(PairingStatus::JoinPending { role: Some(role) }) = view.pairing else {
+    let Some(PairingStatus::JoinPending {
+        role: Some(role), ..
+    }) = view.pairing
+    else {
         panic!("the role must come with the pending join")
     };
     assert_eq!(role.name.as_deref(), Some("Member"));

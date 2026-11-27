@@ -179,6 +179,15 @@ pub struct InstalledPlugin {
     pub chat: Option<PluginChat>,
     /// 这台设备的人在这个插件里的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
+    /// 这个默认 Bot 是共享 Bot（全家共用），不是某个人的私人 Bot。
+    #[serde(default)]
+    pub bot_shared: bool,
+    /// 这个默认 Bot 开着危险模式（ADR-0091）。
+    #[serde(default)]
+    pub bot_danger: bool,
+    /// 主人现在能改这个 Bot 的危险模式：只有归属人的私人 Bot 能开。
+    #[serde(default)]
+    pub bot_danger_can_toggle: bool,
     /// 默认 Bot 身份的当前投影；未提供时也表示未知，不代表房间发送资格。
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]

@@ -294,9 +294,13 @@ impl HomeLink {
                     }
                 }
             }
-            Ok(PairResponse::Joining { outcome, role }) => {
+            Ok(PairResponse::Joining {
+                outcome,
+                role,
+                invited_by,
+            }) => {
                 tracing::info!(?outcome, "the home server answered the join request");
-                (Some(joining(outcome, role.as_ref())), None)
+                (Some(joining(outcome, role.as_ref(), invited_by)), None)
             }
             Ok(PairResponse::Rejected { reason, message }) => {
                 let diagnostic = super::failure::redact(&code, &message);
@@ -594,11 +598,16 @@ fn failed(reason: PairingFailure, message: String) -> PairingStatus {
     }
 }
 
-fn joining(outcome: JoinOutcome, role: Option<&RoleDef>) -> PairingStatus {
+fn joining(
+    outcome: JoinOutcome,
+    role: Option<&RoleDef>,
+    invited_by: Option<String>,
+) -> PairingStatus {
     match outcome {
         // 不认识的加入结果按“等批”算：比报失败让被邀请的人重扫码稳。
         JoinOutcome::Pending | JoinOutcome::Other => PairingStatus::JoinPending {
             role: role.map(join_role),
+            invited_by,
         },
         JoinOutcome::Rejected => failed(PairingFailure::JoinRejected, String::new()),
         JoinOutcome::CodeUsed => failed(PairingFailure::CodeUsed, String::new()),
@@ -612,7 +621,7 @@ fn join_role(role: &RoleDef) -> JoinRoleView {
         role_id: role.id.clone(),
         name: (!role.name.trim().is_empty()).then(|| role.name.trim().to_owned()),
         template: role.template,
-        abilities: role.permissions.granted_items(),
+        abilities: role.permissions.abilities(),
     }
 }
 

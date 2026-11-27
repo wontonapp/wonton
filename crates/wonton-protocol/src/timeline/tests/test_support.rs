@@ -164,6 +164,7 @@ pub(super) fn confirmation(
                 devices: Vec::new(),
                 requester: None,
                 origin: None,
+                on_behalf: None,
                 audience: crate::CardAudience::Keeper,
                 answered_by: None,
                 category: None,

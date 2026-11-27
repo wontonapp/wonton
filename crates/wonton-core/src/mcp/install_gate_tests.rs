@@ -534,6 +534,7 @@ async fn one_unreachable_admin_does_not_remove_the_shared_card() {
     let (_docker, engine) = FakeDocker::start().await;
     let s = setup(engine, Duration::from_secs(60)).await;
     member(&s, "admin", "admin", MemberStatus::Joined);
+    member(&s, "alice", "friend", MemberStatus::Joined);
     let notifier = Arc::new(AdminDevices::default());
     let confirmations = Arc::new(Confirmations::new(
         notifier.clone(),
@@ -553,7 +554,10 @@ async fn one_unreachable_admin_does_not_remove_the_shared_card() {
     );
     let ask = tokio::spawn({
         let bus = bus.clone();
-        async move { bus.ask_plugin_admin("alice".into(), draft()).await }
+        async move {
+            bus.ask_plugin_admin("alice/device:abc".into(), draft())
+                .await
+        }
     });
     let pending = card(&bus, Some("admin")).await;
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -573,6 +577,9 @@ async fn one_unreachable_admin_does_not_remove_the_shared_card() {
     );
     assert_eq!(bus.confirmations().list(None).0[0].id, pending.id);
     assert_eq!(pending.audience, CardAudience::Admins);
+    let behalf = pending.on_behalf.as_ref().expect("管理员卡片要写替谁");
+    assert_eq!(behalf.display_name, "alice");
+    assert_eq!(behalf.user_id, "@alice:test");
     assert_eq!(
         bus.confirmations().may_answer(&pending.id, Some("alice")),
         Some(false)

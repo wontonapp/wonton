@@ -37,6 +37,9 @@ fn permission(permission: &str, text: &str, risk: Option<PermissionRisk>) -> Per
 
 fn installed() -> InstalledPlugin {
     InstalledPlugin {
+        bot_danger_can_toggle: false,
+        bot_shared: false,
+        bot_danger: false,
         chat: Default::default(),
         id: "app.immich.photos".into(),
         title: "相册".into(),

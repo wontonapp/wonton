@@ -86,8 +86,12 @@ pub enum PairingStatus {
     /// 取消不会到这一步。下一次开始配对、或者连接信息被重置时清掉。
     Paired,
     /// 扫的是加入别人家的码，管理员还没同意：被邀请的人看到的加入页。`role` 是邀请时定的角色和这个角色
-    /// 能做的事；核心没带角色时为空。管理员同意后用同一个码再试一次就配上，拒绝或码作废时转到 [`Self::Failed`]。
-    JoinPending { role: Option<JoinRoleView> },
+    /// 能做的事；核心没带角色时为空。`invited_by` 是邀请人的显示名，核心不知道时为空。
+    /// 管理员同意后用同一个码再试一次就配上，拒绝或码作废时转到 [`Self::Failed`]。
+    JoinPending {
+        role: Option<JoinRoleView>,
+        invited_by: Option<String>,
+    },
     Failed {
         reason: PairingFailure,
         /// 按 App 语言写的失败说明，只放进默认收起的“详情”；壳按 `reason` 写标题和下一步。
@@ -105,8 +109,28 @@ pub struct JoinRoleView {
     /// 主人给角色起的名字；模板没改过名时为空，壳按 [`template`](Self::template) 本地化。
     pub name: Option<String>,
     pub template: Option<RoleTemplate>,
-    /// 这个角色放行的权限项，按 [`PermissionItem::ALL`] 的顺序；每一项由壳写成一句人话。
-    pub abilities: Vec<PermissionItem>,
+    /// 这个角色的每一项权限和它的取值，按 [`PermissionItem::ALL`] 的顺序；每一项由壳写成一句人话。
+    pub abilities: Vec<JoinAbility>,
+}
+
+/// 加入页上的一项权限：是哪一项、这个角色是放行、要管理员批还是不行。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct JoinAbility {
+    pub item: PermissionItem,
+    pub state: JoinAbilityState,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum JoinAbilityState {
+    Allowed,
+    /// 能用，但每一步要管理员批。
+    NeedsAdmin,
+    NotAllowed,
+    #[serde(other)]
+    Other,
 }
 
 /// 配对失败的原因，壳据此提示主人下一步。

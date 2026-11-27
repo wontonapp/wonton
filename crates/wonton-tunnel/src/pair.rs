@@ -298,6 +298,9 @@ pub enum PairResponse {
         outcome: JoinOutcome,
         /// 加入后拿到的角色，只在 `Pending` 时给。
         role: Option<RoleDef>,
+        /// 邀请人的显示名，只在 `Pending` 时给；核心不知道时为空。
+        #[serde(default)]
+        invited_by: Option<String>,
     },
     Rejected {
         reason: RejectReason,
@@ -506,6 +509,7 @@ mod tests {
         let pending = PairResponse::Joining {
             outcome: JoinOutcome::Pending,
             role: Some(role.clone()),
+            invited_by: Some("Owner".into()),
         };
         let value = serde_json::to_value(&pending).unwrap();
         assert_eq!(value["result"], "joining");
@@ -513,6 +517,7 @@ mod tests {
         assert_eq!(value["role"]["id"], "child");
         assert_eq!(value["role"]["name"], "");
         assert_eq!(value["role"]["template"], "child");
+        assert_eq!(value["invited_by"], "Owner");
         assert_eq!(
             serde_json::from_value::<PairResponse>(value).unwrap(),
             pending
@@ -525,11 +530,14 @@ mod tests {
             let reply = PairResponse::Joining {
                 outcome,
                 role: None,
+                invited_by: None,
             };
             let value = serde_json::to_value(&reply).unwrap();
             assert_eq!(
                 value,
-                serde_json::json!({"result": "joining", "outcome": wire, "role": null})
+                serde_json::json!({
+                    "result": "joining", "outcome": wire, "role": null, "invited_by": null
+                })
             );
             assert_eq!(
                 serde_json::from_value::<PairResponse>(value).unwrap(),
@@ -546,6 +554,7 @@ mod tests {
             PairResponse::Joining {
                 outcome: JoinOutcome::Other,
                 role: None,
+                invited_by: None,
             }
         );
     }

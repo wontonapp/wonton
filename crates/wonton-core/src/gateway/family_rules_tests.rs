@@ -349,6 +349,7 @@ impl Home {
     pub(super) fn member_device(&self, username: &str) -> EndpointId {
         self.members
             .invite(crate::members::MemberRecord {
+                invited_by: None,
                 username: username.to_owned(),
                 user_id: format!("@{username}:test"),
                 display_name: username.to_owned(),

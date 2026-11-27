@@ -105,6 +105,7 @@ async fn joining_waits_for_an_administrator_and_then_pairs_only_the_claiming_end
     let endpoint = loopback_endpoint(key.clone()).await;
     let response = pair(&endpoint, &code, "Guest phone").await.unwrap();
     let PairResponse::Joining {
+        invited_by: _,
         outcome: JoinOutcome::Pending,
         role: Some(role),
     } = &response
@@ -199,6 +200,7 @@ async fn ordinary_members_cannot_list_or_decide_requests_and_rejection_voids_the
     assert!(matches!(
         pair(&endpoint, &code, "Guest phone").await.unwrap(),
         PairResponse::Joining {
+            invited_by: _,
             outcome: JoinOutcome::Pending,
             ..
         }
