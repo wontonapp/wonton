@@ -108,6 +108,39 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
   启动时会 dump 整份配置、包含令牌，开 debug 排错时别把日志原样贴出去。
   验收：`journalctl -u wonton-iroh-relay | grep -F -- "$(cut -d= -f2 /etc/wonton-iroh-relay/relay.env)"` 应无输出。
 
+## 运行期健康自检（可选，不默认装）
+
+`install.sh` 的 `post_start_check` 只在安装那一次跑。之后证书快过期、QAD 7842 被改回只监听回环、
+`/healthz` 5xx、二进制被换成本地编译的版本，都不会有人发现。这个 systemd timer 每 5 分钟在本机跑
+`healthcheck.sh` 查五件事，任一失败就把 `FAIL <项> …` 写进 journal 并以 1 退出，进 `systemctl --failed`：
+
+- `/etc/wonton-iroh-relay/config.toml` 和 `relay.env` 存在、权限是 600 或 640；
+- `http://127.0.0.1:8742/healthz` 返回 200；
+- UDP 7842 监听在 `0.0.0.0`/`[::]`（判定同 `install.sh`）；
+- `/etc/wonton-iroh-relay/tls/fullchain.pem` 30 天内不过期；
+- 二进制 `--version` 和 `release.env` 的固定版本一致。
+
+只报警，不重启服务（重启仍由 systemd 管）。缺 `curl`、`ss`、`openssl` 时对应项打 `SKIP` 并注明，不当成通过。
+
+装（root，在部署目录里；timer 是可选步骤，`install.sh` 不会装）：
+
+```bash
+install -m 0755 healthcheck.sh /opt/wonton-iroh-relay/healthcheck.sh
+install -m 0644 release.env /opt/wonton-iroh-relay/release.env   # 版本比对的固定值
+install -m 0644 wonton-iroh-relay-healthcheck.service /etc/systemd/system/
+install -m 0644 wonton-iroh-relay-healthcheck.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now wonton-iroh-relay-healthcheck.timer
+```
+
+手动跑一次看输出（root；0 = 全过，1 = 有失败项）：`/opt/wonton-iroh-relay/healthcheck.sh`。
+日志：`journalctl -u wonton-iroh-relay-healthcheck`；上次结果：`systemctl status wonton-iroh-relay-healthcheck`；
+下次时间：`systemctl list-timers wonton-iroh-relay-healthcheck.timer`。
+
+停用：`systemctl disable --now wonton-iroh-relay-healthcheck.timer`，再删掉两个单元和 `/opt/wonton-iroh-relay/healthcheck.sh`。
+
+测试（纯 shell 假命令，不用 Docker、不连网）：`cloud/iroh-relay/test/healthcheck-test.sh`。
+
 ## 验收
 
 ```bash
@@ -122,6 +155,9 @@ curl --noproxy '*' -o /dev/null -w '%{http_code}\n' -H 'Connection: Upgrade' \
 
 # 端到端（开发机，docker；测连接、30 秒吞吐、错令牌被拒，命令见 test/relay-e2e.sh）
 cloud/iroh-relay/test/relay-e2e.sh
+
+# 健康自检脚本的行为测试（假命令，不用 Docker、不连网）
+cloud/iroh-relay/test/healthcheck-test.sh
 ```
 
 `test/relay-e2e.sh` 用同版本官方二进制 + nginx（TLS 终结）+ 上游 `transfer` 示例当一对 `--relay-only` 端点：
