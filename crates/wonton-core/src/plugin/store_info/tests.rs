@@ -203,17 +203,6 @@ fn store_fields_are_checked() {
             ),
         ),
         (
-            format!("  subtitle: {{zh: {}, en: x}}", "字".repeat(31)),
-            message(
-                "plugin-settings-store-info-field-length",
-                &[("field", "subtitle"), ("lang", "zh"), ("max", "30")],
-            ),
-        ),
-        (
-            "  subtitle: {zh: \"\"}".to_owned(),
-            "至少要写一种语言".to_owned(),
-        ),
-        (
             format!("  release_notes: {{zh: {notes}, en: x}}"),
             message(
                 "plugin-settings-store-info-field-length",
@@ -254,6 +243,19 @@ fn store_fields_are_checked() {
         let err = parse_err(&extra);
         assert!(err.contains(&expected), "{extra}：{err}");
     }
+}
+
+#[test]
+fn subtitle_is_short_and_not_empty() {
+    let long = format!("  subtitle: {{zh: {}, en: x}}", "字".repeat(31));
+    let err = parse_err(&long);
+    let expected = message(
+        "plugin-settings-store-info-field-length",
+        &[("field", "subtitle"), ("lang", "zh"), ("max", "30")],
+    );
+    assert!(err.contains(&expected), "{err}");
+    let err = parse_err("  subtitle: {zh: \"\"}");
+    assert!(err.contains("至少要写一种语言"), "{err}");
 }
 
 #[test]

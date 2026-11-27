@@ -278,6 +278,7 @@ fn plugin(id: &str, title: &str, revision: &str) -> InstalledPlugin {
         chat: Default::default(),
         id: id.to_owned(),
         title: title.to_owned(),
+        subtitle: None,
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: revision.to_owned(),
