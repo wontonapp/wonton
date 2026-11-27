@@ -399,7 +399,12 @@ impl Bots {
 
     /// 房间里的对方是 Bot 时给出身份和可用性：以核心的可达清单为准；外站 Bot、旧核心或清单还没到时退回活动快照，
     /// 退不出仍是 `None`（当普通人，输入照常）。
-    pub(super) fn room_bot(&self, user_id: Option<&str>, room_name: &str) -> Option<RoomBot> {
+    pub(super) fn room_bot(
+        &self,
+        user_id: Option<&str>,
+        room_name: &str,
+        name_fallback: bool,
+    ) -> Option<RoomBot> {
         let shared = lock(&self.local);
         let row = user_id
             .and_then(|user_id| {
@@ -410,6 +415,9 @@ impl Bots {
                     .find(|row| row.user_id.as_deref() == Some(user_id))
             })
             .or_else(|| {
+                if !name_fallback {
+                    return None;
+                }
                 // 记录没建出来的行没有 Matrix ID，按插件显示名和房间名对上；同名时只当提示，不当发送资格。
                 shared.shared.as_ref()?.iter().find(|row| {
                     row.user_id.is_none()
@@ -439,8 +447,10 @@ impl Bots {
         let bot = user_id
             .and_then(|user_id| view.bots.iter().find(|bot| bot.user_id == user_id))
             .or_else(|| {
-                // 旧核心/联邦对不上 ID 时，按显示名找一次；找不到仍是普通人。
-                view.bots.iter().find(|bot| bot.name == room_name)
+                // 旧核心/联邦对不上 ID 时，只在私聊里按显示名找一次；找不到仍是普通人。
+                name_fallback
+                    .then(|| view.bots.iter().find(|bot| bot.name == room_name))
+                    .flatten()
             })?;
         Some(RoomBot {
             bot: bot.bot.clone(),
