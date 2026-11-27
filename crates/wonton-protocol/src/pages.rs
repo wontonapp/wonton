@@ -184,7 +184,30 @@ pub struct TabPage {
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = false))]
     pub opens_in_browser: bool,
+    /// 壳不加载网页，画这个原生界面（ADR-0113 第 8 节）。网页还在 `url`，胶囊菜单里的“网页版”打开它
+    /// （同一插件的 `TabRef::PluginPath`，路径 `/`）。`None` 或壳不认识的 `Other` 照旧加载网页。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub native: Option<NativePage>,
 }
+
+/// 代替网页的原生界面。核心按插件声明的标准给，不认插件名：音乐看 `provides.media_source.browse`，
+/// 影视看 `catalog`，相册看 `library`。
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum NativePage {
+    Music,
+    Video,
+    Photos,
+    /// 新版本核心加的原生页，原值留着；壳不认识，照旧加载网页。
+    Other(String),
+}
+
+crate::media::known_or_other!(NativePage {
+    Music => "music",
+    Video => "video",
+    Photos => "photos",
+});
 
 /// 页面的图标。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -349,6 +372,7 @@ mod tests {
 
     fn sample_page(state: TabState, icon: TabIcon) -> TabPage {
         TabPage {
+            native: None,
             title: "动态".into(),
             icon,
             url: Some("http://app-example-feed.wonton.localhost:8480/feed".into()),
@@ -584,5 +608,24 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(newer.reason, Some(PagesFailure::Other));
+    }
+
+    #[test]
+    fn native_pages_this_build_does_not_know_stay_as_other() {
+        let known: NativePage = serde_json::from_value(serde_json::json!("photos")).unwrap();
+        assert_eq!(known, NativePage::Photos);
+        let unknown: NativePage = serde_json::from_value(serde_json::json!("books")).unwrap();
+        assert_eq!(unknown, NativePage::Other("books".into()));
+        assert_eq!(
+            serde_json::to_value(&unknown).unwrap(),
+            serde_json::json!("books")
+        );
+
+        let mut page =
+            serde_json::to_value(sample_page(TabState::Ready, TabIcon::Plugin { icon: None }))
+                .unwrap();
+        page.as_object_mut().unwrap().remove("native");
+        let older: TabPage = serde_json::from_value(page).unwrap();
+        assert_eq!(older.native, None);
     }
 }
