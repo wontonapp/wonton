@@ -415,7 +415,6 @@ internal fun footerReserve(message: TimelineMessage, resources: Resources): Stri
         if (edited.isNotEmpty()) add(edited)
         add(messageTime(message))
         // 回执图标是 14dp，一个字宽不够；不折行空格按 6 个留，字体放大缩小时两边等比。
-        // `TimelineFooterReserveTest` 锁着这 6 个空格和它的排布，改脚注时一起改。
         if (message.isOwn && (message.status == MessageStatus.SENT || message.status == MessageStatus.READ)) {
             add("\u00A0".repeat(6))
         }
