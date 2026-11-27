@@ -17,7 +17,7 @@ import app.wonton.ui.design.toColor
 internal fun botChatNotice(availability: BotChatAvailability?): Int? = when (availability) {
     null, BotChatAvailability.Available -> null
     is BotChatAvailability.Unavailable -> when (availability.reason) {
-        BotChatUnavailable.OTHER_PRIVATE_BOT -> R.string.room_bot_other_private
+        BotChatUnavailable.OWNER_PRIVATE -> R.string.room_bot_other_private
         BotChatUnavailable.GRANT_NOT_ACTIVE -> R.string.room_bot_grant_revoked
         BotChatUnavailable.OTHER -> R.string.room_bot_unavailable
     }

@@ -674,7 +674,7 @@ private extension ChatRoomView {
             return nil
         case let .unavailable(reason):
             switch reason {
-            case .otherPrivateBot: return .Chat.roomBotOtherPrivate
+            case .ownerPrivate: return .Chat.roomBotOtherPrivate
             case .grantNotActive: return .Chat.roomBotGrantRevoked
             default: return .Chat.roomBotUnavailable
             }
