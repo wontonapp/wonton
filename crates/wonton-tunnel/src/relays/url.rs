@@ -1,7 +1,7 @@
 use iroh::RelayUrl;
 use url::Url;
 
-use super::{Relay, RelayView};
+use super::relay::{Relay, RelayView};
 
 /// 给界面、发现文件和日志用的规范化文字：根路径保留 `/`，非根路径去掉尾斜杠（`/relay/` → `/relay`）。
 ///
