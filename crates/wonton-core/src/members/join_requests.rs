@@ -30,7 +30,10 @@ pub(super) struct StoredJoin {
 pub enum JoinCheck {
     Unknown,
     Expired,
-    Pending(String),
+    Pending {
+        role_id: String,
+        invited_by: Option<String>,
+    },
     Paired,
     Rejected,
     CodeUsed,
@@ -112,7 +115,10 @@ impl Members {
             return Ok(Some(JoinCheck::CodeUsed));
         }
         let check = match join.decision {
-            Decision::Pending => JoinCheck::Pending(member.role_id.clone()),
+            Decision::Pending => JoinCheck::Pending {
+                role_id: member.role_id.clone(),
+                invited_by: member.invited_by.clone(),
+            },
             Decision::Approved => {
                 if devices
                     .get(&endpoint)
@@ -174,6 +180,7 @@ impl Members {
                 && join.decision == Decision::Pending
         }) {
             let role_id = member.role_id.clone();
+            let invited_by = member.invited_by.clone();
             let mut next = stored.clone();
             // 改写前把旧 hash 留下：旧码交回来还按这条记录回答。
             let retired = next.joins[index].code_hash.clone();
@@ -183,7 +190,10 @@ impl Members {
             next.joins[index].expires_at_ms = expires_at_ms;
             next.joins[index].request.device_name = device_name.to_owned();
             self.commit(&mut stored, next)?;
-            return Ok(JoinCheck::Pending(role_id));
+            return Ok(JoinCheck::Pending {
+                role_id,
+                invited_by,
+            });
         }
         let mut bytes = [0; 16];
         getrandom::fill(&mut bytes).expect("系统随机数不可用");
@@ -199,7 +209,10 @@ impl Members {
         let check = if joined {
             JoinCheck::Paired
         } else {
-            JoinCheck::Pending(member.role_id.clone())
+            JoinCheck::Pending {
+                role_id: member.role_id.clone(),
+                invited_by: member.invited_by.clone(),
+            }
         };
         let mut next = stored.clone();
         next.joins.push(StoredJoin {

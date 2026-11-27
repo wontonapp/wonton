@@ -257,7 +257,10 @@ fn reused_request_still_answers_the_retired_code_as_used() {
         members
             .request_join(second.secret.expose(), phone, "手机", &devices)
             .unwrap(),
-        JoinCheck::Pending("friend".into())
+        JoinCheck::Pending {
+            role_id: "friend".into(),
+            invited_by: None,
+        }
     );
     // 复用之后旧码仍按记录回答：别的设备交回是“码已用过”。
     let other = SecretKey::generate().public();
@@ -272,6 +275,9 @@ fn reused_request_still_answers_the_retired_code_as_used() {
         members
             .request_join(first.secret.expose(), phone, "手机", &devices)
             .unwrap(),
-        JoinCheck::Pending("friend".into())
+        JoinCheck::Pending {
+            role_id: "friend".into(),
+            invited_by: None,
+        }
     );
 }
