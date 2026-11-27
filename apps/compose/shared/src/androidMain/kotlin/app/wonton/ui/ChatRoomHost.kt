@@ -36,7 +36,7 @@ internal fun OpenRoom(
     val isDirect = row?.isDirect == true
     val isReadOnly = row?.isReadOnly == true
     val bot = viewModel.bots.directBot(row)
-    val botChat = row?.botChat ?: bot?.availability
+    val botAccess = row?.bot?.access ?: bot?.availability?.let(::botAccessOf)
     val main = SideChatEntry(
         supported = row?.sideChats == true && !isReadOnly,
         covered = sideChat != null,
@@ -55,7 +55,7 @@ internal fun OpenRoom(
                 isDirect = isDirect,
                 isReadOnly = isReadOnly,
                 bot = bot,
-                botChat = botChat,
+                botAccess = botAccess,
                 bots = viewModel.bots,
                 plugins = plugins,
                 rooms = viewModel.rooms,
@@ -83,7 +83,7 @@ internal fun OpenRoom(
                     isDirect = isDirect,
                     isReadOnly = isReadOnly,
                     bot = bot,
-                    botChat = botChat,
+                    botAccess = botAccess,
                     bots = viewModel.bots,
                     plugins = plugins,
                     rooms = viewModel.rooms,
