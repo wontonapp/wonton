@@ -1,8 +1,8 @@
-//! 经本地代理调核心的文件接口（ADR-0020）。核心凭隧道身份认出这台已配对设备；每个请求都带 [`FILES_HEADER`]。
+//! 经本地代理调核心的文件接口（ADR-0020）。核心凭隧道身份认出这台已配对设备；每个请求都带 [`FILES_HEADER`] 和 App 的语言。
 
 use std::time::Duration;
 
-use reqwest::header::HeaderMap;
+use reqwest::header::{ACCEPT_LANGUAGE, HeaderMap};
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use url::Url;
@@ -103,6 +103,7 @@ impl Api {
         self.client
             .request(method, self.url(path))
             .header(FILES_HEADER, "1")
+            .header(ACCEPT_LANGUAGE, CATALOG.tag(language()))
     }
 
     fn control(&self, method: Method, path: &str) -> RequestBuilder {
@@ -304,4 +305,33 @@ fn unnamed(status: StatusCode, said: Option<&str>) -> Problem {
 
 pub(super) fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name)?.to_str().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 文件接口的每个请求都带着 App 的语言：网关按 `Accept-Language` 挑后台文案（`gateway/api/mod.rs`），不带就落英文。
+    #[test]
+    fn every_file_request_carries_the_app_language() {
+        let api = Api {
+            base: Url::parse("http://wonton.localhost/_wonton/files/").unwrap(),
+            client: Client::new(),
+        };
+        for request in [
+            api.stream(Method::GET, "files"),
+            api.control(Method::HEAD, "files"),
+            api.tus(Method::PATCH, "uploads"),
+            api.uploads(),
+        ] {
+            let request = request.build().expect("请求能建出来");
+            assert_eq!(
+                request
+                    .headers()
+                    .get(ACCEPT_LANGUAGE)
+                    .map(|value| value.to_str().unwrap()),
+                Some(CATALOG.tag(language()))
+            );
+        }
+    }
 }

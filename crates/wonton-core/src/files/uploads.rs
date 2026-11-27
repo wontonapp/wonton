@@ -299,7 +299,40 @@ impl Uploads {
 
 impl Files {
     /// 创建上传（tusd 的 pre-create）：查磁盘、发编号。没传完的编号查不到，所以这时不写编号记录。
+    ///
+    /// 放到单独的任务里做：tusd 等钩子有期限（`-hooks-http-timeout`，默认 15 秒），核心写待完成记录慢过它时会把钩子连接关掉，
+    /// 这一层 async fn 的 future 跟着被丢掉。放进任务以后，登记（[`Self::upload_being_created`]）和这个上传的队活到真的做完，
+    /// 刚做完的一小会儿里也还认：网关判得出是核心自己慢、而不是把 tusd 的裸 500 转给客户端；作废也排得在写记录后面，不会写完记录没人认。
     pub async fn create_upload(
+        self: &Arc<Self>,
+        upload: NewUpload<'_>,
+        langs: &Languages,
+    ) -> Result<FileId, Failure> {
+        let files = self.clone();
+        let langs = langs.clone();
+        let (id, name, mime_type, size, device) = (
+            upload.id.clone(),
+            upload.name.map(str::to_owned),
+            upload.mime_type.map(str::to_owned),
+            upload.size,
+            upload.device.to_owned(),
+        );
+        tokio::spawn(async move {
+            let upload = NewUpload {
+                id: &id,
+                name: name.as_deref(),
+                mime_type: mime_type.as_deref(),
+                size,
+                device: &device,
+            };
+            files.create_upload_in_turn(upload, &langs).await
+        })
+        .await
+        .map_err(|e| Failure::internal(format!("建上传的任务中止：{e}")))?
+    }
+
+    /// 建上传本身：登记还在做，排上这个上传的队，查完磁盘、写待完成记录。
+    async fn create_upload_in_turn(
         self: &Arc<Self>,
         upload: NewUpload<'_>,
         langs: &Languages,

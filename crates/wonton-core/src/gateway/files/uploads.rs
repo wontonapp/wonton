@@ -261,7 +261,8 @@ async fn create_upload(
         .and_then(|location| location.to_str().ok())
         .and_then(|location| location.rsplit('/').next())
         .and_then(|id| id.parse::<FileId>().ok());
-    // tusd 等钩子超时也回 500（见 `Files::upload_being_created`）。要在作废之前看：作废排在钩子后面，钩子做完就看不出了。
+    // tusd 等钩子超时也回 500（见 `Files::upload_being_created`）。要在作废之前看：作废排在钩子后面，钩子做完的一小会儿里也还认
+    // （见 `creating` 的 `DONE_GRACE`），写完得比 tusd 的期限早一点点也一样判得出是核心自己慢。
     let slow = response.status() == StatusCode::INTERNAL_SERVER_ERROR
         && caller.files.upload_being_created(&id);
     if slow {
