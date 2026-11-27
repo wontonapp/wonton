@@ -319,6 +319,35 @@ mod tests {
         assert!(!PinState::Pinned.window_expired("99.0.0"));
     }
 
+    /// 轮换宽限（ADR-0112 §5）：过了 7 天的旧 pin 丢掉；最新的一张即使也过了宽限仍留着；没到期的旧 pin 留着。
+    #[test]
+    fn prune_drops_expired_pins_but_never_the_newest() {
+        let now = now_ms();
+        let expired = |name: &str, hours_ago: u64| PeerPin {
+            certificate: certificate(name),
+            pinned_at_ms: now - PIN_GRACE_MS - hours_ago * crate::peers::HOUR_MS,
+        };
+        let older_expired = expired("older.example", 2);
+        let fresh = PeerPin {
+            certificate: certificate("fresh.example"),
+            pinned_at_ms: now - crate::peers::HOUR_MS,
+        };
+        let newest_expired = expired("newest.example", 1);
+
+        let mut pins = vec![older_expired, fresh.clone(), newest_expired.clone()];
+        assert!(prune_expired_pins(&mut pins), "丢过期的");
+        assert_eq!(
+            pins,
+            vec![fresh.clone(), newest_expired],
+            "只丢过期的，最新的过期也留"
+        );
+
+        let mut single = vec![expired("only.example", 1)];
+        assert!(!prune_expired_pins(&mut single), "只剩一张时没有可丢的");
+        assert_eq!(single.len(), 1, "最新的一张永远留着");
+        assert!(!prune_expired_pins(&mut Vec::new()));
+    }
+
     #[test]
     fn a_certificate_keeps_its_own_fingerprint() {
         let certificate = certificate("home.example");
