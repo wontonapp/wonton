@@ -340,6 +340,15 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                item.subtitle?.let {
+                    Text(
+                        it,
+                        style = WontonTheme.typography.supporting,
+                        color = colors.textPrimary.toColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     item.summary,
                     style = WontonTheme.typography.supporting,

@@ -379,6 +379,9 @@ private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: De
             PluginIconImage(detail.icon, WontonTheme.size.detailIcon, plugins)
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 Text(detail.title, style = WontonTheme.typography.sectionTitle, color = colors.textPrimary.toColor())
+                detail.subtitle?.let {
+                    Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+                }
                 Text(detail.summary, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
