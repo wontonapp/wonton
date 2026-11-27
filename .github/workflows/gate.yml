@@ -24,7 +24,7 @@ on:
 
 # 同一个 PR 又推了新提交，旧的整轮取消（含调用的重作业），别占着 runner；main 上的每次合并都跑完。
 concurrency:
-  group: gate-${{ github.ref }}
+  group: gate-${{ github.ref }}${{ github.event.action == 'edited' && github.event.changes.base == null && '-meta' || '' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -201,9 +201,13 @@ jobs:
   summary:
     name: gate 汇总
     needs: [changes, lint, rust, ios, android, docker]
-    if: always() && (github.event.action != 'edited' || github.event.changes.base != null)
+    if: always()
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      # body/title-only 的 edited 要读上一轮真 run 的 gate 汇总，把它镜像出来；不能让改正文把红洗成绿。
+      actions: read
     env:
       RESULTS: ${{ join(needs.*.result, ' ') }}
     steps:
@@ -213,6 +217,7 @@ jobs:
           echo "::error::草稿 PR：rust/android/ios/docker 重作业按设计没跑，这份汇总不算数——转 ready 会重跑，以那次为准"
           exit 1
       - name: 各作业的结果
+        if: github.event.action != 'edited' || github.event.changes.base != null
         run: |
           echo "$RESULTS"
           for result in $RESULTS; do
@@ -220,4 +225,41 @@ jobs:
               success|skipped) ;;
               *) exit 1 ;;
             esac
+          done
+      # 改标题/正文也发 edited，但这里没有重作业。改 body 时把“同一个 head 上一轮真 gate”的汇总结论
+      # 原样映到本轮：成功照旧绿、失败照旧红，规则集/队列/land 看到的永远是 SUCCESS/FAILURE，不是 SKIPPED。
+      # 真 run 还在跑就等它完（必需检查只看最新 suite，旧 suite 晚到盖不过新 suite）。
+      - name: 镜像上一轮真 gate 的结果
+        if: github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          SELF: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 80 * 60 ))
+          while :; do
+            runs=$(gh api "repos/$REPO/actions/runs?event=pull_request&head_sha=$HEAD&per_page=100" --paginate \
+              --jq '[.workflow_runs[] | select(.path == ".github/workflows/gate.yml" and (.id | tostring) != env.SELF)] | sort_by(.created_at) | reverse | .[] | [.id, .status, (.conclusion // "")] | @tsv')
+            real=""
+            while IFS=$'\t' read -r id status conclusion; do
+              [ -n "$id" ] || continue
+              jobs=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq '[.jobs[] | {name, conclusion}]') || continue
+              # 真 run 至少有一个非汇总的作业（草稿/空范围的 run 也可能只有 lint）；全 skipped 的 body run 没有。
+              if jq -e '[.[] | select(.name != "gate 汇总" and .conclusion != "skipped")] | length > 0' >/dev/null <<<"$jobs"; then
+                real=$id; summary=$(jq -r '[.[] | select(.name == "gate 汇总") | .conclusion // ""] | first // ""' <<<"$jobs")
+                break
+              fi
+            done <<<"$runs"
+            [ -n "$real" ] || { echo "这个 head 还没有真实 gate run，15 秒后再找"; sleep 15; continue; }
+            if [[ "$status" != completed ]]; then
+              echo "上一轮真 gate（run $real）还在 $status，等它完"
+              (( $(date +%s) < deadline )) || { echo "等上一轮真 gate 超时"; exit 1; }
+              sleep 15
+              continue
+            fi
+            echo "镜像 run $real 的 gate 汇总：${summary:-缺失}"
+            [ "$summary" = success ] || exit 1
+            exit 0
           done
