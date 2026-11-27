@@ -80,7 +80,10 @@ pub use home::Network;
 pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
 pub use media_link::{
-    MediaSubscription, PlaybackSubscription, PlayerPhase, PlayerState, PlayerSupport,
+    MediaSubscription, OfflineState, PlaybackSubscription, PlayerPhase, PlayerState, PlayerSupport,
+    VideoActionFailure, VideoActionResult, VideoDetail, VideoEntry, VideoEntryKind, VideoHome,
+    VideoLibrary, VideoLibraryKind, VideoMediaInfo, VideoPerson, VideoRole, VideoShelf,
+    VideoShelfKind, VideoSort, VideoWall, VideoWallQuery,
 };
 pub use pages::ContentPageSubscription;
 pub use pages::bridge::{
