@@ -440,3 +440,37 @@ async fn several_fitting_providers_need_a_source_or_the_owners_default() {
         .unwrap();
     assert_eq!(only.provider, "app.example.photos");
 }
+
+#[tokio::test]
+async fn a_provider_the_person_cannot_use_does_not_count() {
+    let (photos_at, _, _p) = serve(caps(&["download"], &["video"])).await;
+    let (video_at, _, _v) = serve(caps(&["download"], &["video"])).await;
+    let dir = tempfile::tempdir().unwrap();
+    let ops = [MediaOperation::Download];
+    let (providers, _) = providers(
+        &dir,
+        vec![
+            (
+                candidate("app.example.photos", &ops, &[MediaKind::Video]),
+                photos_at,
+            ),
+            (
+                candidate("app.example.video", &ops, &[MediaKind::Video]),
+                video_at,
+            ),
+        ],
+    );
+    // 两家都能下视频，这个人只能用其中一家：就用它，不回 source_required。
+    let only_video = |plugin: &str| plugin == "app.example.video";
+    let picked = providers
+        .route("alice", only_video, &ops[0], Some(&MediaKind::Video), None)
+        .await
+        .unwrap();
+    assert_eq!(picked.provider, "app.example.video");
+    // 能做的都用不了：权限问题，不是“请选一家”。
+    let failure = providers
+        .route("alice", |_| false, &ops[0], Some(&MediaKind::Video), None)
+        .await
+        .unwrap_err();
+    assert_eq!(failure.code, MediaFailureCode::PermissionDenied);
+}
