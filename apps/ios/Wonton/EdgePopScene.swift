@@ -15,6 +15,8 @@ struct EdgePopScene {
     private let from: UIView
     private let added: [UIView]
     private let under: UIView
+    /// 临时放 `under` 的容器。`under` 已经不在它里面（盖子被别处收掉、UIKit 把它放回了窗口）就不再动它。
+    private weak var container: UIView?
     /// `under` 原来在哪：弹回时放回去。全屏盖子下面那页平时不在窗口里，`superview` 是空的。
     private let underHome: Home
 
@@ -54,11 +56,13 @@ struct EdgePopScene {
         }
         self.from = from
         self.under = under
+        self.container = container
         added = [moving, dim, shadow]
     }
 
     /// 弹回以后把下面那页放回原处。
     func restoreUnder() {
+        guard let container, under.superview === container else { return }
         under.frame = underHome.frame
         if let home = underHome.superview {
             home.insertSubview(under, at: min(underHome.index, home.subviews.count))
@@ -68,15 +72,17 @@ struct EdgePopScene {
     }
 
     /// 拖完关盖子时把下面那页还回原处：留在盖子的容器里会跟着容器一起被拿走，整屏黑掉（iOS 26.5 模拟器实测）。
-    /// 还回去到盖子真正收掉之间，容器里垫一张它的快照挡住；盖子没收掉的话快照过一会儿自己拿掉。
-    func handBackUnder() {
+    /// 还回去到盖子真正收掉之间，容器里垫一张它的快照挡住；返回这张快照，盖子收掉时由调用的一方拿掉。
+    func handBackUnder() -> UIView? {
+        guard let container, under.superview === container else { return nil }
         let still = under.snapshotView(afterScreenUpdates: false)
-        if let still, let container = under.superview {
+        if let still {
             still.frame = under.frame
+            still.isUserInteractionEnabled = false
             container.addSubview(still)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { still.removeFromSuperview() }
         }
         restoreUnder()
+        return still
     }
 
     /// 拿掉快照、压暗和阴影。`showingFrom` 为假时上面一页留着藏起来，等它自己被收走，免得收走前闪一下。
