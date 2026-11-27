@@ -302,6 +302,66 @@
         }
       }
     },
+    "video.waiting": {
+      "comment": "Label next to a paused download progress bar: it continues when the server says so.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting to continue"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待继续下载"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待繼續下載"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再開を待っています"
+          }
+        }
+      }
+    },
+    "video.removeDownload.confirm": {
+      "comment": "Title of the confirmation before deleting a downloaded copy.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove the downloaded copy from this phone?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从这台手机上删除下载的副本？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "從這台手機上刪除下載的副本？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末からダウンロードしたコピーを削除しますか？"
+          }
+        }
+      }
+    },
     "video.cast": {
       "comment": "Header of the cast and crew row.",
       "extractionState": "manual",

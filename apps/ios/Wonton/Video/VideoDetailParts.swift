@@ -173,32 +173,58 @@ extension MediaTrack {
     }
 }
 
-/// 下载中：进度条，和一句“下载时保持 App 打开”。App 退到后台久了系统会停掉下载，回来接着下。
+/// 离线副本这一行：在下的是进度条和一句“下载时保持 App 打开”（App 退到后台久了系统会停掉下载，回来接着下）；
+/// 等着接着下的是停着的进度条和上次没下成的原因；失败的是原因和重试。写完了和没下过的不占这一行。
 struct VideoOfflineRow: View {
     let state: OfflineState?
+    let retry: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        if case let .downloading(done, total) = state {
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-                if let total, total > 0 {
-                    ProgressView(value: Double(done), total: Double(total))
-                } else {
-                    ProgressView(value: nil as Double?)
-                        .progressViewStyle(.linear)
-                }
-                HStack {
-                    Text(.Video2.videoDownloading)
-                    Spacer(minLength: 0)
-                    Text(sizes(done: done, total: total))
-                }
-                .wontonText(WontonTheme.typography.caption)
-                .foregroundStyle(Color(colors.textSecondary))
+        switch state {
+        case let .downloading(done, total):
+            progress(done: done, total: total, moving: true, label: .Video2.videoDownloading) {
                 Text(.Video0.videoKeepAppOpen)
+            }
+        case let .waiting(done, total, failure):
+            progress(done: done, total: total, moving: false, label: .Video1.videoWaiting) {
+                if let failure { Text(failure.videoProblem.title) }
+            }
+        case let .failed(failure):
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                Text(.Video0.videoDownloadFailed)
                     .wontonText(WontonTheme.typography.caption)
                     .foregroundStyle(Color(colors.textSecondary))
+                ProblemRow(problem: failure.videoProblem, retry: retry)
             }
+        case .ready, .none:
+            EmptyView()
         }
+    }
+
+    private func progress(
+        done: UInt64,
+        total: UInt64?,
+        moving: Bool,
+        label: LocalizedStringResource,
+        @ViewBuilder note: () -> some View
+    ) -> some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+            if let total, total > 0 {
+                ProgressView(value: Double(done), total: Double(total))
+            } else if moving {
+                ProgressView(value: nil as Double?)
+                    .progressViewStyle(.linear)
+            }
+            HStack {
+                Text(label)
+                Spacer(minLength: 0)
+                Text(sizes(done: done, total: total))
+            }
+            note()
+        }
+        .wontonText(WontonTheme.typography.caption)
+        .foregroundStyle(Color(colors.textSecondary))
     }
 
     private func sizes(done: UInt64, total: UInt64?) -> String {
@@ -305,7 +331,7 @@ extension VideoRole {
         case .director: String(localized: .Video1.videoRoleDirector)
         case .writer: String(localized: .Video1.videoRoleWriter)
         case .producer: String(localized: .Video2.videoRoleProducer)
-        case .other: ""
+        case .other: String(localized: .Video2.videoRoleOther)
         }
     }
 }

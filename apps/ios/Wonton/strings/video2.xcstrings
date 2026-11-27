@@ -524,6 +524,36 @@
         }
       }
     },
+    "video.role.other": {
+      "comment": "Under a person's photo when their role is none of the above.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他"
+          }
+        }
+      }
+    },
     "video.problem.signIn.nextStep": {
       "comment": "Next step for the problem above.",
       "extractionState": "manual",

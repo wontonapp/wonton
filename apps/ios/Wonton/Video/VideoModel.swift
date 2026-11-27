@@ -12,6 +12,8 @@ final class VideoModel {
     private var player: VideoPlayerController?
     /// 点了没成的动作（标看过、收藏、下载、起播），弹一个对话框说原因。
     var actionProblem: Problem?
+    /// 每有一次播放停下并报给了核心就加一：看过、接着看的位置变了，详情页据此重取。
+    private(set) var playbackEnded = 0
     private var reportedSupport = false
 
     init(core: ClientCore) {
@@ -30,8 +32,8 @@ final class VideoModel {
         await capture { try await self.core.videoDetail(id: id, source: source) }
     }
 
-    func genres(library: String?) async -> [String] {
-        (try? await core.videoGenres(library: library, source: nil)) ?? []
+    func genres(library: String?) async -> Result<[String], MediaError> {
+        await capture { try await self.core.videoGenres(library: library, source: nil) }
     }
 
     /// 标看过或收藏；部分没成的也算没成，原因弹出来。成了返回真。
@@ -55,6 +57,15 @@ final class VideoModel {
         core.videoOffline(itemId: itemId)
     }
 
+    /// 失败了的下载再来一次，接着上次下到的地方。
+    func retryDownload(_ itemId: String) async {
+        do {
+            _ = try await core.videoRetryDownload(itemId: itemId)
+        } catch {
+            actionProblem = error.videoProblem
+        }
+    }
+
     func removeOffline(_ itemId: String) {
         do {
             try core.videoRemoveOffline(itemId: itemId)
@@ -63,14 +74,19 @@ final class VideoModel {
         }
     }
 
-    /// 起播：有写完的离线副本放本机文件，否则让核心开会话。
+    /// 起播：有写完的离线副本放本机文件，否则让核心开会话。在放的先关掉、等它的界面收完。
     func play(_ item: MediaItemRef, title: String, from position: UInt64, audio: UInt16?, subtitle: UInt16?) async {
-        player?.close(finished: false)
-        if case let .ready(path) = core.videoOffline(itemId: item.id) {
-            open(VideoPlayerController(core: core, local: URL(fileURLWithPath: path), title: title, from: position))
-            return
+        if let old = player {
+            player = nil
+            await old.shut()
         }
         reportSupport()
+        if case let .ready(path) = core.videoOffline(itemId: item.id) {
+            let session = await offlineSession(item, from: position)
+            let local = URL(fileURLWithPath: path)
+            open(VideoPlayerController(core: core, local: local, session: session, title: title, from: position))
+            return
+        }
         do {
             let playback = try await core.videoPlay(item: item, positionMs: position, audio: audio, subtitle: subtitle)
             guard let player = VideoPlayerController(core: core, playback: playback, title: title) else {
@@ -83,9 +99,33 @@ final class VideoModel {
         }
     }
 
+    /// 放离线副本也尽量开个会话，好记接着看的位置和看完；几秒内开不成（连不上家里）就不记，照放。
+    private func offlineSession(_ item: MediaItemRef, from position: UInt64) async -> String? {
+        let core = core
+        let attempt = Task {
+            try await core.videoPlay(item: item, positionMs: position, audio: nil, subtitle: nil).session
+        }
+        let timer = Task {
+            try await Task.sleep(for: .seconds(3))
+            attempt.cancel()
+        }
+        defer { timer.cancel() }
+        return try? await attempt.value
+    }
+
     private func open(_ player: VideoPlayerController) {
         self.player = player
-        player.onClose = { [weak self] in self?.player = nil }
+        player.onClose = { [weak self, weak player] in
+            if let self, self.player === player { self.player = nil }
+        }
+        player.onEnded = { [weak self] error in
+            guard let self else { return }
+            if let error {
+                actionProblem = error.videoProblem
+            } else {
+                playbackEnded += 1
+            }
+        }
         player.onFailure = { [weak self] reason in
             self?.actionProblem = Problem(title: String(localized: .Video2.videoPlaybackFailed), detail: reason)
         }

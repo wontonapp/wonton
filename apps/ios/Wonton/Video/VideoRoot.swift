@@ -30,6 +30,7 @@ struct VideoRoot: View {
                 .navigationDestination(for: VideoRoute.self) { VideoScreen(model: model, route: $0) }
         }
         .environment(\.videoPush, VideoPush { path.append($0) })
+        .environment(\.videoCacheScope, model.core.videoCacheScope())
         .videoProblemDialog(model)
     }
 }

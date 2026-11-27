@@ -302,6 +302,36 @@
         }
       }
     },
+    "video.downloadFailed": {
+      "comment": "Above the reason a download stopped for good, next to a retry button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download didn't finish"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下载没完成"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下載沒完成"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ダウンロードが完了しませんでした"
+          }
+        }
+      }
+    },
     "video.episodes": {
       "comment": "In the facts line of a season: how many episodes. Argument: the count.",
       "extractionState": "manual",
