@@ -170,14 +170,11 @@ impl MatrixSession {
         let mut state = self.sync.state();
         let lease = self.store_lease();
         let _ = tokio::time::timeout(Self::LEASE_SETTLE, async {
-            loop {
-                if !matches!(
-                    *state.borrow_and_update(),
-                    sync_service::State::Running | sync_service::State::Offline
-                ) {
-                    break;
-                }
-                if state.changed().await.is_err() {
+            while matches!(
+                state.get(),
+                sync_service::State::Running | sync_service::State::Offline
+            ) {
+                if state.next().await.is_none() {
                     break;
                 }
             }
