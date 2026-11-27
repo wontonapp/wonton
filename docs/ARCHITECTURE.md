@@ -496,7 +496,7 @@ scripts/             CI 与开发脚本
 | 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
 | Rust 本地化 | fluent-bundle、fluent-langneg（cldr）、unic-langid、fluent-syntax | Apache-2.0 / MIT | 已定 |
 | UI | SwiftUI、Compose Multiplatform | — / Apache-2.0 | 已定 |
-| 图标 | Phosphor（单色）、Kubai Icons（彩色分层，iOS）；白名单加生成，无运行时依赖 | MIT | 已定（ADR-0026） |
+| 图标 | iOS：Kubai Icons（彩色分层）；Android：Phosphor。白名单加生成，无运行时依赖 | MIT | 已定（ADR-0026） |
 | 相册 | Immich（插件） | AGPL-3.0，独立容器 | 已定 |
 | 文档 | Paperless-ngx（插件） | GPL-3.0，独立容器 | 已定 |
 | 音乐 | Navidrome（插件） | GPL-3.0，独立容器 | 已定 |

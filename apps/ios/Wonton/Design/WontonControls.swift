@@ -322,7 +322,6 @@ struct WontonRootBar<Trailing: View>: View {
                             Spacer(minLength: 0)
                             if hasActions { trailing.environment(\.wontonGlassControls, true) }
                         }
-                        .wontonIconMono()
                     }
                 }
                 .frame(maxWidth: .infinity, minHeight: hasButtons ? WontonTheme.size.topBar : 0)
@@ -449,7 +448,6 @@ struct WontonPushedBar<Trailing: View>: View {
             trailing
         }
         .environment(\.wontonGlassControls, glassControls)
-        .wontonIconMono()
         .padding(.horizontal, WontonTheme.spacing.s4)
     }
 }

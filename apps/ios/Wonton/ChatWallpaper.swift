@@ -130,11 +130,11 @@ extension View {
     /// 聊天页浮在内容上的一层（ADR-0107）：iOS 26 是一层玻璃，更早的系统垫材质；带 `tint` 的是主要动作。
     @ViewBuilder func chatGlass<S: Shape>(in shape: S, tint: Color? = nil, interactive: Bool = false) -> some View {
         if #available(iOS 26, *) {
-            wontonIconMono().glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
+            glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
         } else if let tint {
-            wontonIconMono().background(tint, in: shape)
+            background(tint, in: shape)
         } else {
-            wontonIconMono().background(.regularMaterial, in: shape)
+            background(.regularMaterial, in: shape)
         }
     }
 

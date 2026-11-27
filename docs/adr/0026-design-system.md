@@ -1,6 +1,6 @@
 # ADR-0026 App 的外观：两端统一自绘、黑白加可换的重点色、Phosphor 图标
 
-- 状态：已接受（2026-11-03）。“两端一模一样”这个前提已被 [ADR-0029](0029-platform-material.md) 改成令牌共用、栏和菜单按平台；被取代的段落就地标出。2026-11-21 补充 Agent 身份色和 App 图标（[ADR-0126](0126-agent-list-bar-and-cloud.md)）；2026-11-26 补充彩色分层图标（见“图标：彩色分层用 Kubai”）
+- 状态：已接受（2026-11-03）。“两端一模一样”这个前提已被 [ADR-0029](0029-platform-material.md) 改成令牌共用、栏和菜单按平台；被取代的段落就地标出。2026-11-21 补充 Agent 身份色和 App 图标（[ADR-0126](0126-agent-list-bar-and-cloud.md)）；2026-11-26 起 iOS 的图标改用 Kubai 彩色分层，“图标：Phosphor”一节只对 Android 有效（见“图标：彩色分层用 Kubai”）
 
 ## 背景
 
@@ -143,20 +143,21 @@ MIT，每个图标都有线框和实心。未选中用 Regular，选中用 Fill�
 - **Tabler：** 只有约两成有实心。
 - **Material Symbols：** 观感太 Android，和两端统一的自有风格不合。
 
-Phosphor 没有专门的服务器图形，用 `hard-drives`。App 内的开源许可页列出随 App 分发的图标集的版本和许可证：`scripts/generate-licenses.py` 从 `design/icons.toml` 的上游声明取。
+Phosphor 没有专门的服务器图形，用 `hard-drives`。App 内的开源许可页列出该平台随 App 分发的那套图标的版本和许可证：`scripts/generate-licenses.py` 从 `design/icons.toml` 的上游声明取。
 
 ### 图标：彩色分层用 Kubai
 
-主人 2026-11-26 看过样例页后定：图标换成 [Kubai Icons](https://icons.kubai.design/) 的彩色分层那一套（MIT），每个图标有自己的颜色，不统一成重点色；默认彩色。iOS 的玻璃和材质栏（系统工具栏、顶栏、聊天页的玻璃钮和输入栏、弹窗）里只用单色，单色仍是 Phosphor；带色实底上的图形（发起聊天的圆钮、遮罩上的关闭、插件占位图）也是单色。iOS 先做，Android 的图标不变。
+主人 2026-11-26 看过样例页后定换成 [Kubai Icons](https://icons.kubai.design/) 的彩色分层那一套（MIT），每个图标有自己的颜色，不统一成重点色；2026-11-27 看过 iOS 的实现后再定：iOS 上所有图标都用它，玻璃栏、顶栏、输入栏和列表行的箭头也是彩色，不留 Phosphor 单色。单色只是一项用户设置，用的还是 Kubai 的图形。iOS 先做；Android 仍是上一节的 Phosphor，换过去时把 Phosphor 整个删掉。出问题靠 `git revert`，App 内不留回退到 Phosphor 的开关。
 
-- **白名单：** `design/icons.toml` 每个语义名多写一个 Kubai 名和一个颜色名，颜色取同一文件的 `[palette]`。没有对应图形的语义名不写，只有单色版。返回和展开箭头（`back`、`forward`）也固定用单色：展开箭头在列表里每行一个，上游的分层版带圆底，成排出现太重。
-- **上游是 0.x：** 版本和 npm tarball 的校验值钉在 `icons.toml`，用到的 SVG 原件和 LICENSE 放进 `design/kubai/`，逐个文件的 SHA-256 记在 `SHA256SUMS`，生成时核对。Phosphor 留着，既是单色版也是回滚：去掉某个语义名的 `kubai`，它就回到 Phosphor。
+- **白名单：** `design/icons.toml` 每个语义名多写一个 Kubai 名和一个颜色名，颜色取同一文件的 `[palette]`。iOS 的 `WontonIcon` 只含写了 Kubai 名的语义名。
+- **上游是 0.x：** 版本和 npm tarball 的校验值钉在 `icons.toml`，用到的 SVG 原件和 LICENSE 放进 `design/kubai/`，逐个文件的 SHA-256 记在 `SHA256SUMS`，生成时核对。
 - **换色在生成时做：** 用 `kubai-icons-static` 包（颜色已经展开成具体值，不含 CSS）。上游每张图的颜色都由一个主色调出来，脚本按同样的配比换成 `[palette]` 的颜色，再检查结果里只剩 CoreSVG 认得的元素和具体颜色（带 `color-mix()`、`var()` 的 SVG，Xcode 会画成纯黑）。
 - **一张图用于浅色和深色：** `[palette]` 的每个颜色对两种页面底和卡片底都要有 3:1，生成时检查。默认重点色 `#FEEBEA` 在白底上只有 1.15:1，而且用户可以换，图标不取它。
-- **选中态：** 彩色分层不分线框和实心，实心版的语义名指向同一张彩色图。选中靠底色、字重或勾，不靠图标换形。
+- **单色版：** 同一张上游图再生成一份给模板渲染，颜色跟界面的前景色。模板渲染只看透明度：主色和深色描边画实，主色混白的面按深浅变淡，白色的纸面和字改成把下面挖空，投影和高光去掉。壳按环境值 `wontonIconMono` 选彩色还是单色，默认彩色。
+- **选中态：** 彩色分层不分线框和实心，实心版的语义名指向同一张图。选中靠底色、字重或勾，不靠图标换形。
 - **裸的加号、叉、勾**在分层套里没有，先用带圆圈的；没有自己画。
 
-验证结果（2026-11-27，Kubai 0.15.0，Xcode 27 的模拟器 iOS 26.5）：换色后的 SVG 放进资源目录、保留矢量，渐变、投影和高光都画得出来。没验证：真机、最大辅助字号、“降低透明度”。
+验证结果（2026-11-27，Kubai 0.15.0，Xcode 27 的模拟器 iOS 26.5）：换色后的 SVG 放进资源目录、保留矢量，渐变、投影和高光都画得出来。单色版只在 macOS 上用 AppKit 渲染看过，`ban` 的斜杠（蒙版里套裁剪路径）没画出来。没验证：真机、最大辅助字号、“降低透明度”、单色版在 iOS 上的样子。
 
 ### 占位图、插件图标、App 图标和启动屏
 

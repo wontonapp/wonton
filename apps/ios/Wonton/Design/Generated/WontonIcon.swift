@@ -14,7 +14,6 @@ enum WontonIcon: String {
     case check
     case checkCircle
     case checkCircleFill
-    case checks
     case clock
     case close
     case code
@@ -97,98 +96,102 @@ enum WontonIcon: String {
 }
 
 extension WontonIcon {
-    /// 彩色分层版的资源名；不在表里的只有单色版。
-    static let colorAssets: [WontonIcon: String] = [
-        .add: "addColor",
-        .agent: "agentColor",
-        .agentFill: "agentColor",
-        .apps: "appsColor",
-        .appsFill: "appsColor",
-        .attach: "attachColor",
-        .blocked: "blockedColor",
-        .cameraOff: "cameraOffColor",
-        .chat: "chatColor",
-        .chatFill: "chatColor",
-        .check: "checkColor",
-        .checkCircle: "checkCircleColor",
-        .checkCircleFill: "checkCircleColor",
-        .clock: "clockColor",
-        .close: "closeColor",
-        .code: "codeColor",
-        .codeFill: "codeColor",
-        .compose: "composeColor",
-        .connection: "connectionColor",
-        .copy: "copyColor",
-        .cpu: "cpuColor",
-        .cpuFill: "cpuColor",
-        .device: "deviceColor",
-        .disk: "diskColor",
-        .document: "documentColor",
-        .documentFill: "documentColor",
-        .download: "downloadColor",
-        .downloadFill: "downloadColor",
-        .error: "errorColor",
-        .errorFill: "errorColor",
-        .expand: "expandColor",
-        .eye: "eyeColor",
-        .file: "fileColor",
-        .folder: "folderColor",
-        .folderFill: "folderColor",
-        .globe: "globeColor",
-        .globeFill: "globeColor",
-        .help: "helpColor",
-        .home: "homeColor",
-        .homeFill: "homeColor",
-        .image: "imageColor",
-        .imageFill: "imageColor",
-        .imageBroken: "imageBrokenColor",
-        .info: "infoColor",
-        .leave: "leaveColor",
-        .list: "listColor",
-        .lock: "lockColor",
-        .lockFill: "lockColor",
-        .lockKey: "lockKeyColor",
-        .more: "moreColor",
-        .music: "musicColor",
-        .musicFill: "musicColor",
-        .notify: "notifyColor",
-        .pause: "pauseColor",
-        .pauseFill: "pauseColor",
-        .person: "personColor",
-        .pin: "pinColor",
-        .pinFill: "pinColor",
-        .play: "playColor",
-        .playFill: "playColor",
-        .qrCode: "qrCodeColor",
-        .refresh: "refreshColor",
-        .reply: "replyColor",
-        .search: "searchColor",
-        .send: "sendColor",
-        .serialPort: "serialPortColor",
-        .server: "serverColor",
-        .settings: "settingsColor",
-        .settingsFill: "settingsColor",
-        .share: "shareColor",
-        .shield: "shieldColor",
-        .shieldFill: "shieldColor",
-        .star: "starColor",
-        .starFill: "starColor",
-        .store: "storeColor",
-        .tasks: "tasksColor",
-        .tasksFill: "tasksColor",
-        .trash: "trashColor",
-        .upload: "uploadColor",
-        .usb: "usbColor",
-        .videoCall: "videoCallColor",
-        .videoCallFill: "videoCallColor",
-        .voiceCall: "voiceCallColor",
-        .voiceCallFill: "voiceCallColor",
-        .warning: "warningColor",
-        .warningFill: "warningColor",
-        .warningCircle: "warningCircleColor",
-        .warningCircleFill: "warningCircleColor",
-        .web: "webColor",
-        .wrench: "wrenchColor",
-        .wrenchFill: "wrenchColor"
-    ]
+    /// 资源名的前半截：彩色版是它加 `Color`，单色版加 `Mono`。
+    var assetName: String {
+        switch self {
+        case .add: "add"
+        case .agent: "agent"
+        case .agentFill: "agent"
+        case .apps: "apps"
+        case .appsFill: "apps"
+        case .attach: "attach"
+        case .back: "back"
+        case .blocked: "blocked"
+        case .cameraOff: "cameraOff"
+        case .chat: "chat"
+        case .chatFill: "chat"
+        case .check: "check"
+        case .checkCircle: "checkCircle"
+        case .checkCircleFill: "checkCircle"
+        case .clock: "clock"
+        case .close: "close"
+        case .code: "code"
+        case .codeFill: "code"
+        case .compose: "compose"
+        case .connection: "connection"
+        case .copy: "copy"
+        case .cpu: "cpu"
+        case .cpuFill: "cpu"
+        case .device: "device"
+        case .disk: "disk"
+        case .document: "document"
+        case .documentFill: "document"
+        case .download: "download"
+        case .downloadFill: "download"
+        case .error: "error"
+        case .errorFill: "error"
+        case .expand: "expand"
+        case .eye: "eye"
+        case .file: "file"
+        case .folder: "folder"
+        case .folderFill: "folder"
+        case .forward: "forward"
+        case .globe: "globe"
+        case .globeFill: "globe"
+        case .help: "help"
+        case .home: "home"
+        case .homeFill: "home"
+        case .image: "image"
+        case .imageFill: "image"
+        case .imageBroken: "imageBroken"
+        case .info: "info"
+        case .leave: "leave"
+        case .list: "list"
+        case .lock: "lock"
+        case .lockFill: "lock"
+        case .lockKey: "lockKey"
+        case .more: "more"
+        case .music: "music"
+        case .musicFill: "music"
+        case .notify: "notify"
+        case .pause: "pause"
+        case .pauseFill: "pause"
+        case .person: "person"
+        case .pin: "pin"
+        case .pinFill: "pin"
+        case .play: "play"
+        case .playFill: "play"
+        case .qrCode: "qrCode"
+        case .refresh: "refresh"
+        case .reply: "reply"
+        case .search: "search"
+        case .send: "send"
+        case .serialPort: "serialPort"
+        case .server: "server"
+        case .settings: "settings"
+        case .settingsFill: "settings"
+        case .share: "share"
+        case .shield: "shield"
+        case .shieldFill: "shield"
+        case .star: "star"
+        case .starFill: "star"
+        case .store: "store"
+        case .tasks: "tasks"
+        case .tasksFill: "tasks"
+        case .trash: "trash"
+        case .upload: "upload"
+        case .usb: "usb"
+        case .videoCall: "videoCall"
+        case .videoCallFill: "videoCall"
+        case .voiceCall: "voiceCall"
+        case .voiceCallFill: "voiceCall"
+        case .warning: "warning"
+        case .warningFill: "warning"
+        case .warningCircle: "warningCircle"
+        case .warningCircleFill: "warningCircle"
+        case .web: "web"
+        case .wrench: "wrench"
+        case .wrenchFill: "wrench"
+        }
+    }
 }

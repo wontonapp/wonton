@@ -33,10 +33,10 @@ TEXTS = ROOT / "licenses" / "texts"
 CARGO_ABOUT_CONFIG = ROOT / "licenses" / "about.toml"
 ICONS = ROOT / "design" / "icons.toml"
 
-# 图形随 App 分发的图标集：design/icons.toml 的 [upstream.<名字>]。Android 只用 Phosphor。
+# 图形随 App 分发的图标集：design/icons.toml 的 [upstream.<名字>]，各平台只列自己带的那一套。
 ICON_SETS = {
     "android": ["phosphor"],
-    "ios": ["phosphor", "kubai"],
+    "ios": ["kubai"],
 }
 
 # cargo-about 是开发期工具，不进 App 二进制；它是 MIT OR Apache-2.0，升级时改这里并跑一遍 check-licenses.sh。
@@ -263,7 +263,7 @@ def icon_components(platform: str, icons: Path = ICONS) -> tuple[list[dict], dic
 
 RUST_SENTINELS = ["serde"]
 # 图标集和依赖走的不是同一条收集路径，各留一个哨兵。
-ICON_SENTINELS = ["@phosphor-icons/core"]
+ICON_SENTINELS = {"android": ["@phosphor-icons/core"], "ios": ["kubai-icons-static"]}
 
 
 def verify(target: Path, platform: str) -> None:
@@ -272,7 +272,7 @@ def verify(target: Path, platform: str) -> None:
     approved = set(approved_ids())
     problems = []
     names = {component["name"] for component in data["components"]}
-    sentinels = (ANDROID_SENTINELS if platform == "android" else RUST_SENTINELS) + ICON_SENTINELS
+    sentinels = (ANDROID_SENTINELS if platform == "android" else RUST_SENTINELS) + ICON_SENTINELS[platform]
     problems += [f"清单里没有 {name}" for name in sentinels if name not in names]
     for component in data["components"]:
         if not component["license_ids"]:

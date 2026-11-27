@@ -40,7 +40,6 @@ private struct PreviewAppIcon: View {
             style: .continuous
         )
         WontonIcon.appsFill.view(size: WontonTheme.size.taskIcon * 0.54)
-            .wontonIconMono()
             .foregroundStyle(Color(colors.accentInkOnFill))
             .frame(width: WontonTheme.size.taskIcon, height: WontonTheme.size.taskIcon)
             .background(shape.fill(Color(colors.accentFill)))

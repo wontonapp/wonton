@@ -159,21 +159,21 @@ struct ImageViewer: View {
     /// 保存和分享常驻：翻页时目标页还没下完，按钮也不整组消失。
     @ToolbarContentBuilder private var actions: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            Button { dismiss() } label: { WontonIcon.close.view().wontonIconMono() }
+            Button { dismiss() } label: { WontonIcon.close.view() }
                 .accessibilityLabel(Text(.Common.commonClose))
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
                 if let currentOriginal { save(currentOriginal) }
             } label: {
-                (justSaved ? WontonIcon.checkCircleFill : WontonIcon.download).view().wontonIconMono()
+                (justSaved ? WontonIcon.checkCircleFill : WontonIcon.download).view()
             }
             .accessibilityLabel(Text(.Viewer.viewerSavePhoto))
             .disabled(currentOriginal == nil)
             Button {
                 if let currentOriginal { share(currentOriginal) }
             } label: {
-                WontonIcon.share.view().wontonIconMono()
+                WontonIcon.share.view()
             }
             .accessibilityLabel(Text(.Viewer.viewerShare))
             .disabled(currentOriginal == nil)

@@ -6,6 +6,7 @@
 # 这个脚本不在核心产物的键里：它只改生成的界面代码，不碰 Rust 核心（见 .github/workflows/README.md 的“核心产物”）。
 
 import base64
+import copy
 import hashlib
 import json
 import math
@@ -19,6 +20,7 @@ import tempfile
 import tomllib
 import urllib.request
 import zipfile
+from xml.etree import ElementTree
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,8 +31,8 @@ KOTLIN = COMPOSE / "kotlin/app/wonton/ui"
 WEB_GENERATED = ROOT / "crates/wonton-client/src/pages/bridge/generated"
 GENERATED_DIRS = [
     IOS / "Design/Generated",
-    IOS / "Assets.xcassets/Icons",
     IOS / "Assets.xcassets/IconsColor",
+    IOS / "Assets.xcassets/IconsMono",
     KOTLIN / "design/generated",
     KOTLIN / "icons",
     WEB_GENERATED,
@@ -53,8 +55,22 @@ KUBAI_GRAY_SPREAD = 6
 # 上游的十六进制颜色是四舍五入过的，按主色混白混黑反推时留这点误差（0–255）。
 KUBAI_MIX_TOLERANCE = 2
 SVG_HEX = re.compile(r'(?<==")#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})(?=")')
+SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+SVG_TAG = "{" + SVG_NAMESPACE + "}"
+SVG_SHAPE_ONLY = {SVG_TAG + "mask", SVG_TAG + "clipPath"}
+SVG_HEX_VALUE = re.compile(r"#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})")
+SVG_OPACITY = {"fill": "fill-opacity", "stroke": "stroke-opacity", "stop-color": "stop-opacity"}
+# 单色版：OKLab 亮度不比主色高出这么多的算实色；通道都不低于 KUBAI_WHITE 的灰算白。
+KUBAI_INK_MARGIN = 0.02
+KUBAI_WHITE = 240
+# 浅面的不透明度：FLOOR 起，含主色越多越浓。要比挖空的地方明显深、又比实色的描边明显浅，
+# 取值是看着 24pt 和 14pt 的渲染调的。
+KUBAI_TINT_FLOOR = 0.25
+KUBAI_TINT_SCALE = 0.4
+# 蒙版的范围照上游自己的蒙版写：比画布（-2.5 -5.5 36 36）大一圈。
+KUBAI_MASK_BOX = {"x": "-40", "y": "-40", "width": "111", "height": "109"}
 SVG_MATRIX = re.compile(r'values="([^"]+)"')
-SVG_PAINT = re.compile(r"#[0-9A-F]{6}|url\(#[\w-]+\)")
+SVG_PAINT = re.compile(r"#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{3}|url\(#[\w-]+\)")
 SVG_ELEMENTS = {
     "svg", "defs", "g", "path", "rect", "circle", "ellipse", "text", "linearGradient", "stop", "mask", "clipPath",
     "filter", "feFlood", "feColorMatrix", "feOffset", "feGaussianBlur", "feComposite", "feBlend",
@@ -63,7 +79,7 @@ SVG_ATTRIBUTES = {
     "xmlns", "viewBox", "width", "height", "id", "x", "y", "x1", "y1", "x2", "y2", "cx", "cy", "r", "rx", "ry", "d",
     "transform", "opacity", "fill", "fill-opacity", "fill-rule", "clip-path", "clip-rule", "mask", "maskUnits",
     "filter", "stroke", "stroke-width", "stroke-opacity", "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
-    "stroke-dashoffset", "pathLength", "offset", "stop-color", "gradientUnits", "color-interpolation-filters",
+    "stroke-dashoffset", "pathLength", "offset", "stop-color", "stop-opacity", "gradientUnits", "color-interpolation-filters",
     "flood-opacity", "in", "in2", "result", "type", "values", "dy", "stdDeviation", "operator", "k2", "k3", "mode",
     "text-anchor", "font-size", "font-weight", "font-family",
 }
@@ -179,48 +195,30 @@ def upstream_svg(icon, style):
 
 
 def swift_icons(icons):
-    cases = "\n".join(f"    case {name}" for name, _, _ in icon_variants(icons))
-    # 实心版没有自己的彩色图：彩色分层不分线框和实心，两个值指向同一张。
-    # 最后一项不带逗号：提交钩子的 swiftlint --fix 会删掉它，生成结果就和 --check 对不上。
-    colored = ",\n".join(
-        f'        .{variant}: "{name}Color"'
-        for variant, icon, _ in icon_variants(icons)
-        for name in [variant.removesuffix("Fill") if icon.get("fill") else variant]
-        if "kubai" in icon
-    )
+    """iOS 只用 Kubai：没写 kubai 的语义名不进枚举。实心版的名字留着（界面按选中态取名），指向同一张图。"""
+    cases, assets = [], []
+    for variant, icon, _ in icon_variants(icons):
+        if "kubai" not in icon:
+            continue
+        name = variant.removesuffix("Fill") if icon.get("fill") else variant
+        cases.append(f"    case {variant}")
+        assets.append(f'        case .{variant}: "{name}"')
     return (
         BANNER
-        + "enum WontonIcon: String {\n" + cases + "\n}\n\n"
+        + "enum WontonIcon: String {\n" + "\n".join(cases) + "\n}\n\n"
         + "extension WontonIcon {\n"
-        + "    /// 彩色分层版的资源名；不在表里的只有单色版。\n"
-        + "    static let colorAssets: [WontonIcon: String] = [\n" + colored + "\n    ]\n}\n"
+        + "    /// 资源名的前半截：彩色版是它加 `Color`，单色版加 `Mono`。\n"
+        + "    var assetName: String {\n        switch self {\n" + "\n".join(assets) + "\n        }\n    }\n}\n"
     )
 
 
 def ios_assets(icons):
+    """每个图标两张：彩色分层（原色）和单色（模板渲染，颜色跟界面走）。都保留矢量。"""
     files = {
         IOS / "Assets.xcassets/Contents.json": json_bytes(XCASSETS_INFO),
-        IOS / "Assets.xcassets/Icons/Contents.json": json_bytes(XCASSETS_INFO),
+        IOS / "Assets.xcassets/IconsColor/Contents.json": json_bytes(XCASSETS_INFO),
+        IOS / "Assets.xcassets/IconsMono/Contents.json": json_bytes(XCASSETS_INFO),
     }
-    for name, icon, style in icon_variants(icons):
-        folder = IOS / f"Assets.xcassets/Icons/{name}.imageset"
-        image = {"filename": f"{name}.svg", "idiom": "universal"}
-        if icon.get("mirror"):
-            image["language-direction"] = "left-to-right"
-        contents = {
-            "images": [image],
-            **XCASSETS_INFO,
-            "properties": {"preserves-vector-representation": True, "template-rendering-intent": "template"},
-        }
-        files[folder / "Contents.json"] = json_bytes(contents)
-        files[folder / f"{name}.svg"] = upstream_svg(icon, style).read_bytes()
-    files.update(ios_color_assets(icons))
-    return files
-
-
-def ios_color_assets(icons):
-    """彩色分层版：原色渲染，保留矢量。"""
-    files = {IOS / "Assets.xcassets/IconsColor/Contents.json": json_bytes(XCASSETS_INFO)}
     check_palette(icons["palette"])
     sums = kubai_sums()
     used = {f'svg/{icon["kubai"]}.svg' for icon in icons["icons"].values() if "kubai" in icon} | {"LICENSE"}
@@ -230,20 +228,24 @@ def ios_color_assets(icons):
     for name, icon in icons["icons"].items():
         if "kubai" not in icon:
             continue
-        source = kubai_source(f'svg/{icon["kubai"]}.svg', sums)
-        svg = kubai_recolored(source.decode(), base, hex_rgb(icons["palette"][icon["color"]]))
-        check_plain_svg(name, svg)
-        folder = IOS / f"Assets.xcassets/IconsColor/{name}Color.imageset"
-        image = {"filename": f"{name}Color.svg", "idiom": "universal"}
-        if icon.get("mirror"):
-            image["language-direction"] = "left-to-right"
-        contents = {
-            "images": [image],
-            **XCASSETS_INFO,
-            "properties": {"preserves-vector-representation": True, "template-rendering-intent": "original"},
+        source = kubai_source(f'svg/{icon["kubai"]}.svg', sums).decode()
+        styles = {
+            "Color": ("original", kubai_recolored(source, base, hex_rgb(icons["palette"][icon["color"]]))),
+            "Mono": ("template", kubai_mono(icon["kubai"], source, base)),
         }
-        files[folder / "Contents.json"] = json_bytes(contents)
-        files[folder / f"{name}Color.svg"] = svg.encode()
+        for suffix, (intent, svg) in styles.items():
+            check_plain_svg(f"{name}{suffix}", svg)
+            folder = IOS / f"Assets.xcassets/Icons{suffix}/{name}{suffix}.imageset"
+            image = {"filename": f"{name}{suffix}.svg", "idiom": "universal"}
+            if icon.get("mirror"):
+                image["language-direction"] = "left-to-right"
+            contents = {
+                "images": [image],
+                **XCASSETS_INFO,
+                "properties": {"preserves-vector-representation": True, "template-rendering-intent": intent},
+            }
+            files[folder / "Contents.json"] = json_bytes(contents)
+            files[folder / f"{name}{suffix}.svg"] = svg.encode()
     return files
 
 
@@ -350,6 +352,111 @@ def kubai_recolored(svg, base, accent):
 
     svg = SVG_HEX.sub(paint, svg)
     return SVG_MATRIX.sub(matrix, svg)
+
+
+def is_white(value):
+    if not SVG_HEX_VALUE.fullmatch(value or ""):
+        return False
+    color = hex_rgb(long_hex(value))
+    return max(color) - min(color) < KUBAI_GRAY_SPREAD and min(color) >= KUBAI_WHITE
+
+
+def long_hex(value):
+    return value if len(value) == 7 else "#" + "".join(c * 2 for c in value[1:])
+
+
+def kubai_ink(color, base):
+    """单色版里这个颜色画多浓：主色、深色描边和黑的角标是实的；主色混白的浅面按含主色的多少变淡。"""
+    if oklab(color)[0] <= oklab(base)[0] + KUBAI_INK_MARGIN:
+        return 1.0
+    share, _, _ = mix_weights(color, base)
+    return round(KUBAI_TINT_FLOOR + KUBAI_TINT_SCALE * max(0.0, min(1.0, share)), 2)
+
+
+def painted(element):
+    """element 底下带颜色属性的节点；内嵌的蒙版和裁剪路径里的黑白是形状不是颜色，跳过。"""
+    if element.tag in SVG_SHAPE_ONLY:
+        return
+    yield element
+    for child in element:
+        yield from painted(child)
+
+
+def white_shapes(element):
+    """element 里白色的部分，画成黑的（蒙版里黑是挖掉）；没有白色返回 None。"""
+    shape = copy.deepcopy(element)
+    found = False
+    for node in painted(shape):
+        for attribute in ("fill", "stroke"):
+            if attribute not in node.attrib:
+                continue
+            white = is_white(node.get(attribute))
+            found = found or white
+            node.set(attribute, "#000" if white else "none")
+    return shape if found else None
+
+
+def knock_out(children, masks, name):
+    """白色在彩色版里是盖在上面的纸面和字；模板渲染只看透明度，盖不住下面，所以改成把先画的东西挖空。
+    按绘制顺序走：碰到带白色的元素，就给它前面的兄弟套一层蒙版，蒙版里是它的白色部分。"""
+    drawn, open_mask = [], None
+    for child in children:
+        cut = white_shapes(child)
+        if child.tag == SVG_TAG + "g":
+            child[:] = knock_out(list(child), masks, name)
+        for node in painted(child):
+            for attribute in ("fill", "stroke"):
+                if is_white(node.get(attribute)):
+                    node.set(attribute, "none")
+        if cut is not None and drawn:
+            if open_mask is None:
+                open_mask = ElementTree.Element(
+                    SVG_TAG + "mask", {"id": f"ko-{name}-{len(masks)}", "maskUnits": "userSpaceOnUse", **KUBAI_MASK_BOX}
+                )
+                ElementTree.SubElement(open_mask, SVG_TAG + "rect", {**KUBAI_MASK_BOX, "fill": "#fff"})
+                masks.append(open_mask)
+                group = ElementTree.Element(SVG_TAG + "g", {"mask": f"url(#{open_mask.get('id')})"})
+                group.extend(drawn)
+                drawn = [group]
+            open_mask.append(cut)
+        drawn.append(child)
+        # 只有纯白的单个图形挖完就不再画东西，下一个白色可以并进同一层蒙版；别的元素可能自己画了东西，
+        # 后面的白色要连它一起挖，另开一层。
+        if cut is None or len(child) or child.get("fill") != "none" or child.get("stroke", "none") != "none":
+            open_mask = None
+    return drawn
+
+
+def kubai_mono(name, svg, base):
+    """单色版仍是 Kubai 的图形，交给模板渲染上色：颜色全换成黑，浓淡写进不透明度，白色挖空。
+    投影和高光的滤镜去掉：模板渲染会把投影也染成前景色，小图标周围糊一圈。"""
+    ElementTree.register_namespace("", SVG_NAMESPACE)
+    root = ElementTree.fromstring(svg)
+    defs = root.find(SVG_TAG + "defs")
+    for node in defs.findall(SVG_TAG + "filter"):
+        defs.remove(node)
+    for node in root.iter():
+        node.attrib.pop("filter", None)
+    body = [child for child in root if child is not defs]
+    for child in body:
+        root.remove(child)
+    masks = []
+    root.extend(knock_out(body, masks, name))
+    # 蒙版里的黑白是形状不是颜色，不动。
+    defs.extend(masks)
+    in_mask = {id(node) for tag in SVG_SHAPE_ONLY for shape in root.iter(tag) for node in shape.iter()}
+    for node in root.iter():
+        if id(node) in in_mask:
+            continue
+        for attribute, opacity in SVG_OPACITY.items():
+            value = node.get(attribute, "")
+            if not SVG_HEX_VALUE.fullmatch(value):
+                continue
+            ink = kubai_ink(hex_rgb(long_hex(value)), base)
+            node.set(attribute, "#000000")
+            if ink < 1:
+                node.set(opacity, str(round(ink * float(node.get(opacity, "1")), 2)))
+    return ElementTree.tostring(root, encoding="unicode")
 
 
 def check_plain_svg(name, svg):

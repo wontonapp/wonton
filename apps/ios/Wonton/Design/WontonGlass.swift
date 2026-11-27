@@ -9,9 +9,9 @@ extension View {
     /// 复合浮层只铺一层玻璃；内部按钮仍用原生语义，不各叠一层材质。
     @ViewBuilder func wontonGlassSurface<S: Shape>(in shape: S) -> some View {
         if #available(iOS 26, *) {
-            wontonIconMono().glassEffect(.regular, in: shape)
+            glassEffect(.regular, in: shape)
         } else {
-            wontonIconMono().background(.regularMaterial, in: shape)
+            background(.regularMaterial, in: shape)
         }
     }
 
@@ -21,7 +21,7 @@ extension View {
 
     @ViewBuilder func wontonNavigationAction() -> some View {
         if #available(iOS 26, *) {
-            wontonIconMono().buttonStyle(.glass).controlSize(.large)
+            buttonStyle(.glass).controlSize(.large)
         } else {
             buttonStyle(.plain)
         }
@@ -35,7 +35,7 @@ private struct WontonBarActionStyle: ViewModifier {
         if #available(iOS 26, *), systemToolbar {
             content.buttonStyle(.automatic)
         } else if #available(iOS 26, *) {
-            content.wontonIconMono().buttonStyle(.glass).controlSize(.large)
+            content.buttonStyle(.glass).controlSize(.large)
         } else {
             content.buttonStyle(WontonSmallButtonStyle())
         }

@@ -140,19 +140,15 @@ class AndroidTest(unittest.TestCase):
 
 
 class IconsTest(unittest.TestCase):
-    def test_ios_lists_both_icon_sets_with_pinned_versions(self):
-        components, texts = licenses.icon_components("ios")
+    def test_each_platform_lists_the_set_it_ships_at_the_pinned_version(self):
         upstream = licenses.tomllib.loads(licenses.ICONS.read_text(encoding="utf-8"))["upstream"]
-        self.assertEqual(
-            {(c["name"], c["version"]) for c in components},
-            {(upstream[key]["package"], upstream[key]["version"]) for key in ("phosphor", "kubai")},
-        )
-        for component in components:
-            self.assertIn("Permission is hereby granted", texts[component["license_ids"][0]]["text"])
-
-    def test_android_lists_only_what_it_ships(self):
-        components, _ = licenses.icon_components("android")
-        self.assertEqual([c["name"] for c in components], ["@phosphor-icons/core"])
+        for platform, key in (("ios", "kubai"), ("android", "phosphor")):
+            components, texts = licenses.icon_components(platform)
+            self.assertEqual(
+                [(c["name"], c["version"]) for c in components],
+                [(upstream[key]["package"], upstream[key]["version"])],
+            )
+            self.assertIn("Permission is hereby granted", texts[components[0]["license_ids"][0]]["text"])
 
     def test_license_outside_approved_has_no_text(self):
         path = Path(self.enterContext(__import__("tempfile").TemporaryDirectory())) / "icons.toml"
@@ -172,7 +168,7 @@ class VerifyTest(unittest.TestCase):
             "components": [
                 {"source": "rust", "name": "serde", "version": "1", "license": "MIT", "license_ids": ["MIT"]},
                 {
-                    "source": "icons", "name": "@phosphor-icons/core", "version": "2", "license": "MIT",
+                    "source": "icons", "name": "kubai-icons-static", "version": "0", "license": "MIT",
                     "license_ids": ["MIT"],
                 },
             ],

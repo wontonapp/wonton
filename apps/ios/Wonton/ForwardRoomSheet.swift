@@ -144,8 +144,7 @@ struct ForwardRoomSheet: View {
                     Circle().strokeBorder(Color(isSelected ? colors.accentInk : colors.separator), lineWidth: 1.5)
                     if isSelected {
                         Circle().fill(Color(colors.accentInk))
-                        WontonIcon.check.view(size: WontonTheme.size.iconTiny).wontonIconMono()
-                            .foregroundStyle(Color(colors.canvas))
+                        WontonIcon.check.view(size: WontonTheme.size.iconTiny).foregroundStyle(Color(colors.canvas))
                     }
                 }
                 .frame(width: WontonTheme.size.icon, height: WontonTheme.size.icon)
