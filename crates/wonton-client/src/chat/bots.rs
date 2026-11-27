@@ -460,6 +460,31 @@ impl Bots {
         })
     }
 
+    /// Bot 列表和联系人候选在同一个视图写入里换：只看 `view.bots` 的壳不会撞上中间态。
+    pub(super) fn publish_bots_and_contacts(&self, local: &Local, bots: Vec<BotView>) {
+        let contacts = {
+            let view = self.view.borrow();
+            contacts::assemble(
+                &bots,
+                local.shared.as_deref(),
+                &view.rooms,
+                view.own_private_bot.as_ref(),
+            )
+        };
+        self.view.send_if_modified(|view| {
+            let mut changed = false;
+            if view.bots != bots {
+                view.bots = bots;
+                changed = true;
+            }
+            if view.shared_contacts != contacts {
+                view.shared_contacts = contacts;
+                changed = true;
+            }
+            changed
+        });
+    }
+
     /// 把当前能选的人合成进 ViewModel；壳只按搜索词过滤，不自己拼。
     pub(super) fn publish_contacts(&self) {
         let contacts = {
@@ -647,16 +672,9 @@ impl Bots {
             );
         }
         local.installed = installed;
-        // 插件表变得频繁，Bot 列表没变时别惊动壳：发送方每次通知都会变成一批时间线增量。
-        self.view.send_if_modified(|view| {
-            if view.bots == views {
-                return false;
-            }
-            view.bots = views;
-            true
-        });
+        // 插件表变得频繁；Bot 列表和联系人候选要一起写，否则壳会看到新 Bot 却还没有联系人。
+        self.publish_bots_and_contacts(&local, views);
         drop(local);
-        self.publish_contacts();
         self.update_activity();
         self.refresh_all();
         self.changed.notify_one();
