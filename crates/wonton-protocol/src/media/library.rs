@@ -5,6 +5,9 @@
 //! 壳看的视图由客户端核另出。服务端发来的取值枚举认不出时落 `Other`；[`LibraryAction`] 是提供方要
 //! 执行的动作，认不得就没法执行，报错（同 [`super::QueueOp`]）。
 //!
+//! 指人的字段（条目的 `owner`、相册的 `members`、[`AlbumOwner::Person`]、写操作里的 `share_with`、`people`）
+//! 一律是 Matrix ID，同 `X-Wonton-User`；提供方自己映射到上游账号。
+//!
 //! 失败一律回 [`super::MediaFailure`] 信封，码按 ADR-0113 第 9 节的表：请求本身不合法才是 `protocol`；
 //! 这个人看不到或改不了某一条是 `permission_denied`，条目不在了是 `media_gone`，上游把这两种说成 400 的，
 //! 提供方也要照这样归类。写操作逐条判断，做不了的那几条进 [`LibraryActionResult::failed`]，不连累整批。
@@ -121,7 +124,7 @@ pub struct PhotoAsset {
     pub live: bool,
     #[serde(default)]
     pub favorite: bool,
-    /// 不是本人的条目（家人共享给他的、共享相册里别人加的）写主人的本机用户名；本人的为空
+    /// 不是本人的条目（家人共享给他的、共享相册里别人加的）写主人的 Matrix ID；本人的为空
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
     /// 原图解码前的占位图（ThumbHash 的 base64）；没有就空着，壳画纯色
@@ -198,7 +201,7 @@ pub struct PersonEntry {
 pub enum AlbumOwner {
     Me,
     Household,
-    /// 别的家人，值是本机用户名
+    /// 别的家人，值是 Matrix ID（`person:@mom:example.com`）
     Person(String),
     /// 新版本新加的归属，原值在里。
     Other(String),
@@ -241,7 +244,7 @@ pub struct Album {
     /// 封面那一条的 id
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<String>,
-    /// 除库主外能看这个相册的本机用户名；可能含正在看的这个人
+    /// 除库主外能看这个相册的人，Matrix ID；可能含正在看的这个人
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -529,6 +532,13 @@ mod tests {
         let owner: AlbumOwner = serde_json::from_str("\"person:mom\"").unwrap();
         assert_eq!(owner, AlbumOwner::Person("mom".into()));
         assert_eq!(serde_json::to_value(&owner).unwrap(), "person:mom");
+        // Matrix ID 自己带 `:`，只按第一个 `person:` 拆。
+        let owner: AlbumOwner = serde_json::from_str("\"person:@a:example.com\"").unwrap();
+        assert_eq!(owner, AlbumOwner::Person("@a:example.com".into()));
+        assert_eq!(
+            serde_json::to_value(&owner).unwrap(),
+            "person:@a:example.com"
+        );
         for raw in ["\"guest\"", "\"person:\""] {
             let owner: AlbumOwner = serde_json::from_str(raw).unwrap();
             assert!(matches!(owner, AlbumOwner::Other(_)));

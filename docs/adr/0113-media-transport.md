@@ -295,7 +295,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `/library` | `GET` | `LibraryFeatures`：接哪些写操作（`actions`）；只读的源回空表，壳不出对应按钮 |
 | `/library/timeline` | `GET` | `Timeline`：按拍摄月分桶（`YYYY-MM`、张数），新的在前 |
 | `/library/timeline/{month}?cursor=` | `GET` | `AssetPage`：这个月的条目，新的在前 |
-| `/library/albums` | `GET` | `Albums`：这个人能看到的相册，带归属（`me`/`household`/`person:<用户名>`）和是否共享 |
+| `/library/albums` | `GET` | `Albums`：这个人能看到的相册，带归属（`me`/`household`/`person:<Matrix ID>`）和是否共享 |
 | `/library/albums/{id}?cursor=` | `GET` | `AlbumPage` |
 | `/library/search?q=&people=&place=&from=&to=&kind=&favorite=&cursor=` | `GET` | `AssetPage`；`q` 按画面内容搜 |
 | `/library/people` | `GET` | `People`：有名字的人物，搜索页按人筛 |
@@ -334,7 +334,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
   全无时提供方先挑出做不了的再做。整批都做不了才回失败信封。
   提供方不认识的动作回 `protocol`，不静默忽略；部分成功逐条回 `failed`。
 - 每人独立库：提供方按 `X-Wonton-User` 用这个人自己的上游账号，回包只含他能看到的（自己的、家人共享给他的、共享相册）。
-  别人的条目带 `owner`（本机用户名），壳据此标出来源。“家庭”账号当家庭相册的库主（第 6 节），归属写 `household`，壳单列。
+  别人的条目带 `owner`（Matrix ID，相册的 `members` 也是），壳据此标出来源。“家庭”账号当家庭相册的库主（第 6 节），归属写 `household`，壳单列。
 - 上游账号首次用到时由提供方建，和网页 OIDC 自动开户同一个时机（核心只把授权过的人转过来）；ADR-0114 第 1 项的
   `member_accounts` 落地后，核心在授权时先调 `add`，首次建号这一步就提前，提供方的建号保持幂等。
 
