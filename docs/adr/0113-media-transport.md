@@ -290,6 +290,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 
 | 提供方路径 | 方法 | 回包（`wonton-protocol::media::library`） |
 | --- | --- | --- |
+| `/library` | `GET` | `LibraryFeatures`：接哪些写操作（`actions`）；只读的源回空表，壳不出对应按钮 |
 | `/library/timeline` | `GET` | `Timeline`：按拍摄月分桶（`YYYY-MM`、张数），新的在前 |
 | `/library/timeline/{month}?cursor=` | `GET` | `AssetPage`：这个月的条目，新的在前 |
 | `/library/albums` | `GET` | `Albums`：这个人能看到的相册，带归属（`me`/`household`/`person:<用户名>`）和是否共享 |
@@ -298,7 +299,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `/library/people` | `GET` | `People`：有名字的人物，搜索页按人筛 |
 | `/library/people/{id}/thumbnail` | `GET` | 人物头像的字节 |
 | `/library/items/{id}` | `GET` | `PhotoDetail`：EXIF、地点、人物 |
-| `/library/items/{id}/content?rendition=` | `GET` | 字节；档位 `thumbnail`/`preview`/`original`/`playback`/`live`，`Range` 原样过 |
+| `/library/items/{id}/content?rendition=` | `GET` | 字节；档位 `thumbnail`/`preview`/`original`/`playback`/`live`，`Range` 原样过；条件请求命中回 304、越界回 416，照常转，不是失败 |
 | `/library/actions` | `POST` | 体 `LibraryAction`（收藏、建相册、加进/移出相册、共享给家人、进回收站、恢复），回 `LibraryActionResult` |
 
 - 服务器核对 `library` 只转发：按设备归属的人填 `X-Wonton-User`、换上提供方签的能力凭据、`Range` 原样过，不缓存、不落盘、
@@ -310,6 +311,20 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 - 视频和实况照片的动态部分在大图页直接播（`playback`、`live` 档），不开第 4 节的播放会话：相册里的短视频不进队列、
   不跨设备接着放。
 - 原生页上本人点的写操作可撤、只动自己能动的，不发确认卡片（ADR-0024）；Agent 改相册走插件自己的 MCP 工具，确认照第 5 节。
+- 失败回 `MediaFailure` 信封，状态码和码对应如下；上游把“看不到”“不存在”也说成 400 的，提供方按意思归类，不归成 `protocol`：
+
+  | 情形 | 状态码 | 码 |
+  | --- | --- | --- |
+  | 请求本身不合法：缺参数、编号格式不对、认不出或不在 `LibraryFeatures` 里的动作 | 400 | `protocol` |
+  | 凭据不对 | 401 | `authentication_required` |
+  | 这个人看不到或改不了这一条、这个相册 | 403 | `permission_denied` |
+  | 条目、相册不在了 | 404 | `media_gone` |
+  | 上游限流 | 429 | `rate_limited` |
+  | 上游出错 | 502 | `upstream_error` |
+  | 上游连不上、没应答 | 503 | `plugin_unavailable` |
+
+  写操作逐条判断：做不了的那几条（别人的照片、不在了的）进 `LibraryActionResult.failed`、各带码，其余照做；上游整批全有或
+  全无时提供方先挑出做不了的再做。整批都做不了才回失败信封。
   提供方不认识的动作回 `protocol`，不静默忽略；部分成功逐条回 `failed`。
 - 每人独立库：提供方按 `X-Wonton-User` 用这个人自己的上游账号，回包只含他能看到的（自己的、家人共享给他的、共享相册）。
   别人的条目带 `owner`（本机用户名），壳据此标出来源。“家庭”账号当家庭相册的库主（第 6 节），归属写 `household`，壳单列。
@@ -324,6 +339,8 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
   同一张都不重传。回收站里的算不算“已在库里”归提供方（Immich 的 `bulk-upload-check` 语义）。
 - 收尾时仍可能撞上重复（检查和上传之间别处传了同一张），`finish` 回 `duplicate: true`，核心把这一项记成 `Skipped`，不算失败。
 - 去重只决定传不传，不删手机上的东西；“备份后释放手机空间”是壳列出已备份项、用户确认后交给系统删。
+- 每一项都带拍摄时间（`taken_at`，手机相册的创建时间）。相册类提供方按它排时间线，没带就回 `protocol` 拒收，不拿上传时刻
+  顶上：顶上的话旧照片会全堆在上传那天。
 
 **实况照片。** iOS 的 Live Photo、Android 的动态照片是一张图加一段视频，各是一个 `UploadItem`。动态那段排在前面；
 静态那项带 `live_video_checksum`，提供方按这个校验和找到已收的那段再关联（Immich 的 `livePhotoVideoId`）。
@@ -342,7 +359,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 
 | 路径 | 动作 | 语义 |
 | --- | --- | --- |
-| `GET /_wonton/capabilities` | 探测 | 返回 `operations`（`upload`/`download`/`playback`/`list`）与 `kinds`（`photo`/`video`/`audio`）；核心据它决定哪些操作可用 |
+| `GET /_wonton/capabilities` | 探测 | 返回 `operations`（`upload`/`download`/`playback`/`list`/`library`）与 `kinds`（`photo`/`video`/`audio`）；核心据它决定哪些操作可用 |
 | `GET /items?kind=&q=&album=&artist=&series=&from=&to=&cursor=` | 列条目 | 分页列这个人能看到的条目，给 Agent 找内容；按 `title` 排，`cursor` 在同一次查询的参数下稳定；回 `items` 与下一页 `cursor` |
 | `POST /uploads` | 开始上传 | 体带 `item`（相对路径、大小、校验和、拍摄时间）；返回 `upload_id` 与已收字节数（为 0 或断点位置） |
 | `HEAD /uploads/{id}` | 查断点 | 返回 `Upload-Offset`；不存在时 404，核心从头开始 |

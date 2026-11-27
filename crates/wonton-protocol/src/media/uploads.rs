@@ -33,6 +33,8 @@ pub struct UploadStart {
     pub size: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
+    /// 拍摄时间。相册类提供方按它排时间线，没有就回 `protocol` 拒收，不拿上传时刻顶上；
+    /// 类型上留可省，给不按时间排的提供方。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub taken_at: Option<Timestamp>,
     /// 实况/动态照片的静态那一项带上动态那段的校验和；动态那段在同一任务里排在前面、先传完
