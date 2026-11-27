@@ -214,3 +214,73 @@ async fn the_owner_can_close_the_window_early_and_get_auto_back() {
             .contains("allow_invalid_tls_certificates = false")
     );
 }
+
+/// 手动关之后对端都钉齐（窗口自然不需要）：交回自动并清掉手改标记；再来一个待钉对端会重新开。
+#[tokio::test]
+async fn a_new_pending_peer_reopens_after_the_manual_close_was_released() {
+    let (config, fake, state, install) = config().await;
+    let toml = install.path().join("secrets/tuwunel/tuwunel.toml");
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = true\n").unwrap();
+    std::fs::create_dir_all(state.path().join("core")).unwrap();
+    std::fs::write(
+        state.path().join("core/peers.json"),
+        serde_json::json!({"peers": {"old.example": {
+            "phase": "paired",
+            "pin_state": {"pending": {"since_version": "0.8.0"}},
+            "peer_pin": []
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    crate::peer_window::store_last_applied(state.path(), true).await;
+    *config.window_applied.lock().unwrap() = Some(true);
+
+    // 主人提前关：核心认文件值，记下这是手改。
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = false\n").unwrap();
+    config.apply_window().await;
+    assert!(crate::peer_window::load_manual(state.path()).is_some());
+
+    // 对端钉齐，窗口不再需要：交回自动、清掉手改标记，文件保持 false。
+    std::fs::write(
+        state.path().join("core/peers.json"),
+        serde_json::json!({"peers": {"old.example": {
+            "phase": "paired",
+            "pin_state": "pinned",
+            "peer_pin": [{"der": "MIIB", "spki_sha256": "00", "pinned_at_ms": 1}]
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+    config.apply_window().await;
+    assert!(
+        crate::peer_window::load_manual(state.path()).is_none(),
+        "钉齐后手改标记要清掉"
+    );
+
+    // 新的待钉对端出现：自动重开 allow_invalid。
+    std::fs::write(
+        state.path().join("core/peers.json"),
+        serde_json::json!({"peers": {
+            "old.example": {
+                "phase": "paired",
+                "pin_state": "pinned",
+                "peer_pin": [{"der": "MIIB", "spki_sha256": "00", "pinned_at_ms": 1}]
+            },
+            "new.example": {
+                "phase": "paired",
+                "pin_state": {"pending": {"since_version": "0.8.0"}},
+                "peer_pin": []
+            }
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    config.apply_window().await;
+    assert!(
+        std::fs::read_to_string(&toml)
+            .unwrap()
+            .contains("allow_invalid_tls_certificates = true"),
+        "新的待钉对端要重新开窗口"
+    );
+    let _ = fake;
+}

@@ -158,12 +158,12 @@ impl FederationConfig {
             }
         }
         let manual = *self.window_manual.lock().expect("窗口状态锁中毒");
-        if let Some(manual) = manual {
-            if manual != needed {
+        if manual.is_some() {
+            if needed && manual != Some(needed) {
                 tracing::debug!(allow_invalid = manual, "主人手动开关着窗口，本轮不自动改");
                 return;
             }
-            // 文件已经回到自动值：交回自动。
+            // 对端都钉齐（needed=false）或文件已回到自动值：交回自动；之后新的待钉对端会重新开。
             *self.window_manual.lock().expect("窗口状态锁中毒") = None;
             crate::peer_window::clear_manual(&self.data_dir).await;
         }
