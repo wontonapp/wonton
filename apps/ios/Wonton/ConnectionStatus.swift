@@ -107,7 +107,10 @@ struct ConnectionLine: View {
             } else {
                 Text(notice.sentence)
                     .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(notice == .deviceRejected || notice == .relayRejected ? colors.warning : colors.textPrimary))
+                    .foregroundStyle(Color(
+                        notice == .deviceRejected || notice == .relayRejected
+                            ? colors.warning : colors.textPrimary
+                    ))
             }
             HStack(spacing: WontonTheme.spacing.s8) {
                 if notice == .deviceRejected {
