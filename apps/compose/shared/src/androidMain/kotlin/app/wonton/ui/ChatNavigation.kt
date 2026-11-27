@@ -35,6 +35,9 @@ data class AskFailureBanner(
     val detail: String,
 )
 
+/// 旧核心没有回执时的等待：超过它仍没回执，就按旧行为打开默认 Agent。
+private const val LEGACY_RECEIPT_GRACE_MS = 2_000L
+
 /**
  * 聊天页打开的房间。应用页和应用商店里点 Agent 插件时直接打开和它的 Bot 的私聊，关掉房间回到点的那一页。
  * [selectTab] 和房间一起换，不然中间会闪一下聊天列表。
@@ -118,7 +121,7 @@ class ChatNavigation(
             legacyOpen?.let(legacyHandler::removeCallbacks)
             val open = Runnable { legacyOpenDefaultAgent(core, id) }
             legacyOpen = open
-            legacyHandler.postDelayed(open, 2000)
+            legacyHandler.postDelayed(open, LEGACY_RECEIPT_GRACE_MS)
         }
 
         private fun legacyOpenDefaultAgent(core: ClientCore, id: UInt) {
