@@ -65,7 +65,6 @@ pub struct CoreState {
     lists: Mutex<VecDeque<Vec<InstalledPlugin>>>,
     /// 假核心保存的引导状态和模型设置。
     onboarding: Mutex<Option<serde_json::Value>>,
-    model_settings: Mutex<Option<serde_json::Value>>,
     /// 假核心保存的资料；为空时是还没填的。
     owner: Mutex<Option<serde_json::Value>>,
     /// 某个方法和路径依次给出的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
@@ -174,10 +173,6 @@ impl CoreState {
 
     pub fn set_owner(&self, name: Option<&str>, email: Option<&str>) {
         *self.owner.lock().unwrap() = Some(owner_json(name, email));
-    }
-
-    pub fn set_model_settings(&self, model_settings: serde_json::Value) {
-        *self.model_settings.lock().unwrap() = Some(model_settings);
     }
 
     pub fn all_seen(&self) -> Vec<Seen> {
@@ -396,18 +391,6 @@ async fn onboarding_routes(
                 }
                 json_value(value.clone())
             }
-            _ => core_error_response(405),
-        });
-    }
-    if path == "/_wonton/api/models/settings" {
-        return Some(match *method {
-            Method::GET => core
-                .model_settings
-                .lock()
-                .unwrap()
-                .clone()
-                .map(json_value)
-                .unwrap_or_else(|| core_error_response(404)),
             _ => core_error_response(405),
         });
     }

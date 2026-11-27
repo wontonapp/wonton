@@ -5,8 +5,8 @@ use wonton_client::{Action, OnboardingStep};
 
 use super::super::rig::Rig;
 use super::{
-    MODEL_SETTINGS, ONBOARDING, PROFILE, act, assert_nothing_saved, at, flow_rig, invalid,
-    onboarding, walk_to_review, with_photos,
+    ONBOARDING, PROFILE, act, assert_nothing_saved, at, flow_rig, invalid, onboarding,
+    walk_to_review, with_photos,
 };
 
 #[tokio::test]
@@ -15,8 +15,9 @@ async fn navigation_walks_back_through_every_step_keeping_choices() {
     let review = walk_to_review(&rig).await;
     assert!(!review.review.items.is_empty());
     for (step, position) in [
-        (OnboardingStep::Apps, 3),
-        (OnboardingStep::Model, 2),
+        (OnboardingStep::Apps, 4),
+        (OnboardingStep::Model, 3),
+        (OnboardingStep::Assistant, 2),
         (OnboardingStep::Profile, 1),
     ] {
         act(
@@ -27,10 +28,9 @@ async fn navigation_walks_back_through_every_step_keeping_choices() {
         );
         let view = at(&rig, step).await;
         let nav = view.nav.unwrap();
-        assert_eq!((nav.position, nav.total), (position, 4));
+        assert_eq!((nav.position, nav.total), (position, 5));
         assert!(view.review.items.is_empty());
         assert!(view.needs[0].selected);
-        assert!(view.model.choice.is_some());
         assert_eq!(view.profile.display_name, " 云吞 ");
     }
     invalid(
@@ -68,7 +68,6 @@ async fn earlier_server_steps_start_from_the_first_and_finished_does_not_enter()
     rig.connected().await;
     at(&rig, OnboardingStep::Finished).await;
     assert!(rig.core.seen(&Method::GET, PROFILE).is_empty());
-    assert!(rig.core.seen(&Method::GET, MODEL_SETTINGS).is_empty());
 
     let other = Rig::new().await;
     other.core.set_onboarding(onboarding("future_step"));

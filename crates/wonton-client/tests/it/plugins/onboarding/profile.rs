@@ -3,7 +3,7 @@
 use wonton_client::{Action, OnboardingStep};
 
 use super::super::rig::Rig;
-use super::{act, assert_nothing_saved, at, edit, flow_rig, model_settings, onboarding};
+use super::{act, assert_nothing_saved, at, edit, flow_rig, onboarding};
 
 #[tokio::test]
 async fn the_name_is_required_and_the_email_is_optional() {
@@ -33,7 +33,7 @@ async fn the_name_is_required_and_the_email_is_optional() {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    at(&rig, OnboardingStep::Model).await;
+    at(&rig, OnboardingStep::Assistant).await;
     assert_nothing_saved(&rig);
 }
 
@@ -42,7 +42,6 @@ async fn a_filled_email_can_be_changed_but_not_cleared() {
     let rig = Rig::new().await;
     rig.core.set_owner(Some("云吞"), Some("me@example.com"));
     rig.core.set_onboarding(onboarding("profile"));
-    rig.core.set_model_settings(model_settings(false));
     rig.connected().await;
     let view = rig
         .wait_onboarding(|view| view.profile.email == "me@example.com" && !view.loading)
@@ -65,5 +64,5 @@ async fn a_filled_email_can_be_changed_but_not_cleared() {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    at(&rig, OnboardingStep::Model).await;
+    at(&rig, OnboardingStep::Assistant).await;
 }

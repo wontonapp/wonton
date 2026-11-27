@@ -2,8 +2,3 @@
 onboarding-steps-not-in-flow = 不在引导里
 
 onboarding-steps-state-missing = 还没有取到引导状态
-
-
-
-onboarding-model-none-configured = 模型网关里还没有接好的模型
-

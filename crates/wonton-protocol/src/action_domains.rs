@@ -377,9 +377,9 @@ pub enum SettingsAction {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OnboardingAction {
-    /// 取引导的状态、推荐清单和模型设置网页。
+    /// 取引导的状态、推荐清单和资料。
     RefreshOnboarding,
-    /// 主人在设置里选了重看：从头走一遍。网页已保存的模型修改不属于引导草稿。
+    /// 主人在设置里选了重看：从头走一遍。模型页里存过的不属于引导草稿。
     RestartOnboarding,
     /// 记下这一步的选择，到下一步。最后一页上是“完成”：一起执行所有选择；执行完了再发一次是离开引导。
     ContinueOnboarding,
@@ -391,8 +391,8 @@ pub enum OnboardingAction {
     ToggleOnboardingNeed { id: String },
     /// 你的资料这一步改了名字或邮箱。只记下来，点完成时才保存。
     EditOnboardingProfile { display_name: String, email: String },
-    /// 选用模型网关里已经接好的模型（[`OnboardingModelChoice::Current`](crate::OnboardingModelChoice::Current)）。
-    UseCurrentModel,
+    /// 你的助手这一步改了名字。只记下来，点完成时才保存。
+    EditOnboardingAssistant { name: String },
     /// 最后一页上重试失败的一项（[`OnboardingReviewItem::id`](crate::OnboardingReviewItem::id)）。
     RetryOnboardingItem { id: String },
     /// 这条提示看过了，这台设备不再显示。

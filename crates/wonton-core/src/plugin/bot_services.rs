@@ -12,7 +12,7 @@ use super::render::MatrixVars;
 use wonton_protocol::{AiLevel, BOT_AI_LEVEL_ENV};
 
 /// 安装时核心建的 Bot。
-pub const DEFAULT_BOT: &str = "default";
+pub const DEFAULT_BOT: &str = wonton_protocol::DEFAULT_BOT;
 
 /// 一个 Bot 渲染容器时要注入的、和其他 Bot 不一样的值。
 #[derive(Debug, Clone, PartialEq, Eq)]

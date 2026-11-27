@@ -77,6 +77,10 @@ impl AgentModelsLink {
         self.view.clone()
     }
 
+    pub(crate) fn subscribe(&self) -> tokio::sync::watch::Receiver<AgentModelsViewModel> {
+        self.view.subscribe()
+    }
+
     pub(crate) fn dispatch(self: &Arc<Self>, action: AgentModelsAction) -> Result<(), CoreError> {
         use AgentModelsAction as A;
         let bot = match &action {

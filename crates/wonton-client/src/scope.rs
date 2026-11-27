@@ -141,6 +141,7 @@ struct ChatLinks {
     push: Arc<PushLink>,
     pages: Arc<PagesLink>,
     files: Arc<FilesLink>,
+    agent_models: Arc<AgentModelsLink>,
     onboarding: Arc<OnboardingLink>,
 }
 
@@ -196,11 +197,17 @@ fn chat_links(
         dir,
         views.map(|v| v.transfers.clone()),
     );
+    let agent_models = AgentModelsLink::new(
+        handle.clone(),
+        home.clone(),
+        views.map(|v| v.agent_models.clone()),
+    );
     let onboarding = OnboardingLink::new(
         handle.clone(),
         home.clone(),
         chat.clone(),
         plugins.clone(),
+        agent_models.subscribe(),
         dir,
         views.map(|v| v.onboarding.clone()),
     );
@@ -209,6 +216,7 @@ fn chat_links(
         push,
         pages: tabs,
         files,
+        agent_models,
         onboarding,
     })
 }
@@ -375,11 +383,6 @@ impl Scope {
             home.clone(),
             views.map(|v| v.bot_contacts.clone()),
         );
-        let agent_models = AgentModelsLink::new(
-            handle.clone(),
-            home.clone(),
-            views.map(|v| v.agent_models.clone()),
-        );
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             home,
@@ -397,7 +400,7 @@ impl Scope {
             friends: people.1,
             family: people.2,
             bot_contacts,
-            agent_models,
+            agent_models: links.agent_models,
             settings: people.3,
             shared_apps,
             browser,

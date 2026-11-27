@@ -1,23 +1,22 @@
 //! 最后一页（ADR-0038）：列出选择和插件权限；点完成后保存资料和“走完了”，再在后台装应用。
-//! 模型网页自己的保存不属于引导提交；点完成之前这里只取安装预览。
+//! 模型页里的操作当场存进 Bot，不属于引导提交；点完成之前这里只取安装预览。
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, HomeStatus, InstallPreview, OnboardingCommit, OnboardingItemProblem,
-    OnboardingItemState, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
-    OnboardingStep, OnboardingUpdate, PluginFailure, PluginIcon, PluginProblem, PluginTask,
-    PluginTaskState, normalized_email,
+    AgentModelsViewModel, ChatViewModel, CoreError, HomeStatus, InstallPreview, OnboardingCommit,
+    OnboardingItemProblem, OnboardingItemState, OnboardingReviewDetail, OnboardingReviewItem,
+    OnboardingReviewKind, OnboardingStep, OnboardingUpdate, PluginFailure, PluginIcon,
+    PluginProblem, PluginTask, PluginTaskState, normalized_email,
 };
 
-use super::draft::ModelDraft;
-use super::{LocalState, OnboardingLink, api, invalid, lock};
+use super::assistant::{ASSISTANT, assistant_entry, model_entry};
+use super::{LocalState, OnboardingLink, api, assistant, invalid, lock};
 use crate::l10n::{CATALOG, language};
 
 pub(super) const PROFILE: &str = "profile";
-pub(super) const MODEL: &str = "model";
 const APPS: &str = "apps";
 
 pub(super) struct ReviewEntry {
@@ -33,7 +32,7 @@ pub(super) struct ReviewEntry {
 }
 
 impl ReviewEntry {
-    fn new(id: &str, kind: OnboardingReviewKind, titles: Vec<String>) -> Self {
+    pub(super) fn new(id: &str, kind: OnboardingReviewKind, titles: Vec<String>) -> Self {
         Self {
             id: id.to_owned(),
             kind,
@@ -47,7 +46,7 @@ impl ReviewEntry {
     }
 
     /// 没改的一类：列现值、标“不变”，完成时不发请求。
-    fn unchanged(id: &str, kind: OnboardingReviewKind, titles: Vec<String>) -> Self {
+    pub(super) fn unchanged(id: &str, kind: OnboardingReviewKind, titles: Vec<String>) -> Self {
         let mut entry = Self::new(id, kind, titles);
         entry.detail = Some(OnboardingReviewDetail::Unchanged);
         entry
@@ -78,8 +77,12 @@ impl ReviewEntry {
 }
 
 /// 按记下的选择列出这一页的项。要装的插件先是 `Preparing`，取到预览后再定。
-/// 资料、模型、应用三类各至少一行：改了的列要提交的值，没改的列现值、标“不变”。
-pub(super) fn entries(state: &LocalState) -> Vec<ReviewEntry> {
+/// 资料、助手、模型、应用各至少一行：改了的列要提交的值，没改的列现值、标“不变”。显不出来的步不列。
+pub(super) fn entries(
+    state: &LocalState,
+    chat: &ChatViewModel,
+    models: &AgentModelsViewModel,
+) -> Vec<ReviewEntry> {
     let Some(onboarding) = state.onboarding.as_ref() else {
         return Vec::new();
     };
@@ -88,7 +91,12 @@ pub(super) fn entries(state: &LocalState) -> Vec<ReviewEntry> {
     if !state.unavailable.contains(&OnboardingStep::Profile) {
         entries.push(profile_entry(state));
     }
-    entries.push(model_entry(state));
+    if !state.unavailable.contains(&OnboardingStep::Assistant) {
+        entries.push(assistant_entry(state, chat));
+    }
+    if !state.unavailable.contains(&OnboardingStep::Model) {
+        entries.push(model_entry(state, models));
+    }
     let mut seen: HashSet<&str> = HashSet::new();
     let needs = state.draft.needs(onboarding);
     let mut apps: Vec<ReviewEntry> = onboarding
@@ -147,13 +155,6 @@ fn profile_entry(state: &LocalState) -> ReviewEntry {
     }
 }
 
-fn model_entry(state: &LocalState) -> ReviewEntry {
-    match state.draft.model(state.model_settings.as_ref()) {
-        Some(model) => model_choice_entry(model),
-        None => ReviewEntry::unchanged(MODEL, OnboardingReviewKind::Model, Vec::new()),
-    }
-}
-
 fn prepare(entry: &mut ReviewEntry, source: Option<String>, blocked: Option<String>) {
     entry.state = match (&source, blocked) {
         (_, Some(message)) => OnboardingItemState::Blocked {
@@ -163,21 +164,6 @@ fn prepare(entry: &mut ReviewEntry, source: Option<String>, blocked: Option<Stri
         (None, None) => OnboardingItemState::Blocked { message: None },
     };
     entry.source = source;
-}
-
-/// 接模型这一步记下的选择对应的行；“用现在的”不动模型，也照常列出来。
-fn model_choice_entry(model: &ModelDraft) -> ReviewEntry {
-    match model {
-        ModelDraft::Current => {
-            let mut entry = ReviewEntry::new(MODEL, OnboardingReviewKind::Model, Vec::new());
-            entry.detail = Some(OnboardingReviewDetail::KeepCurrent);
-            entry
-        }
-        // draft.model() 把跳过折成 None，到这里只会是防御；也按“不变”显示。
-        ModelDraft::Skipped => {
-            ReviewEntry::unchanged(MODEL, OnboardingReviewKind::Model, Vec::new())
-        }
-    }
 }
 
 /// 取到预览后定下这一项：装不了的、要先填资料而资料页没填邮箱的，完成不能点。
@@ -289,9 +275,11 @@ fn core_problem(error: &CoreError) -> PluginProblem {
 impl OnboardingLink {
     /// 进最后一页：列出项，给要装的取预览。
     pub(super) fn enter_review(self: &Arc<Self>) {
+        let chat = self.chat.view();
+        let models = self.models.borrow().clone();
         let (generation, review, sources) = {
             let mut state = lock(&self.state);
-            state.review = entries(&state);
+            state.review = entries(&state, &chat, &models);
             state.review_generation += 1;
             state.commit = OnboardingCommit::NotStarted;
             state.step = Some(OnboardingStep::Review);
@@ -402,7 +390,9 @@ impl OnboardingLink {
         let link = self.clone();
         let generation = self.generation();
         self.runtime.spawn(async move {
-            let saved = link.save_profile(generation).await && link.finish(generation).await;
+            let saved = link.save_profile(generation).await
+                && link.save_assistant(generation).await
+                && link.finish(generation).await;
             if !saved {
                 if link.generation() == generation {
                     lock(&link.state).commit = OnboardingCommit::NotStarted;
@@ -479,6 +469,44 @@ impl OnboardingLink {
         }
     }
 
+    async fn save_assistant(&self, generation: u64) -> bool {
+        if !self.pending(ASSISTANT) {
+            return true;
+        }
+        let chat = self.chat.view();
+        let update = {
+            let state = lock(&self.state);
+            let current = assistant::current_name(&state, &chat);
+            state
+                .draft
+                .assistant_update(current.as_deref())
+                .zip(assistant::default_bot(&state))
+        };
+        let Some((name, bot)) = update else {
+            self.set_entry(ASSISTANT, OnboardingItemState::Done);
+            return true;
+        };
+        self.set_entry(ASSISTANT, OnboardingItemState::Running);
+        let result = match self.plugins.api() {
+            Ok(api) => api::rename_bot(&api, &bot.plugin_id, name).await,
+            Err(problem) => Err(problem),
+        };
+        if self.generation() != generation {
+            return false;
+        }
+        match result {
+            Ok(_) => {
+                lock(&self.state).draft.assistant = None;
+                self.set_entry(ASSISTANT, OnboardingItemState::Done);
+                true
+            }
+            Err(problem) => {
+                self.set_entry(ASSISTANT, plugin_failed(problem));
+                false
+            }
+        }
+    }
+
     async fn finish(&self, generation: u64) -> bool {
         if lock(&self.state).onboarding.is_none() {
             return false;
@@ -522,7 +550,7 @@ impl OnboardingLink {
                 if entry.state == OnboardingItemState::Done {
                     continue;
                 }
-                // 不用装的（资料、模型）随“走完了”一起保存好了。
+                // 不用装的（资料、助手、模型）随“走完了”一起保存好了。
                 let (Some(preview), Some(source)) = (entry.preview.clone(), entry.source.clone())
                 else {
                     entry.state = OnboardingItemState::Done;

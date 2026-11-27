@@ -1,7 +1,7 @@
 
 onboarding-steps-committing = Setup is already being submitted.
 
-onboarding-model-not-model-step = Setup isn't on the model step.
+onboarding-steps-not-assistant-step = Setup isn't on the assistant step.
 
 
 

@@ -1,7 +1,7 @@
 
 onboarding-steps-committing = 送信中です
 
-onboarding-model-not-model-step = セットアップはモデルのステップではありません
+onboarding-steps-not-assistant-step = セットアップはアシスタントのステップではありません
 
 
 

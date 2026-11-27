@@ -1,4 +1,4 @@
-//! 最后一页点完成：保存资料和“走完了”，再在后台装应用；模型由网页自己保存。
+//! 最后一页点完成：保存资料、助手的名字和“走完了”，再在后台装应用；模型在模型页里当场存过。
 
 use axum::http::Method;
 use wonton_client::{
@@ -9,8 +9,8 @@ use wonton_client::{
 
 use super::super::rig::{Canned, Rig, core_error, preview};
 use super::{
-    INSTALL, MODEL_SETTINGS, ONBOARDING, PREVIEW, PROFILE, act, at, edit, flow_rig, invalid,
-    model_settings, onboarding, walk_to_review, with_photos,
+    BOT_PROFILE, INSTALL, ONBOARDING, PREVIEW, PROFILE, act, at, choose_model, edit, flow_rig,
+    invalid, onboarding, pass_assistant, walk_to_review, with_photos,
 };
 
 fn body(rig: &Rig, method: &Method, path: &str) -> Vec<serde_json::Value> {
@@ -75,7 +75,10 @@ async fn finish_saves_every_choice_then_installs_in_the_background() {
     assert_eq!(profile.len(), 1);
     assert_eq!(profile[0]["display_name"], "云吞");
     assert!(profile[0]["email"].is_null());
-    assert!(body(&rig, &Method::PUT, MODEL_SETTINGS).is_empty());
+    assert!(
+        rig.core.seen(&Method::PUT, BOT_PROFILE).is_empty(),
+        "助手的名字没改"
+    );
     let finished = body(&rig, &Method::PUT, ONBOARDING);
     assert_eq!(finished.len(), 1);
     assert_eq!(finished[0], serde_json::json!({"step": "finished"}));
@@ -100,7 +103,7 @@ async fn finish_saves_every_choice_then_installs_in_the_background() {
 #[tokio::test]
 async fn skipping_every_step_only_marks_onboarding_finished() {
     let rig = flow_rig(with_photos(onboarding("profile"))).await;
-    for _ in 0..3 {
+    for _ in 0..4 {
         act(
             &rig,
             Action::Onboarding {
@@ -114,10 +117,11 @@ async fn skipping_every_step_only_marks_onboarding_finished() {
         kinds,
         [
             OnboardingReviewKind::Profile,
+            OnboardingReviewKind::Assistant,
             OnboardingReviewKind::Model,
             OnboardingReviewKind::App
         ],
-        "三类各一行，跳过的标不变"
+        "每类各一行，跳过的标不变"
     );
     assert!(
         review
@@ -142,14 +146,14 @@ async fn skipping_every_step_only_marks_onboarding_finished() {
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
 }
 
-/// 已经走完引导的服务器，重看从第一步开始：资料和模型设置都取到了。
+/// 已经走完引导的服务器，默认 Bot 已经选好模型；重看从第一步开始。
 async fn revisit_rig() -> Rig {
     let rig = Rig::new().await;
     rig.core.set_onboarding(onboarding("finished"));
     rig.core.set_owner(Some("云吞"), Some("me@example.com"));
-    rig.core.set_model_settings(model_settings(true));
     rig.connected().await;
     at(&rig, OnboardingStep::Finished).await;
+    choose_model(&rig).await;
     act(
         &rig,
         Action::Onboarding {
@@ -163,7 +167,7 @@ async fn revisit_rig() -> Rig {
 #[tokio::test]
 async fn finishing_an_untouched_revisit_changes_nothing() {
     let rig = revisit_rig().await;
-    for _ in 0..3 {
+    for _ in 0..4 {
         act(
             &rig,
             Action::Onboarding {
@@ -180,8 +184,8 @@ async fn finishing_an_untouched_revisit_changes_nothing() {
     settled(&rig).await;
     assert!(rig.core.seen(&Method::PUT, PROFILE).is_empty(), "资料没动");
     assert!(
-        rig.core.seen(&Method::PUT, MODEL_SETTINGS).is_empty(),
-        "模型没动"
+        rig.core.seen(&Method::PUT, BOT_PROFILE).is_empty(),
+        "助手没动"
     );
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty(), "应用没动");
     let finished = body(&rig, &Method::PUT, ONBOARDING);
@@ -269,7 +273,7 @@ async fn a_refused_profile_stops_finish_before_anything_else_and_can_be_retried(
         })
         .await;
     assert!(!view.nav.unwrap().can_next);
-    assert!(rig.core.seen(&Method::PUT, MODEL_SETTINGS).is_empty());
+    assert!(rig.core.seen(&Method::PUT, BOT_PROFILE).is_empty());
     assert!(rig.core.seen(&Method::PUT, ONBOARDING).is_empty());
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
 
@@ -304,7 +308,7 @@ async fn photos_only(rig: &Rig, email: &str) -> OnboardingViewModel {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    at(rig, OnboardingStep::Model).await;
+    pass_assistant(rig).await;
     act(
         rig,
         Action::Onboarding {
@@ -395,4 +399,77 @@ async fn a_failed_preview_blocks_finish_until_it_is_retried() {
         .await;
     assert!(view.nav.unwrap().can_next);
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
+}
+
+/// 给助手改了名字：点完成时先存资料、再改名、最后记“走完了”；名字不合规则时停在这一步。
+#[tokio::test]
+async fn a_renamed_assistant_is_saved_on_finish() {
+    let rig = flow_rig(onboarding("profile")).await;
+    rig.core.answer(
+        Method::PUT,
+        BOT_PROFILE,
+        Canned(200, r#"{"profile_rev": 2}"#.into()),
+    );
+    edit(&rig, "云吞", "");
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
+    at(&rig, OnboardingStep::Assistant).await;
+    let rename = |name: &str| {
+        act(
+            &rig,
+            Action::Onboarding {
+                action: wonton_protocol::OnboardingAction::EditOnboardingAssistant {
+                    name: name.to_owned(),
+                },
+            },
+        );
+    };
+    rename("  ");
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
+    let view = rig.app.onboarding();
+    assert_eq!(view.step, Some(OnboardingStep::Assistant));
+    assert!(view.assistant.name_problem.is_some());
+    rename(" 小云 ");
+    assert!(rig.app.onboarding().assistant.name_problem.is_none());
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
+    at(&rig, OnboardingStep::Model).await;
+    choose_model(&rig).await;
+    for _ in 0..2 {
+        act(
+            &rig,
+            Action::Onboarding {
+                action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+            },
+        );
+    }
+    let review = at(&rig, OnboardingStep::Review).await;
+    assert_eq!(review.review.items[1].titles, ["小云"]);
+    assert_eq!(review.review.items[1].detail, None);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
+    settled(&rig).await;
+    assert_eq!(
+        body(&rig, &Method::PUT, BOT_PROFILE),
+        [serde_json::json!({"name": "小云"})]
+    );
+    assert!(position(&rig, &Method::PUT, PROFILE) < position(&rig, &Method::PUT, BOT_PROFILE));
+    assert!(position(&rig, &Method::PUT, BOT_PROFILE) < position(&rig, &Method::PUT, ONBOARDING));
 }
