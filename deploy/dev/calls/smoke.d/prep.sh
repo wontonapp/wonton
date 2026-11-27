@@ -10,11 +10,14 @@ timeout 25 ssh "$HOST" "docker ps --format '{{.Names}}'" | grep -q -- '--app-ele
     die "栈里没装 app.element-call（先装默认 UDP 版）"
 log "预检"
 # dev.sh status 会跑 docker compose ps，在共用机上常常一卡几分钟；这里只看 .dev-ports 和网关是否回 HTTP（根路径 401/404 都算在）。
-read -r gw tunnel < <(timeout 25 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports" 2>/dev/null)
-[[ -n ${gw:-} && -n ${tunnel:-} ]] || die "栈 $STACK 的 .dev-ports 没有（栈没起？）"
-if read -r ngw ntun < <(timeout 25 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $STACK" 2>/dev/null) && [[ -n ${ntun:-} ]]; then
-    old_tunnel=$tunnel; gw=$ngw; tunnel=$ntun
+# 名额端口优先（重排会换）；未占名额时 select_ports 沿用 .dev-ports 并留下原因。
+dev_ports=$(timeout 25 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports" 2>/dev/null || true)
+slot_ports=$(timeout 25 ssh "$HOST" "$HOME/wonton-dev/stack-slot.sh ports $STACK" 2>&1 || true)
+ports=$(select_ports "$dev_ports" "$slot_ports")
+read -r port_src old_tunnel gw tunnel <<<"$ports"
+if [[ $port_src == slot ]]; then
     timeout 25 ssh "$HOST" "printf '%s %s\n' '$gw' '$tunnel' > ~/wonton-dev/stacks/dev-$STACK/.dev-ports" || true
+    # 名额重排换了端口：App 记着旧隧道口，补一条反向映射，配对和通话才不会拨空。
     if [[ $old_tunnel != "$tunnel" ]]; then
         for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$old_tunnel tcp:$tunnel" >/dev/null 2>&1 || true; done
     fi
@@ -38,9 +41,10 @@ timeout 60 ssh "$HOST" "for d in $DEV_A $DEV_B; do
 done" || die "清空 App 数据或授权失败"
 pair a "$DEV_A"; pair b "$DEV_B"
 # 配对之后再建房：wait_room_visible 要看设备的房间列表，未配对时列表一直是空的。
-if [[ -n ${ROOM_ID:-} ]]; then
-    room_name=$ROOM_NAME room_id=$ROOM_ID
-    log "复用房间 $room_id"
+if [[ -n ${ROOM_ID:-} || -n ${ROOM_NAME:-} ]]; then
+    room_name=$(resolve_room_reuse)
+    room_id=$ROOM_ID
+    log "复用房间 $room_id（$room_name）"
 else
     create_room
 fi
