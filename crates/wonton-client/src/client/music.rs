@@ -5,8 +5,11 @@ use wonton_protocol::music::{
     MusicAction, MusicLyricsState, MusicPage, MusicPageAction, MusicPageView,
 };
 
+use wonton_protocol::media::{MediaError, MediaFailureCode};
+
 use super::ClientCore;
-use crate::music_library::{MusicLink, Page};
+use crate::media_link::{MediaLink, failure};
+use crate::music_library::{MusicLink, Page, playable};
 
 /// 原生音乐页的一页（ADR-0113 第 2 节）。壳循环调 [`next`](Self::next) 拿新的视图，页内动作发 [`act`](Self::act)，
 /// 页面关掉时调 [`cancel`](Self::cancel)。
@@ -14,6 +17,7 @@ use crate::music_library::{MusicLink, Page};
 pub struct MusicPageSubscription {
     link: Arc<MusicLink>,
     page: Arc<Page>,
+    media: Arc<MediaLink>,
     receiver: Mutex<watch::Receiver<MusicPageView>>,
     cancelled: watch::Sender<bool>,
 }
@@ -39,6 +43,22 @@ impl MusicPageSubscription {
 
     pub fn act(&self, action: MusicPageAction) {
         self.link.act(&self.page, action);
+    }
+
+    /// 放这一页上的一首歌：这一页的歌按页面顺序就是要放的那一列。同一首在歌单里出现两次时从第一次起。
+    /// 出声、进度、换曲之后都看播放视图。
+    pub async fn play(&self, song_id: String) -> Result<(), MediaError> {
+        let items = playable(&self.page.view(), self.page.plugin_id());
+        let index = items
+            .iter()
+            .position(|item| item.id == song_id)
+            .ok_or_else(|| {
+                failure(
+                    MediaFailureCode::MediaGone,
+                    "song is no longer on this page",
+                )
+            })?;
+        Ok(self.media.play_items(items, index).await?)
     }
 
     pub fn cancel(&self) {
@@ -69,6 +89,7 @@ impl ClientCore {
         Arc::new(MusicPageSubscription {
             link,
             page,
+            media: self.scope().media.clone(),
             receiver: Mutex::new(receiver),
             cancelled: watch::Sender::new(false),
         })

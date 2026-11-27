@@ -11,6 +11,9 @@ mod fetch;
 mod live;
 mod map;
 mod patch;
+mod playable;
+#[cfg(test)]
+mod playable_tests;
 mod star;
 mod wire;
 
@@ -32,6 +35,7 @@ use wonton_protocol::music::{
 pub(crate) use api::Endpoint;
 use api::Failure;
 pub(crate) use live::LiveLibraries;
+pub(crate) use playable::playable;
 
 /// 找到一台曲库。生产里是插件列表加本地代理（[`LiveLibraries`]），测试里是本机的假曲库。
 pub(crate) trait Libraries: Send + Sync {
@@ -248,6 +252,10 @@ impl MusicLink {
 }
 
 impl Page {
+    pub(crate) fn plugin_id(&self) -> &str {
+        &self.plugin_id
+    }
+
     pub(crate) fn view(&self) -> MusicPageView {
         self.view.borrow().clone()
     }
