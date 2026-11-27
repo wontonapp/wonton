@@ -8,3 +8,6 @@ mod pairing;
 mod permissions;
 mod profile;
 mod support;
+
+// 别的网关测试模块按 `family_tests::…` 取这些夹具，拆开后保持原来的路径可见。
+pub(super) use support::*;

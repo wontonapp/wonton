@@ -26,6 +26,7 @@ async fn a_device_whose_member_is_gone_is_rejected() {
     let hers = SecretKey::generate().public();
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             display_name: "Mia".to_owned(),
             ..MemberRecord::for_test("mia")
         })
