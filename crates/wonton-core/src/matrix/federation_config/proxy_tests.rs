@@ -67,8 +67,8 @@ fn two_installs_on_one_host_federate_through_the_core_proxy() {
         let (a_tls, b_tls) = (stack_a.peer_tls_dir.clone(), stack_b.peer_tls_dir.clone());
         let (stack_a, stack_b) = std::thread::scope(|scope| {
             let (a_tls, b_tls) = (a_tls.clone(), b_tls.clone());
-            let started_a = scope.spawn(|| stack_a.launch(a.proxy_port, &b_tls));
-            let started_b = scope.spawn(|| stack_b.launch(b.proxy_port, &a_tls));
+            let started_a = scope.spawn(move || stack_a.launch(a.proxy_port, &b_tls));
+            let started_b = scope.spawn(move || stack_b.launch(b.proxy_port, &a_tls));
             (started_a.join().unwrap(), started_b.join().unwrap())
         });
         pairings.lock().unwrap().extend([
