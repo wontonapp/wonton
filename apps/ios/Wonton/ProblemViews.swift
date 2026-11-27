@@ -235,56 +235,6 @@ extension PagesFailure {
                 nextStep: String(localized: .Problem2.problemPagesInvalidNextStep),
                 detail: detail
             )
-        case .transportUnavailable:
-            return Problem(
-                title: String(localized: .Problem2.problemTransportUnavailableTitle),
-                nextStep: String(localized: .Problem3.problemTransportUnavailableNextStep),
-                detail: detail
-            )
-        case .unauthorized:
-            return Problem(
-                title: String(localized: .Problem3.problemUnauthorizedTitle),
-                nextStep: String(localized: .Problem2.problemUnauthorizedNextStep),
-                detail: detail
-            )
-        case .forbidden:
-            return Problem(
-                title: String(localized: .Problem3.problemForbiddenTitle),
-                nextStep: String(localized: .Problem1.problemPagesForbiddenNextStep),
-                detail: detail
-            )
-        case .notReady:
-            return Problem(title: String(localized: .Problem0.problemNotReadyTitle), nextStep: detail)
-        case .invalidInput:
-            return Problem(
-                title: String(localized: .Problem2.problemInvalidInputTitle),
-                nextStep: String(localized: .Problem3.problemPagesActionNextStep),
-                detail: detail
-            )
-        case .notFound:
-            return Problem(
-                title: String(localized: .Problem1.problemPagesNotFoundTitle),
-                nextStep: String(localized: .Problem3.problemPagesActionNextStep),
-                detail: detail
-            )
-        case .invalidResponse:
-            return Problem(
-                title: String(localized: .Problem3.problemPagesResponseTitle),
-                nextStep: String(localized: .Problem3.problemPagesResponseNextStep),
-                detail: detail
-            )
-        case .protocol:
-            return Problem(
-                title: String(localized: .Problem3.problemPagesProtocolTitle),
-                nextStep: String(localized: .Problem3.problemPagesProtocolNextStep),
-                detail: detail
-            )
-        case .upstream:
-            return Problem(
-                title: String(localized: .Problem2.problemUpstreamTitle),
-                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
-                detail: detail
-            )
         case .other:
             return Problem(
                 title: String(localized: .Problem1.problemGenericTitle),

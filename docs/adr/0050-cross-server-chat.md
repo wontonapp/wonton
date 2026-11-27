@@ -279,8 +279,8 @@ Tuwunel 分不清对方离线、没配对、拒绝我们，由核心按转发组
 
 - **不给的**：
   - 有副作用：`install_plugin`、`uninstall_plugin`、`set_plugin_permission`、`save_file`、`share_file`（发给归属人，
-    但内容可能来自远端的指使）、`set_profile`、`pin_page`、`unpin_page`。
-  - 只读但会把家里的情况带出去：`list_plugins`（装了什么、网页地址）、`plugin_status`、`list_pinned_pages`、
+    但内容可能来自远端的指使）、`set_profile`。
+  - 只读但会把家里的情况带出去：`list_plugins`（装了什么、网页地址）、`plugin_status`、
     `list_shares`（共享文件夹的名字）、`view_file`（工具结果里的文件）、`user_locale`（家人用什么语言）。
   - 只读、只为装插件服务：`check_plugin`。装不了，给了没用。
   - 新加的核心工具默认不给，要在这里写明理由才加。

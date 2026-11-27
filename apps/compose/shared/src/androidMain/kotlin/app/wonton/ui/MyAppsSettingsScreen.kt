@@ -22,9 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import app.wonton.protocol.PageAction
-import app.wonton.protocol.PanelScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -87,12 +85,6 @@ fun MyAppsSettingsScreen(onBack: () -> Unit, open: (PluginEntry) -> Unit, checkI
     // 应用行打开的详情页：设置的浮层里没有插件页栈，单开一个；返回键先关详情。
     val navigation = remember { PluginNavigation(open = open, checkInstalled = checkInstalled) }
     var adding by remember { mutableStateOf(false) }
-    var editingPanel by remember { mutableStateOf(false) }
-    val editor = if (editingPanel) rememberChatPanelState(PanelEdge.TOP, PanelScope.Main, pages) else null
-    if (editor != null) {
-        SideEffect { editor.feed(pages.viewModel.panel, pages.viewModel.panelSelected) }
-        ChatPanelEditor(editor, pages) { editingPanel = false }
-    }
     if (adding) {
         MyAppCandidatesScreen { adding = false }
         return

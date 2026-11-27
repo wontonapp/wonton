@@ -326,7 +326,7 @@ impl ClientCore {
         let opening = chat.begin_timeline(&target)?;
         scope
             .run(async move {
-                let room_view = pages.subscribe_room_view(&target.room_id).await?;
+                let room_view = pages.subscribe_room_view(&target.room_id)?;
                 chat.open_timeline(opening, room_view).await
             })
             .await

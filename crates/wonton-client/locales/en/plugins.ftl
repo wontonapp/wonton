@@ -116,7 +116,6 @@ tabs-storage-problem = Couldn't save My Apps on this device; the next launch may
 
 tabs-view-plugin-no-page = This app has no web page to open.
 
-tabs-page-not-placed = This page isn't in the panel.
 
 # Navigation bar settings file (tabs.json) errors. Shown as the reason of a CoreError::Storage / CoreError::InvalidInput,
 # which the problem banner wraps as "Can't read or write local storage: …".

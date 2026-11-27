@@ -28,6 +28,6 @@ pub(super) use layout::{
 };
 pub(super) use media::media;
 pub(super) use message::text_message;
-pub(super) use pages::{corner, panel};
+pub(super) use pages::corner;
 #[allow(unused_imports)] // `side_card` 只有测试用。
 pub(super) use timeline::{side_card, side_timeline, started_timeline, timeline};

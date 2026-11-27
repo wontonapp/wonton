@@ -39,15 +39,9 @@ internal fun PluginTabStatus(
     if (inBrowser) {
         BrowserPageStatus(
             page, tabs.core,
-            autoOpen = place !is PlacedTab.Panel,
             attempted = browserAttempted,
             allowed = browserAllowed,
-            onBackToChat = {
-                when (place) {
-                    is PlacedTab.Panel -> tabs.send(Action.Pages(PageAction.RemovePanelPage(place.scope, tab)))
-                    else -> tabs.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
-                }
-            },
+            onBackToChat = { tabs.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))) },
         )
         return
     }
@@ -96,11 +90,7 @@ private fun TabStatusActions(
     state: TabState, tab: TabRef, tabs: PagesState, onDetails: (String) -> Unit, place: PlacedTab?,
 ) {
     val pluginId = tab.localPluginId()
-    if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
-        WontonButton(stringResource(R.string.panel_remove), {
-            tabs.send(Action.Pages(PageAction.RemovePanelPage(place.scope, tab)))
-        })
-    } else if (state is TabState.PageRemoved) {
+    if (state is TabState.PageRemoved) {
         WontonButton(stringResource(R.string.common_close), { tabs.send(Action.Pages(PageAction.ClosePage)) })
     } else if (state is TabState.Stopped && tab is TabRef.Plugin) {
         WontonButton(stringResource(R.string.tab_start), {

@@ -40,7 +40,7 @@ pub(super) fn replace_bots(state: &mut PagesState, bots: Vec<BotView>) {
     if state.bots == bots {
         return;
     }
-    // A revoked or replaced grant invalidates every document instance, including panel copies.
+    // A revoked or replaced grant invalidates every document instance.
     let changed: HashSet<_> = state
         .bots
         .iter()
@@ -71,18 +71,6 @@ pub(super) fn replace_bots(state: &mut PagesState, bots: Vec<BotView>) {
                 .keys()
                 .map(|tab| PlacedTab::Page { tab: tab.clone() }),
         )
-        .chain(state.config.panel.iter().map(|entry| PlacedTab::Panel {
-            scope: PanelScope::Main,
-            tab: entry.tab.clone(),
-        }))
-        .chain(state.rooms.iter().flat_map(|(room, state)| {
-            state.panel.pages.iter().map(move |entry| PlacedTab::Panel {
-                scope: PanelScope::Room {
-                    room_id: room.clone(),
-                },
-                tab: entry.tab.clone(),
-            })
-        }))
         .collect();
     for placed in placed {
         if matches!(placed_tab_ref(&placed), TabRef::Bot { bot, .. } if changed.contains(bot)) {
@@ -119,14 +107,10 @@ pub(super) fn stored_item(
         reason: l10n!(CATALOG, language(), "tabs-view-plugin-no-page"),
     })?;
     if path.as_ref().is_some_and(|path| Url::parse(path).is_ok()) {
-        return Err(invalid(&l10n!(
-            CATALOG,
-            language(),
-            "panel-pin-path-outside"
-        )));
+        return Err(invalid(&l10n!(CATALOG, language(), "page-path-outside")));
     }
     let url = resolved_url(page, path.as_deref())
-        .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "panel-pin-path-outside")))?;
+        .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "page-path-outside")))?;
     let path = path
         .as_ref()
         .map(|_| relative_path(&Url::parse(&url).expect("validated page URL")));

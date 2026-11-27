@@ -8,15 +8,14 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
 - `Wonton/`：App 源码。`ChatModel`、`HomeModel`、`PluginsModel` 持有核心推来的 ViewModel 并转发操作，`TimelineModel` 按顺序
   应用时间线的增量，视图只渲染。`PhotoUpload` 把相册里选的照片转成要发的图片（规则见 ADR-0005），消息图片的全屏查看在
   `ImageViewer`：缩放、下滑关闭、存相册和分享都调系统能力。`FilesModel`、`FileCardView`、`TransfersStrip` 和 `BookmarkFileOpener` 是文件的选择、卡片、进度和打开（ADR-0020）。`TabsModel` 持有核心底栏状态；`TabPageView` 和 `TabWebSession`
-  共用固定页、覆盖页的 WKWebView 容器，HTTP CONNECT 代理带会话凭据，插件网页经隧道打开。`ChatPanelHost` 是聊天页和房间的下拉面板（ADR-0052）：两级、
-  跟手、翻页的小圆点，页面按全页大小放着不缩放，面板里的 WKWebView 和底栏的各一份；`PanelEditor` 增删面板里的页面。`PairingView` 是扫码配对页，
+  共用固定页、覆盖页的 WKWebView 容器，HTTP CONNECT 代理带会话凭据，插件网页经隧道打开。`PairingView` 是扫码配对页，
   `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码，`QRCameraArea` 按相机权限包着它，配对、服务器互加和加好友的扫码页共用；加好友扫到或粘贴的原文原样交给核心的 `AddFriend`，“我的二维码”画核心给的 `my_link`；`InviteView` 是“添加设备”，用 Core Image
   把核心要来的配对码画成二维码。`HomeView` 是侧边栏进入的“应用”页，商店入口独立放在已装插件网格上方，有更新时显示数量；连接和“添加设备”在设置的“家里的服务器”里。`StoreView`、
   `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsModel` 订阅核心的设置首页，`SettingsView` 按核心的分组渲染，外观、通知和关于在二级页（ADR-0028）；`NotificationSettingsView` 提供系统通知设置入口，并按核心的状态和原因显示推送登记结果，不放无效的类别开关。`EgressSettingsView` 是“家里的服务器”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“家里的服务器”里的升级服务器（ADR-0025）。
   “家里的服务器”顶部始终显示服务器列表和“添加服务器”，当前这台带勾，点另一台切换。长按可改名或移除；移除前确认只删手机上的聊天记录和文件，不影响服务器。添加时配对页左上角可取消，首次配对不显示取消（ADR-0042）。
   默认名由壳按核心给的固定编号和 App 语言显示，自定义名字原样显示；改名预填显示名，只在主人保存时写回（ADR-0043）。
   配对页和服务器列表的“添加服务器”下面是“用 Matrix 账号登录”（`MatrixLoginView`，ADR-0051），没有服务器的人从配对页进：按核心发现的方式给浏览器登录或密码表单，浏览器登录用
-  `ASWebAuthenticationSession`，回调地址取核心的 `oidcRedirectUri`。`project.yml` 也注册了它的 scheme，回调从面板以外的路径回来时同样交给核心核对。
+  `ASWebAuthenticationSession`，回调地址取核心的 `oidcRedirectUri`。`project.yml` 也注册了它的 scheme，回调从别的路径回来时同样交给核心核对。
 - `ShareExtension/`：系统分享面板里的“云吞”（ADR-0097）。只把分享的东西复制进收件目录、打开 App，不链接 Rust 核心；
   App 收到 `wonton://share/<令牌>` 后认领，分享页在 `ShareInSheet`。`Shared/` 是 App 和扩展共用的 App Group 位置：
   核心的数据目录在组容器的 `wonton/` 里，扩展才放得进去。
@@ -32,7 +31,7 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
 - `project.yml`：XcodeGen 工程描述。`Wonton.xcodeproj` 和 `Wonton/Info.plist` 由它生成，不提交。
 - iPad regular 宽度用 `NavigationSplitView` 展示会话列表和当前内容，插件页只铺右栏；compact 宽度保留单列和抽屉。
   当前房间沿用 `ChatModel.path`，旋转和系统分屏不改选中项；iPad 不套用 iPhone 的竖屏限制。
-- iPad 的会话行和我的应用的长按菜单、面板和公网网页的胶囊菜单可“在新窗口打开”。每个内容窗口独立保存目标与滚动位置，
+- iPad 的会话行和我的应用的长按菜单、公网网页的胶囊菜单可“在新窗口打开”。每个内容窗口独立保存目标与滚动位置，
   房间窗口保留完整聊天操作，插件窗口关闭胶囊只清空本窗口页面；系统关窗才销毁窗口。
   所有窗口共用一个核心、连接和房间草稿，时间线订阅与 WebView 各自独立；切换服务器后，旧服务器窗口提示切回，
   不把旧目标交给新服务器。系统重复打开的完整主窗口仍共享页面栈，链接和快捷指令只路由到主窗口。
@@ -63,10 +62,10 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 关闭目标由核心决定。网页框、安全区和出口见 [ADR-0095](../../docs/adr/0095-no-tab-bar.md)：整页的网页框从状态栏下沿
 开始，顶上不放壳的控件，出口是左边缘右滑，第一次打开时引导一次（`PageExitHint.swift`）；状态栏那一条涂
 页面最顶上实际显示的颜色（核心的取色脚本 `pageColorScript` 报上来，没有可用的颜色时是 App 底色；公网网页不注入脚本，
-用 WebKit 给的 `themeColor`，没有就是 `underPageBackgroundColor`）。整页和内容窗口的网页视图关掉外层回弹（`scrollView.bounces`），面板里的不关。
+用 WebKit 给的 `themeColor`，没有就是 `underPageBackgroundColor`）。整页和内容窗口的网页视图关掉外层回弹（`scrollView.bounces`）。
 不取网页的像素，不注入 `viewport-fit=cover`。
-公网网页和内容窗口留着胶囊，网页框从胶囊那一行下面开始；面板里的页面用 `obscuredContentInsets` 让开面板的上下两条。
-重新加载、我来操作、钉到面板、详情在“我的应用”的长按菜单里（`SidebarAppMenu.swift`）。
+公网网页和内容窗口留着胶囊，网页框从胶囊那一行下面开始。
+重新加载、我来操作、详情在“我的应用”的长按菜单里（`SidebarAppMenu.swift`）。
 
 插件端口映射由核心按主窗口页面栈顶、存活内容页和 App 前后台状态启停（[ADR-0072](../../docs/adr/0072-tunnel-udp.md)），
 壳不另报可见插件。详情页显示核心给的映射状态、拒绝原因和公共中继带宽提示；没有状态时显示未知，

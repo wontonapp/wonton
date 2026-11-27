@@ -28,7 +28,6 @@ mod file_tools;
 mod identity;
 mod naming;
 mod notifier;
-mod panel_tools;
 mod people_tools;
 mod profile_tools;
 mod risky;
@@ -44,7 +43,7 @@ mod tools;
 pub mod upstream;
 mod windows;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -131,8 +130,6 @@ pub struct Bus {
     agent_chains: OnceLock<Arc<crate::gateway::agent_chains::AgentChains>>,
     /// 好友名单（ADR-0051）：`wonton__send_message` 认收件人用（[`Bus::attach_friends`]）。
     friends: OnceLock<Arc<crate::friends::Friends>>,
-    /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
-    pin_cards: Mutex<HashSet<PluginId>>,
     /// 收件箱（ADR-0119）。没接时收件箱工具和接口如实报不可用。
     inbox: OnceLock<Arc<crate::inbox::Inbox>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -183,8 +180,6 @@ mod install_gate_tests;
 mod missing_sender_tests;
 #[cfg(test)]
 mod optional_permission_tests;
-#[cfg(test)]
-mod panel_tests;
 #[cfg(test)]
 mod people_tests;
 #[cfg(test)]

@@ -23,7 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,7 +31,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.window.core.layout.WindowSizeClass
@@ -42,9 +40,6 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.TabRef
-import app.wonton.protocol.AppearanceViewModel
-import app.wonton.protocol.HomeViewModel
-import app.wonton.protocol.PanelScope
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Apps
@@ -95,26 +90,8 @@ internal fun AdaptiveChatLayout(
 }
 
 @Composable
-internal fun ExpandedChatPane(
-    nav: AppNavigation,
-    chat: ChatViewModel,
-    home: HomeViewModel,
-    appearance: AppearanceViewModel,
-) {
-    val panel = rememberChatPanelState(PanelEdge.TOP, PanelScope.Main, nav.pages)
-    val draft = LocalTabDraft.current
-    SideEffect { panel.feed(nav.pages.viewModel.panel, nav.pages.viewModel.panelSelected) }
-    CompositionLocalProvider(LocalChatPanel provides panel) {
-        ChatPanelHost(panel, nav.pages, home, appearance,
-            onDraft = { text -> draft.text = text; nav.pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))) },
-            onDetails = nav::detail)
-        Box(Modifier.fillMaxSize().graphicsLayer { translationY = panel.shiftPx * panel.sign }) {
-            ExpandedChatList(nav, chat)
-            if (panel.level == PanelLevel.PEEK) ChatPanelStrip(panel)
-        }
-        ChatPanelOverlay(panel)
-    }
-    if (panel.editing) ChatPanelEditor(panel, nav.pages) { panel.editing = false }
+internal fun ExpandedChatPane(nav: AppNavigation, chat: ChatViewModel) {
+    ExpandedChatList(nav, chat)
 }
 
 @Composable

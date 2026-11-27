@@ -2,7 +2,7 @@
 
 use wonton_client::{Action, TimelineScroll, TimelineViewport};
 use wonton_matrix::ChatRoom;
-use wonton_protocol::{PanelScope, TimelineAction, TimelineTarget};
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::support::{Home, Phone, Timeline};
 use super::{accept_the_bots_invite, text};
@@ -59,15 +59,6 @@ async fn concurrent_rooms_and_duplicate_subscriptions_keep_receiving_after_cance
         &mut second,
     )
     .await;
-    independent_panels(
-        &phone,
-        first_id.as_str(),
-        second_id.as_str(),
-        &mut first,
-        &mut second,
-        "first-open",
-    )
-    .await;
     duplicate.cancel();
     assert!(duplicate.is_closed().await);
     send(&first_room, "after duplicate closes").await;
@@ -93,16 +84,6 @@ async fn concurrent_rooms_and_duplicate_subscriptions_keep_receiving_after_cance
             text(item, "fresh subscription")
         })
         .await;
-    let mut reopened_second = Timeline::open(&phone, second_id.as_str()).await;
-    independent_panels(
-        &phone,
-        first_id.as_str(),
-        second_id.as_str(),
-        &mut reopened,
-        &mut reopened_second,
-        "reopened",
-    )
-    .await;
 }
 
 async fn forward_between_windows(
@@ -135,50 +116,6 @@ async fn forward_between_windows(
             text(item, "first live")
         })
         .await;
-}
-
-async fn independent_panels(
-    phone: &Phone,
-    first_id: &str,
-    second_id: &str,
-    first: &mut Timeline,
-    second: &mut Timeline,
-    phase: &str,
-) {
-    let first_tab = wonton_protocol::TabRef::Url {
-        url: format!("https://example.com/{phase}/first"),
-    };
-    let second_tab = wonton_protocol::TabRef::Url {
-        url: format!("https://example.com/{phase}/second"),
-    };
-    for (room_id, tab) in [(first_id, &first_tab), (second_id, &second_tab)] {
-        phone
-            .dispatch(Action::Pages {
-                action: wonton_protocol::PageAction::AddPanelPage {
-                    scope: PanelScope::Room {
-                        room_id: room_id.to_owned(),
-                    },
-                    tab: tab.clone(),
-                },
-            })
-            .unwrap();
-    }
-    for (timeline, wanted, other) in [
-        (first, first_tab.clone(), second_tab.clone()),
-        (second, second_tab, first_tab),
-    ] {
-        tokio::time::timeout(super::support::WAIT, async {
-            loop {
-                let update = timeline.next().await;
-                assert!(!update.panel.iter().any(|item| item.tab == other));
-                if update.panel.iter().any(|item| item.tab == wanted) {
-                    break;
-                }
-            }
-        })
-        .await
-        .expect("each room receives only its own panel");
-    }
 }
 
 async fn send(room: &ChatRoom, text: &str) {

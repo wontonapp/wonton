@@ -442,12 +442,6 @@ impl HomeLink {
         unreachable.then(|| view.details.last_failure.unwrap_or_default())
     }
 
-    /// 测试里直接给出连接状态，不必真的建连。
-    #[cfg(test)]
-    pub(crate) fn set_status_for_test(&self, status: HomeStatus) {
-        self.view.send_modify(|view| view.status = status);
-    }
-
     /// 配对时填的设备名；`ConnectHome` 给的连接信息里没有，存储坏了也为空。
     pub(crate) fn device_name(&self) -> Option<String> {
         let ticket = Ticket::parse(self.lock_ticket().as_deref()?).ok()?;

@@ -41,11 +41,6 @@ struct ContentWindow: View {
         .environment(plugins)
         .environment(onboarding)
         .environment(\.wontonBarStatus, barStatus)
-        .environment(\.panelDeps, PanelDependencies(
-            pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
-            draft: receiveDraft, open: open, pendingCards: chat.viewModel.pendingConfirmations,
-            openCardRoom: openCardRoom
-        ))
         .modifier(ChatDialogs(model: chat))
         .task { await chat.observe() }
         .task { await chat.files.observe() }

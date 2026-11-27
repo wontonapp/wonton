@@ -437,11 +437,6 @@ impl ClientCore {
             | PageAction::MoveMyApp { .. }
             | PageAction::SetAutoAddApps { .. }
             | PageAction::RetryMyAppSync
-            | PageAction::AddPanelPage { .. }
-            | PageAction::RemovePanelPage { .. }
-            | PageAction::MovePanelPage { .. }
-            | PageAction::SelectPanelPage { .. }
-            | PageAction::SetBotPinConsent { .. }
             | PageAction::PinCurrentPage { .. }
             | PageAction::ReloadTab { .. }
             | PageAction::DismissUninstalledTabs) => scope.pages.dispatch(action),
