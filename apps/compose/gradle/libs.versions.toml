@@ -72,6 +72,9 @@ androidx-camera-view = { module = "androidx.camera:camera-view", version.ref = "
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "androidx-media3" }
 media3-transformer = { module = "androidx.media3:media3-transformer", version.ref = "androidx-media3" }
 media3-effect = { module = "androidx.media3:media3-effect", version.ref = "androidx-media3" }
+# Apache-2.0。影视页的播放界面（PlayerView）和转码时的 HLS 流。
+media3-ui = { module = "androidx.media3:media3-ui", version.ref = "androidx-media3" }
+media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "androidx-media3" }
 zxing-core = { module = "com.google.zxing:core", version.ref = "zxing" }
 # Apache-2.0。桌面小组件（ADR-0100）：用 Compose 的写法出 RemoteViews。
 androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accessibility label of the menu on a downloaded item. -->
+    <string name="video_downloaded">已下载</string>
+    <!-- Shown when a library or the video page has nothing in it. -->
+    <string name="video_empty">这里还没有内容</string>
+    <!-- In the facts line of a season: how many episodes. Argument: the count. -->
+    <plurals name="video_episodes">
+        <item quantity="other">%d 集</item>
+    </plurals>
+    <!-- Under the download progress: downloads only continue while the app is open. -->
+    <string name="video_keep_app_open">下载完之前请保持 Wonton 打开。</string>
+    <!-- Accessibility label: mark as watched. -->
+    <string name="video_mark_played">标为看过</string>
+    <!-- Accessibility label: mark as not watched. -->
+    <string name="video_mark_unplayed">标为没看过</string>
+    <!-- Main button on a movie or episode: start playing. -->
+    <string name="video_play">播放</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_no_service_next_step">在服务器上安装或启动一个影视插件（如 Jellyfin）。</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_sign_in_next_step">请主人看看你在影视插件里的权限。</string>
+    <!-- Problem title: the video service doesn't accept this person's account. -->
+    <string name="video_problem_sign_in_title">影视服务不认你的账号</string>
+    <!-- Button that continues a paused download. -->
+    <string name="video_resume_download">继续下载</string>
+    <!-- Under a person's photo. -->
+    <string name="video_role_producer">制片</string>
+    <!-- Under a person's photo. -->
+    <string name="video_role_writer">编剧</string>
+    <!-- Button at the end of a row header that opens the full list. -->
+    <string name="video_see_all">全部</string>
+    <!-- Row of recently added movies and shows. -->
+    <string name="video_shelf_latest">最近添加</string>
+    <!-- Title of the sort picker on the poster wall. -->
+    <string name="video_sort">排序</string>
+    <!-- Sort option: highest rated first. -->
+    <string name="video_sort_rating">评分</string>
+    <!-- Sort option: newest release first. -->
+    <string name="video_sort_released">上映时间</string>
+    <!-- Title of the subtitle picker. -->
+    <string name="video_subtitles">字幕</string>
+    <!-- Subtitle picker option: no subtitles. -->
+    <string name="video_subtitles_off">关闭</string>
+    <!-- Title of the video page. -->
+    <string name="video_title">影视</string>
+    <!-- Filter toggle: show only what the person hasn't watched. -->
+    <string name="video_unplayed_only">只看没看过的</string>
+</resources>

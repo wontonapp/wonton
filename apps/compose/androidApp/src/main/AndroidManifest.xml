@@ -102,6 +102,22 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <!-- 影视页的播放器：画中画；转屏、进出画中画不重建，播放器在下面的服务里接着放。 -->
+        <activity
+            android:name="app.wonton.ui.video.VideoPlayerActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
+            android:exported="false" />
+        <service
+            android:name="app.wonton.ui.video.VideoPlaybackService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
         <!-- 通知上的“回复”“允许/拒绝”（ADR-0101）：广播拉起进程里的核心去发。 -->
         <receiver
             android:name=".push.PushActionReceiver"

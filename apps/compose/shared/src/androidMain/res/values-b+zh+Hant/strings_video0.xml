@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the audio track picker. -->
+    <string name="video_audio">音軌</string>
+    <!-- Label next to the download progress bar. -->
+    <string name="video_downloading">正在下載</string>
+    <!-- Accessibility label: add to favorites. -->
+    <string name="video_favorite">收藏</string>
+    <!-- Accessibility label of the sort and filter menu button. -->
+    <string name="video_filter">排序和篩選</string>
+    <!-- Title of the genre picker on the poster wall. -->
+    <string name="video_genre">類型</string>
+    <!-- Dialog title when the player couldn't play. -->
+    <string name="video_playback_failed">放不了</string>
+    <!-- Problem title: the movie or episode no longer exists on the server. -->
+    <string name="video_problem_gone_title">伺服器上已經沒有這一部了</string>
+    <!-- Problem title: more than one video service and none is the default. -->
+    <string name="video_problem_many_sources_title">有不只一個影視服務</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_phone_full_next_step">騰出一些空間後再下載。</string>
+    <!-- Menu action: delete the downloaded copy from this phone. -->
+    <string name="video_remove_download">刪除下載</string>
+    <!-- Main button when the person stopped partway: continue from there. -->
+    <string name="video_resume">繼續播放</string>
+    <!-- Under a person's photo when no character name is known. -->
+    <string name="video_role_actor">演員</string>
+    <!-- Under a person's photo when their role is none of the above. -->
+    <string name="video_role_other">其他</string>
+    <!-- Row of the next unwatched episode of each show in progress. -->
+    <string name="video_shelf_next_up">下一集</string>
+    <!-- Row of movies and episodes the person stopped partway. -->
+    <string name="video_shelf_resume">繼續觀看</string>
+    <!-- Sort option: by name. -->
+    <string name="video_sort_title">名稱</string>
+</resources>

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the audio track picker. -->
+    <string name="video_audio">音声</string>
+    <!-- Label next to the download progress bar. -->
+    <string name="video_downloading">ダウンロード中</string>
+    <!-- Accessibility label: add to favorites. -->
+    <string name="video_favorite">お気に入りに追加</string>
+    <!-- Accessibility label of the sort and filter menu button. -->
+    <string name="video_filter">並べ替えとフィルタ</string>
+    <!-- Title of the genre picker on the poster wall. -->
+    <string name="video_genre">ジャンル</string>
+    <!-- Dialog title when the player couldn't play. -->
+    <string name="video_playback_failed">再生できません</string>
+    <!-- Problem title: the movie or episode no longer exists on the server. -->
+    <string name="video_problem_gone_title">サーバーにもうありません</string>
+    <!-- Problem title: more than one video service and none is the default. -->
+    <string name="video_problem_many_sources_title">動画サービスが複数あります</string>
+    <!-- Next step for the problem above. -->
+    <string name="video_problem_phone_full_next_step">空き容量を増やしてから、もう一度ダウンロードしてください。</string>
+    <!-- Menu action: delete the downloaded copy from this phone. -->
+    <string name="video_remove_download">ダウンロードを削除</string>
+    <!-- Main button when the person stopped partway: continue from there. -->
+    <string name="video_resume">続きから再生</string>
+    <!-- Under a person's photo when no character name is known. -->
+    <string name="video_role_actor">俳優</string>
+    <!-- Under a person's photo when their role is none of the above. -->
+    <string name="video_role_other">その他</string>
+    <!-- Row of the next unwatched episode of each show in progress. -->
+    <string name="video_shelf_next_up">次のエピソード</string>
+    <!-- Row of movies and episodes the person stopped partway. -->
+    <string name="video_shelf_resume">続きを観る</string>
+    <!-- Sort option: by name. -->
+    <string name="video_sort_title">名前</string>
+</resources>
