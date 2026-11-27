@@ -48,7 +48,7 @@ pre-commit:
 pre-push:
   commands:
     clippy:
-      glob: "{crates/**,Cargo.toml,Cargo.lock,clippy.toml,rust-toolchain.toml}"
+      glob: "{crates/**,crates/wonton-onboard/**,Cargo.toml,Cargo.lock,clippy.toml,rust-toolchain.toml}"
       # 只跑这次推送改到的 crate；改了 workspace 的清单或工具链配置就跑整个 workspace。
       run: |
         set -eu
@@ -75,7 +75,7 @@ pre-push:
     merged-main:
       # 合上最新 main 后的树能不能编过：PR 的 CI 只编 PR 自己的提交，main 上新加的字段这里先拦下。
       # 只跳这一项：LEFTHOOK_EXCLUDE=merged-main git push。说明见脚本开头。
-      glob: "{crates/**,Cargo.toml,Cargo.lock,clippy.toml,rust-toolchain.toml}"
+      glob: "{crates/**,crates/wonton-onboard/**,Cargo.toml,Cargo.lock,clippy.toml,rust-toolchain.toml}"
       run: bash scripts/check-merged-main.sh
     swiftlint:
       glob: "apps/ios/**"

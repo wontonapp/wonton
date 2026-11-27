@@ -53,6 +53,7 @@ jobs:
           filters: |
             rust:
               - "crates/**"
+              - "crates/wonton-onboard/**"
               - "deploy/**"
               - "plugins/**"
               - "Cargo.toml"
@@ -66,6 +67,7 @@ jobs:
               - "!**/*.md"
             core:
               - "crates/**"
+              - "crates/wonton-onboard/**"
               - "vendor/**"
               - ".cargo/**"
               - "Cargo.toml"
