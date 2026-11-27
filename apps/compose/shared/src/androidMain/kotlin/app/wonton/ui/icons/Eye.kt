@@ -1,23 +1,47 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+@file:Suppress("MagicNumber", "MaxLineLength", "LongMethod", "UnusedReceiverParameter")
+
 package app.wonton.ui.icons
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonGlyph
 
-@Suppress("UnusedReceiverParameter")
-val WontonIcon.Eye: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-    ImageVector.Builder(
+private const val P0 = "M3.6 12.5C7 6.6 11 4.2 15.5 4.2C20 4.2 24 6.6 27.4 12.5C24 18.4 20 20.8 15.5 20.8C11 20.8 7 18.4 3.6 12.5Z"
+private const val P1 = "M-5.4 0A5.4 5.4 0 1 0 5.4 0A5.4 5.4 0 1 0 -5.4 0Z"
+private const val P2 = "M-2.3 0A2.3 2.3 0 1 0 2.3 0A2.3 2.3 0 1 0 -2.3 0Z"
+
+private fun art(name: String, c: LongArray): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 30.8571f,
+    viewportHeight = 30.8571f,
+    autoMirror = false,
+).apply {
+    addGroup(translationX = -0.0714f, translationY = 2.9286f)
+    addPath(pathData = addPathNodes(P0), stroke = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 4.2f, endY = 20.8f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P0), stroke = SolidColor(Color(c[4])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P0), fill = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 4.2f, endY = 20.8f))
+    addGroup(clipPathData = addPathNodes(P0))
+    addGroup(translationX = 15.5f, translationY = 12.5f)
+    addPath(pathData = addPathNodes(P1), fill = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = -5.4f, endY = 5.4f))
+    addPath(pathData = addPathNodes(P2), fill = SolidColor(Color(c[5])))
+    clearGroup()
+    clearGroup()
+    clearGroup()
+}.build()
+
+val WontonIcon.Eye: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
+    WontonGlyph(
         name = "Eye",
-        defaultWidth = 256.dp,
-        defaultHeight = 256.dp,
-        viewportWidth = 256f,
-        viewportHeight = 256f
-    ).apply {
-        addPath(
-            fill = SolidColor(Color.Black),
-            pathData = addPathNodes("M 247.31 124.76 c -0.35 -0.79 -8.82 -19.58 -27.65 -38.41 C 194.57 61.26 162.88 48.0 128.0 48.0 S 61.43 61.26 36.34 86.35 C 17.51 105.18 9.0 124.0 8.69 124.76 a 8.0 8.0 0.0 0 0 0.0 6.5 c 0.35 0.79 8.82 19.57 27.65 38.4 C 61.43 194.74 93.12 208.0 128.0 208.0 s 66.57 -13.26 91.66 -38.34 c 18.83 -18.83 27.3 -37.61 27.65 -38.4 A 8.0 8.0 0.0 0 0 247.31 124.76 Z M 128.0 192.0 c -30.78 0.0 -57.67 -11.19 -79.93 -33.25 A 133.47 133.47 0.0 0 1 25.0 128.0 A 133.33 133.33 0.0 0 1 48.07 97.25 C 70.33 75.19 97.22 64.0 128.0 64.0 s 57.67 11.19 79.93 33.25 A 133.46 133.46 0.0 0 1 231.05 128.0 C 223.84 141.46 192.43 192.0 128.0 192.0 Z M 128.0 80.0 a 48.0 48.0 0.0 1 0 48.0 48.0 A 48.05 48.05 0.0 0 0 128.0 80.0 Z M 128.0 160.0 a 32.0 32.0 0.0 1 1 32.0 -32.0 A 32.0 32.0 0.0 0 1 128.0 160.0 Z")
-        )
-    }.build()
+        light = longArrayOf(0xFF69A9CB, 0xFF4D99C2, 0xFFB8D6E7, 0xFF8DBDD8, 0xFF1076AD, 0xFF005189),
+        dark = longArrayOf(0xFF5AAEDC, 0xFF44A9DF, 0xFF96BED4, 0xFF75B5D8, 0xFF169DE6, 0xFF006DB7),
+        mono = longArrayOf(0xFF5F5F5F, 0xFF414141, 0xFFB3B3B3, 0xFF858585, 0xFF000000, 0xFF000000),
+        build = ::art,
+    )
 }

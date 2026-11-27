@@ -571,7 +571,7 @@ Actual 的顶部色带来自 WebKit `themeColor`；探针 `edge-to-edge` 时顶�
 | 设备被拒绝 | 只撤销该模拟器的配对：全屏页显示原因和“重新配对”，胶囊可用，不显示原始 502；重新配对并重启 App 后网页恢复 |
 | 临时断连自动恢复 | 全屏停在 Edge，只 `docker stop wonton-adr33-dev`：显示连接短状态，胶囊菜单可操作，无原始 502；`docker start` 后等核心 healthy，连接提示自动消失，同一网页 `loads=1`，随后成功加载 `/second`。未重新配对、未重启 App，未操作其他容器 |
 
-顶栏改用 Phosphor 2.1.1 的 `corners-out`（语义名 `expand`）后，Actual Fullscreen 长标题与按钮分离；图标仍以“全屏打开”作为无障碍标签，点击进入和胶囊关闭通过模拟器实测。
+顶栏改用语义名 `expand` 的图标后，Actual Fullscreen 长标题与按钮分离；图标仍以“全屏打开”作为无障碍标签，点击进入和胶囊关闭通过模拟器实测。
 
 客户端基线 `7c1ab2b6`（含 #398、#399）、iOS-sim Debug 壳接入 `TabLoadSucceeded`，与核心 `f43c04f5` 联调，补验结果：
 

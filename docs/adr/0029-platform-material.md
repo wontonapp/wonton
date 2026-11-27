@@ -33,7 +33,7 @@ ADR-0026 定的是两端一模一样，全部自绘。主人在模拟器上看�
 | 长按菜单 | 系统的 `contextMenu`：预览、背后的效果和菜单都由系统画 | 消息预览，背后的页面模糊并压暗，菜单是 Material 3 的表面 |
 | 弹窗和底部面板的底 | iOS 26 优先系统呈现；保留自绘布局时用一层玻璃；iOS 17–18 用 `Material` | Material 3 的表面 |
 
-iOS 26 的标准导航、菜单和系统面板由平台负责材质与反馈；确需自绘的功能层才用 Liquid Glass。iOS 17–18 的自绘栏、玻璃功能层和旧系统面板走 `Material`。长按菜单例外，整个用系统的：抬起预览的动画、读屏和无障碍都不用自己做。菜单项的图标也用系统的 SF Symbols（回复 `arrowshape.turn.up.left`、转发 `arrowshape.turn.up.right`、复制 `doc.on.doc`、删除 `trash`），不用 Phosphor：菜单里图标的大小、粗细由系统跟着菜单的字排，自带的图标资源对不上。
+iOS 26 的标准导航、菜单和系统面板由平台负责材质与反馈；确需自绘的功能层才用 Liquid Glass。iOS 17–18 的自绘栏、玻璃功能层和旧系统面板走 `Material`。长按菜单例外，整个用系统的：抬起预览的动画、读屏和无障碍都不用自己做。菜单项的图标也用系统的 SF Symbols（回复 `arrowshape.turn.up.left`、转发 `arrowshape.turn.up.right`、复制 `doc.on.doc`、删除 `trash`），不用 App 自己的图标：菜单里图标的大小、粗细由系统跟着菜单的字排，自带的图标资源对不上。
 
 ### 栏不垫底色
 

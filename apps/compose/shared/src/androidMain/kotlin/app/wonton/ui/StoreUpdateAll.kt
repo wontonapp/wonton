@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -33,6 +32,7 @@ import app.wonton.protocol.StoreUpdateBatch
 import app.wonton.protocol.StoreUpdateItem
 import app.wonton.protocol.StoreUpdateState
 import app.wonton.protocol.UpdatablePlugin
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonSheet
 import app.wonton.ui.design.WontonSmallButton

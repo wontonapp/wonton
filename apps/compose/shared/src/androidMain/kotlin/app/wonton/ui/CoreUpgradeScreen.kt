@@ -15,7 +15,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,6 +41,7 @@ import app.wonton.protocol.CoreUpgradeStatus
 import app.wonton.protocol.CoreUpgradeTarget
 import app.wonton.protocol.CoreUpgradeViewModel
 import app.wonton.protocol.InstalledPlugins
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind

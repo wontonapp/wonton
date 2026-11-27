@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,6 +43,7 @@ import app.wonton.protocol.BotProfileFailure
 import app.wonton.protocol.BotProfileProblem
 import app.wonton.protocol.BotView
 import app.wonton.protocol.PluginIcon
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonNotice

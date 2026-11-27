@@ -31,7 +31,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -50,7 +49,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -58,7 +56,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import app.wonton.ui.R
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.SheetSendBar
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.design.WontonSheet
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
@@ -163,7 +163,7 @@ internal fun AttachmentSheet(
 }
 
 @Composable
-private fun SheetTab(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+private fun SheetTab(label: String, icon: WontonGlyph, selected: Boolean, onClick: () -> Unit) {
     val colors = WontonTheme.colors
     val tint = (if (selected) colors.textPrimary else colors.textSecondary).toColor()
     Column(

@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -72,6 +71,7 @@ import app.wonton.protocol.TimelineMessage
 import app.wonton.protocol.TimelineViewport
 import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset

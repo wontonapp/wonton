@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,6 +23,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import app.wonton.protocol.PeerRequestRow
 import app.wonton.protocol.RejectedPeerRow
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonSmallButton

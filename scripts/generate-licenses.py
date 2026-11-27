@@ -33,11 +33,8 @@ TEXTS = ROOT / "licenses" / "texts"
 CARGO_ABOUT_CONFIG = ROOT / "licenses" / "about.toml"
 DESIGN = ROOT / "design"
 
-# 图形随 App 分发的图标集：design/icons.toml 的 [upstream.<名字>]，各平台只列自己带的那一套。
-ICON_SETS = {
-    "android": ["phosphor"],
-    "ios": ["kubai"],
-}
+# 图形随 App 分发的图标集：design/icons.toml 的 [upstream.<名字>]，LICENSE 在 design/<名字>/。两端是同一套。
+ICON_SETS = ["kubai"]
 
 # cargo-about 是开发期工具，不进 App 二进制；它是 MIT OR Apache-2.0，升级时改这里并跑一遍 check-licenses.sh。
 # 发布资产按平台分开（0.9.3 没有 x86_64 darwin 的），每个钉自己的 sha256；第二段是 tar 里的目录名。
@@ -241,12 +238,12 @@ def android_components(export: Path) -> tuple[list[dict], dict[str, dict]]:
     return components, licenses
 
 
-def icon_components(platform: str, design: Path = DESIGN) -> tuple[list[dict], dict[str, dict]]:
+def icon_components(design: Path = DESIGN) -> tuple[list[dict], dict[str, dict]]:
     """图标不是依赖，哪个工具都收不到：版本和许可取 design/icons.toml 里钉的上游。
     每套单开一组，正文原样取上游的 LICENSE：MIT 要求带着版权行，标准全文里没有。"""
     upstreams = tomllib.loads((design / "icons.toml").read_text(encoding="utf-8"))["upstream"]
     components, licenses = [], {}
-    for key in ICON_SETS[platform]:
+    for key in ICON_SETS:
         upstream = upstreams[key]
         if upstream["license"] not in approved_ids():
             raise GenerateError(f"{upstream['package']} 用了 APPROVED 之外的 {upstream['license']}")
@@ -269,7 +266,7 @@ def icon_components(platform: str, design: Path = DESIGN) -> tuple[list[dict], d
 
 RUST_SENTINELS = ["serde"]
 # 图标集和依赖走的不是同一条收集路径，各留一个哨兵。
-ICON_SENTINELS = {"android": ["@phosphor-icons/core"], "ios": ["kubai-icons-static"]}
+ICON_SENTINELS = ["kubai-icons-static"]
 
 
 def verify(target: Path, platform: str) -> None:
@@ -278,7 +275,7 @@ def verify(target: Path, platform: str) -> None:
     approved = set(approved_ids())
     problems = []
     names = {component["name"] for component in data["components"]}
-    sentinels = (ANDROID_SENTINELS if platform == "android" else RUST_SENTINELS) + ICON_SENTINELS[platform]
+    sentinels = (ANDROID_SENTINELS if platform == "android" else RUST_SENTINELS) + ICON_SENTINELS
     problems += [f"清单里没有 {name}" for name in sentinels if name not in names]
     for component in data["components"]:
         if not component["license_ids"]:
@@ -321,7 +318,7 @@ def main() -> int:
             raise GenerateError(f"AboutLibraries 的清单里没有 {', '.join(missing)}，收集断了")
     else:
         components, licenses = rust_components(args.platform)
-    icon_parts, icon_licenses = icon_components(args.platform)
+    icon_parts, icon_licenses = icon_components()
     components += icon_parts
     licenses.update(icon_licenses)
 

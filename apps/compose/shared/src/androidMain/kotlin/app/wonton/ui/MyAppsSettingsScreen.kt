@@ -19,7 +19,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -50,6 +49,7 @@ import app.wonton.protocol.SidebarApp
 
 import app.wonton.protocol.TabCandidate
 import app.wonton.protocol.TabRef
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.WontonGroup

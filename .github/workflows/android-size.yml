@@ -12,6 +12,7 @@ on:
       - "apps/ios/Wonton/Design/Generated/**"
       - "design/**"
       - "scripts/generate-design.py"
+      - "scripts/design/**"
       - "scripts/check-apk-size.sh"
       - "crates/wonton-client/**"
       - "crates/wonton-matrix/**"

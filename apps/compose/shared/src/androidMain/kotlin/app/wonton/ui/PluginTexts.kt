@@ -7,12 +7,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -22,6 +20,8 @@ import app.wonton.protocol.PermissionLine
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.Rgb
+import app.wonton.ui.design.Icon
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Info
@@ -102,7 +102,7 @@ internal fun InstallAccessDetails(notices: List<CardLine>, permissions: List<Per
 
 /** 正文行前面的小图标，和第一行文字对齐。 */
 @Composable
-fun LineIcon(icon: ImageVector, tint: Color) {
+fun LineIcon(icon: WontonGlyph, tint: Color) {
     Icon(
         icon,
         // 装饰：小图标紧贴说明文字。

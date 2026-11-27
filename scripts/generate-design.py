@@ -10,20 +10,20 @@ import copy
 import hashlib
 import json
 import math
-import os
 import re
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
 import tomllib
-import urllib.request
-import zipfile
 from xml.etree import ElementTree
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# 同目录的 design 包；这个脚本文件名带连字符，不在包里。
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from design import compose_vector  # noqa: E402
+
 DESIGN = ROOT / "design"
 IOS = ROOT / "apps/ios/Wonton"
 COMPOSE = ROOT / "apps/compose/shared/src/androidMain"
@@ -37,13 +37,6 @@ GENERATED_DIRS = [
     KOTLIN / "icons",
     WEB_GENERATED,
 ]
-
-VALKYRIE_VERSION = "1.2.1"
-VALKYRIE_URL = (
-    f"https://github.com/ComposeGears/Valkyrie/releases/download/cli-{VALKYRIE_VERSION}/"
-    f"valkyrie-cli-{VALKYRIE_VERSION}.zip"
-)
-VALKYRIE_SHA256 = "5929fb15395059e566c51dcdb2bed98a2d2e92ad8d344f8186d3b701be6533b3"
 
 KUBAI = DESIGN / "kubai"
 # 浅色、深色下图标会落在上面的底：crates/wonton-client/src/appearance/themes.rs 的 canvas、surfaceSubtle
@@ -74,6 +67,9 @@ KUBAI_DARK_WHITE = 0.8
 # 去掉底的图形绕画布中心（15.5, 12.5）放大：上游的线条是按放在圆底里画的，单独用偏小。
 KUBAI_BARE_TRANSFORM = "translate(15.5 12.5) scale(1.5) translate(-15.5 -12.5)"
 # 蒙版的范围照上游自己的蒙版写：比画布（-2.5 -5.5 36 36）大一圈。
+# Compose 的单色版：主色换成黑，浅面就成了深浅不同的灰、白还是白；壳用颜色矩阵把“越白越透明”算成不透明度，
+# 白色的字和纸面就挖空了（ImageVector 没有蒙版，没法像 iOS 那样在图里挖）。
+COMPOSE_MONO_ACCENT = (0, 0, 0)
 KUBAI_MASK_BOX = {"x": "-40", "y": "-40", "width": "111", "height": "109"}
 SVG_MATRIX = re.compile(r'values="([^"]+)"')
 SVG_PAINTS = {"fill", "stroke", "stop-color", "flood-color"}
@@ -192,25 +188,17 @@ def rust_web_tokens(tokens):
 
 
 def icon_variants(icons):
-    """(文件名里的语义名, 语义条目, 样式)。"""
+    """(语义名, 语义条目, 指向的图)。fill 的语义名多一个带 Fill 的别名：界面按选中态取名，Kubai 不分线框和实心，
+    两个名字是同一张图。"""
     for name, icon in icons["icons"].items():
-        yield name, icon, "regular"
+        yield name, icon, name
         if icon.get("fill"):
-            yield f"{name}Fill", icon, "fill"
-
-
-def upstream_svg(icon, style):
-    file = f'{icon["phosphor"]}-fill.svg' if style == "fill" else f'{icon["phosphor"]}.svg'
-    return DESIGN / "phosphor" / style / file
+            yield f"{name}Fill", icon, name
 
 
 def swift_icons(icons):
-    """iOS 只用 Kubai：没写 kubai 的语义名不进枚举。实心版的名字留着（界面按选中态取名），指向同一张图。"""
     cases, assets = [], []
-    for variant, icon, _ in icon_variants(icons):
-        if "kubai" not in icon:
-            continue
-        name = variant.removesuffix("Fill") if icon.get("fill") else variant
+    for variant, _, name in icon_variants(icons):
         cases.append(f"    case {variant}")
         assets.append(f'        case .{variant}: "{name}"')
     return (
@@ -222,6 +210,17 @@ def swift_icons(icons):
     )
 
 
+def kubai_sources(icons):
+    """(语义名, 语义条目, 上游 SVG)，bare 的已经去掉底。原件和调色板先校验。"""
+    check_palette(icons["palette"])
+    check_kubai_files(KUBAI, kubai_used(icons))
+    for name, icon in icons["icons"].items():
+        source = (KUBAI / f'svg/{icon["kubai"]}.svg').read_text()
+        if icon.get("bare"):
+            source = kubai_bare(source, icons["upstream"]["kubai"]["base"])
+        yield name, icon, source
+
+
 def ios_assets(icons):
     """每个图标两套：彩色分层（原色，浅色、深色各一张）和单色（模板渲染，颜色跟界面走）。都保留矢量。"""
     files = {
@@ -229,15 +228,8 @@ def ios_assets(icons):
         IOS / "Assets.xcassets/IconsColor/Contents.json": json_bytes(XCASSETS_INFO),
         IOS / "Assets.xcassets/IconsMono/Contents.json": json_bytes(XCASSETS_INFO),
     }
-    check_palette(icons["palette"])
-    check_kubai_files(KUBAI, kubai_used(icons))
     base = hex_rgb(icons["upstream"]["kubai"]["base"])
-    for name, icon in icons["icons"].items():
-        if "kubai" not in icon:
-            continue
-        source = (KUBAI / f'svg/{icon["kubai"]}.svg').read_text()
-        if icon.get("bare"):
-            source = kubai_bare(source, icons["upstream"]["kubai"]["base"])
+    for name, icon, source in kubai_sources(icons):
         color = icons["palette"][icon["color"]]
         files.update(image_set(name, "Color", "original", icon, {
             "": kubai_recolored(source, base, hex_rgb(color["light"]), 1),
@@ -556,7 +548,7 @@ def check_kubai_files(folder, used):
 
 
 def kubai_used(icons):
-    return {f'svg/{icon["kubai"]}.svg' for icon in icons["icons"].values() if "kubai" in icon} | {"LICENSE"}
+    return {f'svg/{icon["kubai"]}.svg' for icon in icons["icons"].values()} | {"LICENSE"}
 
 
 def vendor_kubai(tarball, icons, folder):
@@ -593,51 +585,44 @@ def json_bytes(value):
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
 
 
-def valkyrie_jar():
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / f"wonton/valkyrie-{VALKYRIE_VERSION}"
-    jar = cache / f"lib/valkyrie-{VALKYRIE_VERSION}-all.jar"
-    if jar.exists():
-        return jar
-    cache.mkdir(parents=True, exist_ok=True)
-    archive = cache / "valkyrie.zip"
-    with urllib.request.urlopen(VALKYRIE_URL) as response:
-        archive.write_bytes(response.read())
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    if digest != VALKYRIE_SHA256:
-        archive.unlink()
-        sys.exit(f"Valkyrie 的哈希不对：{digest}")
-    with zipfile.ZipFile(archive) as zipped:
-        zipped.extractall(cache)
-    archive.unlink()
-    return jar
-
-
 def compose_icons(icons):
-    """每个图标一个文件。mirror 是整次运行的开关，所以按是否翻转分两次运行。"""
-    jar = valkyrie_jar()
+    """每个图标一个文件：同一份路径配浅色、深色、单色三套颜色。ImageVector 画不了的东西怎么改写见 compose_vector。"""
+    base = hex_rgb(icons["upstream"]["kubai"]["base"])
     files = {}
-    with tempfile.TemporaryDirectory() as temp:
-        temp = Path(temp)
-        for mirror in (False, True):
-            source, target = temp / f"in-{mirror}", temp / f"out-{mirror}"
-            source.mkdir()
-            target.mkdir()
-            for name, icon, style in icon_variants(icons):
-                if bool(icon.get("mirror")) == mirror:
-                    shutil.copy(upstream_svg(icon, style), source / f"{name}.svg")
-            if not any(source.iterdir()):
-                continue
-            subprocess.run(
-                ["java", "-jar", str(jar), "svgxml2imagevector",
-                 f"--input-path={source}", f"--output-path={target}",
-                 "--package-name=app.wonton.ui.icons", "--iconpack-name=WontonIcon",
-                 "--output-format=lazy-property", "--use-path-data-string=true",
-                 "--suppress-unused-receiver=true", f"--auto-mirror={str(mirror).lower()}"],
-                check=True, capture_output=True,
-            )
-            for path in target.rglob("*.kt"):
-                files[KOTLIN / "icons" / path.name] = path.read_bytes()
-    pack = BANNER + "package app.wonton.ui.icons\n\nobject WontonIcon\n"
+    for name, icon, source in kubai_sources(icons):
+        try:
+            root, labels = compose_vector.flatten(source)
+            flat = ElementTree.tostring(root, encoding="unicode")
+            check_plain_svg(f"{name}（Compose）", flat)
+            color = icons["palette"][icon["color"]]
+            accents = {
+                "light": (hex_rgb(color["light"]), 1),
+                "dark": (hex_rgb(color["dark"]), KUBAI_DARK_WHITE),
+                "mono": (COMPOSE_MONO_ACCENT, 1),
+            }
+            colors = compose_vector.source_colors(root) + [compose_vector.long_hex(label["fill"]) for label in labels]
+            palettes = {
+                variant: [
+                    "0xFF" + rgb_hex(kubai_recolor(hex_rgb(value), base, accent, white))[1:] for value in colors
+                ]
+                for variant, (accent, white) in accents.items()
+            }
+            text = compose_vector.kotlin_file(BANNER, camel_upper(name), root, labels, palettes, icon.get("mirror"))
+        except compose_vector.Unsupported as error:
+            sys.exit(f"图标 {name} 转不成 ImageVector：{error}")
+        files[KOTLIN / f"icons/{camel_upper(name)}.kt"] = text.encode()
+    aliases = "\n".join(
+        f"val WontonIcon.{camel_upper(variant)}: WontonGlyph get() = {camel_upper(name)}"
+        for variant, _, name in icon_variants(icons)
+        if variant != name
+    )
+    pack = (
+        BANNER
+        + '@file:Suppress("UnusedReceiverParameter")\n\n'
+        + "package app.wonton.ui.icons\n\nimport app.wonton.ui.design.WontonGlyph\n\n"
+        + "object WontonIcon\n\n"
+        + aliases + "\n"
+    )
     files[KOTLIN / "icons/WontonIcon.kt"] = pack.encode()
     return files
 

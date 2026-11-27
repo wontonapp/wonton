@@ -2,7 +2,6 @@ package app.wonton.ui
 
 import android.icu.text.ListFormatter
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.CoreUpgradeCheck
@@ -19,6 +18,7 @@ import app.wonton.protocol.CoreVersion
 import app.wonton.protocol.InstalledPlugins
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.ThemeColors
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.icons.CheckCircleFill
 import app.wonton.ui.icons.ErrorFill
 import app.wonton.ui.icons.Info
@@ -31,7 +31,7 @@ internal class StageLine(
     val title: String,
     val detail: String? = null,
     /** 没有图标时转圈。 */
-    val icon: ImageVector? = null,
+    val icon: WontonGlyph? = null,
     val tint: (ThemeColors) -> Rgb = { it.textSecondary },
 )
 

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +39,7 @@ import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.InstalledPlugins
 import app.wonton.protocol.UdpFlowStats
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonBarStatus
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.wontonContentPadding

@@ -14,6 +14,7 @@ enum WontonIcon: String {
     case check
     case checkCircle
     case checkCircleFill
+    case checks
     case clock
     case close
     case code
@@ -27,6 +28,7 @@ enum WontonIcon: String {
     case disk
     case document
     case documentFill
+    case down
     case download
     case downloadFill
     case error
@@ -113,6 +115,7 @@ extension WontonIcon {
         case .check: "check"
         case .checkCircle: "checkCircle"
         case .checkCircleFill: "checkCircle"
+        case .checks: "checks"
         case .clock: "clock"
         case .close: "close"
         case .code: "code"
@@ -126,6 +129,7 @@ extension WontonIcon {
         case .disk: "disk"
         case .document: "document"
         case .documentFill: "document"
+        case .down: "down"
         case .download: "download"
         case .downloadFill: "download"
         case .error: "error"

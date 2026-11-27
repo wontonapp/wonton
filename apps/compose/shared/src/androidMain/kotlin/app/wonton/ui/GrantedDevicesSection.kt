@@ -5,17 +5,17 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.PluginDeviceKind
 import app.wonton.protocol.PluginGrantedDevice
+import app.wonton.ui.design.Icon
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Device
@@ -88,7 +88,7 @@ private fun grantedDeviceLabel(kind: PluginDeviceKind): String = stringResource(
     },
 )
 
-private fun grantedDeviceIcon(kind: PluginDeviceKind): ImageVector = when (kind) {
+private fun grantedDeviceIcon(kind: PluginDeviceKind): WontonGlyph = when (kind) {
     PluginDeviceKind.SERIAL -> WontonIcon.SerialPort
     PluginDeviceKind.USB -> WontonIcon.Usb
     PluginDeviceKind.DISK -> WontonIcon.Disk

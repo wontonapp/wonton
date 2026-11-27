@@ -23,7 +23,6 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -54,6 +53,7 @@ import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginState
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind

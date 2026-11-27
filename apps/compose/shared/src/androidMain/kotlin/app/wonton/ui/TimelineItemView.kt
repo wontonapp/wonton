@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
@@ -70,6 +69,7 @@ import app.wonton.protocol.SendState
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme

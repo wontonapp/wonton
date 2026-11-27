@@ -1,23 +1,41 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+@file:Suppress("MagicNumber", "MaxLineLength", "LongMethod", "UnusedReceiverParameter")
+
 package app.wonton.ui.icons
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonGlyph
 
-@Suppress("UnusedReceiverParameter")
-val WontonIcon.Device: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-    ImageVector.Builder(
+private const val P0 = "M7.3 4.4Q7.3 1 10.7 1L20.3 1Q23.7 1 23.7 4.4L23.7 20.6Q23.7 24 20.3 24L10.7 24Q7.3 24 7.3 20.6Z"
+private const val P1 = "M9.4 4.6Q9.4 3.4 10.6 3.4L20.4 3.4Q21.6 3.4 21.6 4.6L21.6 18.8Q21.6 20 20.4 20L10.6 20Q9.4 20 9.4 18.8Z"
+
+private fun art(name: String, c: LongArray): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 30.8571f,
+    viewportHeight = 30.8571f,
+    autoMirror = false,
+).apply {
+    addGroup(translationX = -0.0714f, translationY = 2.9286f)
+    addPath(pathData = addPathNodes(P0), stroke = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 1f, endY = 24f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P0), stroke = SolidColor(Color(c[4])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P0), fill = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 1f, endY = 24f))
+    addPath(pathData = addPathNodes(P1), fill = SolidColor(Color(c[5])))
+    clearGroup()
+}.build()
+
+val WontonIcon.Device: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
+    WontonGlyph(
         name = "Device",
-        defaultWidth = 256.dp,
-        defaultHeight = 256.dp,
-        viewportWidth = 256f,
-        viewportHeight = 256f
-    ).apply {
-        addPath(
-            fill = SolidColor(Color.Black),
-            pathData = addPathNodes("M 176.0 16.0 L 80.0 16.0 A 24.0 24.0 0.0 0 0 56.0 40.0 L 56.0 216.0 a 24.0 24.0 0.0 0 0 24.0 24.0 h 96.0 a 24.0 24.0 0.0 0 0 24.0 -24.0 L 200.0 40.0 A 24.0 24.0 0.0 0 0 176.0 16.0 Z M 184.0 216.0 a 8.0 8.0 0.0 0 1 -8.0 8.0 L 80.0 224.0 a 8.0 8.0 0.0 0 1 -8.0 -8.0 L 72.0 40.0 a 8.0 8.0 0.0 0 1 8.0 -8.0 h 96.0 a 8.0 8.0 0.0 0 1 8.0 8.0 Z M 140.0 60.0 a 12.0 12.0 0.0 1 1 -12.0 -12.0 A 12.0 12.0 0.0 0 1 140.0 60.0 Z")
-        )
-    }.build()
+        light = longArrayOf(0xFF969FAC, 0xFF828D9D, 0xFFCDD2D8, 0xFFAFB6C0, 0xFF58667B, 0xFFFFFFFF),
+        dark = longArrayOf(0xFFA1AAB7, 0xFF99A4B3, 0xFFB8BCC2, 0xFFABB2BC, 0xFF8896AA, 0xFFFFFFFF),
+        mono = longArrayOf(0xFF5F5F5F, 0xFF414141, 0xFFB3B3B3, 0xFF858585, 0xFF000000, 0xFFFFFFFF),
+        build = ::art,
+    )
 }

@@ -1,23 +1,44 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+@file:Suppress("MagicNumber", "MaxLineLength", "LongMethod", "UnusedReceiverParameter")
+
 package app.wonton.ui.icons
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonGlyph
 
-@Suppress("UnusedReceiverParameter")
-val WontonIcon.Cpu: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-    ImageVector.Builder(
+private const val P0 = "M12.5 4.4V2.1M12.5 20.6V22.9M7.4 9.5H5.1M23.6 9.5H25.9M18.5 4.4V2.1M18.5 20.6V22.9M7.4 15.5H5.1M23.6 15.5H25.9"
+private const val P1 = "M7.4 6.6Q7.4 4.4 9.6 4.4L21.4 4.4Q23.6 4.4 23.6 6.6L23.6 18.4Q23.6 20.6 21.4 20.6L9.6 20.6Q7.4 20.6 7.4 18.4Z"
+private const val P2 = "M11.2 10Q11.2 8.2 13 8.2L18 8.2Q19.8 8.2 19.8 10L19.8 15Q19.8 16.8 18 16.8L13 16.8Q11.2 16.8 11.2 15Z"
+
+private fun art(name: String, c: LongArray): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 30.8571f,
+    viewportHeight = 30.8571f,
+    autoMirror = false,
+).apply {
+    addGroup(translationX = -0.0714f, translationY = 2.9286f)
+    addPath(pathData = addPathNodes(P0), stroke = SolidColor(Color(c[5])), strokeLineWidth = 2.2f, strokeLineCap = StrokeCap.Round)
+    addPath(pathData = addPathNodes(P1), stroke = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 4.4f, endY = 20.6f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P1), stroke = SolidColor(Color(c[6])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P1), fill = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 4.4f, endY = 20.6f))
+    addPath(pathData = addPathNodes(P2), fill = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = 8.2f, endY = 16.8f))
+    clearGroup()
+}.build()
+
+val WontonIcon.Cpu: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
+    WontonGlyph(
         name = "Cpu",
-        defaultWidth = 256.dp,
-        defaultHeight = 256.dp,
-        viewportWidth = 256f,
-        viewportHeight = 256f
-    ).apply {
-        addPath(
-            fill = SolidColor(Color.Black),
-            pathData = addPathNodes("M 152.0 96.0 L 104.0 96.0 a 8.0 8.0 0.0 0 0 -8.0 8.0 v 48.0 a 8.0 8.0 0.0 0 0 8.0 8.0 h 48.0 a 8.0 8.0 0.0 0 0 8.0 -8.0 L 160.0 104.0 A 8.0 8.0 0.0 0 0 152.0 96.0 Z M 144.0 144.0 L 112.0 144.0 L 112.0 112.0 h 32.0 Z M 232.0 144.0 L 216.0 144.0 L 216.0 112.0 h 16.0 a 8.0 8.0 0.0 0 0 0.0 -16.0 L 216.0 96.0 L 216.0 56.0 a 16.0 16.0 0.0 0 0 -16.0 -16.0 L 160.0 40.0 L 160.0 24.0 a 8.0 8.0 0.0 0 0 -16.0 0.0 L 144.0 40.0 L 112.0 40.0 L 112.0 24.0 a 8.0 8.0 0.0 0 0 -16.0 0.0 L 96.0 40.0 L 56.0 40.0 A 16.0 16.0 0.0 0 0 40.0 56.0 L 40.0 96.0 L 24.0 96.0 a 8.0 8.0 0.0 0 0 0.0 16.0 L 40.0 112.0 v 32.0 L 24.0 144.0 a 8.0 8.0 0.0 0 0 0.0 16.0 L 40.0 160.0 v 40.0 a 16.0 16.0 0.0 0 0 16.0 16.0 L 96.0 216.0 v 16.0 a 8.0 8.0 0.0 0 0 16.0 0.0 L 112.0 216.0 h 32.0 v 16.0 a 8.0 8.0 0.0 0 0 16.0 0.0 L 160.0 216.0 h 40.0 a 16.0 16.0 0.0 0 0 16.0 -16.0 L 216.0 160.0 h 16.0 a 8.0 8.0 0.0 0 0 0.0 -16.0 Z M 200.0 200.0 L 56.0 200.0 L 56.0 56.0 L 200.0 56.0 v 95.87 s 0.0 0.09 0.0 0.13 s 0.0 0.09 0.0 0.13 L 200.0 200.0 Z")
-        )
-    }.build()
+        light = longArrayOf(0xFF8F9CF0, 0xFF7A8AED, 0xFFCAD0F8, 0xFFAAB4F3, 0xFF4659D1, 0xFF4338B7, 0xFF4D62E7),
+        dark = longArrayOf(0xFF9CA5E1, 0xFF939EE5, 0xFFB5BAD6, 0xFFA7AEDC, 0xFF7381D7, 0xFF635FB8, 0xFF7F8EEE),
+        mono = longArrayOf(0xFF5F5F5F, 0xFF414141, 0xFFB3B3B3, 0xFF858585, 0xFF000000, 0xFF000000, 0xFF000000),
+        build = ::art,
+    )
 }

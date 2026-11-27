@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,7 +18,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -36,10 +34,12 @@ import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskNextStep
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.Rgb
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
@@ -348,7 +348,7 @@ val PluginTask.hasAddedToolsNews: Boolean
 
 /** 一行结果：小图标紧贴文字，和文字的第一行对齐。 */
 @Composable
-fun StateLine(icon: ImageVector, text: String, tint: Rgb) {
+fun StateLine(icon: WontonGlyph, text: String, tint: Rgb) {
     Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Icon(
             icon,

@@ -3,11 +3,8 @@ package app.wonton.ui.design
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.requiredSize
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Badge
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -17,6 +14,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.wonton.ui.R
+import app.wonton.ui.icons.Down
+import app.wonton.ui.icons.WontonIcon
 
 /**
  * 停在别处时的“回到底部”圆钮：数字是离开底部后到的消息数，没有就不写数字（ADR-0071）。
@@ -42,7 +41,7 @@ fun ScrollToBottomAction(count: Int, onClick: () -> Unit, modifier: Modifier = M
         // 角标叠在圆钮外面：FAB 的 Surface 会按圆形裁剪内容，放进 BadgedBox 超出的部分会被切掉。
         Box {
             // 装饰：圆钮外层已经带了名字。
-            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
+            Icon(WontonIcon.Down, contentDescription = null)
             if (count > 0) {
                 Badge(
                     modifier = Modifier

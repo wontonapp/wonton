@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,7 +18,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.semantics.Role
@@ -31,6 +29,8 @@ import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.TabRef
+import app.wonton.ui.design.Icon
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Leave
@@ -77,7 +77,7 @@ internal fun PluginPageCapsule(
 }
 
 @Composable
-private fun CapsuleArtwork(trailingIcon: ImageVector) {
+private fun CapsuleArtwork(trailingIcon: WontonGlyph) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         CapsuleGlyph(WontonIcon.More)
         Box(Modifier.width(WontonTheme.size.hairline).height(WontonTheme.size.iconSmall)
@@ -87,7 +87,7 @@ private fun CapsuleArtwork(trailingIcon: ImageVector) {
 }
 
 @Composable
-private fun CapsuleGlyph(icon: ImageVector) {
+private fun CapsuleGlyph(icon: WontonGlyph) {
     Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton), contentAlignment = Alignment.Center) {
         // 装饰：旁边叠着的命中区自己带名字。
         Icon(icon, null, Modifier.size(WontonTheme.size.iconSmall), tint = WontonTheme.colors.textPrimary.toColor())
