@@ -372,6 +372,27 @@ impl Store {
         Ok(view)
     }
 
+    /// 设备报的离线占用：这台设备那份记成 `bytes`，上限照旧，别的设备那份不动；回记完的合计。设备被移除、
+    /// 这个人退出家庭时记成 0。
+    pub fn report_offline(
+        &self,
+        person: &str,
+        device: &str,
+        bytes: u64,
+    ) -> Result<QuotaView, MediaStoreError> {
+        let ledger = Ledger::DeviceOffline;
+        let (provider, device) = ledger.keys(None, Some(device))?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        let limit = self
+            .ledger_usage(&tx, person, ledger, provider, device)?
+            .map_or(ledger.default_limit(), |(_, limit)| limit);
+        self.record_usage(&tx, person, ledger, provider, device, bytes, limit)?;
+        let view = self.read_quota(&tx, person)?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(view)
+    }
+
     /// 写一格账。上传账先删掉迁移留下的空提供方旧账行：它的用量由这一格接手，
     /// 留着会被 `read_quota` 与这一格一起合计两遍。
     #[allow(clippy::too_many_arguments)] // 一格账就是这几个字段，再包结构体只是把参数搬个家。

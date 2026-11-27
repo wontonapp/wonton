@@ -142,7 +142,7 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 
 **失败分类。** 以 `wonton-protocol/src/file/mod.rs:97-142` 的 `FileFailure` 为底，**保留它的本地、传输、协议、上游四组**（`local_source_unavailable`、`local_permission_denied`、`local_storage_full`、`local_io`、`transport_unavailable`、`protocol`、`plugin_unavailable`、`upstream_error`），再加 `AuthenticationRequired`、`UnsupportedByDevice`、`RateLimited`、`MediaGone`、`ServerStorageFull`。服务端空间不足和手机空间不足分成两个码，壳才知道该去清哪边；`device_no_response` 只出现在工具结果里，不进任务失败枚举。失败即停，不藏错误：状态转 `Failed{failure}`，失败原文和类别都进视图与事件（`media.task.failed`），Agent 能看到完整原因。
 
-**配额与清理。** 服务器核记两个账本：每个提供方的上传总量上限（按人）和每台设备的离线下载占用上限（按人按设备）。超限在 `Preparing` 就拒；拒的回执和 `QuotaView` 都分两项（`provider_upload`、`device_offline`），各带自己的 `used`/`limit`，壳据此出“去清服务器”还是“去清手机”。离线占用以设备为准：设备删了副本、被系统清了、重装了 App 都用 `PUT /offline` 报一次现在一共占多少，核心记成它，不靠逐项扣减对账；两次上报之间下载写完时核心往上加。离线文件的清理只由用户或 Agent 显式发起；App 在系统存储告急时只提示，不自行删。
+**配额与清理。** 服务器核记两个账本：每个提供方的上传总量上限（按人）和每台设备的离线下载占用上限（按人按设备）。超限在 `Preparing` 就拒；拒的回执和 `QuotaView` 都分两项（`provider_upload`、`device_offline`），各带自己的 `used`/`limit`，壳据此出“去清服务器”还是“去清手机”。离线占用以设备为准：设备删了副本、被系统清了、重装了 App 都用 `PUT /offline` 报一次现在一共占多少，核心记成它，不靠逐项扣减对账；两次上报之间下载写完时核心往上加。账按设备分开记，一台上报只覆盖它自己那份，配额看这个人所有设备之和；设备被移除或这个人退出家庭时，那台的份额清零。离线文件的清理只由用户或 Agent 显式发起；App 在系统存储告急时只提示，不自行删。
 
 **后台限制。** iOS 的传输走 `URLSession` 后台会话：它不需要声明后台模式，系统在自己事件里把 App 拉起来并交回结果；只有批量枚举相册、整理这类不跑完会被打断的活才用 `BGProcessingTask`，那才要加 `processing`（现在只有 `audio`，`apps/ios/project.yml:69`）。`PHPhotoLibrary` 给的是内存数据，后台会话只能用文件，客户端核先落临时分片文件，传完删；空间不足先算再落。Android 传输走 `WorkManager` 加 `dataSync` 前台服务，一天总时长 6 小时（[FGS 超时](https://developer.android.com/develop/background-work/services/fgs/timeout)）；超过 6 小时的任务（大库首次备份）必须分批，批与批之间落回 `WaitingPower` 或 `Queued`。
 

@@ -16,6 +16,8 @@ pub mod task_service;
 mod transfer;
 
 #[cfg(test)]
+mod offline_tests;
+#[cfg(test)]
 mod provider_tests;
 #[cfg(test)]
 pub(crate) mod test_support;
