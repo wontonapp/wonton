@@ -269,6 +269,14 @@ mod tests {
             QueueOp::Jump { index: 3 },
             QueueOp::Clear,
             QueueOp::SetMode(QueueMode::RepeatOne),
+            QueueOp::Replace {
+                entries: vec![item(), item()],
+                cursor: Some(1),
+            },
+            QueueOp::Replace {
+                entries: Vec::new(),
+                cursor: None,
+            },
         ];
         for op in ops {
             let json = serde_json::to_value(&op).unwrap();
@@ -280,6 +288,22 @@ mod tests {
             json,
             serde_json::json!({"op": "set_mode", "value": "shuffle"})
         );
+        let json = serde_json::to_value(QueueOp::Replace {
+            entries: Vec::new(),
+            cursor: Some(0),
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"op": "replace", "value": {"entries": [], "cursor": 0}})
+        );
+    }
+
+    /// 队列改动是要执行的：不认识的不能当没事跳过（旧核心收到新 App 的 `replace` 得拒，不能回成功）。
+    #[test]
+    fn a_queue_op_this_build_does_not_know_is_refused() {
+        let unknown = serde_json::json!({"op": "shuffle_from_here", "value": {"index": 2}});
+        assert!(serde_json::from_value::<QueueOp>(unknown).is_err());
     }
 
     fn plan() -> PlaybackPlan {

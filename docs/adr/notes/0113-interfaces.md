@@ -330,7 +330,7 @@ pub enum StopReason { User, Agent, TakenOver, Finished, Error, Removed, Other(St
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", tag = "op", content = "value")]
-pub enum QueueOp { Read, Enqueue { at: Option<usize>, item: MediaItemRef }, Remove { index: usize }, Jump { index: usize }, Clear, SetMode(QueueMode) }
+pub enum QueueOp { Read, Enqueue { at: Option<usize>, item: MediaItemRef }, Remove { index: usize }, Jump { index: usize }, Clear, SetMode(QueueMode), Replace { entries: Vec<MediaItemRef>, cursor: Option<usize> } }
 
 // 同 `TaskTarget`，载荷另起 `value`：{"op":"set_mode","value":"shuffle"}；`Read` 等无载荷的没有 `value`。
 

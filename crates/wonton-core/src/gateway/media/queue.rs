@@ -10,7 +10,9 @@ use axum::response::{IntoResponse, Json, Response};
 use hyper::StatusCode;
 use wonton_protocol::media::api::QueueChange;
 use wonton_protocol::media::provider::QueueSnapshot;
-use wonton_protocol::media::{MediaFailure, MediaFailureCode, MediaItemRef, Queue, QueueOp};
+use wonton_protocol::media::{
+    MediaFailure, MediaFailureCode, MediaItemRef, MediaKind, Queue, QueueOp,
+};
 
 use super::sessions::{item_route, session_route};
 use super::{Caller, reply, service_failure};
@@ -40,13 +42,15 @@ pub(super) async fn change(
             return reply(&failure(MediaFailureCode::Protocol, message));
         }
     };
-    // 入队的条目由核心填来源，客户端写的只当点名：按选提供方的规则定下这一项以后从哪家放，
-    // 点名的那家用不了、做不了就在这里拒。
-    if let QueueOp::Enqueue { item, .. } = &mut change.op {
-        match item_route(&gateway, &caller, &caller.person, item).await {
-            Ok(route) => item.source = Some(route.provider),
-            Err(failure) => return reply(&failure),
-        }
+    // 入队、整条替换的条目由核心填来源，客户端写的只当点名：按选提供方的规则定下每一项以后从哪家放，
+    // 有一项点名的那家用不了、做不了就整个拒，队列不动。
+    let items: Vec<&mut MediaItemRef> = match &mut change.op {
+        QueueOp::Enqueue { item, .. } => vec![item],
+        QueueOp::Replace { entries, .. } => entries.iter_mut().collect(),
+        _ => Vec::new(),
+    };
+    if let Err(failure) = route_items(&gateway, &caller, items).await {
+        return reply(&failure);
     }
     let read_only = matches!(change.op, QueueOp::Read);
     let changed = caller
@@ -63,6 +67,34 @@ pub(super) async fn change(
         Ok(QueueChanged::Stale(queue)) => (StatusCode::CONFLICT, Json(queue)).into_response(),
         Err(error) => reply(&service_failure(&error)),
     }
+}
+
+/// 给每一项定来源。一张专辑的条目种类和点名多半相同，同样的只选一次，不为百来首各问一遍。
+async fn route_items(
+    gateway: &Gateway,
+    caller: &Caller,
+    items: Vec<&mut MediaItemRef>,
+) -> Result<(), MediaFailure> {
+    let mut chosen: Vec<(MediaKind, Option<String>, String)> = Vec::new();
+    for item in items {
+        let known = chosen
+            .iter()
+            .find(|(kind, source, _)| *kind == item.kind && *source == item.source);
+        let provider = match known {
+            Some((_, _, provider)) => provider.clone(),
+            None => {
+                let route = item_route(gateway, caller, &caller.person, item).await?;
+                chosen.push((
+                    item.kind.clone(),
+                    item.source.clone(),
+                    route.provider.clone(),
+                ));
+                route.provider
+            }
+        };
+        item.source = Some(provider);
+    }
+    Ok(())
 }
 
 /// 把队列推给这个人正在播的那条会话的提供方（`PUT /playback/{session}/queue`，`savePlayQueue` 的翻法）。

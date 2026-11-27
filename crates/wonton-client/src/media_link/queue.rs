@@ -1,6 +1,7 @@
 //! 队列改动（ADR-0113 第 4 节）：带读到的版本发给核心。别处先改了（409，体是当前队列）就换上当前队列，
 //! 把这次改动按“同一项”挪到新的一版上重放一次：删的、跳去的、插在谁前面，都按那一项的编号重新找位置。
-//! 找不准（本机没见过那一版）不猜，如实报 `stale_revision`，请用户看过再改。
+//! 找不准（本机没见过那一版）不猜，如实报 `stale_revision`，请用户看过再改。整条替换、清空、换模式
+//! 不看位置，原样再发一次。
 
 use wonton_protocol::media::api::QueueChange;
 use wonton_protocol::media::{MediaFailure, MediaFailureCode, Queue, QueueOp, Revision};
@@ -80,6 +81,7 @@ fn rebase(
         QueueOp::Read
         | QueueOp::Clear
         | QueueOp::SetMode(_)
+        | QueueOp::Replace { .. }
         | QueueOp::Enqueue { at: None, .. } => Ok(Some(op.clone())),
         QueueOp::Enqueue { at: Some(at), item } => {
             let at = if seen.is_some_and(|seen| *at >= seen.entries.len()) {
@@ -256,6 +258,29 @@ mod tests {
         assert_eq!(result.unwrap_err().code, MediaFailureCode::StaleRevision);
         assert_eq!(adopted, [5]);
         assert_eq!(core.seen.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_stale_replace_is_sent_again_as_it_was() {
+        let (api, core) = fake_core(vec![
+            (StatusCode::CONFLICT, queue(2, &["x"])),
+            (StatusCode::OK, queue(3, &["a", "b"])),
+        ])
+        .await;
+        let replace = QueueOp::Replace {
+            entries: vec![item("a"), item("b")],
+            cursor: Some(1),
+        };
+        let (result, adopted) = run(&api, None, replace.clone()).await;
+        result.unwrap();
+        assert_eq!(adopted, [2, 3]);
+        let seen = core.seen.lock().unwrap();
+        assert_eq!(
+            seen.iter()
+                .map(|c| (c.revision, c.op.clone()))
+                .collect::<Vec<_>>(),
+            [(1, replace.clone()), (2, replace)]
+        );
     }
 
     #[tokio::test]

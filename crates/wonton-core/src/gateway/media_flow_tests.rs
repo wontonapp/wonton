@@ -282,6 +282,53 @@ async fn queue_changes_reach_the_provider_of_the_playing_session() {
 }
 
 #[tokio::test]
+async fn replacing_the_queue_fills_every_source_or_changes_nothing() {
+    let f = fixture().await;
+    f.start_session().await;
+    let replace = |revision: &Value, items: Vec<Value>| {
+        json!({"revision": revision, "op": {"op": "replace",
+                                            "value": {"entries": items, "cursor": 1}}})
+    };
+    let (status, queue) = f
+        .json(
+            Method::POST,
+            "/_wonton/api/media/queue",
+            replace(
+                &json!(0),
+                vec![item("v1", "video", None), item("v2", "video", None)],
+            ),
+        )
+        .await;
+    assert_eq!(
+        (status, queue["cursor"].as_u64()),
+        (StatusCode::OK, Some(1))
+    );
+    for entry in queue["entries"].as_array().unwrap() {
+        assert_eq!(entry["source"], super::media_tests::PROVIDER);
+    }
+    assert_eq!(f.hits("PUT /playback/up-1/queue"), 1);
+    // 有一项这家放不了：整个拒，队列还是上一版。
+    let (status, failure) = f
+        .json(
+            Method::POST,
+            "/_wonton/api/media/queue",
+            replace(
+                &queue["revision"],
+                vec![item("v3", "video", None), item("t9", "audio", None)],
+            ),
+        )
+        .await;
+    assert_eq!(
+        (status, failure["code"].as_str()),
+        (StatusCode::SERVICE_UNAVAILABLE, Some("plugin_unavailable"))
+    );
+    let (_, read) = f
+        .json(Method::GET, "/_wonton/api/media/queue", Value::Null)
+        .await;
+    assert_eq!(read, queue);
+}
+
+#[tokio::test]
 async fn a_queued_item_from_another_source_plays_from_that_source() {
     let f = fixture_with(vec![music()]).await;
     let (session, _) = f.start_session().await;

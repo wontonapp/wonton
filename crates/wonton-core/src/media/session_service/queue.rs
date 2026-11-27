@@ -96,6 +96,18 @@ fn apply(queue: &mut Queue, op: QueueOp) -> Result<(), SessionServiceError> {
             queue.cursor = None;
         }
         QueueOp::SetMode(mode) => queue.mode = mode,
+        QueueOp::Replace { entries, cursor } => {
+            let len = entries.len();
+            queue.cursor = match cursor {
+                Some(index) if index >= len => {
+                    return Err(SessionServiceError::QueueIndex { index, len });
+                }
+                Some(index) => Some(index),
+                None if len == 0 => None,
+                None => Some(0),
+            };
+            queue.entries = entries;
+        }
     }
     Ok(())
 }
@@ -210,5 +222,41 @@ mod tests {
             SessionServiceError::QueueIndex { index: 3, len: 1 }
         ));
         assert_eq!(sessions.queue(ALICE).unwrap(), queue);
+    }
+
+    #[test]
+    fn replacing_the_queue_starts_from_the_chosen_track_and_keeps_the_mode() {
+        let (_dir, sessions) = service();
+        let replace = |ids: &[&str], cursor| QueueOp::Replace {
+            entries: ids.iter().map(|id| item(id)).collect(),
+            cursor,
+        };
+        let mut queue = applied(sessions.change_queue(ALICE, 0, replace(&["x"], None)));
+        queue = applied(sessions.change_queue(
+            ALICE,
+            queue.revision,
+            QueueOp::SetMode(QueueMode::Shuffle),
+        ));
+        queue = applied(sessions.change_queue(
+            ALICE,
+            queue.revision,
+            replace(&["a", "b", "c"], Some(2)),
+        ));
+        assert_eq!(
+            (ids(&queue), queue.cursor, &queue.mode),
+            (vec!["a", "b", "c"], Some(2), &QueueMode::Shuffle)
+        );
+        queue = applied(sessions.change_queue(ALICE, queue.revision, replace(&["d", "e"], None)));
+        assert_eq!((ids(&queue), queue.cursor), (vec!["d", "e"], Some(0)));
+        // 越界的、空队列却指了一项的，都不动队列。
+        for bad in [replace(&["f"], Some(1)), replace(&[], Some(0))] {
+            let error = sessions
+                .change_queue(ALICE, queue.revision, bad)
+                .unwrap_err();
+            assert!(matches!(error, SessionServiceError::QueueIndex { .. }));
+            assert_eq!(sessions.queue(ALICE).unwrap(), queue);
+        }
+        queue = applied(sessions.change_queue(ALICE, queue.revision, replace(&[], None)));
+        assert_eq!((queue.entries.len(), queue.cursor), (0, None));
     }
 }
