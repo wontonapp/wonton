@@ -388,6 +388,7 @@ fn fake_root_page(tab: TabRef) -> OpenPage {
             state: TabState::Ready,
             reload: 0,
             opens_in_browser: false,
+            native: None,
         },
     }
 }
