@@ -127,6 +127,10 @@ pub struct PhotoAsset {
     /// 不是本人的条目（家人共享给他的、共享相册里别人加的）写主人的 Matrix ID；本人的为空
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// 不是本人的、但主人不是这台服务器上的哪位家人（上游里对不上任何人的账号）：`owner` 为空、这项为
+    /// true。提供方不写那个账号的名字或邮箱
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub owner_unknown: bool,
     /// 原图解码前的占位图（ThumbHash 的 base64）；没有就空着，壳画纯色
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thumbhash: Option<String>,
@@ -203,6 +207,8 @@ pub enum AlbumOwner {
     Household,
     /// 别的家人，值是 Matrix ID（`person:@mom:example.com`）
     Person(String),
+    /// 别人的，但库主不是这台服务器上的哪位家人（`unknown`）；提供方不写那个账号的名字或邮箱
+    Unknown,
     /// 新版本新加的归属，原值在里。
     Other(String),
 }
@@ -212,6 +218,7 @@ impl Serialize for AlbumOwner {
         match self {
             Self::Me => serializer.serialize_str("me"),
             Self::Household => serializer.serialize_str("household"),
+            Self::Unknown => serializer.serialize_str("unknown"),
             Self::Person(name) => serializer.serialize_str(&format!("person:{name}")),
             Self::Other(raw) => serializer.serialize_str(raw),
         }
@@ -224,6 +231,7 @@ impl<'de> Deserialize<'de> for AlbumOwner {
         Ok(match raw.as_str() {
             "me" => Self::Me,
             "household" => Self::Household,
+            "unknown" => Self::Unknown,
             _ => match raw.strip_prefix("person:") {
                 Some(name) if !name.is_empty() => Self::Person(name.to_owned()),
                 _ => Self::Other(raw),
@@ -244,7 +252,7 @@ pub struct Album {
     /// 封面那一条的 id
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<String>,
-    /// 除库主外能看这个相册的人，Matrix ID；可能含正在看的这个人
+    /// 除库主外能看这个相册的人，Matrix ID；可能含正在看的这个人。不是这台服务器上家人的不列
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -444,6 +452,7 @@ mod tests {
             live: true,
             favorite: false,
             owner: Some("mom".into()),
+            owner_unknown: false,
             thumbhash: Some("1QcSHQRnh493V4dIh4eXh1h4kJUI".into()),
         }
     }
@@ -528,6 +537,24 @@ mod tests {
     }
 
     #[test]
+    fn an_owner_who_is_no_family_member_is_flagged_not_named() {
+        let mut asset = asset();
+        assert!(
+            serde_json::to_value(&asset)
+                .unwrap()
+                .get("owner_unknown")
+                .is_none()
+        );
+        asset.owner = None;
+        asset.owner_unknown = true;
+        let wire = serde_json::to_value(&asset).unwrap();
+        assert_eq!(wire["owner_unknown"], true);
+        assert!(wire.get("owner").is_none());
+        let back: PhotoAsset = serde_json::from_value(wire).unwrap();
+        assert_eq!(back, asset);
+    }
+
+    #[test]
     fn album_owner_reads_people_and_falls_to_other() {
         let owner: AlbumOwner = serde_json::from_str("\"person:mom\"").unwrap();
         assert_eq!(owner, AlbumOwner::Person("mom".into()));
@@ -539,6 +566,9 @@ mod tests {
             serde_json::to_value(&owner).unwrap(),
             "person:@a:example.com"
         );
+        let owner: AlbumOwner = serde_json::from_str("\"unknown\"").unwrap();
+        assert_eq!(owner, AlbumOwner::Unknown);
+        assert_eq!(serde_json::to_value(&owner).unwrap(), "unknown");
         for raw in ["\"guest\"", "\"person:\""] {
             let owner: AlbumOwner = serde_json::from_str(raw).unwrap();
             assert!(matches!(owner, AlbumOwner::Other(_)));

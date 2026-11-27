@@ -218,6 +218,7 @@ fn wire_album(row: PhotoAlbumRow) -> Album {
             PhotoAlbumOwner::Me => AlbumOwner::Me,
             PhotoAlbumOwner::Household => AlbumOwner::Household,
             PhotoAlbumOwner::Person { username } => AlbumOwner::Person(username),
+            PhotoAlbumOwner::Unknown => AlbumOwner::Unknown,
             PhotoAlbumOwner::Other { raw } => AlbumOwner::Other(raw),
         },
         shared: row.shared,
