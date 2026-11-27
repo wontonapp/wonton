@@ -4,8 +4,6 @@
     <string name="onboarding_done">安裝這些應用程式</string>
     <!-- Primary button after setup finished: leave setup and open chat. -->
     <string name="onboarding_enter_chat">進入聊天</string>
-    <!-- Problem title in setup: the home server can't be reached. -->
-    <string name="onboarding_problem_model_transport_unavailable">連不上家用伺服器，請檢查網路後重試。</string>
     <!-- Problem title while installing: the home server is older than the app needs. -->
     <string name="onboarding_problem_plugin_server_too_old">家用伺服器版本太舊，請先升級伺服器。</string>
     <!-- Problem title while installing: the home server can't be reached. -->
@@ -20,8 +18,6 @@
     <string name="onboarding_problem_store_unreachable">連不上推薦清單的來源，可以重試或跳過。</string>
     <!-- Fallback when the core gives no reason why an app can't be installed. -->
     <string name="onboarding_review_blocked">裝不了這個應用程式</string>
-    <!-- Row description in the review step: the already-configured models are kept. -->
-    <string name="onboarding_review_keep_current">繼續用目前的</string>
     <!-- Row description in the review step: finishing will not touch this. -->
     <string name="onboarding_review_unchanged">不改動</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->

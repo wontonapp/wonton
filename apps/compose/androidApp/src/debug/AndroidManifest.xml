@@ -21,5 +21,11 @@
         <activity
             android:name=".QualityPreviewActivity"
             android:exported="true" />
+
+        <!-- ADR-0129 模型页的界面走查页。 -->
+        <activity
+            android:name=".ModelsPreviewActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>

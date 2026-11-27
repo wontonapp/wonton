@@ -18,6 +18,7 @@ import app.wonton.android.push.followSystemNotifications
 import app.wonton.client.ClientCore
 import app.wonton.client.initLogging
 import app.wonton.protocol.Action
+import app.wonton.protocol.AgentModelsAction
 import app.wonton.protocol.HomeAction
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.ui.LocalNotificationPermission
@@ -29,6 +30,7 @@ import app.wonton.ui.WontonApp
 import app.wonton.ui.completeMatrixOidcCallback
 import app.wonton.ui.defaultDeviceName
 import app.wonton.ui.homeUpdates
+import app.wonton.ui.isModelLoginCallback
 import app.wonton.ui.pluginsUpdates
 import app.wonton.ui.send
 import kotlinx.coroutines.flow.distinctUntilChangedBy
@@ -52,6 +54,10 @@ open class MainActivity : AppCompatActivity() {
     open override fun onCreate(savedInstanceState: Bundle?) {
         (application as WontonApplication).configureForLaunch(intent)
         super.onCreate(savedInstanceState)
+        if (!returnModelLoginToRoot()) start()
+    }
+
+    private fun start() {
         enableEdgeToEdge()
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
         if (debuggable) {
@@ -110,7 +116,7 @@ open class MainActivity : AppCompatActivity() {
     }
 
     private fun takeIntent(intent: Intent) {
-        if (takeMatrixCallback(intent)) return
+        if (takeMatrixCallback(intent) || takeModelLoginCallback(intent)) return
         requests.take(intent)
         val inbox = shareInbox ?: return
         takeShare(intent)?.let { content -> lifecycleScope.launch { inbox.receive(content) } }
@@ -184,6 +190,32 @@ open class MainActivity : AppCompatActivity() {
         val taken = core?.completeMatrixOidcCallback(url) == true
         if (taken) intent.data = null
         return taken
+    }
+
+    /**
+     * 模型服务商的浏览器授权回跳（ADR-0129）：整条网址交给核心续上登录，不当 App 链接。
+     * 没有在等的登录时核心会拒，迟到的回跳原样丢掉。
+     */
+    private fun takeModelLoginCallback(intent: Intent): Boolean {
+        val url = intent.dataString?.takeIf { intent.action == Intent.ACTION_VIEW && isModelLoginCallback(it) }
+            ?: return false
+        (application as WontonApplication).core.getOrNull()
+            ?.send(Action.AgentModels(AgentModelsAction.FinishModelLogin(url)))
+        intent.data = null
+        return true
+    }
+
+    /**
+     * 浏览器把回跳发成新的 VIEW 意图时，系统会在 Custom Tabs 上面再建一个本 Activity（singleTop 只管栈顶）。
+     * 回跳交给核心后回到原来那个、顺带清掉浏览器，这个不留。先 finish：CLEAR_TOP 从栈顶往下找，不跳过自己就找到自己。
+     */
+    private fun returnModelLoginToRoot(): Boolean {
+        if (isTaskRoot || !takeModelLoginCallback(intent)) return false
+        finish()
+        startActivity(
+            Intent(this, javaClass).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+        )
+        return true
     }
 
     override fun onResume() {

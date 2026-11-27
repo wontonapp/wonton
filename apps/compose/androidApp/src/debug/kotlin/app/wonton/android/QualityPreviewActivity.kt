@@ -32,6 +32,7 @@ import app.wonton.protocol.FontStyle
 import app.wonton.protocol.HomePath
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.ModelTestResult
 import app.wonton.protocol.OnboardingCommit
 import app.wonton.protocol.OnboardingItemState
 import app.wonton.protocol.OnboardingReview
@@ -105,7 +106,7 @@ class QualityPreviewActivity : ComponentActivity() {
         }
     }
 
-    /** 引导最后一步：三类汇总、权限、来源提示和安装进展。 */
+    /** 引导最后一步：资料、助手、模型和应用的汇总，权限、来源提示和安装进展。 */
     @Composable
     private fun OnboardingReviewPreview() {
         val core = (application as WontonApplication).core.getOrNull() ?: return
@@ -113,7 +114,7 @@ class QualityPreviewActivity : ComponentActivity() {
         val scroll = rememberScrollState()
         Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         StepCardFrame(
-            nav = StepNav(position = 4u, total = 4u, canBack = true, canSkip = false, canNext = true, canClose = true),
+            nav = StepNav(position = 5u, total = 5u, canBack = true, canSkip = false, canNext = true, canClose = true),
             title = stringResource(R.string.onboarding_step_review),
             primaryText = stringResource(R.string.onboarding_done),
             primaryBusy = false,
@@ -154,7 +155,7 @@ private const val SCREEN_DETAILS = "details"
 private const val SCREEN_DETAILS_FLOWS = "details-flows"
 private const val SCREEN_ONBOARDING_REVIEW = "onboarding-review"
 
-/** 确认页的假数据：资料和模型没改，一台要装的应用带两项权限和来源提示，一台在排队。 */
+/** 确认页的假数据：资料没改，助手起了名字，模型接好并测通，一台要装的应用带两项权限和来源提示，一台在排队。 */
 private fun previewOnboardingReview() = OnboardingReview(
     items = listOf(
         OnboardingReviewItem(
@@ -168,10 +169,20 @@ private fun previewOnboardingReview() = OnboardingReview(
             state = OnboardingItemState.Ready,
         ),
         OnboardingReviewItem(
+            id = "assistant",
+            kind = OnboardingReviewKind.ASSISTANT,
+            titles = listOf("Wonton"),
+            detail = null,
+            icon = null,
+            permissions = emptyList(),
+            notices = emptyList(),
+            state = OnboardingItemState.Ready,
+        ),
+        OnboardingReviewItem(
             id = "model",
             kind = OnboardingReviewKind.MODEL,
-            titles = listOf("OpenAI"),
-            detail = OnboardingReviewDetail.Unchanged,
+            titles = listOf("OpenRouter", "openai/gpt-4o-mini"),
+            detail = OnboardingReviewDetail.Model(ModelTestResult.OK),
             icon = null,
             permissions = emptyList(),
             notices = emptyList(),

@@ -8,4 +8,132 @@
     <plurals name="agent_run_steps">
         <item quantity="other">%1$d 步</item>
     </plurals>
+    <!-- Title of the page where the owner connects an AI model to their assistant. -->
+    <string name="agent_models_title">模型</string>
+    <!-- Shown where the model in use would be, when the assistant has no model yet. -->
+    <string name="agent_models_none">還沒接模型</string>
+    <!-- Button that sends a short real request to check the model in use works. -->
+    <string name="agent_models_test">測一下</string>
+    <!-- Note under the test button: testing costs a tiny real request. -->
+    <string name="agent_models_test_note">測試會發一則很短的真實請求，服務商可能計費。</string>
+    <!-- Status line while the model test is running. -->
+    <string name="agent_models_test_running">正在測試…</string>
+    <!-- Result line: the model test got a real reply. -->
+    <string name="agent_models_test_ok">可以用</string>
+    <!-- Result line: the model test got a real reply. %1$s is the reply time in seconds, e.g. 1.2. -->
+    <string name="agent_models_test_ok_latency">可以用 · %1$s 秒回覆</string>
+    <!-- Result line: the provider refused the saved key or sign-in during the test. -->
+    <string name="agent_models_test_rejected">服務商不認這把 key 或這次登入。重新登入，或換一把 key。</string>
+    <!-- Result line: the home server could not reach the provider during the test. -->
+    <string name="agent_models_test_unreachable">連不上服務商。看看家裡伺服器的網路，再測一次。</string>
+    <!-- Result line: the provider answered the test with an error, such as no credit left or the model being unavailable. -->
+    <string name="agent_models_test_upstream">服務商回報錯誤，可能是額度用完了，或這個模型不能用。</string>
+    <!-- Result line: the test could not run because no model is chosen. -->
+    <string name="agent_models_test_no_model">先選一個模型</string>
+    <!-- Result line: the model test did not pass for a reason this app version does not know. -->
+    <string name="agent_models_test_other">測試沒通過</string>
+    <!-- Label that expands the rest of the provider list. -->
+    <string name="agent_models_more">更多</string>
+    <!-- Placeholder of the search field over the provider list. -->
+    <string name="agent_models_search">搜尋服務商</string>
+    <!-- Shown when the assistant offers no other providers. -->
+    <string name="agent_models_no_providers">沒有別的服務商</string>
+    <!-- Shown when a search over providers or models finds nothing. -->
+    <string name="agent_models_no_match">沒有符合的</string>
+    <!-- State of a provider that has a saved key or a signed-in account. -->
+    <string name="agent_models_connected">已接好</string>
+    <!-- Title of the dialog asking to confirm an expensive model. %1$s is the model name. -->
+    <string name="agent_models_confirm_title">要用 %1$s 嗎？</string>
+    <!-- Button that makes the selected model the one the assistant uses. -->
+    <string name="agent_models_use">用這個</string>
+    <!-- Marks the model the assistant is using now in the model list. -->
+    <string name="agent_models_in_use">使用中</string>
+    <!-- Button that removes the saved key or sign-in for this provider. -->
+    <string name="agent_models_disconnect">中斷連接</string>
+    <!-- Title of the dialog confirming disconnecting a provider. %1$s is the provider name. -->
+    <string name="agent_models_disconnect_title">要中斷 %1$s 嗎？</string>
+    <!-- Body of the dialog confirming disconnecting a provider. -->
+    <string name="agent_models_disconnect_message">存在這個助理裡的 key 或登入會刪掉。</string>
+    <!-- Section title over the list of models a provider offers. -->
+    <string name="agent_models_models">模型</string>
+    <!-- Shown when a connected provider offers no models. -->
+    <string name="agent_models_models_empty">這家沒有可選的模型</string>
+    <!-- Status line while the model list of a provider is loading. -->
+    <string name="agent_models_models_loading">正在取得模型…</string>
+    <!-- Placeholder of the search field over a provider's models. %1$d is how many models there are. -->
+    <string name="agent_models_models_search">搜尋 %1$d 個模型</string>
+    <!-- Button that starts signing in to a provider in the in-app browser. -->
+    <string name="agent_models_login">登入</string>
+    <!-- Button that starts signing in to a provider again. -->
+    <string name="agent_models_login_again">重新登入</string>
+    <!-- Notice: the owner declined the sign-in on the provider's page. -->
+    <string name="agent_models_login_denied">在服務商那邊按了拒絕</string>
+    <!-- Notice: the sign-in took too long and expired. -->
+    <string name="agent_models_login_expired">登入逾時了</string>
+    <!-- Notice: the provider sign-in failed. -->
+    <string name="agent_models_login_failed">沒有登入成功</string>
+    <!-- Clipboard label for a copied sign-in code. Not shown in the app. -->
+    <string name="agent_models_login_code_label">登入碼</string>
+    <!-- Shown when the provider asks for a sign-in method this app version cannot open. -->
+    <string name="agent_models_login_unsupported">更新雲吞後才能這樣登入</string>
+    <!-- Button under a sign-in code: copies the code and opens the provider's sign-in page. -->
+    <string name="agent_models_login_copy_open">複製碼並開啟登入頁</string>
+    <!-- Button that opens the provider's sign-in page again. -->
+    <string name="agent_models_login_open">開啟登入頁</string>
+    <!-- Status line while waiting for the owner to approve the sign-in in the browser. -->
+    <string name="agent_models_login_waiting">等你在瀏覽器裡核准</string>
+    <!-- Label and placeholder of the field for a provider API key. -->
+    <string name="agent_models_key">API key</string>
+    <!-- Button that opens the provider's page for creating an API key. -->
+    <string name="agent_models_key_get">去拿 key</string>
+    <!-- Button offered after returning from the provider's page with a key on the clipboard. -->
+    <string name="agent_models_key_paste">貼上剛複製的 key</string>
+    <!-- Shown under the key field: the provider refused this key, nothing was saved. -->
+    <string name="agent_models_key_rejected">服務商不認這把 key，沒有儲存。核對後再存一次。</string>
+    <!-- Shown under the key field: the key was saved, but this provider cannot check keys in advance. -->
+    <string name="agent_models_key_unverified">存好了。這家無法事先驗證 key，選好模型後測一下。</string>
+    <!-- Label and placeholder of the field for a custom provider's service address. -->
+    <string name="agent_models_base_url">服務位址</string>
+    <!-- Shown under a field the assistant said was filled in wrong. -->
+    <string name="agent_models_field_invalid">這一項填得不對</string>
+    <!-- Problem title on the model page: the phone cannot reach the home server. -->
+    <string name="agent_models_problem_transport">連不上家裡的伺服器</string>
+    <!-- What to do next, under the model page problem title when the phone cannot reach the home server. -->
+    <string name="agent_models_problem_transport_next">看看網路，再試一次。</string>
+    <!-- Problem title on the model page: this person is not allowed to change this assistant's model. -->
+    <string name="agent_models_problem_forbidden">你不能改這個助理的模型</string>
+    <!-- What to do next, under the model page problem title when this person is not allowed to change this assistant's model. -->
+    <string name="agent_models_problem_forbidden_next">請家裡伺服器的主人給你模型設定的權限。</string>
+    <!-- Problem title on the model page: the assistant app is not installed, or it no longer has this assistant. -->
+    <string name="agent_models_problem_not_installed">這個助理沒有安裝</string>
+    <!-- What to do next, under the model page problem title when the assistant app is not installed, or it no longer has this assistant. -->
+    <string name="agent_models_problem_not_installed_next">到應用商店裝上助理應用，再試一次。</string>
+    <!-- Problem title on the model page: the assistant has not finished starting. -->
+    <string name="agent_models_problem_not_ready">助理還在啟動</string>
+    <!-- What to do next, under the model page problem title when the assistant has not finished starting. -->
+    <string name="agent_models_problem_not_ready_next">等一下再試。</string>
+    <!-- Problem title on the model page: this assistant app cannot have its model set up in the app. -->
+    <string name="agent_models_problem_unsupported">這個助理不能在這裡接模型</string>
+    <!-- What to do next, under the model page problem title when this assistant app cannot have its model set up in the app. -->
+    <string name="agent_models_problem_unsupported_next">到「應用」裡開啟它自己的頁面設定模型。</string>
+    <!-- Problem title on the model page: the provider or the sign-in in progress no longer exists. -->
+    <string name="agent_models_problem_not_found">這家服務商或這次登入已經不在了</string>
+    <!-- What to do next, under the model page problem title when the provider or the sign-in in progress no longer exists. -->
+    <string name="agent_models_problem_not_found_next">返回重新整理列表，再來一次。</string>
+    <!-- Problem title on the model page: something entered was not accepted. -->
+    <string name="agent_models_problem_invalid_input">填的內容不對</string>
+    <!-- What to do next, under the model page problem title when something entered was not accepted. -->
+    <string name="agent_models_problem_invalid_input_next">核對一下再試。</string>
+    <!-- Problem title on the model page: the assistant hit an error handling the request. -->
+    <string name="agent_models_problem_upstream">助理處理時出錯了</string>
+    <!-- What to do next, under the model page problem title when the assistant hit an error handling the request. -->
+    <string name="agent_models_problem_upstream_next">過一會兒再試。</string>
+    <!-- Problem title on the model page: the app and the home server versions do not match. -->
+    <string name="agent_models_problem_protocol">App 和家裡伺服器的版本對不上</string>
+    <!-- What to do next, under the model page problem title when the app and the home server versions do not match. -->
+    <string name="agent_models_problem_protocol_next">把 App 和家裡的伺服器都更新後再試。</string>
+    <!-- Problem title on the model page: a reason this app version does not know. -->
+    <string name="agent_models_problem_other">沒有成功</string>
+    <!-- What to do next, under the model page problem title when a reason this app version does not know. -->
+    <string name="agent_models_problem_other_next">再試一次；一直不行就更新雲吞。</string>
 </resources>

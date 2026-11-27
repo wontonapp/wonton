@@ -73,7 +73,7 @@ internal fun OnboardingHost(
     ) {
         when {
             paired && !skipped && view.blocksHome() -> {
-                OnboardingGate(view, plugins, home, send) { skipped = true }
+                OnboardingGate(view, plugins, send) { skipped = true }
             }
             else -> content()
         }
@@ -87,12 +87,11 @@ private fun OnboardingViewModel.blocksHome(): Boolean =
 private fun OnboardingGate(
     view: OnboardingViewModel,
     plugins: PluginsState,
-    home: HomeViewModel,
     send: (Action) -> Unit,
     skip: () -> Unit,
 ) {
     when {
-        view.step.isOnboardingStep() -> OnboardingRoute(view, plugins, home)
+        view.step.isOnboardingStep() -> OnboardingScreen(view, plugins)
         view.loading -> {
             BackHandler { }
             Box(
@@ -134,21 +133,7 @@ private fun OnboardingFinishedEffect(view: OnboardingViewModel, paired: Boolean,
 }
 
 private fun OnboardingStep?.isOnboardingStep(): Boolean = when (this) {
-    OnboardingStep.PROFILE, OnboardingStep.MODEL,
+    OnboardingStep.PROFILE, OnboardingStep.ASSISTANT, OnboardingStep.MODEL,
     OnboardingStep.APPS, OnboardingStep.REVIEW -> true
     else -> false
-}
-
-@Composable
-private fun OnboardingRoute(view: OnboardingViewModel, plugins: PluginsState, home: HomeViewModel) {
-    var gateway by remember(view.step) { mutableStateOf<String?>(null) }
-    val url = gateway
-    if (url != null) {
-        OnboardingGatewayScreen(url, home) {
-            gateway = null
-            plugins.send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
-        }
-    } else {
-        OnboardingScreen(view, plugins, openGateway = { gateway = it })
-    }
 }

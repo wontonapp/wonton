@@ -114,14 +114,38 @@ adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<�
 
 ## 新用户引导
 
-配对后的四步引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md)：资料、模型、应用、确认；不再选 Agent，默认 Bot 由核心按默认 Agent 插件重建。
-每一步只在客户端核心的内存里记下选择，最后一页列出权限和说明，点“完成”才保存资料、模型并在后台安装应用。
+配对后的五步引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md) 和 [ADR-0129](../../docs/adr/0129-native-agent-model-setup.md)：
+资料、你的助手、接模型、应用、确认；不再选 Agent，默认 Bot 由核心按默认 Agent 插件重建。
+资料、助手的名字和应用只在客户端核心的内存里记下选择，最后一页列出权限和说明，点“完成”才保存并在后台安装应用；接模型当场存进默认 Bot。
 每项显示进展和失败重试；选项选中用勾选标志，没装且装不了时显示原因并禁用，已安装的不因安装限制被禁选；保存完成即可进入聊天，不等待镜像下载。核心没有给出默认 Agent 的聊天身份时留在聊天列表。
 首次状态加载失败会显示整屏错误，可重试或只在这次运行里先跳过；设置里的“重看引导”会重新打开完整流程。
 验证首次体验使用独立开发数据目录；重看时显示服务器上现有设置，不删除既有应用或模型配置。
 
-名字必填、邮箱选填，字段错误由核心给出。模型页只有“沿用当前模型”和打开上游设置页的入口，供应商、key 和登录都在设置页里选。
-网页里的保存立即生效，不属于引导草稿；网关未就绪时显示原因，跳过或打开网页都不表示模型已经可用。取 key 的厂商链接交给系统浏览器。
+名字必填、邮箱选填，字段错误由核心给出。“你的助手”一步给默认 Bot 起名字，名字不合规则的原因按核心给的类别显示。
+“接模型”一步就是默认 Bot 的模型页（见下一节），不打开任何插件网页；选好主模型才能点下一步，跳过不算接好。
+确认页的“模型”一行写“服务商 · 模型”和最近一次测试的结果，没接、没测、测通、不通分开写。
+
+## 模型页
+
+一个 Bot 的模型页（ADR-0129）渲染客户端核心的 `AgentModelsViewModel`：顶上是在用的模型和“测一下”，下面是服务商（推荐的在前，
+其余收进“更多”、能搜）。点开一家按核心给的接法摆登录、填 key、选模型和断开；页面状态都在核心，壳只留输入框里还没提交的文字。
+
+- 去拿 key、设备码登录和浏览器授权都用 Custom Tabs。码带在网址里的登录自己打开浏览器，核心轮询到批准后壳把自己的 Activity
+  拉回前台（`CLEAR_TOP`）盖住浏览器；人自己关掉浏览器回来算取消。码要人抄的先把码大字亮在页面上，点“复制码并打开登录页”才开，
+  回来不算取消。
+- 浏览器授权的回跳是 `wonton://model-login`，和别的 `wonton://` 链接走同一个 intent filter；`MainActivity` 认出它就把整条网址
+  交给核心（`FinishModelLogin`），不当 App 链接。没用 Auth Tab：回跳经 intent filter 已经够用，Auth Tab 要另接一套结果回调，
+  等有服务商真的走回跳时再评估。
+- 从“去拿 key”的网页回到前台时读一次剪贴板，内容以这家 key 的固定开头起头就给“粘贴刚复制的 key”；没有固定开头的服务商不读。
+  Android 13 起读剪贴板系统会提示，这是预期的。框里有 key 时这一屏开 `FLAG_SECURE`。
+
+界面走查用 Debug 构建的 `ModelsPreviewActivity`，假 ViewModel、不连服务器：
+
+```bash
+adb shell am start -n app.wonton.android/.ModelsPreviewActivity -e screen login-code
+```
+
+状态名见 `androidApp/src/debug/.../ModelsPreviewData.kt` 的 `previewModels`，另有 `onboarding-assistant`、`onboarding-model`。
 
 ## 插件页
 
