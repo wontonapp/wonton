@@ -24,6 +24,8 @@ apps/ios/WontonClient/Sources/WontonClient/Generated/
 *.mov
 *.log
 plugin-pr.md
+# 走查的截图和日志目录
+.walk/
 
 # 系统文件
 .DS_Store
