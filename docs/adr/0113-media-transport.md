@@ -1,6 +1,6 @@
 # ADR-0113 媒体与传输：长任务由核心持有，插件经媒体源能力提供内容
 
-- 状态：提议（2026-11-21），影音相册线起草，插件底座线复审后合并
+- 状态：提议（2026-11-21），影音相册线起草，插件底座线复审后合并；2026-11-27 补充第 9 节（相册原生浏览、去重、实况照片）
 - 取代 [ADR-0014](0014-reserved-capabilities.md) 的“Subsonic 原生音乐页”一节（主人 2026-11-21 定回原生）；补充 [ADR-0005](0005-native-clients-thick-core.md)（跨设备长任务的事实源在服务器核）
 - 关联：[ADR-0005](0005-native-clients-thick-core.md)（厚核心薄壳）、[ADR-0015](0015-small-components-standard-interfaces.md)（小部件、标准接口）、
   [ADR-0016](0016-mcp-bus-and-confirmations.md)（MCP 总线与确认）、[ADR-0020](0020-file-service.md)（文件服务）、
@@ -259,7 +259,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 - 一套长任务模型（上传与下载共用第 3 节的身份、状态、进度、断点、退避、失败分类、配额；播放会话借用同一套状态与失败分类）；
 - 能力 `media_source` 与契约测试（两个假提供方），核心当使用方，三个插件各出一个薄适配器翻上游接口（Immich `POST /assets` 与 `bulk-upload-check`、Subsonic `stream`/`scrobble`/`savePlayQueue`、Jellyfin `PlaybackInfo`/`Sessions/…`）；
 - 服务器核的任务与会话、命令通道、MCP 工具；客户端核的执行与 ViewModel；两壳的原生播放、上传、下载、锁屏与 PiP；
-- 音乐、影视各自的原生播放界面（结论已由主人定，本篇只给底座）。
+- 音乐、影视各自的原生播放界面，相册的原生浏览界面（结论已由主人定，本篇只给底座；相册的浏览契约见第 9 节）。
 
 不做：
 
@@ -279,6 +279,62 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 - #585 的网页媒体会话在收编期间保持可用，直到音乐原生页与第三方页的 renderer 都验过（见“待验证”）。
 - `FileFailure` 的码只增不改；服务端空间不足改用新码，旧壳落到通用文案。
 
+### 9. 相册：原生浏览、去重和实况照片（2026-11-27 补充）
+
+主人 11-27 定相册也做原生界面：时间线、相册、共享相册、家庭相册、大图、视频和实况照片播放、搜索都在两端原生画，
+手感对标 Google Photos 和 Synology Photos；Immich 网页降为管理和高级入口。手机自动备份同样自己做（第 3 节的上传任务）。
+
+**浏览走 `media_source` 的新操作 `library`，客户端核不直讲 Immich。** 第 2 节的读路径例外只给 OpenSubsonic 这个开放标准；
+Immich 没有标准，客户端核直讲它就是给一个具体插件开特例（ADR-0015），换一个相册插件就要改客户端核和发 App。
+`GET /items` 的通用列表也不够：没有按月分桶、尺寸、实况、归属和相册，画不出网格。`library` 的面按相册应用共有的几样定：
+
+| 提供方路径 | 方法 | 回包（`wonton-protocol::media::library`） |
+| --- | --- | --- |
+| `/library/timeline` | `GET` | `Timeline`：按拍摄月分桶（`YYYY-MM`、张数），新的在前 |
+| `/library/timeline/{month}?cursor=` | `GET` | `AssetPage`：这个月的条目，新的在前 |
+| `/library/albums` | `GET` | `Albums`：这个人能看到的相册，带归属（`me`/`household`/`person:<用户名>`）和是否共享 |
+| `/library/albums/{id}?cursor=` | `GET` | `AlbumPage` |
+| `/library/search?q=&people=&place=&from=&to=&kind=&favorite=&cursor=` | `GET` | `AssetPage`；`q` 按画面内容搜 |
+| `/library/people` | `GET` | `People`：有名字的人物，搜索页按人筛 |
+| `/library/items/{id}` | `GET` | `PhotoDetail`：EXIF、地点、人物 |
+| `/library/items/{id}/content?rendition=` | `GET` | 字节；档位 `thumbnail`/`preview`/`original`/`playback`/`live`，`Range` 原样过 |
+| `/library/actions` | `POST` | 体 `LibraryAction`（收藏、建相册、加进/移出相册、共享给家人、进回收站、恢复），回 `LibraryActionResult` |
+
+- 服务器核对 `library` 只转发：按设备归属的人填 `X-Wonton-User`、换上提供方签的能力凭据、`Range` 原样过，不缓存、不落盘、
+  不改写回包。客户端走 `/_wonton/api/media/library/…`，后半段就是上表的提供方路径。家里有不止一个声明了 `library` 和 `photo`
+  的提供方时用 `?source=<插件 id>` 选；只有一个就取它；多个又没选回 `protocol`，不替人挑。
+- 这个人没被授权打开这个插件（ADR-0088 的应用清单）回 `permission_denied`，和打开插件网页是同一个判断。
+- 客户端核持有浏览的状态：游标、按日分组、选择集、缩略图磁盘缓存（按条目 id 和档位，有上限、按最近使用淘汰）；壳只画网格、
+  手势和转场（ADR-0120 手写白名单里的“相册看图”）。字节经客户端核的本机回环交给原生图片加载器和播放器，不经绑定层搬。
+- 视频和实况照片的动态部分在大图页直接播（`playback`、`live` 档），不开第 4 节的播放会话：相册里的短视频不进队列、
+  不跨设备接着放。
+- 原生页上本人点的写操作可撤、只动自己能动的，不发确认卡片（ADR-0024）；Agent 改相册走插件自己的 MCP 工具，确认照第 5 节。
+  提供方不认识的动作回 `protocol`，不静默忽略；部分成功逐条回 `failed`。
+- 每人独立库：提供方按 `X-Wonton-User` 用这个人自己的上游账号，回包只含他能看到的（自己的、家人共享给他的、共享相册）。
+  别人的条目带 `owner`（本机用户名），壳据此标出来源。“家庭”账号当家庭相册的库主（第 6 节），归属写 `household`，壳单列。
+- 上游账号首次用到时由提供方建，和网页 OIDC 自动开户同一个时机（核心只把授权过的人转过来）；ADR-0114 第 1 项的
+  `member_accounts` 落地后，核心在授权时先调 `add`，首次建号这一步就提前，提供方的建号保持幂等。
+
+**去重。**
+
+- 手机上的客户端核给每一项算 SHA-1，写成 `sha1:<小写 hex>` 放进 `UploadItem.checksum`；按（系统资源 id、修改时间）缓存，
+  不每次重算。和 Immich 的去重同一种算法，提供方不用再算一遍。
+- 建备份任务前先问提供方 `POST /uploads/check`（一次最多 1000 个），已在这个人库里的不进任务：换手机、重装、两台手机里的
+  同一张都不重传。回收站里的算不算“已在库里”归提供方（Immich 的 `bulk-upload-check` 语义）。
+- 收尾时仍可能撞上重复（检查和上传之间别处传了同一张），`finish` 回 `duplicate: true`，核心把这一项记成 `Skipped`，不算失败。
+- 去重只决定传不传，不删手机上的东西；“备份后释放手机空间”是壳列出已备份项、用户确认后交给系统删。
+
+**实况照片。** iOS 的 Live Photo、Android 的动态照片是一张图加一段视频，各是一个 `UploadItem`。动态那段排在前面；
+静态那项带 `live_video_checksum`，提供方按这个校验和找到已收的那段再关联（Immich 的 `livePhotoVideoId`）。
+动态那段没传成时静态那项不传，跟着标同一个失败；重试时两段一起再来，不会留下一张丢了动态部分的图。
+
+没选的做法：
+
+- **客户端核直讲 Immich 接口**：见上，给具体插件开特例；还要把每人的 Immich key 发到手机上。
+- **只用 `GET /items` 的通用列表**：字段不够画网格，按月分桶、实况、相册、共享都得另加。
+- **原生页内嵌 Immich 网页**：主人已定原生；网页的滚动位置、手势、离线缓存都不在我们手里，进程被杀就回到入口。
+- **核心缓存缩略图**：核心只中转不缓冲（第 1 节）；缓存放客户端核，命中时连网都不用。
+
 ## 媒体源契约
 
 提供方按能力 `media_source` 实现路径；使用方是核心，核心不认具体插件。凭据由提供方签给核心，每个请求带 `X-Wonton-User`（任务或会话的主人）。
@@ -290,7 +346,8 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 | `POST /uploads` | 开始上传 | 体带 `item`（相对路径、大小、校验和、拍摄时间）；返回 `upload_id` 与已收字节数（为 0 或断点位置） |
 | `HEAD /uploads/{id}` | 查断点 | 返回 `Upload-Offset`；不存在时 404，核心从头开始 |
 | `PATCH /uploads/{id}` | 续传 | 体是从 `Upload-Offset` 起的字节，`Content-Range` 校验；冲突回 409 并给当前偏移 |
-| `POST /uploads/{id}/finish` | 收尾 | 提供方校验后入库，返回 `item_id` |
+| `POST /uploads/{id}/finish` | 收尾 | 提供方校验后入库，返回 `item_id`；收尾时才发现重复回 `duplicate: true`（第 9 节） |
+| `POST /uploads/check` | 去重检查 | 体带校验和（一次最多 1000 个），回已在这个人库里的那些和它们的 `item_id`（第 9 节） |
 | `DELETE /uploads/{id}` | 放弃 | 幂等 |
 | `POST /playback` | 取播放计划 | 体带 `item`、`DeviceProfile`、`position_ms`、`audio?`、`subtitle?`（同 `PlaybackRequest`；切轨用同一 `item`、当前 `position_ms` 与新轨号重取）；返回 `PlaybackPlan`（直连 URL 或转码流、音轨字幕、可 seek 范围、过期时间） |
 | `POST /playback/{session}/progress` | 报进度 | 体带位置毫秒与墙钟；提供方按上游约定写（scrobble、`Sessions/Playing/Progress`） |
@@ -298,6 +355,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 | `POST /playback/{session}/stopped` | 结束 | 带最终位置与原因 |
 | `GET /items/{id}/segments` | 章节/片头片尾 | 回 `segments`（类型、起点、终点）；没有就 404。plan 里带了就以 plan 为准，起播后新抓到的以新抓的为准 |
 | `GET /items/{id}/download` | 下离线 | 支持 `Range`/`If-Range`，回 206 与 `Content-Range` |
+| `/library/…` | 相册浏览 | 声明了 `library` 操作的提供方实现，路径和回包见第 9 节的表 |
 | `POST /revoke` | 收回 | 体只带 `name`；提供方只注销上游凭据、停掉上游会话（任务表在核心，核心自己取消任务、结束会话） |
 
 失败回 `MediaFailure` 信封（`code`、`message`、`retry_after?`），码即下面失败类别的名字。
@@ -365,6 +423,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 ## 接口影响
 
 - `crates/wonton-protocol`：新 `media` 模块，含能力名、头、路径、`MediaViewModel`/`PlaybackViewModel`/`MediaAction`。字段级见 `notes/adr0113-interfaces.md`。
+- `crates/wonton-protocol`：`media::library`（相册浏览的线上形状）、`media::uploads`（上传开始、收尾、去重检查的线上形状），`MediaOperation` 加 `library`（第 9 节）。
 - `crates/wonton-core`：能力表加 `media_source`，核心侧提供方客户端与两个契约测试假提供方；`/_wonton/api/media/{tasks,sessions,queue,streams,commands}`；MCP 工具与事件。
 - `crates/wonton-client`：`Action::Media`、`subscribe_media`/`subscribe_playback`、`player_state`、`_meta` 键；媒体页的 `#585` 会话改成 renderer。
 - `wonton-docs`：`plugin-spec.md` 补 `media_source` 契约与错误码，清单 `provides.media_source` 字段。

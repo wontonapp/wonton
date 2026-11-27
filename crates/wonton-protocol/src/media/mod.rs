@@ -5,7 +5,8 @@
 //! 失败回 [`MediaFailure`] 信封，码就是类别，文案由壳按类别出。
 //!
 //! 条目、设备档和两个取值枚举在这里；[`task`] 是长任务的骨架，上传与下载共用；[`session`] 是播放会话、
-//! 队列与播放计划；[`view`] 是壳渲染的视图和核发给设备的命令。
+//! 队列与播放计划；[`view`] 是壳渲染的视图和核发给设备的命令；[`uploads`] 是核心与提供方之间上传的
+//! 线上形状；[`library`] 是相册浏览（`library` 操作）。
 //!
 //! 取值认不出时落到各自的 `Other`，原值留着，能原样再序列化回去，别让一个新值把整条信封判成协议错
 //! （AGENTS.md）：核心和 App 分开升级，新核发的新命令旧 App 跳过那一条，同批其他命令照常读。唯一的例外是
@@ -17,8 +18,10 @@ pub use crate::personal_data::WONTON_USER_HEADER;
 #[cfg(feature = "uniffi")]
 use uuid::Uuid;
 
+pub mod library;
 pub mod session;
 pub mod task;
+pub mod uploads;
 pub mod view;
 
 pub use session::*;
@@ -152,6 +155,8 @@ pub enum MediaOperation {
     Download,
     Playback,
     List,
+    /// 相册浏览：时间线、相册、搜索、取字节和本人的写操作（[`library`]）
+    Library,
     /// 新版本新加的操作，原值在里。
     Other(String),
 }
@@ -161,6 +166,7 @@ known_or_other!(MediaOperation {
     Download => "download",
     Playback => "playback",
     List => "list",
+    Library => "library",
 });
 
 #[cfg(test)]
@@ -237,6 +243,10 @@ mod tests {
         assert_eq!(
             serde_json::to_value(MediaOperation::List).unwrap(),
             serde_json::json!("list")
+        );
+        assert_eq!(
+            serde_json::to_value(MediaOperation::Library).unwrap(),
+            serde_json::json!("library")
         );
     }
 
