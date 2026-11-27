@@ -90,6 +90,10 @@ impl ClientCore {
             plugins: watch::Sender::new(fake_plugins(current.plugins.borrow().clone())),
             pages: watch::Sender::new(fake_pages(current.pages.borrow().clone())),
             transfers: watch::Sender::new(current.transfers.borrow().clone()),
+            media: crate::media_link::MediaViews {
+                media: watch::Sender::new(current.media.media.borrow().clone()),
+                playback: watch::Sender::new(current.media.playback.borrow().clone()),
+            },
             onboarding: watch::Sender::new(fake_onboarding(current.onboarding.borrow().clone())),
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),

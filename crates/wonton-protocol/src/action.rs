@@ -71,6 +71,10 @@ pub enum Action {
     Agent {
         action: AgentAction,
     },
+    /// 媒体与传输（ADR-0113）：播放控制、停止、队列改动。
+    Media {
+        action: crate::media::MediaAction,
+    },
 }
 
 #[cfg(test)]

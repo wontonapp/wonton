@@ -156,6 +156,7 @@ impl ClientCore {
                     reason: "clients module is not wired yet".into(),
                 }),
             },
+            Action::Media { action } => scope.media.dispatch(action),
         }
     }
 }
