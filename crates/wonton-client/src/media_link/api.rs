@@ -31,7 +31,7 @@ pub(crate) fn failure(code: MediaFailureCode, message: impl Into<String>) -> Med
     }
 }
 
-fn unreachable(error: &reqwest::Error) -> MediaFailure {
+pub(crate) fn unreachable(error: &reqwest::Error) -> MediaFailure {
     failure(MediaFailureCode::TransportUnavailable, error.to_string())
 }
 
@@ -128,7 +128,7 @@ impl MediaApi {
         let response = if stale {
             response
         } else {
-            check(response).await?
+            checked(response).await?
         };
         let queue = read(response).await?;
         Ok(if stale {
@@ -148,11 +148,11 @@ impl MediaApi {
 
 /// 发出去，成功的原样返回，失败的折成信封。
 pub(crate) async fn send(request: RequestBuilder) -> Result<Response, MediaFailure> {
-    let response = request.send().await.map_err(|e| unreachable(&e))?;
-    check(response).await
+    checked(request.send().await.map_err(|e| unreachable(&e))?).await
 }
 
-async fn check(response: Response) -> Result<Response, MediaFailure> {
+/// 成功的原样返回，失败的折成信封。
+pub(crate) async fn checked(response: Response) -> Result<Response, MediaFailure> {
     if response.status().is_success() {
         return Ok(response);
     }

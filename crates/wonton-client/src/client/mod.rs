@@ -48,6 +48,7 @@ mod lan;
 mod limits;
 mod media;
 mod media_sources;
+mod media_video;
 mod music;
 mod my_avatar;
 mod page_color;

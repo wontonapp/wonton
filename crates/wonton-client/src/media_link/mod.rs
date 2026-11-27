@@ -7,6 +7,7 @@
 //! 字节由执行层负责，不在这里。
 
 mod api;
+mod download;
 mod loopback;
 #[cfg(test)]
 mod loopback_tests;
@@ -19,6 +20,7 @@ mod state;
 mod subscription;
 #[cfg(test)]
 mod tests;
+mod video;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -39,6 +41,8 @@ use wonton_protocol::{CoreError, HomeStatus, HomeViewModel};
 
 use crate::home::HomeLink;
 pub(crate) use api::{MediaApi, failure};
+use download::Downloads;
+pub use download::OfflineState;
 use loopback::Loopback;
 use player_bridge::{Bridge, Report};
 pub use player_bridge::{PlayerCommand, PlayerEvent};
@@ -46,6 +50,11 @@ pub use profile::PlayerSupport;
 use profile::Profiles;
 use state::Local;
 pub use subscription::{MediaSubscription, PlaybackSubscription};
+pub use video::{
+    VideoActionFailure, VideoActionResult, VideoDetail, VideoEntry, VideoEntryKind, VideoHome,
+    VideoLibrary, VideoLibraryKind, VideoMediaInfo, VideoPerson, VideoRole, VideoShelf,
+    VideoShelfKind, VideoSort, VideoWall, VideoWallQuery,
+};
 
 /// 壳的播放器该处在哪一步；只给壳用，不进协议。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -70,6 +79,7 @@ pub(crate) struct MediaLink {
     loopback: Loopback,
     profiles: Profiles,
     bridge: Mutex<Bridge>,
+    downloads: Arc<Downloads>,
     media: watch::Sender<MediaViewModel>,
     playback: watch::Sender<Option<PlaybackViewModel>>,
 }
@@ -107,6 +117,7 @@ impl MediaLink {
             loopback: Loopback::new(),
             profiles: Profiles::open(dir),
             bridge: Mutex::new(Bridge::default()),
+            downloads: Downloads::open(dir),
             media: views.media,
             playback: views.playback,
         });
@@ -154,6 +165,7 @@ impl MediaLink {
         };
         match pulled.await {
             Ok((api, tasks, sessions)) => {
+                self.run_downloads(&api, &tasks);
                 self.update(|local| local.align(tasks, sessions));
                 // 队列单独拉：拉不到不挡任务和会话的对齐，原因记在播放视图上。壳改队列要带它的版本。
                 match api.get::<Queue>(&queue_path()).await {
@@ -171,10 +183,18 @@ impl MediaLink {
 
     pub(crate) fn dispatch(self: &Arc<Self>, action: MediaAction) -> Result<(), CoreError> {
         match action {
-            MediaAction::StartUpload { .. } | MediaAction::StartDownload { .. } => {
-                Err(CoreError::NotReady {
-                    reason: "upload and download bytes belong to the transfer executor, which this client core does not have yet".into(),
-                })
+            MediaAction::StartUpload { .. } => Err(CoreError::NotReady {
+                reason: "media uploads belong to the upload worker, which this client core does not have yet".into(),
+            }),
+            // 核心让这台设备开始或接着下：重拉任务表，按它对齐。
+            MediaAction::StartDownload { .. } => {
+                let link = self.clone();
+                self.runtime.spawn(async move {
+                    if let Err(failure) = link.sync().await {
+                        tracing::warn!(code = ?failure.code, error = %failure.message, "download tasks could not be aligned with the server");
+                    }
+                });
+                Ok(())
             }
             // 新核心发的新动作，这一版跳过（AGENTS.md 的向前兼容）。
             MediaAction::Other(_) => Ok(()),
@@ -246,9 +266,27 @@ impl MediaLink {
     }
 
     pub(crate) async fn create_task(&self, create: TaskCreate) -> Result<MediaTask, MediaFailure> {
-        let task: MediaTask = self.api()?.post(&tasks_path(), &create).await?;
+        let api = self.api()?;
+        let task: MediaTask = api.post(&tasks_path(), &create).await?;
+        self.run_downloads(&api, std::slice::from_ref(&task));
         self.update(|local| local.put_task(task.clone()));
         Ok(task)
+    }
+
+    /// 这台设备的下载任务交给执行层：该下的下，停了的停。
+    fn run_downloads(&self, api: &MediaApi, tasks: &[MediaTask]) {
+        let device = self.home.view().device_id;
+        self.downloads.reconcile(&self.runtime, api, &device, tasks);
+    }
+
+    /// 这一条在这台设备上的离线副本。
+    pub(crate) fn offline(&self, item_id: &str) -> Option<OfflineState> {
+        self.downloads.offline(item_id)
+    }
+
+    /// 删掉这一条的离线副本。
+    pub(crate) fn remove_offline(&self, item_id: &str) -> Result<(), MediaFailure> {
+        self.downloads.remove(item_id)
     }
 
     /// 本机回环前缀：播放器、后台传输连 `{前缀}/sessions/{id}/stream` 这样的地址。
