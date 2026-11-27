@@ -1,5 +1,4 @@
 # 推送中继
-本目录里的 `push.808cbd.com` 是**真实部署子域**，换域名要改 `install.sh` 的 `DOMAIN` 与 nginx `server_name`；占位示例是 `192.0.2.10`。
 
 ADR-0003 的 M2：家里服务器按 Web Push（RFC 8030）把**已经加密给设备**的通知发到这里（RFC 8291 的
 aes128gcm），这里把它交给 [gorush](https://github.com/appleboy/gorush)，由 gorush 发到 APNs 或 FCM。
