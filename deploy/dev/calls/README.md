@@ -75,5 +75,5 @@ RELAYS='https://<令牌>@relay.808cbd.com,no-n0' STACK=call-smoke HOST=localhost
 - 每轮开始会 `pm clear` 两个设备（配对、权限、本地缓存的房间都清空），再重新配对；这是为了让“全新安装会先出 Loading/授权页”不再被误判成已配对。**relay 组例外**：它故意先在直连下把 EC 页面打开把 JS 包放进缓存，再下规则。
 - 自建中继当前跑 iroh-relay v1.4.1，App 的 iroh 1.5.0 只发 `Sec-WebSocket-Protocol: iroh-relay`，v1.4.1 只认
   `iroh-relay-v1|v2`，升级回 400 `unsupported relay version`（`curl` 实测：`iroh-relay` 400、v1/v2 101）。relay 组会卡在
-  block 后的 `transport-unavailable`/`no relay is reachable`；把 relay 镜像升到 v1.5.0 重部署后再跑。
+  block 后的 `transport-unavailable`/`no relay is reachable`；把 relay 镜像升到 v1.5.0 重部署后再跑（本仓的 `deploy/dev/entry-cloud/compose.yaml` 已钉 v1.5.0 摘要）。
 - 中继组要 `adb root` 后改设备的 iptables（只动模拟器内部，脚本退出时 `iptables -F OUTPUT` 还原）；真机需要 root/adb root。

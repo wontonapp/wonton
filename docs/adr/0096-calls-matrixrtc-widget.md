@@ -372,7 +372,7 @@ RELAYS='https://<令牌>@relay.808cbd.com,no-n0' STAGE=relay STACK=call-e2e-rela
 
 根因：relay 主机跑的是 iroh-relay **v1.4.1**，它只认 `iroh-relay-v1|v2` 子协议；App 里的 iroh **1.5.0** 只发新的
 `iroh-relay`。同版本的 core 侧 QUIC 能连，只有 App 的 WebSocket relay 挂。修法：把 relay 镜像升到 **v1.5.0** 后重新
-部署 `relay.808cbd.com`（194 已 pull 到 `n0computer/iroh-relay:v1.5.0`），再按上面的命令复跑两轮，四类判据的原文和
+部署 `relay.808cbd.com`（194 已 pull 到 `n0computer/iroh-relay:v1.5.0`；本仓的 `deploy/dev/entry-cloud/compose.yaml` 已钉 v1.5.0 摘要，差部署），再按上面的命令复跑两轮，四类判据的原文和
 速率/丢包/抖动补在这里。relay 域名在协调手里，本仓改不了。
 
 限制：只安卓模拟器；中继主机到 194 的线路和令牌配额决定实际速率；每连接 256 KiB/s 的限速在 iroh 中继上，不在本仓。
