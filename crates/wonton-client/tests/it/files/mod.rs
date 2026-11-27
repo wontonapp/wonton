@@ -4,6 +4,7 @@
 mod cards;
 mod download;
 mod download_resume;
+mod operations;
 mod transfers;
 mod upload;
 mod upload_resume;
