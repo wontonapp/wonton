@@ -6,7 +6,6 @@ use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::IntoResponse;
 use axum::routing::post;
 use serde_json::json;
-use tokio::net::TcpListener;
 use wonton_protocol::media::uploads::UploadStart;
 use wonton_protocol::media::{
     MediaFailure, MediaFailureCode, MediaKind, MediaOperation, MediaTask, Progress, ProgressUnit,
@@ -354,10 +353,9 @@ async fn failures_keep_the_providers_code_or_follow_the_status() {
 
 #[tokio::test]
 async fn a_provider_that_does_not_answer_is_unavailable() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let dead = Endpoint::Tcp(listener.local_addr().unwrap().to_string());
-    drop(listener);
+    // 不用“绑了再放掉”的端口：并行的测试会立刻占走它。没人听的套接字路径必定连不上。
     let dir = tempfile::tempdir().unwrap();
+    let dead = Endpoint::unix(dir.path().join("gone.sock"));
     let (providers, _) = providers(&dir, vec![(photos(), dead)]);
     let failure = providers
         .route("alice", anyone, &MediaOperation::Upload, None, None)
