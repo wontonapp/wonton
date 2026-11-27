@@ -83,7 +83,7 @@ pub use media_link::{
     MediaSubscription, OfflineState, PlaybackSubscription, PlayerCommand, PlayerEvent, PlayerPhase,
     PlayerState, PlayerSupport, VideoActionFailure, VideoActionResult, VideoDetail, VideoEntry,
     VideoEntryKind, VideoHome, VideoLibrary, VideoLibraryKind, VideoMediaInfo, VideoPerson,
-    VideoRole, VideoShelf, VideoShelfKind, VideoSort, VideoWall, VideoWallQuery,
+    VideoPlayback, VideoRole, VideoShelf, VideoShelfKind, VideoSort, VideoWall, VideoWallQuery,
 };
 pub use pages::ContentPageSubscription;
 pub use pages::bridge::{

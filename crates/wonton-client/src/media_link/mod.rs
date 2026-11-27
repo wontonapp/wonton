@@ -21,6 +21,7 @@ mod subscription;
 #[cfg(test)]
 mod tests;
 mod video;
+mod video_play;
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -55,6 +56,8 @@ pub use video::{
     VideoLibrary, VideoLibraryKind, VideoMediaInfo, VideoPerson, VideoRole, VideoShelf,
     VideoShelfKind, VideoSort, VideoWall, VideoWallQuery,
 };
+pub use video_play::VideoPlayback;
+pub(crate) use video_play::session_id;
 
 /// 壳的播放器该处在哪一步；只给壳用，不进协议。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -80,6 +83,7 @@ pub(crate) struct MediaLink {
     profiles: Profiles,
     bridge: Mutex<Bridge>,
     downloads: Arc<Downloads>,
+    reports: video_play::Reports,
     media: watch::Sender<MediaViewModel>,
     playback: watch::Sender<Option<PlaybackViewModel>>,
 }
@@ -118,6 +122,7 @@ impl MediaLink {
             profiles: Profiles::open(dir),
             bridge: Mutex::new(Bridge::default()),
             downloads: Downloads::open(dir),
+            reports: video_play::Reports::default(),
             media: views.media,
             playback: views.playback,
         });
