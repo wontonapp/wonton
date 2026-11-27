@@ -1,17 +1,20 @@
 //! 任务：建、列、读，暂停/继续/取消/重试，设备报进度、报写完、报失败。
 
+use std::sync::Arc;
+
 use axum::Extension;
 use axum::body::Bytes;
-use axum::extract::{Path, Query};
+use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Json, Response};
 use hyper::StatusCode;
 use wonton_protocol::media::api::{PauseRequest, TaskList, TaskProgressReport, TaskQuery};
 use wonton_protocol::media::{
-    MediaFailure, MediaFailureCode, MediaTask, PauseReason, Progress, ProgressUnit, TaskCreate,
-    TaskId, TaskKind, TaskState, TaskTarget, new_task_id,
+    MediaFailure, MediaFailureCode, MediaOperation, MediaTask, PauseReason, Progress, ProgressUnit,
+    TaskCreate, TaskId, TaskKind, TaskState, TaskTarget, new_task_id,
 };
 
-use super::{Caller, reply, service_failure};
+use super::{Caller, MediaQuery, reply, service_failure};
+use crate::gateway::Gateway;
 use crate::media::session_service::unix_now_ms;
 use crate::plugin::media_source::failure;
 
@@ -48,8 +51,12 @@ fn json<T: serde::de::DeserializeOwned>(body: &Bytes) -> Reply<T> {
     })
 }
 
-pub(super) async fn create(Extension(caller): Extension<Caller>, body: Bytes) -> Response {
-    let made = (|| {
+pub(super) async fn create(
+    State(gateway): State<Arc<Gateway>>,
+    Extension(caller): Extension<Caller>,
+    body: Bytes,
+) -> Response {
+    let made: Reply<MediaTask> = async {
         let create: TaskCreate = json(&body)?;
         let person = caller.person(&create.person)?;
         let device = caller.device(&create.device)?;
@@ -85,16 +92,35 @@ pub(super) async fn create(Extension(caller): Extension<Caller>, body: Bytes) ->
                 "这一版核心不认识这种任务",
             ));
         }
+        // 上传点了名：先按选提供方的规则核一遍（在不在跑、这个人能不能用、能不能上传），过了再记下，
+        // 不等第一片才被提供方拒。
+        let source = match (&task.target, &create.options.source) {
+            (TaskTarget::Upload(_), Some(source)) => Some(
+                caller
+                    .media
+                    .providers
+                    .route(
+                        &task.person,
+                        caller.allowed(&gateway),
+                        &MediaOperation::Upload,
+                        None,
+                        Some(source),
+                    )
+                    .await?
+                    .provider,
+            ),
+            _ => None,
+        };
         let store = &caller.media.store;
         store.create_task(&task).map_err(|e| service_failure(&e))?;
-        // 上传点了名就先记下那一家；能不能用、在不在跑，开第一项时按记下的查。
-        if let (TaskTarget::Upload(_), Some(source)) = (&task.target, &create.options.source) {
+        if let Some(source) = source {
             store
-                .bind_task_provider(&task.person, task.id, source)
+                .bind_task_provider(&task.person, task.id, &source)
                 .map_err(|e| service_failure(&e))?;
         }
         Ok(task)
-    })();
+    }
+    .await;
     match made {
         Ok(task) => (StatusCode::CREATED, Json(task)).into_response(),
         Err(failure) => reply(&failure),
@@ -103,7 +129,7 @@ pub(super) async fn create(Extension(caller): Extension<Caller>, body: Bytes) ->
 
 pub(super) async fn list(
     Extension(caller): Extension<Caller>,
-    Query(query): Query<TaskQuery>,
+    MediaQuery(query): MediaQuery<TaskQuery>,
 ) -> Response {
     respond((|| {
         let person = caller.person(query.person.as_deref().unwrap_or_default())?;

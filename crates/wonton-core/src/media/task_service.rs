@@ -134,6 +134,11 @@ impl TaskService {
             partial_failures: Vec::new(),
         };
         self.store.create_task(&new)?;
+        // 点名或首次选定的那家跟着走：重试不重新挑，免得换了一家。
+        if let Some(provider) = self.store.task_provider(&new.person, old.id)? {
+            self.store
+                .bind_task_provider(&new.person, new.id, &provider)?;
+        }
         Ok(new)
     }
 
@@ -146,10 +151,12 @@ impl TaskService {
         Ok(())
     }
 
-    /// 暂停或等条件的任务回队；到点重试也用它。
+    /// 暂停或等条件的任务回队；到点重试也用它。已在排队的不动。
     pub fn resume(&self, task: TaskId) -> Result<(), TaskServiceError> {
         self.change(task, |task| {
-            self.move_to(task, TaskState::Queued)?;
+            if task.state != TaskState::Queued {
+                self.move_to(task, TaskState::Queued)?;
+            }
             task.next_attempt_at = None;
             Ok(())
         })?;
@@ -665,10 +672,13 @@ mod tests {
         let mut queued = task(2);
         queued.state = TaskState::Queued;
         store.create_task(&queued).unwrap();
-        assert_illegal(
-            service.resume(queued.id),
-            TaskState::Queued,
-            TaskState::Queued,
+        // 排队中的“继续”什么也不用做；排队中也能暂停（设备还没开始取字节的下载）。
+        service.resume(queued.id).unwrap();
+        assert_eq!(stored(&store, 2).state, TaskState::Queued);
+        service.pause(queued.id, PauseReason::User).unwrap();
+        assert_eq!(
+            stored(&store, 2).state,
+            TaskState::Paused(PauseReason::User)
         );
         service.cancel(queued.id).unwrap();
         assert_eq!(stored(&store, 2).state, TaskState::Cancelled);

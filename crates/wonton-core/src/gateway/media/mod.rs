@@ -14,11 +14,13 @@ mod tasks;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::{Request, State};
+use axum::extract::{FromRequestParts, Query, Request, State};
+use axum::http::request::Parts;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Json, Response};
 use axum::routing::{get, post};
 use hyper::StatusCode;
+use serde::de::DeserializeOwned;
 use wonton_protocol::media::api::MEDIA_API_PREFIX;
 use wonton_protocol::media::{MediaFailure, MediaFailureCode, WONTON_DEVICE_HEADER};
 
@@ -150,20 +152,46 @@ pub(super) fn reply(failure: &MediaFailure) -> Response {
     (status_of(&failure.code), Json(failure)).into_response()
 }
 
+/// 每个码都列出来、不留兜底：新加的码要在这里定状态码，不会悄悄落成 502 让壳以为核心坏了。
 fn status_of(code: &MediaFailureCode) -> StatusCode {
+    use MediaFailureCode as C;
     match code {
-        MediaFailureCode::PermissionDenied | MediaFailureCode::LocalPermissionDenied => {
-            StatusCode::FORBIDDEN
+        C::PermissionDenied | C::LocalPermissionDenied => StatusCode::FORBIDDEN,
+        C::MediaGone => StatusCode::NOT_FOUND,
+        C::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+        C::PluginUnavailable | C::TransportUnavailable => StatusCode::SERVICE_UNAVAILABLE,
+        C::ServerStorageFull | C::LocalStorageFull => StatusCode::INSUFFICIENT_STORAGE,
+        C::UnsupportedByDevice => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+        C::Protocol => StatusCode::BAD_REQUEST,
+        // 要用户选一家带 `source` 再来：请求缺东西，不是核心或上游坏了。
+        C::SourceRequired => StatusCode::UNPROCESSABLE_ENTITY,
+        C::AuthenticationRequired
+        | C::UpstreamError
+        | C::LocalSourceUnavailable
+        | C::LocalIo
+        | C::SuspendedBySystem
+        | C::Other(_) => StatusCode::BAD_GATEWAY,
+    }
+}
+
+/// 查询串按约定的形状解析；解析不了回 `protocol` 信封，不用 axum 默认的纯文本 400。
+pub(super) struct MediaQuery<T>(pub(super) T);
+
+impl<T, S> FromRequestParts<S> for MediaQuery<T>
+where
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = Response;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        match Query::<T>::from_request_parts(parts, state).await {
+            Ok(Query(value)) => Ok(Self(value)),
+            Err(rejection) => Err(reply(&failure(
+                MediaFailureCode::Protocol,
+                format!("查询串不是约定的形状：{}", rejection.body_text()),
+            ))),
         }
-        MediaFailureCode::MediaGone => StatusCode::NOT_FOUND,
-        MediaFailureCode::RateLimited => StatusCode::TOO_MANY_REQUESTS,
-        MediaFailureCode::PluginUnavailable | MediaFailureCode::TransportUnavailable => {
-            StatusCode::SERVICE_UNAVAILABLE
-        }
-        MediaFailureCode::ServerStorageFull => StatusCode::INSUFFICIENT_STORAGE,
-        MediaFailureCode::UnsupportedByDevice => StatusCode::UNSUPPORTED_MEDIA_TYPE,
-        MediaFailureCode::Protocol => StatusCode::BAD_REQUEST,
-        _ => StatusCode::BAD_GATEWAY,
     }
 }
 

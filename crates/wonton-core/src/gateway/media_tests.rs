@@ -8,7 +8,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::Path;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use hyper::{Method, Request};
 use serde_json::{Value, json};
 use wonton_protocol::media::api::{
@@ -23,20 +23,21 @@ use super::files_tests::paired_gateway;
 use super::tests::CORE;
 use super::{TunnelPeer, router};
 use crate::media::Media;
+use crate::media::provider::Candidate;
 use crate::media::test_support::{FakeDirectory, Seen, Served, candidate, caps, serve};
 
-const PROVIDER: &str = "app.example.media";
+pub(super) const PROVIDER: &str = "app.example.media";
 
-/// 假提供方的状态：一个上传号对应的已收字节；`forget` 打开后 `HEAD` 一律回 404。
+/// 假提供方的状态：一个上传号对应的已收字节；`forget` 打开后 `HEAD`、`PATCH` 一律回 404（上传过期）。
 #[derive(Default)]
-struct Uploads {
+pub(super) struct Uploads {
     next: u32,
     received: Vec<(String, Vec<u8>)>,
-    forget: bool,
-    started: Vec<Value>,
+    pub(super) forget: bool,
+    pub(super) started: Vec<Value>,
 }
 
-type Shared = Arc<Mutex<Uploads>>;
+pub(super) type Shared = Arc<Mutex<Uploads>>;
 
 const CONTENT: &[u8] = b"0123456789";
 
@@ -93,6 +94,9 @@ fn provider(shared: Shared) -> Router {
             .patch(
                 move |Path(id): Path<String>, headers: HeaderMap, body: Bytes| async move {
                     let mut state = patch.lock().unwrap();
+                    if state.forget {
+                        return StatusCode::NOT_FOUND.into_response();
+                    }
                     let (_, bytes) = state
                         .received
                         .iter_mut()
@@ -154,23 +158,34 @@ fn provider(shared: Shared) -> Router {
                 partial(range_start(&headers, header::RANGE).unwrap_or(0))
             }),
         )
+        .route(
+            "/playback/{session}/queue",
+            put(|| async { StatusCode::NO_CONTENT }),
+        )
 }
 
-struct Fixture {
+pub(super) struct Fixture {
     _dir: tempfile::TempDir,
     peer: TunnelPeer,
     app: Router,
     seen: Seen,
-    uploads: Shared,
+    pub(super) uploads: Shared,
     _served: Served,
+    /// 另外挂上的提供方，按挂上的顺序。
+    others: Vec<(Seen, Served)>,
 }
 
-async fn fixture() -> Fixture {
+pub(super) async fn fixture() -> Fixture {
+    fixture_with(Vec::new()).await
+}
+
+/// 除了 [`PROVIDER`]，再挂几家假提供方。
+pub(super) async fn fixture_with(extra: Vec<(Candidate, Router)>) -> Fixture {
     let uploads = Shared::default();
     let (endpoint, seen, served) = serve(provider(uploads.clone())).await;
     let dir = tempfile::TempDir::new().unwrap();
     let paired = paired_gateway(dir.path()).await;
-    let (directory, _) = FakeDirectory::new(vec![(
+    let mut entries = vec![(
         candidate(
             PROVIDER,
             &[
@@ -181,7 +196,14 @@ async fn fixture() -> Fixture {
             &[MediaKind::Photo, MediaKind::Video],
         ),
         endpoint,
-    )]);
+    )];
+    let mut others = Vec::new();
+    for (candidate, router) in extra {
+        let (endpoint, seen, served) = serve(router).await;
+        entries.push((candidate, endpoint));
+        others.push((seen, served));
+    }
+    let (directory, _) = FakeDirectory::new(entries);
     let media = Media::with_directory(
         &dir.path().join("media"),
         Arc::new(directory),
@@ -196,6 +218,7 @@ async fn fixture() -> Fixture {
         seen,
         uploads,
         _served: served,
+        others,
     }
 }
 
@@ -204,7 +227,7 @@ impl Fixture {
         crate::files::device_label(&self.peer.0)
     }
 
-    async fn send(
+    pub(super) async fn send(
         &self,
         method: Method,
         path: &str,
@@ -232,7 +255,12 @@ impl Fixture {
         (status, headers, body)
     }
 
-    async fn json(&self, method: Method, path: &str, body: Value) -> (StatusCode, Value) {
+    pub(super) async fn json(
+        &self,
+        method: Method,
+        path: &str,
+        body: Value,
+    ) -> (StatusCode, Value) {
         let (status, _, bytes) = self
             .send(
                 method,
@@ -249,7 +277,7 @@ impl Fixture {
         (status, value)
     }
 
-    async fn upload_task(&self, path: &str) -> String {
+    pub(super) async fn upload_task(&self, path: &str) -> String {
         let (status, task) = self
             .json(
                 Method::POST,
@@ -269,7 +297,12 @@ impl Fixture {
         task["id"].as_str().unwrap().to_owned()
     }
 
-    async fn patch(&self, task: &str, range: &str, bytes: &'static [u8]) -> (StatusCode, Value) {
+    pub(super) async fn patch(
+        &self,
+        task: &str,
+        range: &str,
+        bytes: &'static [u8],
+    ) -> (StatusCode, Value) {
         let path = task_upload_path(task.parse().unwrap(), "i1");
         let (status, _, body) = self
             .send(
@@ -282,7 +315,7 @@ impl Fixture {
         (status, serde_json::from_slice(&body).unwrap())
     }
 
-    async fn start_session(&self) -> (PlaybackSessionId, Value) {
+    pub(super) async fn start_session(&self) -> (PlaybackSessionId, Value) {
         let f = self;
         let (status, session) = f
         .json(
@@ -302,14 +335,22 @@ impl Fixture {
         (session["id"].as_str().unwrap().parse().unwrap(), session)
     }
 
-    fn hits(&self, prefix: &str) -> usize {
-        self.seen
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(target, _, _)| target.starts_with(prefix))
-            .count()
+    pub(super) fn hits(&self, prefix: &str) -> usize {
+        count(&self.seen, prefix)
     }
+
+    /// 第 `index` 家另外挂上的提供方收到几个以 `prefix` 开头的请求。
+    pub(super) fn other_hits(&self, index: usize, prefix: &str) -> usize {
+        count(&self.others[index].0, prefix)
+    }
+}
+
+fn count(seen: &Seen, prefix: &str) -> usize {
+    seen.lock()
+        .unwrap()
+        .iter()
+        .filter(|(target, _, _)| target.starts_with(prefix))
+        .count()
 }
 
 #[tokio::test]

@@ -278,6 +278,16 @@ impl Store {
         expected: u64,
     ) -> Result<bool, MediaStoreError> {
         let conn = self.conn()?;
+        self.queue_cas(&conn, person, queue, expected)
+    }
+
+    pub(super) fn queue_cas(
+        &self,
+        conn: &Connection,
+        person: &str,
+        queue: &Queue,
+        expected: u64,
+    ) -> Result<bool, MediaStoreError> {
         let changed = conn
             .execute(
                 "INSERT INTO queue (person, revision, entries, cursor, mode, sleep_at_ms)

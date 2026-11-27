@@ -10,21 +10,24 @@ use wonton_protocol::media::{
 use super::task_service::{TaskService, TaskServiceError};
 
 impl TaskService {
-    /// 设备开始传：排队的经 `Preparing` 进 `Running`，等网络、等电源的直接回 `Running`；已在跑的不动。
-    /// 暂停的、终态的不让开始。
+    /// 设备开始传（开一项上传、来取下载的字节）。规则见 [`Self::start`]。
     pub fn begin(&self, task: TaskId) -> Result<MediaTask, TaskServiceError> {
-        self.change(task, |task| {
-            match task.state {
-                TaskState::Running => {}
-                TaskState::Queued => {
-                    self.move_to(task, TaskState::Preparing)?;
-                    self.move_to(task, TaskState::Running)?;
-                }
-                _ => self.move_to(task, TaskState::Running)?,
+        self.change(task, |task| self.start(task))
+    }
+
+    /// 排队的经 `Preparing` 进 `Running`；暂停、等条件的直接回 `Running`（设备又来传字节就是在传）；
+    /// 已在跑的不动；终态报非法转移，再跑是新任务。
+    fn start(&self, task: &mut MediaTask) -> Result<(), TaskServiceError> {
+        match task.state {
+            TaskState::Running => {}
+            TaskState::Queued => {
+                self.move_to(task, TaskState::Preparing)?;
+                self.move_to(task, TaskState::Running)?;
             }
-            task.next_attempt_at = None;
-            Ok(())
-        })
+            _ => self.move_to(task, TaskState::Running)?,
+        }
+        task.next_attempt_at = None;
+        Ok(())
     }
 
     /// 一项的已收字节推进到 `offset`；进度按各项偏移合计。
@@ -78,6 +81,13 @@ impl TaskService {
         total: Option<u64>,
     ) -> Result<MediaTask, TaskServiceError> {
         self.change(task, |task| {
+            // 设备在写就是在传：排队、等条件的跟着进 `Running`；用户暂停的照记进度，不替他恢复。
+            if matches!(
+                task.state,
+                TaskState::Queued | TaskState::WaitingNetwork | TaskState::WaitingPower
+            ) {
+                self.start(task)?;
+            }
             task.progress.done = done;
             if total.is_some() {
                 task.progress.total = total;
@@ -86,9 +96,12 @@ impl TaskService {
         })
     }
 
-    /// 下载写完了。
+    /// 下载写完了。还没进 `Running` 的（暂停那一刻正好写完、手机上本来就有）先进，再落 `Done`。
     pub fn complete(&self, task: TaskId) -> Result<MediaTask, TaskServiceError> {
         self.change(task, |task| {
+            if !matches!(task.state, TaskState::Running | TaskState::Preparing) {
+                self.start(task)?;
+            }
             if let Some(total) = task.progress.total {
                 task.progress.done = total;
             }

@@ -1,6 +1,6 @@
 use wonton_protocol::media::{
     ControlOp, IllegalTransition, PauseReason, PlaybackSession, PlaybackSessionId, Queue,
-    QueueMode, TaskState,
+    QueueMode, Revision, TaskState,
 };
 
 use super::state::{clamp_to_duration, is_active};
@@ -21,13 +21,18 @@ impl SessionService {
         for _ in 0..3 {
             self.ensure_active(&stored.session, &ctl)?;
             let queue = self.apply(&mut stored.session, &ctl)?;
-            if self
-                .store
-                .save_session_cas(&stored.session, stored.version)?
-            {
-                if let Some(queue) = queue {
-                    self.store.save_queue(&stored.session.person, &queue)?;
-                }
+            let landed = match &queue {
+                Some((queue, expected)) => self.store.save_session_and_queue_cas(
+                    &stored.session,
+                    stored.version,
+                    queue,
+                    *expected,
+                )?,
+                None => self
+                    .store
+                    .save_session_cas(&stored.session, stored.version)?,
+            };
+            if landed {
                 if matches!(ctl, ControlOp::Pause | ControlOp::SeekMs(_)) {
                     self.mark_progress(session, (self.clock)());
                 }
@@ -61,12 +66,12 @@ impl SessionService {
         .into())
     }
 
-    /// 按控制动作改会话；换曲顺带把改过的队列交回去，等会话落库后再存。
+    /// 按控制动作改会话；换曲顺带把改过的队列和读到的版本交回去，和会话一起比较写。
     fn apply(
         &self,
         session: &mut PlaybackSession,
         ctl: &ControlOp,
-    ) -> Result<Option<Queue>, SessionServiceError> {
+    ) -> Result<Option<(Queue, Revision)>, SessionServiceError> {
         match ctl {
             ControlOp::Play | ControlOp::Resume => {
                 if session.state != TaskState::Running {
@@ -110,7 +115,7 @@ impl SessionService {
         &self,
         session: &mut PlaybackSession,
         forward: bool,
-    ) -> Result<Option<Queue>, SessionServiceError> {
+    ) -> Result<Option<(Queue, Revision)>, SessionServiceError> {
         let Some(mut queue) = self.store.queue(&session.person)? else {
             return Ok(None);
         };
@@ -133,11 +138,12 @@ impl SessionService {
         if next == current && queue.cursor == Some(current) {
             return Ok(None);
         }
+        let expected = queue.revision;
         queue.cursor = Some(next);
         queue.bump();
         session.item = queue.entries[next].clone();
         session.position_ms = 0;
         session.plan = None;
-        Ok(Some(queue))
+        Ok(Some((queue, expected)))
     }
 }

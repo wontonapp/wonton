@@ -34,6 +34,10 @@ use crate::http::HttpClient;
 /// 一次调用等多久。上游（Jellyfin 取播放计划要探片源）偶尔慢，比个人数据宽一些。
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// 字节转发等响应头多久，和文件代理同一个数（`gateway::proxy` 的 `RESPONSE_HEADER_DEADLINE`）：冷启动的
+/// 转码、慢盘收尾都可能超过 JSON 调用的 20 秒。从请求体写完才起算，大分片本身不受它限。
+const BYTES_HEADER_DEADLINE: Duration = Duration::from_secs(120);
+
 /// 响应体上限，和 [`HttpClient`] 解析上游 JSON 的上限一致。条目一页、播放计划都远小于它。
 const MAX_BODY_BYTES: usize = 1 << 20;
 
@@ -106,6 +110,7 @@ impl MediaSourceClient {
     }
 
     /// 这些校验和里哪些已在这个人的库里（ADR-0113 第 9 节的去重）。超过单次上限的分批问，回包合在一起。
+    #[allow(dead_code)] // 建备份任务前问去重（M18 的执行层）接上之前没有调用点。
     pub(crate) async fn check_uploads(
         &self,
         user: &str,
@@ -313,7 +318,7 @@ impl MediaSourceClient {
                 *request.headers_mut() = headers;
                 let response = self
                     .http
-                    .send_forwarded(request, Some(CALL_TIMEOUT))
+                    .send_forwarded(request, Some(BYTES_HEADER_DEADLINE))
                     .await
                     .map_err(|e| {
                         failure(
@@ -324,18 +329,31 @@ impl MediaSourceClient {
                 response.map(Body::new)
             }
             Some(client) => {
-                let response = client
+                // 有体的（续写）在 reqwest 这边分不开“体还在写”和“等响应头”，只给取字节的设期限。
+                let bodyless = matches!(method, Method::GET | Method::HEAD);
+                let sent = client
                     .request(method, &url)
                     .headers(headers)
                     .body(reqwest::Body::wrap_stream(body.into_data_stream()))
-                    .send()
-                    .await
-                    .map_err(|e| {
-                        failure(
-                            MediaFailureCode::PluginUnavailable,
-                            format!("unix 套接字请求失败：{}", crate::http::error_chain(&e)),
-                        )
-                    })?;
+                    .send();
+                let sent = if bodyless {
+                    tokio::time::timeout(BYTES_HEADER_DEADLINE, sent)
+                        .await
+                        .map_err(|_| {
+                            failure(
+                                MediaFailureCode::PluginUnavailable,
+                                format!("媒体源 {} 秒没回响应头", BYTES_HEADER_DEADLINE.as_secs()),
+                            )
+                        })?
+                } else {
+                    sent.await
+                };
+                let response = sent.map_err(|e| {
+                    failure(
+                        MediaFailureCode::PluginUnavailable,
+                        format!("unix 套接字请求失败：{}", crate::http::error_chain(&e)),
+                    )
+                })?;
                 let mut built = Response::builder().status(response.status());
                 if let Some(target) = built.headers_mut() {
                     *target = response.headers().clone();

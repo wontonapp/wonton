@@ -13,8 +13,8 @@ use hyper::StatusCode;
 use wonton_protocol::media::api::{SessionList, session_stream_path};
 use wonton_protocol::media::provider::{PlaybackProgress, PlaybackStopped};
 use wonton_protocol::media::{
-    ControlOp, MediaAction, MediaFailure, MediaFailureCode, MediaOperation, PlaybackRequest,
-    PlaybackSession, PlaybackSessionId, ProviderStream, TrackKind,
+    ControlOp, MediaAction, MediaFailure, MediaFailureCode, MediaItemRef, MediaOperation,
+    PlaybackRequest, PlaybackSession, PlaybackSessionId, ProviderStream, TrackKind,
 };
 
 use super::{Caller, reply, service_failure};
@@ -91,7 +91,34 @@ pub(super) async fn session_route(
     caller
         .media
         .providers
-        .route_to(&caller.person, caller.allowed(gateway), &provider)
+        .route_to(
+            &caller.person,
+            caller.allowed(gateway),
+            &provider,
+            &MediaOperation::Playback,
+            Some(&session.item.kind),
+        )
+        .await
+}
+
+/// 按条目自己的来源选提供方（没带按主人的默认、只有一家的规则）：队列是相册、音乐、影视共用的一条，
+/// 下一项可能来自另一家，不能拿会话起播那家去问。
+pub(super) async fn item_route(
+    gateway: &Gateway,
+    caller: &Caller,
+    person: &str,
+    item: &MediaItemRef,
+) -> Reply<ProviderRoute> {
+    caller
+        .media
+        .providers
+        .route(
+            person,
+            caller.allowed(gateway),
+            &MediaOperation::Playback,
+            Some(&item.kind),
+            item.source.as_deref(),
+        )
         .await
 }
 
@@ -175,15 +202,27 @@ pub(super) async fn control(
             .sessions
             .control(session.id, ctl.clone())
             .map_err(|e| service_failure(&e))?;
-        if !(replan || updated.plan.is_none()) || updated.stop_reason.is_some() {
-            return Ok(updated);
+        let updated = if !(replan || updated.plan.is_none()) || updated.stop_reason.is_some() {
+            updated
+        } else {
+            replan_session(&gateway, &caller, &updated, &ctl).await?
+        };
+        // 换曲动了队列的指针，同样推给提供方。
+        if matches!(ctl, ControlOp::Next | ControlOp::Prev) {
+            let queue = caller
+                .media
+                .sessions
+                .queue(&caller.person)
+                .map_err(|e| service_failure(&e))?;
+            super::queue::push(&gateway, &caller, &queue).await;
         }
-        replan_session(&gateway, &caller, &updated, &ctl).await
+        Ok(updated)
     };
     respond(controlled.await)
 }
 
-/// 切轨、换曲后重取计划：同一个设备档、当前位置、这次选的轨。取不到就报错，客户端继续用旧计划。
+/// 切轨、换曲后重取计划：同一个设备档、当前位置、这次选的轨。切轨问会话记下的那家；换曲按新那一项的
+/// 来源选，换了家就把会话记到新的那家，之后的流、位置、停止都发给它。取不到就报错，客户端继续用旧计划。
 async fn replan_session(
     gateway: &Gateway,
     caller: &Caller,
@@ -220,7 +259,17 @@ async fn replan_session(
         person: session.person.clone(),
         profile,
     };
-    let route = session_route(gateway, caller, session).await?;
+    let route = if matches!(ctl, ControlOp::SetAudio(_) | ControlOp::SetSubtitle(_)) {
+        session_route(gateway, caller, session).await?
+    } else {
+        let route = item_route(gateway, caller, &session.person, &session.item).await?;
+        caller
+            .media
+            .store
+            .bind_session_route(session.id, &route.provider, &request.profile)
+            .map_err(|e| service_failure(&e))?;
+        route
+    };
     let plan = route.client.playback(&session.person, &request).await?;
     caller
         .media

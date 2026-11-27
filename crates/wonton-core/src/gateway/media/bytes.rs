@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use axum::Extension;
 use axum::body::Body;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Json, Response};
 use hyper::header::{self, HeaderMap, HeaderName};
 use hyper::{Method, StatusCode};
@@ -22,13 +22,13 @@ use wonton_protocol::media::provider::{
 };
 use wonton_protocol::media::uploads::{UPLOAD_OFFSET_HEADER, UploadOffset, UploadStart};
 use wonton_protocol::media::{
-    MediaFailure, MediaFailureCode, MediaKind, MediaOperation, MediaTask, PlaybackRequest,
-    PlaybackSession, ProviderStream, TaskKind, TaskTarget, UploadItem,
+    ItemState, MediaFailure, MediaFailureCode, MediaItemRef, MediaKind, MediaOperation, MediaTask,
+    PlaybackRequest, PlaybackSession, ProviderStream, TaskKind, TaskTarget, UploadItem,
 };
 
-use super::sessions::{own_session, session_route};
+use super::sessions::{item_route, own_session, session_route};
 use super::tasks::{own_task, parse_task};
-use super::{Caller, reply, service_failure};
+use super::{Caller, MediaQuery, reply, service_failure};
 use crate::gateway::Gateway;
 use crate::media::provider::ProviderRoute;
 use crate::media::session_service::unix_now_ms;
@@ -91,7 +91,13 @@ async fn upload_route(
     match known {
         Some(provider) => {
             providers
-                .route_to(&task.person, caller.allowed(gateway), &provider)
+                .route_to(
+                    &task.person,
+                    caller.allowed(gateway),
+                    &provider,
+                    &MediaOperation::Upload,
+                    None,
+                )
                 .await
         }
         None => {
@@ -111,7 +117,13 @@ async fn upload_route(
                 Ok(route)
             } else {
                 providers
-                    .route_to(&task.person, caller.allowed(gateway), &bound)
+                    .route_to(
+                        &task.person,
+                        caller.allowed(gateway),
+                        &bound,
+                        &MediaOperation::Upload,
+                        None,
+                    )
                     .await
             }
         }
@@ -139,6 +151,10 @@ pub(super) async fn upload_start(
         Ok(entry) => entry,
         Err(failure) => return reply(&failure),
     };
+    // 已经收尾的不再找提供方：它那边的上传号收尾后就没了，再查会被当成过期重开一份。
+    if matches!(entry.state, ItemState::Done | ItemState::Skipped) {
+        return offset(StatusCode::OK, entry.size);
+    }
     if let Err(e) = caller.media.tasks.begin(task.id) {
         return reply(&service_failure(&e));
     }
@@ -148,7 +164,8 @@ pub(super) async fn upload_start(
     }
 }
 
-/// 有号先查断点，没号或提供方不认就开新的；回当前偏移，并记到这一项上。
+/// 有号先查断点，没号或提供方不认就开新的；回当前偏移，并记到这一项上。已经收满（零字节的项、上次写完
+/// 还没来得及收尾）就顺手收尾。
 async fn open_upload(
     gateway: &Gateway,
     caller: &Caller,
@@ -168,6 +185,9 @@ async fn open_upload(
             .await?
     {
         advance(caller, task, &entry.item_id, at)?;
+        if at >= entry.size {
+            finish(caller, &route, task, &entry.item_id, &binding.upload_id).await?;
+        }
         return Ok(at);
     }
     let start = UploadStart {
@@ -185,12 +205,34 @@ async fn open_upload(
             &entry.item_id,
             &UploadBinding {
                 provider: route.provider.clone(),
-                upload_id: created.upload_id,
+                upload_id: created.upload_id.clone(),
             },
         )
         .map_err(|e| service_failure(&e))?;
     advance(caller, task, &entry.item_id, created.upload_offset)?;
+    if created.upload_offset >= entry.size {
+        finish(caller, &route, task, &entry.item_id, &created.upload_id).await?;
+    }
     Ok(created.upload_offset)
+}
+
+/// 让提供方收尾，这一项记完成；检查和上传之间别处传了同一张的，提供方说重复，记跳过，不算失败
+/// （ADR-0113 第 9 节）。
+async fn finish(
+    caller: &Caller,
+    route: &ProviderRoute,
+    task: &MediaTask,
+    item: &str,
+    upload_id: &str,
+) -> Reply<()> {
+    let finished = route.client.finish_upload(&task.person, upload_id).await?;
+    let tasks = &caller.media.tasks;
+    let recorded = if finished.duplicate {
+        tasks.skip_item(task.id, item)
+    } else {
+        tasks.finish_item(task.id, item)
+    };
+    recorded.map(|_| ()).map_err(|e| service_failure(&e))
 }
 
 fn advance(caller: &Caller, task: &MediaTask, item: &str, at: u64) -> Reply<()> {
@@ -230,40 +272,38 @@ async fn write_upload(
     body: Body,
 ) -> Reply<(StatusCode, u64)> {
     let entry = upload_item(task, item)?;
+    let at = resume_at(headers)?;
+    let route = upload_route(gateway, caller, task).await?;
     let binding = caller
         .media
         .store
         .upload_binding(&task.person, task.id, item)
         .map_err(|e| service_failure(&e))?
+        .filter(|binding| binding.provider == route.provider)
         .ok_or_else(|| {
             failure(
                 MediaFailureCode::Protocol,
                 "这一项还没开始上传，先 POST 同一个地址",
             )
         })?;
-    let at = resume_at(headers)?;
-    let route = upload_route(gateway, caller, task).await?;
-    let outcome = route
+    let patched = route
         .client
         .patch_upload(&task.person, &binding.upload_id, at, pass(headers), body)
-        .await?;
+        .await;
+    let outcome = match patched {
+        // 提供方那边这个上传过期了：原地重开一个，回 409 带新偏移，设备照 409 的约定从那里续，任务不失败。
+        Err(gone) if gone.code == MediaFailureCode::MediaGone => {
+            let reopened = open_upload(gateway, caller, task, &entry).await?;
+            return Ok((StatusCode::CONFLICT, reopened));
+        }
+        other => other?,
+    };
     advance(caller, task, item, outcome.offset)?;
     if outcome.conflict {
         return Ok((StatusCode::CONFLICT, outcome.offset));
     }
     if outcome.offset >= entry.size {
-        let finished = route
-            .client
-            .finish_upload(&task.person, &binding.upload_id)
-            .await?;
-        // 检查和上传之间别处传了同一张：记跳过，不算失败（ADR-0113 第 9 节）。
-        let tasks = &caller.media.tasks;
-        let recorded = if finished.duplicate {
-            tasks.skip_item(task.id, item)
-        } else {
-            tasks.finish_item(task.id, item)
-        };
-        recorded.map_err(|e| service_failure(&e))?;
+        finish(caller, &route, task, item, &binding.upload_id).await?;
     }
     Ok((StatusCode::OK, outcome.offset))
 }
@@ -312,18 +352,13 @@ pub(super) async fn content(
             .store
             .task_provider(&task.person, task.id)
             .map_err(|e| service_failure(&e))?;
+        let providers = &caller.media.providers;
         let route = match known {
             Some(provider) => {
-                caller
-                    .media
-                    .providers
-                    .route_to(&task.person, caller.allowed(&gateway), &provider)
-                    .await?
+                download_route(&gateway, &caller, &task, &target.kind, &provider).await?
             }
             None => {
-                let route = caller
-                    .media
-                    .providers
+                let route = providers
                     .route(
                         &task.person,
                         caller.allowed(&gateway),
@@ -332,14 +367,24 @@ pub(super) async fn content(
                         target.source.as_deref(),
                     )
                     .await?;
-                caller
+                let bound = caller
                     .media
                     .store
                     .bind_task_provider(&task.person, task.id, &route.provider)
                     .map_err(|e| service_failure(&e))?;
-                route
+                if bound == route.provider {
+                    route
+                } else {
+                    download_route(&gateway, &caller, &task, &target.kind, &bound).await?
+                }
             }
         };
+        // 设备来取字节就是开始下了：排队的进 `Running`，之后报进度、写完都从这里接着走。
+        caller
+            .media
+            .tasks
+            .begin(task.id)
+            .map_err(|e| service_failure(&e))?;
         route
             .client
             .forward(
@@ -355,6 +400,27 @@ pub(super) async fn content(
         Ok(response) => response,
         Err(failure) => reply(&failure),
     }
+}
+
+/// 下载任务记下的那家，按下载和条目的种类核对。
+async fn download_route(
+    gateway: &Gateway,
+    caller: &Caller,
+    task: &MediaTask,
+    kind: &MediaKind,
+    provider: &str,
+) -> Reply<ProviderRoute> {
+    caller
+        .media
+        .providers
+        .route_to(
+            &task.person,
+            caller.allowed(gateway),
+            provider,
+            &MediaOperation::Download,
+            Some(kind),
+        )
+        .await
 }
 
 pub(super) async fn stream(
@@ -388,8 +454,8 @@ pub(super) async fn stream(
     }
 }
 
-/// 队列里另一项的流（无缝播放、预取）：这一项必须在这个人的队列里，按会话起播时的设备档向同一个
-/// 提供方要它的计划，取计划里的流。不改会话，也不进播放记录。
+/// 队列里另一项的流（无缝播放、预取）：这一项必须在这个人的队列里，按会话起播时的设备档、向这一项
+/// 自己的来源要它的计划，取计划里的流。不改会话，也不进播放记录。
 pub(super) async fn queued_stream(
     State(gateway): State<Arc<Gateway>>,
     Extension(caller): Extension<Caller>,
@@ -398,10 +464,11 @@ pub(super) async fn queued_stream(
 ) -> Response {
     let fetched = async {
         let session = own_session(&caller, &id)?;
-        let route = session_route(&gateway, &caller, &session).await?;
+        let entry = queued_entry(&caller, &session, &item)?;
+        let route = item_route(&gateway, &caller, &session.person, &entry).await?;
         let path = match caller.media.queued.get(session.id, &item, unix_now_ms()) {
             Some(path) => path,
-            None => queued_plan(&caller, &route, &session, &item).await?,
+            None => queued_plan(&caller, &route, &session, entry).await?,
         };
         route
             .client
@@ -420,22 +487,26 @@ pub(super) async fn queued_stream(
     }
 }
 
-async fn queued_plan(
-    caller: &Caller,
-    route: &ProviderRoute,
-    session: &PlaybackSession,
-    item: &str,
-) -> Reply<String> {
+fn queued_entry(caller: &Caller, session: &PlaybackSession, item: &str) -> Reply<MediaItemRef> {
     let queue = caller
         .media
         .sessions
         .queue(&session.person)
         .map_err(|e| service_failure(&e))?;
-    let entry = queue
+    queue
         .entries
         .into_iter()
         .find(|entry| entry.id == item)
-        .ok_or_else(|| failure(MediaFailureCode::MediaGone, format!("队列里没有 {item}")))?;
+        .ok_or_else(|| failure(MediaFailureCode::MediaGone, format!("队列里没有 {item}")))
+}
+
+async fn queued_plan(
+    caller: &Caller,
+    route: &ProviderRoute,
+    session: &PlaybackSession,
+    entry: MediaItemRef,
+) -> Reply<String> {
+    let item = entry.id.clone();
     let profile = caller
         .media
         .store
@@ -456,7 +527,7 @@ async fn queued_plan(
     caller
         .media
         .queued
-        .put(session.id, item, path.clone(), plan.expires_at);
+        .put(session.id, &item, path.clone(), plan.expires_at);
     Ok(path)
 }
 
@@ -490,7 +561,7 @@ pub(super) struct KindQuery {
 pub(super) async fn items(
     State(gateway): State<Arc<Gateway>>,
     Extension(caller): Extension<Caller>,
-    Query(query): Query<ItemsQuery>,
+    MediaQuery(query): MediaQuery<ItemsQuery>,
 ) -> Response {
     let listed = async {
         let kind = query
@@ -530,7 +601,7 @@ pub(super) async fn artwork(
     State(gateway): State<Arc<Gateway>>,
     Extension(caller): Extension<Caller>,
     Path(item): Path<String>,
-    Query(KindQuery { kind, source }): Query<KindQuery>,
+    MediaQuery(KindQuery { kind, source }): MediaQuery<KindQuery>,
     headers: HeaderMap,
 ) -> Response {
     let fetched = async {
