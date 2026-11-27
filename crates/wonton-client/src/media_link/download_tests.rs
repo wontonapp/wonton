@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 
 use axum::Router;
 use axum::body::{Body, Bytes};
-use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::extract::{Path, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use tokio::net::TcpListener;
@@ -122,14 +122,30 @@ async fn content(State(core): State<Core>, headers: HeaderMap) -> Response {
     }
 }
 
-async fn report(State(core): State<Core>, uri: Uri, body: Bytes) -> StatusCode {
+async fn report(
+    State(core): State<Core>,
+    Path((id, action)): Path<(TaskId, String)>,
+    body: Bytes,
+) -> Response {
     let mut seen = core.seen.lock().unwrap();
-    if uri.path().ends_with("/complete") {
-        seen.completed += 1;
-    } else if uri.path().ends_with("/failure") {
-        seen.failures.push(serde_json::from_slice(&body).unwrap());
+    match action.as_str() {
+        "complete" => seen.completed += 1,
+        "failure" => {
+            let failure: MediaFailure = serde_json::from_slice(&body).unwrap();
+            seen.failures.push(failure.clone());
+            // 和核心一样：传输类排进等待、到点再叫，其余的失败。
+            let state = if failure.code == MediaFailureCode::TransportUnavailable {
+                TaskState::WaitingNetwork
+            } else {
+                TaskState::Failed(failure)
+            };
+            let mut reported = task(state, DEVICE);
+            reported.id = id;
+            return axum::Json(reported).into_response();
+        }
+        _ => {}
     }
-    StatusCode::NO_CONTENT
+    StatusCode::NO_CONTENT.into_response()
 }
 
 async fn fake_core(mode: Mode) -> (MediaApi, Core) {
@@ -271,11 +287,13 @@ async fn a_cut_connection_keeps_the_part_for_next_time() {
     let task = new_task_id();
     let failure = downloads.run(&api, task, item()).await.unwrap_err();
     assert_eq!(failure.code, MediaFailureCode::TransportUnavailable);
+    // 断了就不再是“在下”：核心排进等待，壳看到的是等着接着下和这次断的原因。
     assert_eq!(
         downloads.offline("ep/1"),
-        Some(OfflineState::Downloading {
+        Some(OfflineState::Waiting {
             done: 4,
-            total: Some(10)
+            total: Some(10),
+            failure: Some(failure),
         })
     );
 
@@ -293,6 +311,7 @@ async fn an_upstream_failure_is_reported_with_its_category() {
     let dir = tempfile::tempdir().unwrap();
     let downloads = Downloads::open(dir.path());
     let (api, core) = fake_core(Mode::Gone).await;
+    // 一个字节都没下到也有离线副本：壳要显示失败和原因，不是又回到“下载”。
     let failure = downloads
         .run(&api, new_task_id(), item())
         .await
@@ -302,11 +321,33 @@ async fn an_upstream_failure_is_reported_with_its_category() {
         core.seen.lock().unwrap().failures[0].code,
         MediaFailureCode::MediaGone
     );
-    assert!(
-        downloads
-            .offline("ep/1")
-            .is_none_or(|s| !matches!(s, OfflineState::Ready { .. }))
+    assert_eq!(
+        downloads.offline("ep/1"),
+        Some(OfflineState::Failed { failure })
     );
+}
+
+#[tokio::test]
+async fn a_retried_download_continues_from_the_failed_tasks_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let downloads = Downloads::open(dir.path());
+    let (api, core) = fake_core(Mode::Gone).await;
+    let old = new_task_id();
+    half_done(&downloads, old, 4, Some("\"v1\""));
+    downloads.run(&api, old, item()).await.unwrap_err();
+    assert_eq!(downloads.failed_task("ep/1"), Some(old));
+
+    let new = new_task_id();
+    downloads.adopt(old, new).unwrap();
+    assert_eq!(downloads.failed_task("ep/1"), None);
+    *core.mode.lock().unwrap() = Mode::Honest { etag: "\"v1\"" };
+    downloads.run(&api, new, item()).await.unwrap();
+    assert_eq!(ready_bytes(&downloads), CONTENT);
+    assert_eq!(
+        core.seen.lock().unwrap().ranges.last().unwrap().as_deref(),
+        Some("bytes=4-")
+    );
+    assert_eq!(downloads.records().len(), 1);
 }
 
 fn task(state: TaskState, device: &str) -> MediaTask {

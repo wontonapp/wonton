@@ -6,3 +6,6 @@ video-download-interrupted = ダウンロードが中断されました：{ $rea
 
 # Detail when the app passes back a malformed playback session ID. $value is what it passed.
 video-session-unreadable = 再生セッション ID を読み取れません：{ $value }
+
+# Detail when retrying an offline download that the server hasn't marked as failed.
+video-download-not-failed = 再試行できる失敗したダウンロードはありません。

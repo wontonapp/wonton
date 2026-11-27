@@ -30,8 +30,9 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::time::Instant;
 use wonton_protocol::media::api::{
-    MEDIA_API_PREFIX, SessionList, TaskList, queue_path, session_control_path, session_path,
-    session_progress_path, session_stop_path, sessions_path, tasks_path,
+    MEDIA_API_PREFIX, SessionList, TaskAction, TaskList, queue_path, session_control_path,
+    session_path, session_progress_path, session_stop_path, sessions_path, task_action_path,
+    tasks_path,
 };
 use wonton_protocol::media::provider::{ItemsPage, ItemsQuery, PlaybackStopped};
 use wonton_protocol::media::{
@@ -292,6 +293,27 @@ impl MediaLink {
     /// 删掉这一条的离线副本。
     pub(crate) fn remove_offline(&self, item_id: &str) -> Result<(), MediaFailure> {
         self.downloads.remove(item_id)
+    }
+
+    /// 核心说失败了的下载再来一次：核心开新任务，旧任务的半截归它，这台设备接着下。
+    pub(crate) async fn retry_download(&self, item_id: &str) -> Result<MediaTask, MediaFailure> {
+        let old = self.downloads.failed_task(item_id).ok_or_else(|| {
+            failure(
+                MediaFailureCode::Protocol,
+                crate::l10n::text("video-download-not-failed", &[]),
+            )
+        })?;
+        let api = self.api()?;
+        let task: MediaTask = api
+            .post(
+                &task_action_path(old, TaskAction::Retry),
+                &serde_json::json!({}),
+            )
+            .await?;
+        self.downloads.adopt(old, task.id)?;
+        self.run_downloads(&api, std::slice::from_ref(&task));
+        self.update(|local| local.put_task(task.clone()));
+        Ok(task)
     }
 
     /// 本机回环前缀：播放器、后台传输连 `{前缀}/sessions/{id}/stream` 这样的地址。
