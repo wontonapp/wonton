@@ -13,21 +13,22 @@
 //! 每次翻倍、封顶 16 秒的退避重连。这一层不再自己加节奏——改 endpoint 的中继表会让 iroh 跑一遍完整
 //! net_report（每台中继 3 个 HTTPS 探测），所以探针只用单台中继的 map，档位不变时一次都不动。
 
+mod n0;
 mod relay;
 mod url;
 
-use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, LazyLock};
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ::url::Url;
 use anyhow::Context;
-use iroh::endpoint::default_relay_mode;
 use iroh::endpoint::presets;
 use iroh::tls::CaTlsConfig;
 use iroh::{Endpoint, RelayMap, RelayMode, RelayUrl, SecretKey, Watcher};
 use percent_encoding::percent_decode_str;
 
+pub use n0::{is_public_relay, n0_relays};
 pub use relay::{Relay, RelayToken, RelayView, relay_map};
 pub use url::{canonical_relay, canonical_url, canonical_view, relay_url_text, url_text};
 
@@ -237,16 +238,6 @@ impl RelayTable {
     }
 }
 
-/// 这个地址是不是 n0 公共中继（[`n0_relays`] 那一组，含强制预发时的预发中继）。
-///
-/// 映射开着、路径走 n0 公共中继时带宽不够传画面，App 要如实提示（ADR-0072）；自建中继不提示。
-/// iroh 报告的中继路径地址就是配置里的 URL，和这里用的是同一份表。
-pub fn is_public_relay(url: &RelayUrl) -> bool {
-    static N0: LazyLock<HashSet<RelayUrl>> =
-        LazyLock::new(|| n0_relays(0).map(|relay| relay.url).collect());
-    N0.contains(&canonical_url(url.clone()))
-}
-
 /// 报错时打的地址：userinfo 里的令牌换成 `<redacted>`，令牌不进日志。
 fn redact_item(item: &str) -> String {
     let Some((scheme, rest)) = item.split_once("://") else {
@@ -321,23 +312,6 @@ pub fn relay_from_item(item: &str, tier: u8) -> Result<Relay, String> {
     };
     relay.validate()?;
     Ok(relay)
-}
-
-/// `n0` 关键字那一组：iroh 认的默认中继（设了 `IROH_FORCE_STAGING_RELAYS` 时是 n0 的预发环境，
-/// 和 `presets::N0` 的选择一致）。
-pub fn n0_relays(tier: u8) -> impl Iterator<Item = Relay> {
-    default_relay_mode()
-        .relay_map()
-        .relays::<Vec<_>>()
-        .into_iter()
-        .map(move |config| Relay {
-            // iroh 内置的主机名带 FQDN 尾点，规范成我们的一种写法（canonical_url 的说明）。
-            url: canonical_url(config.url.clone()),
-            token: None,
-            // n0 自己开的 QUIC 端口就是 iroh 的默认端口，不单独写。
-            quic_port: None,
-            tier,
-        })
 }
 
 /// 回退判定给出的动作。
