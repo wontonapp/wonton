@@ -10,7 +10,7 @@ matrix_env() {
     # 容器重建后 IP 会变，缓存里的地址可能被别的服务接手（404 但仍连得上）：只有 200 才复用，其它一律重登。
     if [[ -s $cache ]]; then
         url=$(cut -d' ' -f1 <"$cache")
-        if [[ $(timeout 25 ssh "$HOST" "curl -s -m 5 -o /dev/null -w '%{http_code}' $url/_matrix/client/versions" || true) != 200 ]]; then
+        if [[ $(timeout 60 ssh "$HOST" "curl -s -m 5 -o /dev/null -w '%{http_code}' $url/_matrix/client/versions" || true) != 200 ]]; then
             rm -f "$cache"
         fi
     fi
@@ -43,7 +43,7 @@ PY
 api() {
     local method=$1 path=$2 body=${3:-} url tok
     read -r url tok < <(matrix_env)
-    timeout 25 ssh "$HOST" "curl -sS --fail-with-body -X $method \
+    timeout 60 ssh "$HOST" "curl -sS --fail-with-body -X $method \
         -H 'Authorization: Bearer $tok' -H 'Content-Type: application/json' \
         '$url$path'${body:+ --data-binary @-}" <<<"${body-}"
 }
@@ -51,7 +51,7 @@ api() {
 pair() { # pair <a|b> <dev>
     local dev=$2 log code pid
     if ui "$dev" 2>/dev/null | grep -q nexuslauncher; then
-        timeout 25 ssh "$HOST" "adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null
+        timeout 60 ssh "$HOST" "adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null
         sleep 4
     fi
     # 每轮都从 pm clear 后的空数据起（见准备段），所以无条件配对；不再用页面文本猜“已配对”，
@@ -74,7 +74,7 @@ pair() { # pair <a|b> <dev>
     # 配对码是一次性的，落盘只留连通用的 URL。
     printf '%s pair 码已取到\n' "$(date +%T)" >> "$EVIDENCE/pair.log"
     # 先 force-stop：设备上残留的旧配对请求会和这次的码撞成 “Both were cancelled”。
-    timeout 25 ssh "$HOST" "adb -s $dev shell am force-stop app.wonton.android; \
+    timeout 60 ssh "$HOST" "adb -s $dev shell am force-stop app.wonton.android; \
         adb -s $dev shell pm grant app.wonton.android android.permission.CAMERA; \
         adb -s $dev shell pm grant app.wonton.android android.permission.RECORD_AUDIO; \
         adb -s $dev shell pm grant app.wonton.android android.permission.POST_NOTIFICATIONS; \
@@ -89,7 +89,7 @@ pair() { # pair <a|b> <dev>
         # 页面可能一直停在 Loading；核心日志出现「设备扫码配对」就是成功了，不必等页面文字。
         if timeout 30 ssh "$HOST" "docker logs --since '$since' wonton-$STACK 2>&1 | grep -q '设备扫码配对'"; then
             kill "$pid" 2>/dev/null || true
-            timeout 25 ssh "$HOST" "adb -s $dev shell am force-stop app.wonton.android; \
+            timeout 60 ssh "$HOST" "adb -s $dev shell am force-stop app.wonton.android; \
                 adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null || true
             sleep 4
             return 0
@@ -98,13 +98,13 @@ pair() { # pair <a|b> <dev>
         if grep -q 'Saved it somewhere safe' <<<"$xml" || grep -q 'text="Saved"' <<<"$xml"; then
             tap_name "$dev" 'Saved' || true; sleep 2; continue
         fi
-        if grep -qE 'text="Reset backup"|text="重置备份"' <<<"$xml"; then timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent BACK"; sleep 2; continue; fi
+        if grep -qE 'text="Reset backup"|text="重置备份"' <<<"$xml"; then timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent BACK"; sleep 2; continue; fi
         if grep -q 'Continue on your other device' <<<"$xml"; then
             # 验证超时页只在已配对设备上出现：这轮码没被消费，直接当配对成功返回。
             kill "$pid" 2>/dev/null || true; return 0
         fi
         if grep -q 'When you switch to a new phone' <<<"$xml"; then
-            timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent BACK; sleep 1; adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null
+            timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent BACK; sleep 1; adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null
             sleep 2; continue
         fi
         if grep -qE 'Verify with another device|Enter (your )?recovery key|This device.c?an.t see past messages yet|text="Chat backup"' <<<"$xml"; then
@@ -113,7 +113,7 @@ pair() { # pair <a|b> <dev>
         fi
         if grep -qE 'text="(聊天|Chat)"|text="call-smoke-|text="Element Call \||Waiting for you|content-desc="In call"' <<<"$xml"; then
             # 配好了但停在备份页（底部已经能看见标签）时退回列表。
-            grep -q 'Save your recovery key\|Chat backup is on\|can.t see past messages' <<<"$xml" && { timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent BACK"; sleep 2; continue; }
+            grep -q 'Save your recovery key\|Chat backup is on\|can.t see past messages' <<<"$xml" && { timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent BACK"; sleep 2; continue; }
             break
         fi
         if grep -q 'text="Start verification"' <<<"$xml"; then to_list "$dev"; sleep 1; continue; fi
@@ -131,7 +131,7 @@ pair() { # pair <a|b> <dev>
             kill "$pid" 2>/dev/null || true
             # 配对后的落地页各机型不同（备份、恢复码、跨设备验证）。冷启动重进，
             # 直接回聊天列表，不让后续步骤去猜当前停在哪一页。
-            timeout 25 ssh "$HOST" "adb -s $dev shell am force-stop app.wonton.android; \
+            timeout 60 ssh "$HOST" "adb -s $dev shell am force-stop app.wonton.android; \
                 adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null || true
             sleep 4
             return 0
@@ -173,7 +173,7 @@ wait_room_visible() { # 等 room_name 的行在两端列表出现（预算 40 �
     local d xml ok
     for i in $(seq 1 20); do
         for d in "$DEV_A" "$DEV_B"; do
-            timeout 25 ssh "$HOST" "adb -s $d shell am force-stop app.wonton.android; adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+            timeout 60 ssh "$HOST" "adb -s $d shell am force-stop app.wonton.android; adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
         done
         sleep 8
         # 配对后常停在「另一台设备还没应答」的跨设备验证页，列表被盖住；to_list 会跳过它回列表。

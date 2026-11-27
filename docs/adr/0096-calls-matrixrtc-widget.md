@@ -333,6 +333,50 @@ mini（Apple silicon、macOS 27.0、Xcode 27.1）、iOS 26.5 模拟器、iPhone 
 - 没验：真机、媒体捕获权限、完整 App 里 Element Call 页面和信令经本地代理的端到端路径。真机上回环候选不通时按第 5 节的
   退路。
 
+- 没验：真机、媒体捕获权限、完整 App 里 Element Call 页面和信令经本地代理的端到端路径。真机上回环候选不通时按第 5 节的
+  退路。
+
+### 自建中继现场（2026-11-27）
+
+11-26 自建 iroh 中继上线（`cloud/iroh-relay`，#1058/#1059）后，在 194 的开发栈上验“通话真的只走自建中继”。只改冒烟
+（`deploy/dev/calls/smoke.sh`），不改客户端：核心的 `WONTON_RELAYS` 设成 `https://<令牌>@relay.808cbd.com,no-n0`，
+App 从 `/_wonton/api/tunnel` 拿到的就是这一条（ADR-0048）。
+
+条件：194 开发栈（项目 `wonton-call-e2e-relay`）、两台 Android 模拟器（`emulator-5562`/`emulator-5566`，App 是
+`-Pwonton.abis=x86_64` 的 Debug 构建，commit `69c037a0`）、c 组原有的 `block_direct`（丢掉到私网候选的包）。一轮约
+10–15 分钟。
+
+命令（在 `~/wonton-dev/tunnel-call-e2e-relay/repo` 里，第一次 `evidence/relay1`、第二次 `evidence/relay2`）：
+
+```bash
+RELAYS='https://<令牌>@relay.808cbd.com,no-n0' STAGE=relay STACK=call-e2e-relay HOST=194 \
+  DEV_A=emulator-5562 DEV_B=emulator-5566 EVIDENCE=$HOME/wonton-dev/tunnel-call-e2e-relay/evidence/relay1 \
+  deploy/dev/calls/smoke.sh
+```
+
+判据（都是硬失败）：①`/_wonton/api/tunnel` 的表逐项等于 `RELAYS`（地址、令牌、档位），`no-n0` 时没有
+`n0.iroh.link`，响应带 `endpoint_id` 和 `direct_addrs`（`relay-table.json`）；②两端 `CheckedPath` 有 `relay: true`
+且落在 `relay.808cbd.com`，统计前后各判一次（`relay-path-<a|b>.log`）；③两端双向音频字节；④媒体判定后两端各采 24
+秒，每 2 秒一拍，每拍都有已连接的候选对、收音频逐拍增长且不低于 4 kbit/s（`relay-stats-c.log` 里的速率、丢包、抖动）。
+
+结果：**中继路径被 relay 版本卡住，未验证通过**（2026-11-27）。
+
+`STAGE=udp` 在 194 的开发栈上通过：两端 `call.member`、双向音视频字节、挂断后 state 清空都成立。`STAGE=relay`
+多轮没到媒体阶段，两处的现象一致：
+
+- 两端的隧道在压掉直连后 30–40 秒确实经中继重连上（`隧道连接已建立 handshake_ms=8`），但 App 的 relay 客户端同时
+  报 `no relay is reachable`，随后 `隧道建连失败 code="transport-unavailable"`（`relay1/*-core.log`）。
+- 用 `curl` 直接开 `/relay` 的 WebSocket 复现：带 `Sec-WebSocket-Protocol: iroh-relay` 回 **400
+  `unsupported relay version: we support iroh-relay-v2, iroh-relay-v1 but you only provide iroh-relay`**；带
+  `iroh-relay-v1`/`-v2` 回 101（证据 `evidence/relay-probe/probe.log`）。
+
+根因：relay 主机跑的是 iroh-relay **v1.4.1**，它只认 `iroh-relay-v1|v2` 子协议；App 里的 iroh **1.5.0** 只发新的
+`iroh-relay`。同版本的 core 侧 QUIC 能连，只有 App 的 WebSocket relay 挂。修法：把 relay 镜像升到 **v1.5.0** 后重新
+部署 `relay.808cbd.com`（194 已 pull 到 `n0computer/iroh-relay:v1.5.0`），再按上面的命令复跑两轮，四类判据的原文和
+速率/丢包/抖动补在这里。relay 域名在协调手里，本仓改不了。
+
+限制：只安卓模拟器；中继主机到 194 的线路和令牌配额决定实际速率；每连接 256 KiB/s 的限速在 iroh 中继上，不在本仓。
+
 ## 和其他 ADR 的关系
 
 - **ADR-0014**：通话的底座定为 MatrixRTC + LiveKit 插件；Bot 作为参与方加入、屏幕共享、后台不断线留给后续。

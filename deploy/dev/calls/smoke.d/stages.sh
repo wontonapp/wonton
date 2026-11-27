@@ -3,10 +3,13 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2034 # 这些变量由别的库赋值或使用，单文件分析看不见。
 
-compose_changed=0 direct_blocked=0
+compose_changed=0 direct_blocked=0 relay_env_saved=0 announce_saved=0
 restore_defaults() {
     restore_compose
     (( direct_blocked )) && unblock_direct
+    (( announce_saved )) && restore_announce
+    (( relay_env_saved )) && restore_relay_env
+    rm -f "$here/../../.dev-no-deps"
     if (( compose_changed )); then
         dev_sh uninstall app.element-call >/dev/null 2>&1 || true
         echo y | dev_sh install "$pkg" >"$EVIDENCE/install-default.log" 2>&1 ||
@@ -90,28 +93,96 @@ check_tunnel_relay() { # <a|b>：App 核心日志里最近一次隧道路径必�
     local side=$1 dev last errs
     [[ $side == a ]] && dev=$DEV_A || dev=$DEV_B
     # 回前台会重查一次隧道；不这样拿到的可能是阻断直连之前的旧路径。
-    timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent 3; adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+    timeout 60 ssh "$HOST" "adb -s $dev shell input keyevent 3; adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
     sleep 8
-    last=$(timeout 25 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 400 files/core.log'" 2>/dev/null |
+    last=$(timeout 60 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 400 files/core.log'" 2>/dev/null |
         grep 'CheckedPath' | tail -1 || true)
     # 不管过没过都落盘：路径判据和出错原因（中继限速、transport-unavailable、EC 连不上）都要能复查。
-    timeout 25 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 400 files/core.log'" 2>/dev/null |
+    timeout 60 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 400 files/core.log'" 2>/dev/null |
         grep -E 'CheckedPath|transport-unavailable|rate-limit|Failed to connect' | tail -8 \
         >> "$EVIDENCE/relay-path-$side.log" || true
     if grep -q 'relay: true' <<<"$last"; then
-        log "设备 $side 隧道走中继：$last"
-        return 0
+        if [[ -z $relay_host ]] || grep -qF "$relay_host" <<<"$last"; then
+            log "设备 $side 隧道走中继${relay_host:-}：$last"
+            return 0
+        fi
+        log "设备 $side 走了中继但不是由 $relay_host 承载：$last"
+        return 1
     fi
-    errs=$(timeout 25 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 200 files/core.log'" 2>/dev/null |
+    errs=$(timeout 60 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 200 files/core.log'" 2>/dev/null |
         grep -iE 'transport-unavailable|rate-limit|Failed to connect|tunnel check failed' | tail -3 || true)
     log "设备 $side 隧道没走中继：${last:-没有路径日志}${errs:+；错因：$(tr '\n' ' ' <<<"$errs")}"
     return 1
+}
+
+check_relay_continuity() { # 中继组媒体判定后：两端各连续采样约 24 秒（每 2 秒一拍）
+    local side port page pid rc=0 pids=()
+    : > "$EVIDENCE/relay-stats-c.log"
+    for side in a b; do
+        if [[ $side == a ]]; then port=9331; else port=9334; fi
+        page=$(cdp "$side" "$port" pick 2>/dev/null || true)
+        [[ -n $page ]] || { log "连续性：设备 $side 没有 widget 页"; return 1; }
+        cdp "$side" "$port" session "$page" premain.js 12 > "$EVIDENCE/relay-stats-$side.jsonl" 2>"$EVIDENCE/relay-stats-$side.err" &
+        pids+=($!)
+    done
+    for pid in "${pids[@]}"; do wait "$pid" || rc=1; done
+    (( rc == 0 )) || { log "连续性：采样失败（看 relay-stats-*.err）"; return 1; }
+    # 判据：每拍都有已连接的候选对，收音频字节逐拍增长、速率不低于 relay_min_kbps；断拍也算断。
+    python3 - "$relay_min_kbps" "$EVIDENCE/relay-stats-a.jsonl" "$EVIDENCE/relay-stats-b.jsonl" <<'PEOF' | tee -a "$EVIDENCE/relay-stats-c.log"
+import json, sys
+
+min_kbps = int(sys.argv[1])
+bad = 0
+for side, path in zip("ab", sys.argv[2:]):
+    try:
+        samples = [json.loads(line) for line in open(path) if line.strip()]
+    except FileNotFoundError:
+        samples = []
+    if len(samples) < 5:
+        print(f"设备 {side}: 只有 {len(samples)} 拍（采样断了）")
+        bad = 1
+        continue
+    span = (samples[-1].get("at", 0) - samples[0].get("at", 0)) / 1000
+    if span < 20:
+        print(f"设备 {side}: 采样只有 {span:.0f} 秒")
+        bad = 1
+    prev = None
+    for n, sample in enumerate(samples, 1):
+        pcs = [pc for pc in sample.get("pcs") or [] if pc.get("selected")]
+        if not pcs:
+            print(f"设备 {side} 拍 {n}: 没有选中的候选对")
+            bad = 1
+            prev = None
+            continue
+        pc = pcs[-1]
+        audio = (pc.get("inbound") or {}).get("audio") or {}
+        got = audio.get("bytes") or 0
+        if pc.get("state") != "connected":
+            print(f"设备 {side} 拍 {n}: 连接状态 {pc.get('state')}")
+            bad = 1
+        if prev is not None:
+            dt = (sample.get("at", 0) - prev[0]) / 1000
+            kbps = (got - prev[1]) * 8 / max(dt, 0.001) / 1000
+            print(f"设备 {side} 拍 {n}: 收音频 {kbps:.1f} kbit/s 累计 {got} B 丢包 {audio.get('lost')} 抖动 {audio.get('jitter')} s 状态 {pc.get('state')}")
+            if dt <= 0 or dt > 5:
+                print(f"  拍间隔 {dt:.1f} 秒")
+                bad = 1
+            if got <= prev[1]:
+                print(f"  收音频没增长（{prev[1]} -> {got}）")
+                bad = 1
+            elif kbps < min_kbps:
+                print(f"  收音频 {kbps:.1f} kbit/s 低于 {min_kbps}")
+                bad = 1
+        prev = (sample.get("at", 0), got)
+sys.exit(1 if bad else 0)
+PEOF
 }
 
 configure_udp_only() { log "路径：UDP 直连（插件默认）"; }
 configure_tcp_only() {
     log "路径：只留 TCP 7881"
     local dc=$pkg/docker-compose.yml
+    [[ -f $dc ]] || { log "插件包不在 $pkg（tcp 组要就地改它的 compose）"; return 1; }
     [[ -f $dc.orig ]] || cp "$dc" "$dc.orig"
     sed -i 's/^      UDP_PORT: "7882"$/      UDP_PORT: "0"/' "$dc"
     grep -q '^      UDP_PORT: "0"$' "$dc" || { log "compose 里没找到 UDP_PORT: \"7882\"，sed 没生效"; return 1; }
@@ -134,14 +205,14 @@ restore_compose() { # 把就地改过的插件 compose 还原（副本在插件�
 block_direct() { # 模拟两端只能走中继：丢掉到私网直连候选的包，只留模拟器的 DNS 和宿主机 10.0.2.2
     local d
     for d in "$DEV_A" "$DEV_B"; do
-        timeout 25 ssh "$HOST" "adb -s $d root" >/dev/null 2>&1 || true
+        timeout 60 ssh "$HOST" "adb -s $d root" >/dev/null 2>&1 || true
     done
     sleep 4
     for d in "$DEV_A" "$DEV_B"; do
-        timeout 25 ssh "$HOST" "adb -s $d wait-for-device" >/dev/null 2>&1 || true
+        timeout 60 ssh "$HOST" "adb -s $d wait-for-device" >/dev/null 2>&1 || true
         # 只有模拟器自己的 DNS（10.0.2.3）和宿主 TCP（页面/调试）留在私网里；到宿主的隧道 UDP 也丢掉，
         # 否则 10.0.2.2:隧道端口 仍会被当成直连。
-        timeout 25 ssh "$HOST" "adb -s $d shell '
+        timeout 60 ssh "$HOST" "adb -s $d shell '
             iptables -F OUTPUT
             iptables -I OUTPUT 1 -d 192.168.0.0/16 -j DROP
             iptables -I OUTPUT 1 -d 172.16.0.0/12 -j DROP
@@ -149,40 +220,174 @@ block_direct() { # 模拟两端只能走中继：丢掉到私网直连候选的�
             iptables -I OUTPUT 1 -d 10.0.2.2 -p udp --dport $tunnel -j DROP
             iptables -I OUTPUT 1 -d 10.0.2.2 -p tcp -j ACCEPT
             iptables -I OUTPUT 1 -d 10.0.2.3 -j ACCEPT'" >/dev/null 2>&1 || true
-        timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$gw tcp:$gw; adb -s $d reverse tcp:$tunnel tcp:$tunnel" >/dev/null 2>&1 || true
+        timeout 60 ssh "$HOST" "adb -s $d reverse tcp:$gw tcp:$gw; adb -s $d reverse tcp:$tunnel tcp:$tunnel" >/dev/null 2>&1 || true
         # 规则生效后 iroh 会自己把路径切到 relay；不要 force-stop，重拨会重新拉 EC 的大 JS 包，
         # 公网中继限速时更容易把隧道打成 transport-unavailable。只把 App 带回前台。
-        timeout 25 ssh "$HOST" "adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+        timeout 60 ssh "$HOST" "adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
     done
     direct_blocked=1
 }
 unblock_direct() { # 去掉 block_direct 的规则，恢复直连
     local d
     for d in "$DEV_A" "$DEV_B"; do
-        timeout 25 ssh "$HOST" "adb -s $d root" >/dev/null 2>&1 || true
+        timeout 60 ssh "$HOST" "adb -s $d root" >/dev/null 2>&1 || true
     done
     sleep 4
     for d in "$DEV_A" "$DEV_B"; do
-        timeout 25 ssh "$HOST" "adb -s $d wait-for-device; adb -s $d shell iptables -F OUTPUT" >/dev/null 2>&1 || true
+        timeout 60 ssh "$HOST" "adb -s $d wait-for-device; adb -s $d shell iptables -F OUTPUT" >/dev/null 2>&1 || true
     done
     direct_blocked=0
 }
-configure_relay_only() {
-    log "路径：强制 n0 中继（宣告一个到不了的直连地址）"
-    # 重新 up 一次而不是 status：只有 up 会把 --announce 写进 .dev-announce 并传给核心，重起核心。
-    dev_sh up --announce 10.0.2.99 >/dev/null || { log "带中继宣告地址重起核心失败"; return 1; }
-    # 名额重排后 up 会换端口（.dev-ports 也变）；以 stack-slot 现在发的端口为准，并把 App 记着的旧隧道
-    # 端口反向映射到新端口，否则 App 拨的还是旧隧道，永远连不回核心。
-    local old_tunnel=$tunnel
-    for i in $(seq 1 10); do
-        if read -r gw tunnel < <(timeout 25 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $STACK" 2>/dev/null) && [[ -n $tunnel ]]; then break; fi
+relay_env_file() { printf '%s/../core/.env' "$here"; }
+stack_ports() { # 打印名额现在发的「网关 隧道」端口。登记可能挂在栈名或项目名上，两个名字都试；
+    # 只认两个纯数字，读不到返回 1（主机负载高时 ssh 要 25 秒，给三次机会）。
+    local n out a b i
+    for i in 1 2 3; do
+        for n in "$STACK" "wonton-$STACK"; do
+            out=$(timeout 60 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $n" 2>/dev/null) || continue
+            read -r a b <<<"$out"
+            if [[ $a =~ ^[0-9]+$ && $b =~ ^[0-9]+$ ]]; then printf '%s %s\n' "$a" "$b"; return 0; fi
+        done
         sleep 2
     done
-    timeout 25 ssh "$HOST" "printf '%s %s\n' '$gw' '$tunnel' > ~/wonton-dev/stacks/dev-$STACK/.dev-ports" || true
-    for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$old_tunnel tcp:$tunnel" >/dev/null 2>&1 || true; done
-    timeout 300 ssh "$HOST-stack" restart "$STACK" core || { log "重启核心失败"; return 1; }
-    timeout 10 ssh "$HOST" "docker inspect wonton-$STACK" 2>/dev/null | grep -q 'WONTON_ANNOUNCE_ADDRESSES=10.0.2.99' ||
-        log "警告：核心环境里没有 10.0.2.99 的宣告，靠 block_direct 兜底"
+    return 1
+}
+
+pin_relay_table() { # 配对前调用：RELAYS 钉进 .env，重起核心，再核对容器环境和接口
+    # 只换中继表不需要重编镜像、也不该重跑 hydra-migrate；这两个 marker 让 dev.sh 走快路径。
+    touch "$here/../../.dev-no-deps" "$here/../../.dev-no-build"
+    local env_file
+    [[ -n $relays ]] || return 0
+    [[ $relay_host =~ ^[a-z0-9.-]+\.[a-z]+$ ]] || die "RELAYS/RELAY_HOST 里没有像样的中继主机（'$relay_host'）"
+    env_file=$(relay_env_file)
+    if [[ -f $env_file ]]; then
+        cp "$env_file" "$EVIDENCE/stack-env.orig" || die "读不了 $env_file"
+        relay_env_saved=1
+    fi
+    { grep -v '^WONTON_DEV_RELAYS=' "$env_file" 2>/dev/null || true
+      printf '%s\n' "WONTON_DEV_RELAYS=$relays"
+    } > "$env_file.new" || die "写不进 $env_file"
+    mv "$env_file.new" "$env_file"
+    log "中继表写进 $env_file（$(mask_relays "$relays")），重起核心"
+    if ! dev_sh up >/dev/null; then
+        fix_slot_owner; dev_sh up >/dev/null || die "带中继表重起核心失败"
+    fi
+    refresh_ports
+    # up 返回时核心可能还没监听：等网关回 HTTP 再核对，否则失败还会伪装成“接口调不到”。
+    local i code=000
+    for i in $(seq 1 90); do
+        code=$(timeout 10 ssh "$HOST" "curl -s -m 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:$gw/" || true)
+        [[ $code != 000 ]] && break
+        deadline_hit && break
+        sleep 2
+    done
+    [[ $code != 000 ]] || die "核心重启后网关 127.0.0.1:$gw 仍不在"
+    [[ $(ssh "$HOST" "docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' wonton-$STACK" | sed -n 's/^WONTON_RELAYS=//p') == "$relays" ]] ||
+        die "核心环境里的 WONTON_RELAYS 不等于 RELAYS"
+    check_relay_table || die "中继接口给的表不是 RELAYS（看 relay-table.json）"
+}
+
+check_relay_table() { # 接口返回的表必须逐项等于 RELAYS（地址、令牌、档位）；带 no-n0 时不能有 n0
+    local data token json
+    [[ -n $relays ]] || return 0
+    # App 拿表的接口：主人的令牌经网关调 /_wonton/api/tunnel（和 dev.sh tunnel 同一个请求）。
+    # 开发栈把数据目录挂在宿主同路径（没有 /data 这个挂载点），问容器里的 WONTON_DATA_DIR。
+    data=$(ssh "$HOST" "docker exec wonton-$STACK sh -c 'printf %s \$WONTON_DATA_DIR'" | tr -d '\r')
+    [[ -n $data ]] || die "核心容器没有 WONTON_DATA_DIR"
+    token=$(ssh "$HOST" "docker exec wonton-$STACK cat $data/core/owner-token" | tr -d '\r') || die "取不到主人的令牌"
+    json=$(ssh "$HOST" "curl -sS --noproxy '*' -m 15 -H 'Host: $STACK.wonton.localhost:$gw' -H 'Authorization: Bearer $token' http://127.0.0.1:$gw/_wonton/api/tunnel") ||
+        die "调不到网关的 /_wonton/api/tunnel"
+    printf '%s\n' "$json" > "$EVIDENCE/relay-table.json"
+    python3 - "$relays" "$EVIDENCE/relay-table.json" <<'PEOF' | tee -a "$EVIDENCE/run.log"
+import json, sys
+from urllib.parse import unquote, urlsplit
+
+raw, path = sys.argv[1], sys.argv[2]
+expected, no_n0, n0 = [], False, False
+for tier, tier_text in enumerate(raw.split(";")):
+    for item in tier_text.split(","):
+        item = item.strip()
+        if not item:
+            sys.exit(f"RELAYS 第 {tier + 1} 档里有空项")
+        if item == "no-n0":
+            no_n0 = True
+            continue
+        if item == "n0":
+            n0 = True
+            continue
+        if item.startswith("!"):
+            continue
+        parts = urlsplit(item)
+        userinfo, _, hostport = parts.netloc.rpartition("@")
+        expected.append({"url": f"{parts.scheme}://{hostport}{parts.path or '/'}", "token": unquote(userinfo) or None,
+                         "quic_port": int(parts.fragment) if parts.fragment else None, "tier": tier})
+data = json.load(open(path))
+problem = []
+if not isinstance(data.get("endpoint_id"), str) or len(data["endpoint_id"]) != 64:
+    problem.append("接口没给 64 位 endpoint_id")
+if not data.get("direct_addrs"):
+    problem.append("接口没给 direct_addrs")
+actual = []
+for entry in data.get("relays") or []:
+    parts = urlsplit(entry.get("url") or "")
+    hostport = parts.netloc.rpartition("@")[2]
+    actual.append({"url": f"{parts.scheme}://{hostport}{parts.path or '/'}", "token": entry.get("token"),
+                   "quic_port": entry.get("quic_port"), "tier": entry.get("tier")})
+    is_n0 = (parts.hostname or "").endswith(".iroh.link")
+    print(f"表项：{actual[-1]['url']} tier={actual[-1]['tier']} 令牌={'有' if actual[-1]['token'] else '无'}{'（n0）' if is_n0 else ''}")
+    if no_n0 and is_n0:
+        problem.append(f"{actual[-1]['url']} 是 n0，no-n0 没生效")
+key = lambda e: (e["tier"] or 0, e["url"])
+if n0:
+    for entry in actual:
+        if not entry["url"].endswith(".iroh.link/") and entry not in expected:
+            problem.append(f"多出来的表项 {entry['url']}")
+    for want in expected:
+        if want not in actual:
+            problem.append(f"少了表项 {want['url']}")
+else:
+    for i, (want, got) in enumerate(zip(expected, sorted(actual, key=key))):
+        if want != got:
+            problem.append(f"第 {i + 1} 项和 RELAYS 不一致：{got} != {want}")
+    if len(expected) != len(actual):
+        problem.append(f"表项 {len(actual)} 条，RELAYS 是 {len(expected)} 条")
+for reason in problem:
+    print(f"  - {reason}")
+sys.exit(1 if problem else 0)
+PEOF
+}
+
+restore_relay_env() { # 还原 .env；原来没有就删掉，别留下只给这轮用的中继令牌
+    local env_file
+    env_file=$(relay_env_file)
+    if (( relay_env_saved )); then
+        cp "$EVIDENCE/stack-env.orig" "$env_file" || log "还原 $env_file 失败"
+    else
+        rm -f "$env_file"
+    fi
+    relay_env_saved=0
+}
+
+fix_slot_owner() { # 名额被自动登记时 owner 写成项目名（wonton-<栈>），acquire 只认裸栈名，会报「换个 --project」：
+    # 在 HOST 上把带本项目名的名额改回裸栈名，再让调用方重试一次 up。
+    ssh "$HOST" "for d in ~/wonton-dev/stack-slots/*/; do
+        [ \"\$(cat \$d/project 2>/dev/null)\" = 'wonton-$STACK' ] || continue
+        printf '%s\\n' '$STACK' > \"\$d/owner\"; rm -f \"\$d/auto\"
+    done" || true
+}
+
+configure_relay_only() {
+    log "路径：强制中继（宣告一个到不了的直连地址，丢光到私网的包）"
+    touch "$here/../../.dev-no-deps" "$here/../../.dev-no-build"
+    # 先重钉中继表并核对接口：配对票据里带的就是这张表，配上了再换要重配。
+    pin_relay_table || return 1
+    # 重新 up 一次而不是 status：只有 up 会把 --announce 传给核心并重起它。本机替身的 up 不认
+    # --announce，先在 .announce 里写好再 up；真 remote-dev 两边都认，写两遍无副作用。
+    dev_sh status --announce 10.0.2.99 >/dev/null 2>&1 || true
+    dev_sh up --announce 10.0.2.99 >/dev/null 2>&1 || { log "带中继宣告地址重起核心失败"; return 1; }
+    # 名额重排后 up 会换端口（.dev-ports 也变）；以 stack-slot 现在发的端口为准，并把 App 记着的旧隧道
+    # 端口反向映射到新端口，否则 App 拨的还是旧隧道，永远连不回核心。
+    refresh_ports
     # 重启后 remote-dev 可能丢 compose 的网络别名，core 一直起不来；必须等到网关、隧道和
     # Tuwunel 都能答，再往下走，否则失败会伪装成“房间不在列表/没进通话”。
     local i code ready=0
@@ -195,6 +400,13 @@ configure_relay_only() {
         sleep 2
     done
     ((ready)) || { log "核心重启后 180 秒仍没就绪（网关/隧道/Tuwunel 有一个不通；别名丢失见 README）"; return 1; }
+    # 重启后接口再核一次：新核心读到的仍是 RELAYS，n0 没回来。
+    check_relay_table || { log "核心重启后中继表不是 RELAYS（看 relay-table.json）"; return 1; }
+    # core 刚重启过，两端 App 的 sync 会退避、卡在旧房间（09:40 实测 UI 点不动）；冷启动让同步重连再往下走。
+    for d in "$DEV_A" "$DEV_B"; do
+        timeout 60 ssh "$HOST" "adb -s $d shell am force-stop app.wonton.android; adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+    done
+    sleep 5
     # 先把房间和 EC 页面在直连下打开：公网中继会把超过约 100 KB 的 HTTP 响应流截断，
     # EC 的入口 JS 有 325 KB，冷缓存下永远加载不完（ERR_CONTENT_LENGTH_MISMATCH）。
     open_room "$DEV_A" "$room_name" || { log "中继组：a 打不开房间"; return 1; }
@@ -203,8 +415,14 @@ configure_relay_only() {
     open_call "$DEV_A" || true; open_call "$DEV_B" || true
     sleep 20
     block_direct
-    # 直连被丢掉后 iroh 自己切到 relay；等它切完再回房间。
-    sleep 30
+    # 直连被丢掉后 iroh 要几十秒才经中继重连（10:43 实测 35 秒，随后 8ms 握手）；先等两端路径真的
+    # 变成 relay 再回房间，否则 open_room 撞在“连不上”的列表上直接判失败。
+    local n
+    for n in $(seq 1 30); do
+        if check_tunnel_relay a && check_tunnel_relay b; then break; fi
+        if (( n == 30 )); then log "中继组：block 后 150 秒两端隧道都没从中继重连"; return 1; fi
+        sleep 5
+    done
     open_room "$DEV_A" "$room_name" || { log "中继组：block 后 a 回不了房间"; return 1; }
     open_room "$DEV_B" "$room_name" || { log "中继组：block 后 b 回不了房间"; return 1; }
     sleep 3
@@ -220,7 +438,7 @@ run_group() { # run_group <a|b|c|plain> <说明> <配置函数>；任何一步�
     group_deadline_at=$((SECONDS + GROUP_DEADLINE))
     log "组 $g 判定阶段 deadline ${GROUP_DEADLINE}s"
     clear_dialogs
-    for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true; done
+    for d in "$DEV_A" "$DEV_B"; do timeout 60 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true; done
     sleep 3
     if ! open_room "$DEV_A" "$room_name"; then
         fail_group "$g" "a 打不开房间（组级超时或页面没起）"
@@ -270,17 +488,26 @@ run_group() { # run_group <a|b|c|plain> <说明> <配置函数>；任何一步�
     fi
     shot "$DEV_A" "group-$g-a"; shot "$DEV_B" "group-$g-b"
     for d in "$DEV_A" "$DEV_B"; do
-        timeout 25 ssh "$HOST" "adb -s $d shell dumpsys package app.wonton.android | grep -E 'android.permission.(CAMERA|RECORD_AUDIO): granted'"
+        timeout 60 ssh "$HOST" "adb -s $d shell dumpsys package app.wonton.android | grep -E 'android.permission.(CAMERA|RECORD_AUDIO): granted'"
     done | tee -a "$EVIDENCE/permissions.log" >/dev/null
     stats a 9331 "$g" || fail_group "$g" "a 没有统计"
     stats b 9334 "$g" || fail_group "$g" "b 没有统计"
+    if [[ $g == c ]]; then
+        # 有媒体在跑的这一刻再判一次路径：前面判过一次，这里防中途掉回直连或换到 n0。
+        check_tunnel_relay a || fail_group "$g" "统计后 a 的隧道不再走中继"
+        check_tunnel_relay b || fail_group "$g" "统计后 b 的隧道不再走中继"
+    fi
     if [[ -s $EVIDENCE/webrtc-a-$g.jsonl && -s $EVIDENCE/webrtc-b-$g.jsonl ]] && check_media_path "$g"; then
         log "组 $g 判定：路径和双向音视频都成立"
     else
         fail_group "$g" "两端路径或双向音视频不符（看 webrtc-*-$g.jsonl）"
     fi
+    # 中继下媒体要持续：两端各采 20 秒以上，见 check_relay_continuity。
+    if [[ $g == c ]]; then
+        check_relay_continuity || fail_group "$g" "中继下的音视频不连续（看 relay-stats-c.log）"
+    fi
     deadline_hit && { fail_group "$g" "组级超时 ${GROUP_DEADLINE}s（媒体/统计阶段）"; return 1; }
-    timeout 25 ssh "$HOST" "adb -s $DEV_A shell cmd media_session volume --stream 3 --set 0" >/dev/null 2>&1 || true
+    timeout 60 ssh "$HOST" "adb -s $DEV_A shell cmd media_session volume --stream 3 --set 0" >/dev/null 2>&1 || true
     hangup "$DEV_A" || fail_group "$g" "a 找不到挂断按钮"
     hangup "$DEV_B" || fail_group "$g" "b 找不到挂断按钮"
     if [[ -s $keys ]] && wait_left "$room_id" "$keys" 60; then
@@ -313,7 +540,7 @@ run_kill() { # 延迟 leave：B 正常挂断，再把 A 的 App 强杀，本轮�
     done
     ((cleared)) || fail_group kill "B 挂断 60 秒后本轮成员仍有两條"
     sleep 3
-    timeout 25 ssh "$HOST" "adb -s $DEV_A shell am force-stop app.wonton.android"
+    timeout 60 ssh "$HOST" "adb -s $DEV_A shell am force-stop app.wonton.android"
     t0=$(date +%s)
     for i in $(seq 1 30); do
         sleep 2
