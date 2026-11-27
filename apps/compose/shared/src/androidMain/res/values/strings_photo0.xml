@@ -2,4 +2,32 @@
 <resources>
     <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
     <string name="photo_gif_unreadable">Can\'t read this GIF</string>
+    <!-- Photo library: title and bottom-bar item of the album list. -->
+    <string name="photo_library_tab_albums">Albums</string>
+    <!-- Photo library: title and bottom-bar item of the search page. -->
+    <string name="photo_library_tab_search">Search</string>
+    <!-- Photo library: screen-reader name of a photo shown full screen. -->
+    <string name="photo_library_photo">Photo</string>
+    <!-- Photo library: screen-reader action on a grid item that selects or deselects it. -->
+    <string name="photo_library_select">Select</string>
+    <!-- Photo library: action that marks the selected items as favorites. -->
+    <string name="photo_library_favorite">Favorite</string>
+    <!-- Photo library: heading of the albums that belong to the whole household. -->
+    <string name="photo_library_albums_household">Family</string>
+    <!-- Photo library: next step under the empty-library title. -->
+    <string name="photo_library_empty_hint">Photos you upload in your photo app will show up here.</string>
+    <!-- Photo library: error title when more than one installed app can serve photos and the owner has not picked a default. -->
+    <string name="photo_library_source_required_title">More than one photo app is installed</string>
+    <!-- Photo library: shown in the share sheet when the home server says this person is not allowed to share with family members (for example they have not joined yet). -->
+    <string name="photo_library_share_denied">You can\'t share with family right now</string>
+    <!-- Photo library: shown when a search has no results. -->
+    <string name="photo_library_search_none">Nothing found</string>
+    <!-- Photo library: search filter chip and sheet title for the time range. -->
+    <string name="photo_library_filter_time">Time</string>
+    <!-- Photo library: time range option. -->
+    <string name="photo_library_time_this_year">This year</string>
+    <!-- Photo library: button on the full-screen photo that opens more actions. -->
+    <string name="photo_library_more">More</string>
+    <!-- Photo library: badge on a grid item that belongs to someone who is not a member of this home, so there is no name to show. Keep it very short. -->
+    <string name="photo_library_owner_unknown">Not mine</string>
 </resources>

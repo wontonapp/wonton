@@ -45,6 +45,7 @@ import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.music.MusicLibraryPage
+import app.wonton.ui.photos.PhotosRoute
 import kotlin.math.roundToInt
 
 /** 最近关掉的页面还留着 WebView 实例，重开不重载；个数是内存考虑的折中（每个 WebView 一份独立渲染进程）。 */
@@ -65,15 +66,20 @@ internal fun PluginPagesHost(
     val openTabs = stack.mapTo(HashSet()) { it.tab }
     for (open in kept + stack) {
         key(open.tab) {
-            val music = open.musicLibrary()
-            if (music == null) {
+            val music = open.nativeTab(NativePage.Music)
+            val photos = open.nativeTab(NativePage.Photos)
+            if (music == null && photos == null) {
                 PluginPageContainer(
                     open, pages, home, appearance, parked = open.tab !in openTabs,
                     active = open.tab == active, onDetails, onDraft, bannerTop,
                 )
             } else if (open.tab in openTabs) {
                 // 原生页没有要保活的网页：关掉就放下，重开从首页取。
-                MusicLibraryPage(music, open.page.title, pages, active = open.tab == active, onDetails)
+                if (music != null) {
+                    MusicLibraryPage(music, open.page.title, pages, active = open.tab == active, onDetails)
+                } else if (photos != null) {
+                    PhotosRoute(photos, pages, active = open.tab == active)
+                }
             }
         }
     }
@@ -81,9 +87,9 @@ internal fun PluginPagesHost(
     if (active != null && active in openTabs && !pageKeepsCapsule(active)) PageExitHint()
 }
 
-/** 原生的音乐库只接就绪的入口页；启动中、已停止这些状态照旧由网页页的状态页说明。 */
-private fun OpenPage.musicLibrary(): TabRef.Plugin? =
-    (tab as? TabRef.Plugin)?.takeIf { page.native == NativePage.Music && page.state is TabState.Ready }
+/** 原生页（音乐库、相册）只接就绪的入口页；启动中、已停止这些状态照旧由网页页的状态页说明。 */
+private fun OpenPage.nativeTab(kind: NativePage): TabRef.Plugin? =
+    (tab as? TabRef.Plugin)?.takeIf { page.native == kind && page.state is TabState.Ready }
 
 /** 刚关掉的页（最旧的在前）；只在栈变化时算一次，不是快照状态。 */
 private class ClosedPages {

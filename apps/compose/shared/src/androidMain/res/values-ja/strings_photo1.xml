@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Photo library: button that leaves selection mode. -->
+    <string name="photo_library_selection_cancel">選択を解除</string>
+    <!-- Photo library: action that removes the selected items from favorites. -->
+    <string name="photo_library_unfavorite">お気に入り解除</string>
+    <!-- Photo library: placeholder of the album name field. -->
+    <string name="photo_library_album_name">アルバム名</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_not_installed_hint">オーナーにストアで写真アプリ（Immich など）をインストールしてもらうか、あなたに公開してもらってください。</string>
+    <!-- Photo library: next step under the no-results title. -->
+    <string name="photo_library_search_none_hint">別の言葉で試すか、絞り込みを減らしてください。</string>
+    <!-- Photo library: search filter chip and dialog title for the place. -->
+    <string name="photo_library_filter_place">場所</string>
+    <!-- Photo library: time range option: no limit. -->
+    <string name="photo_library_time_any">指定なし</string>
+    <!-- Photo library: notice after adding to an album. Argument: how many items. -->
+    <plurals name="photo_library_done_added">
+        <item quantity="other">%1$d 件をアルバムに追加しました</item>
+    </plurals>
+</resources>

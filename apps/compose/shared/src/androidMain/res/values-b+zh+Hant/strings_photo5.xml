@@ -2,4 +2,52 @@
 <resources>
     <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
     <string name="photo_unreadable">讀不出這張照片</string>
+    <!-- Photo library: screen-reader name of a video in the grid. Argument: when it was taken. -->
+    <string name="photo_library_video_from">影片，%1$s</string>
+    <!-- Photo library: action that moves the selected items to the trash (not a permanent delete). -->
+    <string name="photo_library_trash">移到垃圾桶</string>
+    <!-- Photo library: heading of the albums the user owns. -->
+    <string name="photo_library_albums_mine">我的</string>
+    <!-- Photo library: heading of the albums other family members shared with the user. -->
+    <string name="photo_library_albums_shared">與我共享</string>
+    <!-- Photo library: error title when no photo app is installed or it is not running. -->
+    <string name="photo_library_unavailable_title">相簿應用程式未安裝或未執行</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_denied_next_step">請擁有者把相簿應用程式共享給你。</string>
+    <!-- Photo library: error title when the photo app is rate limiting requests. -->
+    <string name="photo_library_busy_title">請求太頻繁</string>
+    <!-- Photo library: error title when the photo app itself returned an error. -->
+    <string name="photo_library_upstream_title">相簿應用程式發生錯誤</string>
+    <!-- Photo library: generic error title. -->
+    <string name="photo_library_failed_title">無法載入</string>
+    <!-- Photo library: error title when a video or live photo can't be played. -->
+    <string name="photo_library_video_failed_title">無法播放</string>
+    <!-- Photo library: first line of the notice when a change (favorite, add to album, trash…) did not go through at all. -->
+    <string name="photo_library_edit_failed">沒有完成</string>
+    <!-- Photo library: notice after creating an album. -->
+    <string name="photo_library_done_album_created">相簿已建立</string>
+    <!-- Photo library: placeholder of the search field; the user describes what is in the picture. -->
+    <string name="photo_library_search_prompt">搜尋畫面，例如「海邊的日落」</string>
+    <!-- Photo library: button on the full-screen photo that opens its details. -->
+    <string name="photo_library_info">資訊</string>
+    <!-- Photo library: row in the photo details saying whose photo it is. Argument: that family member's username. -->
+    <string name="photo_library_owned_by">來自 %1$s</string>
+    <!-- Photo library: row in the photo details when the photo belongs to someone who is not a member of this home. -->
+    <string name="photo_library_owned_by_unknown">別人的照片</string>
+    <!-- Photo library: title of the selection bar. Argument: how many items are selected. -->
+    <plurals name="photo_library_selected">
+        <item quantity="other">已選 %1$d 項</item>
+    </plurals>
+    <!-- Photo library: item count of an album. Argument: the count. -->
+    <plurals name="photo_library_items">
+        <item quantity="other">%1$d 項</item>
+    </plurals>
+    <!-- Photo library: notice after moving to the trash. Argument: how many items. -->
+    <plurals name="photo_library_done_trashed">
+        <item quantity="other">已將 %1$d 項移到垃圾桶</item>
+    </plurals>
+    <!-- Photo library: second line of the notice when some items could not be changed. Arguments: how many failed, and the reason for the first one. -->
+    <plurals name="photo_library_failed_items">
+        <item quantity="other">%1$d 項未完成：%2$s</item>
+    </plurals>
 </resources>

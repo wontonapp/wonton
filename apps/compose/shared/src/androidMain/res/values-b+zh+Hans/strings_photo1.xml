@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Photo library: button that leaves selection mode. -->
+    <string name="photo_library_selection_cancel">取消选择</string>
+    <!-- Photo library: action that removes the selected items from favorites. -->
+    <string name="photo_library_unfavorite">取消收藏</string>
+    <!-- Photo library: placeholder of the album name field. -->
+    <string name="photo_library_album_name">相册名</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_not_installed_hint">请主人到应用商店装一个相册应用（比如 Immich），或把它开给你。</string>
+    <!-- Photo library: next step under the no-results title. -->
+    <string name="photo_library_search_none_hint">换个说法，或去掉几个筛选条件。</string>
+    <!-- Photo library: search filter chip and dialog title for the place. -->
+    <string name="photo_library_filter_place">地点</string>
+    <!-- Photo library: time range option: no limit. -->
+    <string name="photo_library_time_any">不限</string>
+    <!-- Photo library: notice after adding to an album. Argument: how many items. -->
+    <plurals name="photo_library_done_added">
+        <item quantity="other">已把 %1$d 项加进相册</item>
+    </plurals>
+</resources>

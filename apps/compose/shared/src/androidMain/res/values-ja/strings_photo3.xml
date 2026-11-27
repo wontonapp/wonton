@@ -1,4 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="photo_failed_at_reason">%1$s：%2$s</string>
+    <!-- Photo library: screen-reader name of a photo in the grid. Argument: when it was taken. -->
+    <string name="photo_library_photo_from">写真、%1$s</string>
+    <!-- Photo library: action that takes the selected items out of the open album (the items stay in the library). -->
+    <string name="photo_library_remove_from_album">アルバムから外す</string>
+    <!-- Photo library: tile, row and dialog title for creating an album. -->
+    <string name="photo_library_new_album">新規アルバム</string>
+    <!-- Photo library: confirm button of the new-album dialog. -->
+    <string name="photo_library_create">作成</string>
+    <!-- Photo library: screen-reader name of the mark on an album cover saying the album is shared. -->
+    <string name="photo_library_shared_mark">共有中</string>
+    <!-- Photo library: shown when the library has no photos. -->
+    <string name="photo_library_empty_title">写真はまだありません</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_gone_next_step">削除された可能性があります。更新して確認してください。</string>
+    <!-- Photo library: generic next step under an error title. -->
+    <string name="photo_library_try_later">しばらくしてからもう一度お試しください。</string>
+    <!-- Photo library: search filter chip that keeps only photos. -->
+    <string name="photo_library_filter_photos">写真</string>
+    <!-- Photo library: time range option that opens a date range picker. -->
+    <string name="photo_library_time_custom">日付を指定</string>
+    <!-- Photo library: chip on a live/motion photo; tapping it plays the motion part. -->
+    <string name="photo_library_live">Live</string>
+    <!-- Photo library: notice after restoring from the trash. Argument: how many items. -->
+    <plurals name="photo_library_done_restored">
+        <item quantity="other">%1$d 件を元に戻しました</item>
+    </plurals>
 </resources>

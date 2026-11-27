@@ -4,4 +4,28 @@
     <string name="photo_failed_at">%1$d 枚目を送れませんでした</string>
     <!-- Next step under a photo problem when the core gave no reason: pick a different photo. -->
     <string name="photo_try_another">別の写真でお試しください。</string>
+    <!-- Photo library: action and confirm button for sharing with family members. -->
+    <string name="photo_library_share">共有</string>
+    <!-- Photo library: title of the sheet that picks which family members to share with. -->
+    <string name="photo_library_share_title">家族と共有</string>
+    <!-- Photo library: button on the notice after moving items to the trash; restores them. -->
+    <string name="photo_library_undo">元に戻す</string>
+    <!-- Photo library: button that reloads the library. -->
+    <string name="photo_library_refresh">更新</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_unavailable_next_step">ストアで写真アプリ（Immich など）をインストールしてください。インストール済みなら「アプリ」で状態を確認してください。</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_source_required_next_step">どれを開くかまだ決まっていません。オーナーに既定の写真アプリを決めてもらってから、もう一度お試しください。</string>
+    <!-- Photo library: notice after sharing an album with family members. -->
+    <string name="photo_library_done_shared">家族と共有しました</string>
+    <!-- Photo library: placeholder of the place field. -->
+    <string name="photo_library_filter_place_hint">市区町村、地域、国</string>
+    <!-- Photo library: search filter chip that keeps only videos. -->
+    <string name="photo_library_filter_videos">動画</string>
+    <!-- Photo library: play button on a video. -->
+    <string name="photo_library_play">再生</string>
+    <!-- Photo library: notice after favoriting. Argument: how many items. -->
+    <plurals name="photo_library_done_favorite">
+        <item quantity="other">%1$d 件をお気に入りに追加しました</item>
+    </plurals>
 </resources>

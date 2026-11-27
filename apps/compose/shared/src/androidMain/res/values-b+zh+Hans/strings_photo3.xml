@@ -1,4 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="photo_failed_at_reason">%1$s：%2$s</string>
+    <!-- Photo library: screen-reader name of a photo in the grid. Argument: when it was taken. -->
+    <string name="photo_library_photo_from">照片，%1$s</string>
+    <!-- Photo library: action that takes the selected items out of the open album (the items stay in the library). -->
+    <string name="photo_library_remove_from_album">移出相册</string>
+    <!-- Photo library: tile, row and dialog title for creating an album. -->
+    <string name="photo_library_new_album">新建相册</string>
+    <!-- Photo library: confirm button of the new-album dialog. -->
+    <string name="photo_library_create">创建</string>
+    <!-- Photo library: screen-reader name of the mark on an album cover saying the album is shared. -->
+    <string name="photo_library_shared_mark">已共享</string>
+    <!-- Photo library: shown when the library has no photos. -->
+    <string name="photo_library_empty_title">还没有照片</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_gone_next_step">可能已被删除，刷新看看还剩什么。</string>
+    <!-- Photo library: generic next step under an error title. -->
+    <string name="photo_library_try_later">稍后再试。</string>
+    <!-- Photo library: search filter chip that keeps only photos. -->
+    <string name="photo_library_filter_photos">照片</string>
+    <!-- Photo library: time range option that opens a date range picker. -->
+    <string name="photo_library_time_custom">自选日期</string>
+    <!-- Photo library: chip on a live/motion photo; tapping it plays the motion part. -->
+    <string name="photo_library_live">实况</string>
+    <!-- Photo library: notice after restoring from the trash. Argument: how many items. -->
+    <plurals name="photo_library_done_restored">
+        <item quantity="other">已恢复 %1$d 项</item>
+    </plurals>
 </resources>
