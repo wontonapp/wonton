@@ -19,7 +19,7 @@ final class ChatRoomNoticesTests: XCTestCase {
             (.appNotShared, "room.botAppNotShared"),
             (.contactPending, "room.botContactPending"),
             (.contactDeclined, "room.botContactDeclined"),
-            (.botMissing, "room.botMissing")
+            (.botMissing, "room.botMissing"),
         ]
         for (reason, key) in expected {
             XCTAssertEqual(botAccessNoticeText(.unusable(reason: reason))?.key, key, "\(reason)")
