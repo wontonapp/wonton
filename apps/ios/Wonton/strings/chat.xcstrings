@@ -1252,36 +1252,6 @@
         }
       }
     },
-    "room.botUnknown": {
-      "comment": "Above the composer when the app can't check yet whether the person may message this Bot.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn't check yet whether this Bot can be messaged."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "还没核实这个 Bot 能不能发。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "還沒核實這個 Bot 能不能發。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "この Bot に送れるかまだ確かめていません。"
-          }
-        }
-      }
-    },
     "room.botOwnerPrivate": {
       "comment": "Bot 可用性的原因。",
       "extractionState": "manual",

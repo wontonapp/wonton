@@ -208,8 +208,6 @@
     <string name="room_bot_grant_revoked">Access to this Bot was removed.</string>
     <!-- The Bot is known but currently unusable for an unclassified reason. -->
     <string name="room_bot_unavailable">This Bot can\'t be used right now.</string>
-    <!-- Eligibility could not be checked yet, e.g. offline; do not claim it works. -->
-    <string name="room_bot_unknown">Couldn\'t check yet whether this Bot can be messaged.</string>
     <string name="room_bot_role_lacks_shared_bots">This is a family Bot, but your role can\'t use family Bots.</string>
     <string name="room_bot_app_not_shared">This app isn\'t available to you.</string>
     <string name="room_bot_contact_pending">The contact request is still waiting for approval.</string>
