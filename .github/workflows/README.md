@@ -247,3 +247,9 @@ iOS 是 XCFramework 和 Swift 绑定，Android 是 .so 和 Kotlin 绑定。键�
   或 push 到 main 的这一个提交，不扫全部历史；误报白名单在 `.gitleaks.toml`，每条写明理由，真密钥不能
   进白名单。
 - 规则集只有 `gate 汇总` 一个必需检查：被调用的作业改名、加作业都不动规则集；改动范围只看 `gate.yml` 的 `changes`。
+
+## 在分支上按需跑 UI 测试
+
+作者要在托管机器上验证界面改动时，不用等夜跑：`gh workflow run nightly-ui.yml --ref <分支> -f platform=ios -f ios_tests="WontonUITests/SettingsUITests"`
+（Android 用 `-f platform=android -f android_tests=<完整类名,…>`；不填就跑全套）。用的是分支上的工作流文件，失败不开 issue；结果和录屏在这次运行的产物里。
+公开仓库的托管 macOS 分钟免费，但组织同时最多 5 个 macOS 作业，攒一起跑，不要一个用例一次。

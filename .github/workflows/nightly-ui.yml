@@ -17,10 +17,22 @@ on:
       pairing_code:
         description: 开发栈的配对码（可选，10 分钟内有效；没有时只有不需要后端的用例会跑）
         required: false
+      platform:
+        description: 跑哪端（手动在分支上验证时只跑要的那端，省托管机器）
+        type: choice
+        options: [both, ios, android]
+        default: both
+      ios_tests:
+        description: iOS 只跑这些（xcodebuild -only-testing 的值，空格分隔，如 WontonUITests/SettingsUITests）；空就跑全套
+        required: false
+      android_tests:
+        description: Android 只跑这些类（逗号分隔的完整类名，给 testInstrumentationRunnerArguments.class）；空就跑全套
+        required: false
 
 # 夜跑排到第二天还没跑完时不取消上一轮。
+# 手动在分支上验证的（作者把重的 UI 测试放到托管机器上跑，见 workflows/README.md）各跑各的，不和夜跑排队。
 concurrency:
-  group: nightly-ui
+  group: ${{ github.event_name == 'schedule' && 'nightly-ui' || format('ui-{0}', github.run_id) }}
   cancel-in-progress: false
 
 env:
@@ -33,7 +45,7 @@ permissions:
 jobs:
   ios:
     name: 夜跑 iOS UI 测试
-    if: github.event.schedule != '0 4 * * *'
+    if: github.event.schedule != '0 4 * * *' && (github.event_name != 'workflow_dispatch' || inputs.platform != 'android')
     runs-on: xcode-27
     # 上限按跑完全套留足：跑测试前的准备（Rust 核心、测试包、模拟器）约 30 分钟，全套 UI 测试
     # 在 Apple 芯片的开发机上 40 多分钟（2026-11，约 90 个用例），托管机器更慢。
@@ -141,8 +153,12 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
       - name: 跑 WontonUITests 并录屏
         timeout-minutes: 170
+        env:
+          IOS_TESTS: ${{ inputs.ios_tests }}
         run: |
           set -o pipefail
+          only=(-only-testing:WontonUITests)
+          if [ -n "$IOS_TESTS" ]; then only=(); for t in $IOS_TESTS; do only+=("-only-testing:$t"); done; fi
           rm -rf "$RUNNER_TEMP/ui.xcresult"
           # 等测试包装好、App 起起来再录：模拟器刚启动时最容易被安装和录屏一起拽死。
           (sleep 30; exec xcrun simctl io "$SIMULATOR_UDID" recordVideo --codec=h264 "$RUNNER_TEMP/ui.mp4") &
@@ -156,7 +172,7 @@ jobs:
             -destination "id=$SIMULATOR_UDID" \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             -resultBundlePath "$RUNNER_TEMP/ui.xcresult" \
-            -only-testing:WontonUITests \
+            "${only[@]}" \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 90 \
@@ -177,7 +193,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
       - name: 失败时开 issue 或留言
-        if: failure()
+        if: failure() && github.event_name == 'schedule'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -189,7 +205,7 @@ jobs:
 
   android:
     name: 夜跑 Android UI 测试
-    if: github.event.schedule != '30 4 * * *'
+    if: github.event.schedule != '30 4 * * *' && (github.event_name != 'workflow_dispatch' || inputs.platform != 'ios')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -225,6 +241,8 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: 跑 androidTest 并录屏
+        env:
+          ANDROID_TESTS: ${{ inputs.android_tests }}
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36
@@ -238,7 +256,7 @@ jobs:
             # /data/local/tmp 是 shell 能写的地方（API 36 上 /sdcard 根目录不行）。
             adb shell screenrecord --size 720x1280 --time-limit 180 /data/local/tmp/ui.mp4 &
             # 脚本的每行是单独的 sh：构建、抓产物和退出码要写在同一行里。
-            (cd apps/compose && ./gradlew --no-daemon --no-build-cache -Pwonton.abis=x86_64 -Pwonton.uiFake=1 :androidApp:connectedDebugAndroidTest); status=$?; adb pull /data/local/tmp/ui.mp4 "$RUNNER_TEMP/ui.mp4" || true; mkdir -p "$RUNNER_TEMP/shots"; adb pull /sdcard/Pictures/WontonUITests "$RUNNER_TEMP/shots" || true; exit $status
+            (cd apps/compose && ./gradlew --no-daemon --no-build-cache -Pwonton.abis=x86_64 -Pwonton.uiFake=1 ${ANDROID_TESTS:+-Pandroid.testInstrumentationRunnerArguments.class=$ANDROID_TESTS} :androidApp:connectedDebugAndroidTest); status=$?; adb pull /data/local/tmp/ui.mp4 "$RUNNER_TEMP/ui.mp4" || true; mkdir -p "$RUNNER_TEMP/shots"; adb pull /sdcard/Pictures/WontonUITests "$RUNNER_TEMP/shots" || true; exit $status
       - name: 上传结果和录屏
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -252,7 +270,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
       - name: 失败时开 issue 或留言
-        if: failure()
+        if: failure() && github.event_name == 'schedule'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
