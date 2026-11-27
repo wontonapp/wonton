@@ -2,6 +2,8 @@
 
 use wonton_client::{ChatAccount, ChatFailure};
 
+use super::accept_the_bots_invite;
+
 use super::support::{Home, OWNER, Phone};
 
 #[tokio::test(flavor = "multi_thread")]
