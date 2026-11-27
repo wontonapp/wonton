@@ -176,6 +176,7 @@ impl PluginManager {
             self.refresh_bot_core_aliases(&manifest).await?;
         }
         if !keep_data {
+            self.remove_bot_volumes(plugin, bot).await?;
             let dir = self.cfg.apps_dir.join(plugin.slug()).join("bots").join(bot);
             match fs::remove_dir_all(&dir) {
                 Ok(()) => {}

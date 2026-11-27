@@ -508,6 +508,7 @@ fn render_service_containers(
             forced_shares_read_only,
             named: package.named_volumes(),
             service: name,
+            bot,
             allow_docker_socket: ctx.granted.contains(&Permission::DockerSocket),
             socket_declared: manifest.permissions.contains(&Permission::DockerSocket)
                 || manifest

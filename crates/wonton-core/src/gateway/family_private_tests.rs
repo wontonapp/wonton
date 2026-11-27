@@ -2,6 +2,8 @@
 mod files;
 #[path = "family_private_permissions_tests.rs"]
 mod permissions;
+#[path = "family_private_volume_docker_tests.rs"]
+mod volume_docker;
 
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
@@ -92,6 +94,7 @@ impl Bed {
                 gid: ids.gid(),
             }),
             files,
+            None,
         );
         gateway
             .plugins
@@ -115,6 +118,8 @@ impl Bed {
         }
     }
 
+    /// `docker` 是真实 Docker 测试的实例：资源名带上它，等健康按生产时限。
+    #[allow(clippy::too_many_arguments)]
     fn gateway(
         dir: &std::path::Path,
         engine: Engine,
@@ -123,6 +128,7 @@ impl Bed {
         members: Arc<Members>,
         data_owner: crate::plugin::hostdir::Owner,
         files: bool,
+        docker: Option<&crate::plugin::names::Instance>,
     ) -> Arc<Gateway> {
         let profile = OwnerStore::for_test(dir, &owner());
         let public = PublicUrls {
@@ -140,12 +146,15 @@ impl Bed {
             tz: "UTC".into(),
             puid: data_owner.uid,
             pgid: data_owner.gid,
-            install_timeout: Duration::from_secs(5),
+            install_timeout: match docker {
+                Some(_) => crate::config::DEFAULT_INSTALL_TIMEOUT,
+                None => Duration::from_secs(5),
+            },
             owner: "owner".into(),
             profile: profile.clone(),
             gateway_port: 8080,
             plugin_slice: None,
-            instance: Default::default(),
+            instance: docker.cloned().unwrap_or_default(),
         };
         let plugins = Arc::new(
             PluginManager::new(
@@ -175,60 +184,15 @@ impl Bed {
     }
 
     async fn call(&self, method: Method, path: &str, body: Value) -> Reply {
-        send_as(
-            &router(self.gateway.clone()),
-            None,
-            method,
-            CORE,
-            path,
-            &[
-                ("authorization", &bearer()),
-                ("content-type", "application/json"),
-            ],
-            &body.to_string(),
-        )
-        .await
+        call(&self.gateway, method, path, body).await
     }
 
     fn pending(&self, username: &str, private_bot: bool) -> (String, iroh::EndpointId) {
-        self.gateway
-            .members
-            .invite(MemberRecord {
-                role_id: "family".into(),
-                wants_private_bot: private_bot,
-                ..MemberRecord::for_test(username)
-            })
-            .unwrap();
-        let code = self.gateway.members.issue_pairing_code(username).unwrap();
-        let device = SecretKey::generate().public();
-        self.gateway
-            .members
-            .request_join(
-                code.secret.expose(),
-                device,
-                "Phone",
-                &self.gateway.tunnel.devices,
-            )
-            .unwrap();
-        let id = self
-            .gateway
-            .members
-            .join_requests()
-            .iter()
-            .find(|request| request.username == username)
-            .unwrap()
-            .id
-            .clone();
-        (id, device)
+        pending(&self.gateway, username, private_bot)
     }
 
     async fn approve(&self, id: &str) -> Reply {
-        self.call(
-            Method::POST,
-            &wonton_protocol::join_request_approve_path(id),
-            Value::Null,
-        )
-        .await
+        approve(&self.gateway, id).await
     }
 
     async fn retry(&self) -> Reply {
@@ -262,9 +226,67 @@ impl Bed {
                 gid: ids.gid(),
             },
             true,
+            None,
         );
         self.gateway.plugins.restore().await.unwrap();
     }
+}
+
+async fn call(gateway: &Arc<Gateway>, method: Method, path: &str, body: Value) -> Reply {
+    send_as(
+        &router(gateway.clone()),
+        None,
+        method,
+        CORE,
+        path,
+        &[
+            ("authorization", &bearer()),
+            ("content-type", "application/json"),
+        ],
+        &body.to_string(),
+    )
+    .await
+}
+
+fn pending(gateway: &Gateway, username: &str, private_bot: bool) -> (String, iroh::EndpointId) {
+    gateway
+        .members
+        .invite(MemberRecord {
+            role_id: "family".into(),
+            wants_private_bot: private_bot,
+            ..MemberRecord::for_test(username)
+        })
+        .unwrap();
+    let code = gateway.members.issue_pairing_code(username).unwrap();
+    let device = SecretKey::generate().public();
+    gateway
+        .members
+        .request_join(
+            code.secret.expose(),
+            device,
+            "Phone",
+            &gateway.tunnel.devices,
+        )
+        .unwrap();
+    let id = gateway
+        .members
+        .join_requests()
+        .iter()
+        .find(|request| request.username == username)
+        .unwrap()
+        .id
+        .clone();
+    (id, device)
+}
+
+async fn approve(gateway: &Arc<Gateway>, id: &str) -> Reply {
+    call(
+        gateway,
+        Method::POST,
+        &wonton_protocol::join_request_approve_path(id),
+        Value::Null,
+    )
+    .await
 }
 
 #[tokio::test]
@@ -376,6 +398,7 @@ async fn a_home_whose_ownership_cannot_be_fixed_is_reported_as_missing_permissio
         members,
         foreign,
         false,
+        None,
     );
     let id = {
         gateway

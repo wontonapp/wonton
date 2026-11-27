@@ -162,8 +162,18 @@ fn others(
             json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
         }
         (&Method::GET, ["images", image @ .., "json"]) => {
-            let check = docker.image_healthchecks.get(&image.join("/"));
-            json_reply(StatusCode::OK, json!({"Config": {"Healthcheck": check}}))
+            let image = image.join("/");
+            let check = docker.image_healthchecks.get(&image);
+            let volumes = docker.image_volumes.get(&image).map(|paths| {
+                paths
+                    .iter()
+                    .map(|path| (path.clone(), json!({})))
+                    .collect::<serde_json::Map<_, _>>()
+            });
+            json_reply(
+                StatusCode::OK,
+                json!({"Config": {"Healthcheck": check, "Volumes": volumes}}),
+            )
         }
         (&Method::POST, ["images", "create"]) if docker.pull_error.is_some() => json_reply(
             StatusCode::INTERNAL_SERVER_ERROR,
