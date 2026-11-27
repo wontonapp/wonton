@@ -51,10 +51,13 @@ fn partial(start: usize) -> Response {
     let body = CONTENT[start..].to_vec();
     (
         StatusCode::PARTIAL_CONTENT,
-        [(
-            header::CONTENT_RANGE,
-            format!("bytes {start}-{}/{}", CONTENT.len() - 1, CONTENT.len()),
-        )],
+        [
+            (
+                header::CONTENT_RANGE,
+                format!("bytes {start}-{}/{}", CONTENT.len() - 1, CONTENT.len()),
+            ),
+            (header::ETAG, "\"v1\"".to_owned()),
+        ],
         body,
     )
         .into_response()
@@ -63,7 +66,7 @@ fn partial(start: usize) -> Response {
 fn provider(shared: Shared) -> Router {
     let (start, head, patch, finish) = (shared.clone(), shared.clone(), shared.clone(), shared);
     caps(
-        &["upload", "download", "playback", "list"],
+        &["upload", "download", "playback", "list", "catalog"],
         &["photo", "video"],
     )
     .route(
@@ -146,7 +149,20 @@ fn reading() -> Router {
         .route(
             "/items/{id}/download",
             get(|headers: HeaderMap| async move {
-                partial(range_start(&headers, header::RANGE).unwrap_or(0))
+                if headers
+                    .get(header::IF_NONE_MATCH)
+                    .is_some_and(|tag| tag == "\"v1\"")
+                {
+                    return StatusCode::NOT_MODIFIED.into_response();
+                }
+                match range_start(&headers, header::RANGE) {
+                    Some(start) if start >= CONTENT.len() => (
+                        StatusCode::RANGE_NOT_SATISFIABLE,
+                        [(header::CONTENT_RANGE, format!("bytes */{}", CONTENT.len()))],
+                    )
+                        .into_response(),
+                    start => partial(start.unwrap_or(0)),
+                }
             }),
         )
         .route(
@@ -170,6 +186,17 @@ fn reading() -> Router {
             }),
         )
         .route("/hls/{*rest}", get(hls))
+        .route(
+            "/catalog/entries/{id}",
+            get(|| async { axum::Json(json!({"entry": {"id": "s/1"}})) }),
+        )
+        .route(
+            "/catalog/actions",
+            post(|body: Bytes| async move {
+                let action: Value = serde_json::from_slice(&body).unwrap();
+                axum::Json(json!({"done": action["ids"], "failed": []}))
+            }),
+        )
         .route(
             "/items",
             get(|| async {
@@ -241,6 +268,7 @@ pub(super) async fn fixture_with(extra: Vec<(Candidate, Router)>) -> Fixture {
                 MediaOperation::Download,
                 MediaOperation::Playback,
                 MediaOperation::List,
+                serde_json::from_value(json!("catalog")).unwrap(),
             ],
             &[MediaKind::Photo, MediaKind::Video],
         ),
@@ -508,7 +536,7 @@ async fn upstream_401_fails_the_upload_task_without_backoff() {
 }
 
 #[tokio::test]
-async fn download_bytes_keep_the_range() {
+async fn download_bytes_keep_the_range_and_the_http_answers() {
     let f = fixture().await;
     let (status, task) = f
         .json(
@@ -539,6 +567,27 @@ async fn download_bytes_keep_the_range() {
     assert_eq!(status, StatusCode::PARTIAL_CONTENT);
     assert_eq!(headers[header::CONTENT_RANGE], "bytes 3-9/10");
     assert_eq!(body, b"3456789");
+    // 缓存命中的 304、越界的 416 是 HTTP 的回答，原样回来，不是失败信封。
+    let etag = headers[header::ETAG].to_str().unwrap().to_owned();
+    let (status, _, body) = f
+        .send(
+            Method::GET,
+            &path,
+            &[("if-none-match", etag)],
+            Body::empty(),
+        )
+        .await;
+    assert_eq!((status, body.len()), (StatusCode::NOT_MODIFIED, 0));
+    let (status, headers, _) = f
+        .send(
+            Method::GET,
+            &path,
+            &[("range", "bytes=20-".into())],
+            Body::empty(),
+        )
+        .await;
+    assert_eq!(status, StatusCode::RANGE_NOT_SATISFIABLE);
+    assert_eq!(headers[header::CONTENT_RANGE], "bytes */10");
 }
 
 #[tokio::test]

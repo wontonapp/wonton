@@ -90,7 +90,7 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 
 1. 客户端核在本机起回环 HTTP（照 `files/stream.rs:1-8` 的随机令牌），播放器、上传器只连 `127.0.0.1`。
 2. 客户端核把请求经设备隧道发给核心网关 `/_wonton/api/media/…`，凭证是设备隧道身份（ADR-0004、ADR-0009）；`X-Wonton-User` 由核心按设备归属的人填，能力凭据由核心从提供方签的那把取，两者都不进壳。
-3. 核心按能力别名转发给提供方，字节**流式透传、不落盘**；`Range`、`If-Range`、`Content-Range` 原样过。客户端只认三条核心路由，路径里带任务/会话和 item，核心按它查到提供方：
+3. 核心按能力别名转发给提供方，字节**流式透传、不落盘**；`Range`、`If-Range`、`Content-Range`、`If-None-Match`、`If-Modified-Since` 原样过，提供方回的 304、416 和缓存相关的响应头（`ETag`、`Last-Modified`、`Cache-Control`、`Accept-Ranges`、`Content-Range`）也原样回。客户端只认三条核心路由，路径里带任务/会话和 item，核心按它查到提供方：
    `POST|PATCH /_wonton/api/media/tasks/{id}/uploads/{item}`（`{item}` 是 `item_id`；POST 无体、核心用任务里的 `UploadItem` 补体建上传并记住 `upload_id` 映射，PATCH 按映射续写，两者都回当前 `upload_offset`）、
    `GET /_wonton/api/media/tasks/{id}/items/{item}/content`（转发 `/items/{id}/download`）、
    `GET /_wonton/api/media/sessions/{id}/stream/{文件名}`（转发 plan 的流地址，文件名取它的最后一段；HLS 的子列表、分片按它解析成 `…/stream/{子路径}`，接在流地址的目录后面）。

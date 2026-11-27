@@ -1,4 +1,5 @@
-//! 媒体接口 `/_wonton/api/media/*`（ADR-0113 第 2、3、4 节）：任务、播放会话、队列、条目和三条字节路由。
+//! 媒体接口 `/_wonton/api/media/*`（ADR-0113 第 2、3、4 节）：任务、播放会话、队列、条目、三条字节路由，
+//! 和相册、影视原生浏览的转发（第 9、10 节）。
 //!
 //! 只接经隧道的已配对设备，还要带 `X-Wonton-Device`，值是这台设备的隧道身份：带自定义请求头的跨站
 //! 请求要先过预检，这里不回 CORS 头，插件网页因此碰不到这些接口（同文件接口）。人由核心按设备记录认，
@@ -6,6 +7,7 @@
 //!
 //! 错误体一律是 [`MediaFailure`] 信封；状态码只是提示，壳按信封里的类别出字。
 
+mod browse;
 mod bytes;
 mod queue;
 mod sessions;
@@ -104,6 +106,14 @@ pub(super) fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
         .route(&at("/queue"), get(queue::read).post(queue::change))
         .route(&at("/items"), get(bytes::items))
         .route(&at("/items/{id}/artwork"), get(bytes::artwork))
+        .route(
+            &at("/library/{*rest}"),
+            get(browse::library).post(browse::library),
+        )
+        .route(
+            &at("/catalog/{*rest}"),
+            get(browse::catalog).post(browse::catalog),
+        )
         .layer(middleware::from_fn_with_state(gateway, require_device))
 }
 

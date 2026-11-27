@@ -504,6 +504,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | 上面两条后接 `/{rest}` | `GET` | 原始字节；`rest` 是播放器按上一份列表解析出的相对地址（HLS 的子列表、分片） | 字节流。核心把 `rest` 逐段接到流地址的目录后面，查询串用这次请求的；`.`、`..`、空段回 `protocol` |
 | `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
 | `/items` | `GET` | 无（query 同提供方的 `GET /items`，`kind` 必填） | `{items, cursor?}`，核心转给这个种类的提供方 |
+| `/library/{rest}`、`/catalog/{rest}` | `GET`、`POST` | 同提供方的 `/library/…`、`/catalog/…`（第 9、10 节）；可带 `source` | 提供方的回包原样回；核心按 `library`+`photo`、`catalog`+`video` 选提供方，路径原样转、去掉 `source`，`.`、`..`、空段回 `protocol` |
 | `/items/{id}/artwork` | `GET` | 无（query: `kind`，可选 `source`、`type`、`width`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork`，`type`、`width` 原样带过去 |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
 | `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
