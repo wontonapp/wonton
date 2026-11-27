@@ -10,19 +10,25 @@
 //! - 出码方的主人点了同意或拒绝后，出码方也连回扫码方（地址来自扫码请求），发 JSON 的
 //!   [`PeerMessage::Decision`]；扫码方只接受它扫过的那个 endpoint ID（[`PeerPairHandler::expecting_decision`]
 //!   说了算）发来的结果。任何一方删配对时发 [`PeerMessage::Removed`]，尽力而为，对方离线时靠联邦握手被拒兜底。
+//! - 配对成立后两端互换自签叶证书（ADR-0112）：[`PeerMessage::Certificate`] 带整张 DER 和公钥的 SPKI
+//!   SHA-256，收到就钉；`ack` 为真时是对对方最近一条的回执。轮换时新旧一起给，回执到了只留新的。
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use url::Url;
 
 pub(crate) mod client;
 pub(crate) mod server;
 
-pub use client::{ask_outcome, deliver_decision, notify_removed, scan, scan_to};
+pub use client::{
+    ask_outcome, deliver_certificate, deliver_decision, notify_removed, scan, scan_to,
+};
 pub use server::{PeerPairHandler, PeerPairProtocol};
 
 /// 服务器配对协议的 ALPN，和隧道、设备配对、联邦挂在同一个 endpoint 上。协议不兼容地变化时升级末尾的版本号。
@@ -251,6 +257,72 @@ impl PeerIdentity {
     }
 }
 
+/// 一台服务器的自签叶证书（ADR-0112）：配对时经已认证的通道互换，对方钉住。
+///
+/// DER 走 base64（标准字母表、带填充），`spki_sha256` 是证书公钥 SubjectPublicKeyInfo 的 SHA-256，
+/// 十六进制小写。钉的是叶本身：CA 私钥漏了能签任意名字，叶不能。
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerCertificate {
+    /// 整张证书的 DER，base64。
+    pub der: String,
+    /// `der` 里公钥的 SPKI SHA-256。
+    pub spki_sha256: String,
+}
+
+impl PeerCertificate {
+    /// 由证书 DER 造一条，SPKI 指纹现算。读不懂的 DER 当错报文给出原因。
+    pub fn from_der(der: Vec<u8>) -> Result<Self, String> {
+        let (_, parsed) = x509_parser::parse_x509_certificate(&der).map_err(|e| e.to_string())?;
+        let spki_sha256 = hex(Sha256::digest(parsed.subject_pki.raw).as_slice());
+        Ok(Self {
+            der: STANDARD.encode(der),
+            spki_sha256,
+        })
+    }
+
+    /// 字段自洽：DER 读得懂，指纹确实等于它自己公钥的 SPKI SHA-256。
+    pub fn validate(&self) -> bool {
+        let Some((der, pinned)) = self.der_bytes().zip(self.spki_sha256_bytes()) else {
+            return false;
+        };
+        let Ok((_, parsed)) = x509_parser::parse_x509_certificate(&der) else {
+            return false;
+        };
+        Sha256::digest(parsed.subject_pki.raw).as_slice() == pinned
+    }
+
+    /// 解回证书的 DER。
+    pub fn der_bytes(&self) -> Option<Vec<u8>> {
+        STANDARD.decode(&self.der).ok()
+    }
+
+    /// 指纹按 32 字节取，交给握手侧和对方的 SPKI 比。
+    pub fn spki_sha256_bytes(&self) -> Option<[u8; 32]> {
+        let text = self.spki_sha256.as_bytes();
+        if text.len() != 64 {
+            return None;
+        }
+        let mut out = [0; 32];
+        for (slot, pair) in out.iter_mut().zip(text.chunks(2)) {
+            *slot = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+        }
+        Some(out)
+    }
+}
+
+impl fmt::Debug for PeerCertificate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PeerCertificate")
+            .field("spki_sha256", &self.spki_sha256)
+            .field("der_len", &self.der.len())
+            .finish()
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 /// 一端经 [`PEER_PAIR_ALPN`] 发给另一端的消息。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -274,6 +346,15 @@ pub enum PeerMessage {
     },
     /// 一方删了和另一方的配对（ADR-0050）：尽力而为的通知，对方离线时靠联邦握手被拒兜底。
     Removed { server_name: String },
+    /// 一方出示自己的自签叶证书（ADR-0112）：配对成立后互换，轮换时新旧一起发。
+    /// `ack` 为真时同时是对对方最近一条 `Certificate` 的回执，对方收下后只留这一张新叶。
+    Certificate {
+        #[serde(flatten)]
+        certificate: PeerCertificate,
+        /// 这条是在回执对方刚发来的证书。
+        #[serde(default)]
+        ack: bool,
+    },
 }
 
 /// 对 [`PeerMessage`] 的应答。`Error` 的原因 [`PeerRejectReason`] 对上设备配对的 [`crate::pair::RejectReason`]
@@ -343,6 +424,12 @@ mod tests {
             relays: vec!["https://relay.example.com./".to_owned()],
             addrs: vec!["192.168.1.20:18482".parse().unwrap()],
         }
+    }
+
+    fn certificate() -> PeerCertificate {
+        let key = rcgen::KeyPair::generate().unwrap();
+        let params = rcgen::CertificateParams::new(vec!["abc.wonton.internal".to_owned()]).unwrap();
+        PeerCertificate::from_der(params.self_signed(&key).unwrap().der().to_vec()).unwrap()
     }
 
     fn code() -> PeerPairingCode {
@@ -552,5 +639,52 @@ mod tests {
             addr.ip_addrs()
                 .any(|a| a == &"192.168.1.20:18482".parse().unwrap())
         );
+    }
+
+    /// 契约：证书消息经 JSON 往返不丢字段；缺 `ack` 的按不是回执读。
+    #[test]
+    fn certificate_messages_survive_json() {
+        let certificate = certificate();
+        let message = PeerMessage::Certificate {
+            certificate: certificate.clone(),
+            ack: true,
+        };
+        let json = serde_json::to_value(&message).unwrap();
+        assert_eq!(json["type"], "certificate");
+        assert_eq!(json["der"], certificate.der);
+        assert_eq!(json["spki_sha256"], certificate.spki_sha256);
+        assert_eq!(json["ack"], true);
+        assert_eq!(
+            serde_json::from_value::<PeerMessage>(json).unwrap(),
+            message
+        );
+        let without_ack: PeerMessage = serde_json::from_value(serde_json::json!({
+            "type": "certificate",
+            "der": certificate.der,
+            "spki_sha256": certificate.spki_sha256,
+        }))
+        .unwrap();
+        assert_eq!(
+            without_ack,
+            PeerMessage::Certificate {
+                certificate,
+                ack: false,
+            }
+        );
+    }
+
+    /// 指纹是从证书自己的公钥算出来的：指到别的公钥或读不懂的 DER 都不认。
+    #[test]
+    fn a_certificate_carries_the_hash_of_its_own_public_key() {
+        let certificate = certificate();
+        assert!(certificate.validate());
+        let der = certificate.der_bytes().unwrap();
+        assert!(!der.is_empty());
+        assert_eq!(certificate.spki_sha256_bytes().unwrap().len(), 32);
+        assert_eq!(PeerCertificate::from_der(der).unwrap(), certificate);
+        let mut forged = certificate.clone();
+        forged.spki_sha256 = "00".repeat(32);
+        assert!(!forged.validate());
+        assert!(PeerCertificate::from_der(b"not a certificate".to_vec()).is_err());
     }
 }

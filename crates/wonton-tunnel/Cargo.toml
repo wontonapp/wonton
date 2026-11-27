@@ -25,6 +25,10 @@ iroh = { workspace = true, features = ["unstable-custom-transports"] }
 iroh-relay = "1.4.1"
 # MIT OR Apache-2.0。中继令牌写在地址的 userinfo 里，按百分号编码解码。
 percent-encoding = { workspace = true }
+# MIT OR Apache-2.0。从对方发来的证书里取公钥的 SPKI 算指纹（ADR-0112）；已在依赖树里（wonton-core 用它读证书）。
+x509-parser = "0.18.1"
+# MIT OR Apache-2.0。SPKI 指纹。
+sha2 = { workspace = true }
 # MIT OR Apache-2.0。配对请求和回应的 JSON。
 serde = { workspace = true }
 serde_json = { workspace = true }

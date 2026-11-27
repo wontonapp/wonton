@@ -13,9 +13,9 @@ use iroh::{EndpointId, SecretKey};
 use wonton_tunnel::TunnelServer;
 use wonton_tunnel::pair::{PairHandler, PairProtocol, PairResponse, RejectReason};
 use wonton_tunnel::peer_pair::{
-    PEER_PAIR_ALPN, PeerIdentity, PeerPairHandler, PeerPairProtocol, PeerPairToken,
-    PeerPairingCode, PeerRejectReason, PeerReply, ask_outcome, deliver_decision, notify_removed,
-    scan_to,
+    PEER_PAIR_ALPN, PeerCertificate, PeerIdentity, PeerPairHandler, PeerPairProtocol,
+    PeerPairToken, PeerPairingCode, PeerRejectReason, PeerReply, ask_outcome, deliver_certificate,
+    deliver_decision, notify_removed, scan_to,
 };
 
 use crate::support::{Timeouts, loopback_endpoint};
@@ -33,6 +33,8 @@ struct Issuer {
     rejected: Mutex<Vec<EndpointId>>,
     /// 主人的回答：还没回答时为空。
     answer: Mutex<Option<bool>>,
+    /// 收到的证书：来源、证书和是不是回执。
+    certificates: Mutex<Vec<(EndpointId, PeerCertificate, bool)>>,
 }
 
 impl Issuer {
@@ -44,6 +46,7 @@ impl Issuer {
             scanned: Mutex::new(Vec::new()),
             rejected: Mutex::new(Vec::new()),
             answer: Mutex::new(None),
+            certificates: Mutex::new(Vec::new()),
         }
     }
 
@@ -59,6 +62,13 @@ impl Issuer {
 }
 
 impl PeerPairHandler for Issuer {
+    fn certificate(&self, from: EndpointId, certificate: &PeerCertificate, ack: bool) {
+        self.certificates
+            .lock()
+            .unwrap()
+            .push((from, certificate.clone(), ack));
+    }
+
     fn scanned(
         &self,
         scanner: EndpointId,
@@ -174,6 +184,8 @@ impl PeerPairHandler for Scanner {
             .unwrap()
             .push((from, approved, identity.clone()));
     }
+
+    fn certificate(&self, _: EndpointId, _: &PeerCertificate, _: bool) {}
 
     fn removed(&self, from: EndpointId, server_name: &str) {
         self.removed
@@ -640,4 +652,52 @@ async fn the_code_address_holds_the_relay_only() {
     );
     assert_eq!(addr.ip_addrs().count(), 0);
     issuer.server.shutdown().await;
+}
+
+/// 证书消息送到对方的处理方，来源是 QUIC 握手认证的 endpoint；回执照样带证书。
+#[tokio::test]
+async fn a_certificate_reaches_the_peer_handler() {
+    let issuer_state = Arc::new(Issuer::new());
+    let issuer = start(issuer_state.clone()).await;
+    let scanner = start(Arc::new(Scanner::default())).await;
+    let key = rcgen::KeyPair::generate().unwrap();
+    let params = rcgen::CertificateParams::new(vec!["scanner.example".to_owned()]).unwrap();
+    let certificate =
+        PeerCertificate::from_der(params.self_signed(&key).unwrap().der().to_vec()).unwrap();
+
+    deliver_certificate(
+        scanner.endpoint(),
+        addr_for(issuer.id, &issuer.addrs),
+        certificate.clone(),
+        false,
+    )
+    .await
+    .unwrap();
+    deliver_certificate(
+        scanner.endpoint(),
+        addr_for(issuer.id, &issuer.addrs),
+        certificate.clone(),
+        true,
+    )
+    .await
+    .unwrap();
+
+    {
+        let received = issuer_state.certificates.lock().unwrap();
+        assert_eq!(received.len(), 2);
+        assert_eq!(received[0], (scanner.id, certificate.clone(), false));
+        assert_eq_ack(&received[1], &scanner.id, &certificate);
+    }
+    issuer.server.shutdown().await;
+    scanner.server.shutdown().await;
+}
+
+fn assert_eq_ack(
+    received: &(EndpointId, PeerCertificate, bool),
+    from: &EndpointId,
+    certificate: &PeerCertificate,
+) {
+    assert_eq!(received.0, *from);
+    assert_eq!(&received.1, certificate);
+    assert!(received.2);
 }
