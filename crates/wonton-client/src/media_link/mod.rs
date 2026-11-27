@@ -10,6 +10,9 @@ mod api;
 mod loopback;
 #[cfg(test)]
 mod loopback_tests;
+mod player_bridge;
+#[cfg(test)]
+mod player_bridge_tests;
 mod profile;
 mod queue;
 mod state;
@@ -22,20 +25,23 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use tokio::runtime::Handle;
 use tokio::sync::watch;
+use tokio::time::Instant;
 use wonton_protocol::media::api::{
     MEDIA_API_PREFIX, SessionList, TaskList, queue_path, session_control_path, session_path,
-    session_stop_path, sessions_path, tasks_path,
+    session_progress_path, session_stop_path, sessions_path, tasks_path,
 };
 use wonton_protocol::media::provider::{ItemsPage, ItemsQuery, PlaybackStopped};
 use wonton_protocol::media::{
     MediaAction, MediaFailure, MediaFailureCode, MediaTask, MediaViewModel, PlaybackRequest,
-    PlaybackSession, PlaybackViewModel, Queue, TaskCreate, TaskState,
+    PlaybackSession, PlaybackSessionId, PlaybackViewModel, Queue, TaskCreate, TaskState,
 };
 use wonton_protocol::{CoreError, HomeStatus, HomeViewModel};
 
 use crate::home::HomeLink;
 pub(crate) use api::{MediaApi, failure};
 use loopback::Loopback;
+use player_bridge::{Bridge, Report};
+pub use player_bridge::{PlayerCommand, PlayerEvent};
 pub use profile::PlayerSupport;
 use profile::Profiles;
 use state::Local;
@@ -63,6 +69,7 @@ pub(crate) struct MediaLink {
     state: Mutex<Local>,
     loopback: Loopback,
     profiles: Profiles,
+    bridge: Mutex<Bridge>,
     media: watch::Sender<MediaViewModel>,
     playback: watch::Sender<Option<PlaybackViewModel>>,
 }
@@ -99,6 +106,7 @@ impl MediaLink {
             state: Mutex::new(local),
             loopback: Loopback::new(),
             profiles: Profiles::open(dir),
+            bridge: Mutex::new(Bridge::default()),
             media: views.media,
             playback: views.playback,
         });
@@ -265,6 +273,73 @@ impl MediaLink {
             .get(&format!("{MEDIA_API_PREFIX}{}", query.path()))
             .await
     }
+}
+
+impl MediaLink {
+    /// 壳的播放器报的事（M20）：本机的位置先跟上，再按节奏把位置、换曲或停止发给核心；没成的原因落在
+    /// 播放视图上。回给壳这次要它做的（多数时候什么也不用做）。
+    pub(crate) fn report_player(self: &Arc<Self>, event: PlayerEvent) -> PlayerCommand {
+        let wall_clock = unix_ms();
+        let decided = self.update(|local| {
+            let session = local.session()?.clone();
+            local.set_position(session.id, event.position_ms());
+            if let PlayerEvent::Failed { code, message, .. } = &event {
+                local.playback_failed(failure(code.clone(), message.clone()));
+            }
+            let decision = self
+                .bridge
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .decide(&session, local.queue(), &event, Instant::now(), wall_clock);
+            Some((session.id, decision))
+        });
+        let Some((session, decision)) = decided else {
+            return PlayerCommand::Keep;
+        };
+        if let Some(report) = decision.report {
+            let link = self.clone();
+            self.runtime.spawn(async move {
+                if let Err(failure) = link.send_report(session, report).await {
+                    link.update(|local| local.playback_failed(failure));
+                }
+            });
+        }
+        decision.command
+    }
+
+    async fn send_report(
+        &self,
+        session: PlaybackSessionId,
+        report: Report,
+    ) -> Result<(), MediaFailure> {
+        let api = self.api()?;
+        match report {
+            Report::Progress(body) => api.post_empty(&session_progress_path(session), &body).await,
+            Report::Control(ctl) => {
+                let body = MediaAction::Control { session, ctl };
+                let read: PlaybackSession = api.post(&session_control_path(session), &body).await?;
+                self.update(|local| local.put_session(read));
+                // 换曲挪了队列的指针：取回来，壳的队列页跟着走。
+                let queue: Queue = api.get(&queue_path()).await?;
+                self.update(|local| local.put_queue(queue));
+                Ok(())
+            }
+            Report::Stop(body) => {
+                api.post_empty(&session_stop_path(session), &body).await?;
+                let read: PlaybackSession = api.get(&session_path(session)).await?;
+                self.update(|local| local.put_session(read));
+                Ok(())
+            }
+        }
+    }
+}
+
+fn unix_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 /// 会话翻成播放器该在的状态。

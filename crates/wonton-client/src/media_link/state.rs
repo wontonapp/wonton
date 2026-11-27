@@ -6,8 +6,8 @@
 use std::collections::BTreeMap;
 
 use wonton_protocol::media::{
-    ItemView, MediaFailure, MediaTask, MediaViewModel, PlaybackSession, PlaybackViewModel, Queue,
-    QuotaView, TaskId, TaskState, TaskTarget, TaskView, UploadItem,
+    ItemView, MediaFailure, MediaTask, MediaViewModel, PlaybackSession, PlaybackSessionId,
+    PlaybackViewModel, Queue, QuotaView, TaskId, TaskState, TaskTarget, TaskView, UploadItem,
 };
 
 /// 一次最多给壳几项条目，多的用 `items_cursor` 翻。
@@ -83,6 +83,13 @@ impl Local {
             self.playback_failure = None;
         }
         self.session = Some(session);
+    }
+
+    /// 播放器报的位置：只改本机这份，让播放视图和续播点跟上；核心那份按节奏另报。
+    pub(crate) fn set_position(&mut self, session: PlaybackSessionId, position_ms: u64) {
+        if let Some(current) = self.session.as_mut().filter(|s| s.id == session) {
+            current.position_ms = position_ms;
+        }
     }
 
     pub(crate) fn session(&self) -> Option<&PlaybackSession> {

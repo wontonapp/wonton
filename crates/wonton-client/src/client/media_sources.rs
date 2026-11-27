@@ -12,7 +12,8 @@ use wonton_protocol::media::{
 
 use super::ClientCore;
 use crate::media_link::{
-    MediaSubscription, PlaybackSubscription, PlayerState, PlayerSupport, failure,
+    MediaSubscription, PlaybackSubscription, PlayerCommand, PlayerEvent, PlayerState,
+    PlayerSupport, failure,
 };
 use crate::scope::Scope;
 
@@ -32,6 +33,12 @@ impl ClientCore {
 
     pub fn player_state(&self) -> PlayerState {
         self.scope().media.player_state()
+    }
+
+    /// 播放器报发生了什么（出声、暂停、拖动、放完、停了、放不下去）；位置上报的节奏、放完换下一项还是
+    /// 停止都由核心定。回的是壳这次要做的。
+    pub fn report_player(&self, event: PlayerEvent) -> PlayerCommand {
+        self.scope().media.report_player(event)
     }
 
     /// 壳报这台设备的播放器能直放什么；之后起播请求里的设备档空着就用它。缺了格式或容器回
