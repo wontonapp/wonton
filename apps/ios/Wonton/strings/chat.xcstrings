@@ -1192,36 +1192,6 @@
         }
       }
     },
-    "room.botOtherPrivate": {
-      "comment": "Above the composer in a DM with a family member's private Bot, which the current person, owner included, has no grant for.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This is another family member's private Bot. Its owner hasn't given access."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这是家里人的私人 Bot，主人还没给授权。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "這是家裡人的私人 Bot，主人還沒給授權。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "これは家族の他の人のプライベート Bot です。持ち主はまだ利用を許可していません。"
-          }
-        }
-      }
-    },
     "room.botGrantRevoked": {
       "comment": "Above the composer in a DM with a Bot the person could use before and whose grant was removed.",
       "extractionState": "manual",

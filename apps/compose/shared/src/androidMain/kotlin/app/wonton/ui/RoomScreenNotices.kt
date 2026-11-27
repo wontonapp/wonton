@@ -35,6 +35,8 @@ internal fun botAccessReasonNotice(reason: BotChatUnavailable): Int = when (reas
     BotChatUnavailable.CONTACT_DECLINED -> R.string.room_bot_contact_declined
     BotChatUnavailable.BOT_MISSING -> R.string.room_bot_missing
     BotChatUnavailable.OTHER -> R.string.room_bot_unavailable
+    // 协议先于壳多出来的原因：旧壳先显示通用句，别让整层编不过。
+    else -> R.string.room_bot_unavailable
 }
 
 /** 这个 Bot 现在不能聊的原因；能用、不是 Bot 或还没取到时为空，输入框照常。 */
