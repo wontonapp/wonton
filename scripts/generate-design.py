@@ -181,8 +181,9 @@ def upstream_svg(icon, style):
 def swift_icons(icons):
     cases = "\n".join(f"    case {name}" for name, _, _ in icon_variants(icons))
     # 实心版没有自己的彩色图：彩色分层不分线框和实心，两个值指向同一张。
-    colored = "\n".join(
-        f'        .{variant}: "{name}Color",'
+    # 最后一项不带逗号：提交钩子的 swiftlint --fix 会删掉它，生成结果就和 --check 对不上。
+    colored = ",\n".join(
+        f'        .{variant}: "{name}Color"'
         for variant, icon, _ in icon_variants(icons)
         for name in [variant.removesuffix("Fill") if icon.get("fill") else variant]
         if "kubai" in icon
