@@ -7,7 +7,9 @@ final class AskAgentUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
+        app.launchArguments += [
+            "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES",
+        ]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
         app.launchEnvironment["WONTON_UI_TEST_ASK_ON_LAUNCH"] = "1"
