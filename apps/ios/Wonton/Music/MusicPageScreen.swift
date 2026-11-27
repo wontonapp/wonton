@@ -74,7 +74,9 @@ private struct MusicPageBody: View {
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
         if let root {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                MusicOpenButton(page: .search, label: String(localized: .Music1.musicSearch), systemImage: "magnifyingglass")
+                MusicOpenButton(
+                    page: .search, label: String(localized: .Music1.musicSearch), systemImage: "magnifyingglass"
+                )
                 Menu {
                     Button(String(localized: .Music0.musicWebVersion), systemImage: "globe", action: root.openWeb)
                     Button(TabText.addToMyApps, systemImage: "plus.square.on.square", action: root.addToMyApps)

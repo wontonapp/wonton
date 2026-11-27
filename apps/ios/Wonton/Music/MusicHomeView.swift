@@ -50,36 +50,41 @@ private struct MusicCategories: View {
     @Environment(\.music) private var music
     @Environment(\.wontonColors) private var colors
 
-    private var entries: [(String, WontonIcon, MusicPage)] {
+    private struct Entry {
+        let title: String
+        let icon: WontonIcon
+        let page: MusicPage
+    }
+
+    private var entries: [Entry] {
         [
-            (String(localized: .Music0.musicPlaylists), .list, .playlists),
-            (String(localized: .Music1.musicArtists), .person, .artists),
-            (String(localized: .Music1.musicAlbums), .imageFill, .albums(sort: .name)),
-            (String(localized: .Music1.musicSongs), .music, .songs),
-            (String(localized: .Music1.musicStarred), .star, .starred),
-            (String(localized: .Music0.musicGenres), .folder, .genres),
+            Entry(title: String(localized: .Music0.musicPlaylists), icon: .list, page: .playlists),
+            Entry(title: String(localized: .Music1.musicArtists), icon: .person, page: .artists),
+            Entry(title: String(localized: .Music1.musicAlbums), icon: .imageFill, page: .albums(sort: .name)),
+            Entry(title: String(localized: .Music1.musicSongs), icon: .music, page: .songs),
+            Entry(title: String(localized: .Music1.musicStarred), icon: .star, page: .starred),
+            Entry(title: String(localized: .Music0.musicGenres), icon: .folder, page: .genres)
         ]
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            ForEach(entries, id: \.0) { title, icon, page in
-                Button { music?.open(page) } label: {
+            ForEach(entries, id: \.title) { entry in
+                Button { music?.open(entry.page) } label: {
                     HStack(spacing: WontonTheme.spacing.s16) {
-                        icon.view(size: WontonTheme.size.icon).foregroundStyle(Color(colors.textPrimary))
-                        Text(title)
+                        entry.icon.view(size: WontonTheme.size.icon).foregroundStyle(Color(colors.textPrimary))
+                        Text(entry.title)
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                         Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.footnote.weight(.semibold))
+                        WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
                             .foregroundStyle(Color(colors.textSecondary))
                     }
                     .frame(minHeight: WontonTheme.size.target)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                if title != entries.last?.0 {
+                if entry.title != entries.last?.title {
                     Divider().padding(.leading, WontonTheme.size.icon + WontonTheme.spacing.s16)
                 }
             }
@@ -188,7 +193,9 @@ struct MusicTrackStack: View {
             LazyVStack(spacing: 0) {
                 ForEach(tracks, id: \.id) { track in
                     MusicTrackRow(track: track, star: star)
-                    if track.id != tracks.last?.id { Divider().padding(.leading, 44 + WontonTheme.spacing.s12) }
+                    if track.id != tracks.last?.id {
+                        Divider().padding(.leading, WontonTheme.size.fileThumbnail + WontonTheme.spacing.s12)
+                    }
                 }
             }
             .padding(.horizontal, WontonTheme.spacing.pageInset)

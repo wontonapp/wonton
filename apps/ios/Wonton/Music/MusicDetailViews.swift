@@ -25,7 +25,7 @@ private struct MusicHeader: View {
                     Button { openSubtitle?() } label: {
                         Text(subtitle)
                             .wontonText(WontonTheme.typography.itemTitle)
-                            .foregroundStyle(openSubtitle == nil ? Color(colors.textSecondary) : Color(colors.textPrimary))
+                            .foregroundStyle(Color(openSubtitle == nil ? colors.textSecondary : colors.textPrimary))
                     }
                     .buttonStyle(.plain)
                     .disabled(openSubtitle == nil)
@@ -72,7 +72,8 @@ struct MusicAlbumView: View {
                 title: detail.album.title,
                 subtitle: detail.album.artist,
                 openSubtitle: detail.album.artistId.map { id in { music?.open(.artist(id: id)) } },
-                caption: [detail.genre, detail.album.year.map(String.init)].compactMap(\.self).joined(separator: " · ").nilIfEmpty,
+                caption: [detail.genre, detail.album.year.map(String.init)]
+                    .compactMap(\.self).joined(separator: " · ").nilIfEmpty,
                 starred: detail.album.starred,
                 setStar: { star(.album(detail.album.id), $0) }
             )

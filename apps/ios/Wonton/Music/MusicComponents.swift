@@ -99,7 +99,7 @@ struct MusicTrackRow: View {
                     .monospacedDigit()
                     .frame(width: 24, alignment: .trailing)
             } else {
-                MusicCover(cover: track.cover, side: 44)
+                MusicCover(cover: track.cover, side: WontonTheme.size.fileThumbnail)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(track.title)
@@ -143,7 +143,7 @@ struct MusicArtistRow: View {
     var body: some View {
         Button { music?.open(.artist(id: artist.id)) } label: {
             HStack(spacing: WontonTheme.spacing.s12) {
-                MusicCover(cover: artist.cover, side: 48, round: true)
+                MusicCover(cover: artist.cover, side: WontonTheme.size.avatar, round: true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(artist.name)
                         .wontonText(WontonTheme.typography.body)
