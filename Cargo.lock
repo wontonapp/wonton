@@ -9252,6 +9252,7 @@ dependencies = [
  "tar",
  "tempfile",
  "thiserror 2.0.21",
+ "time",
  "tokio",
  "tokio-rustls",
  "tokio-websockets",
@@ -9405,6 +9406,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
@@ -9413,6 +9415,7 @@ dependencies = [
  "url",
  "wonton-protocol",
  "wonton-tunnel",
+ "x509-parser",
 ]
 
 [[package]]

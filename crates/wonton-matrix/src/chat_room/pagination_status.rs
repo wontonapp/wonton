@@ -8,7 +8,8 @@ use std::{
 use futures_util::{Stream, StreamExt};
 use tokio::{sync::mpsc, task::JoinHandle};
 
-use super::{BackPaginationStatus, ChatRoom, back_pagination};
+use super::ChatRoom;
+use super::timeline::{BackPaginationStatus, back_pagination};
 
 impl ChatRoom {
     /// 向前翻页的状态流：第一项是当前状态。

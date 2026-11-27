@@ -44,6 +44,10 @@ pub trait PeerPairHandler: Send + Sync + Debug + 'static {
 
     /// 对方删了和我们的配对。`from` 是 QUIC 握手认证过的对方 endpoint ID。
     fn removed(&self, from: EndpointId, server_name: &str);
+
+    /// 对方同步来一张它的自签叶证书（ADR-0112）。`ack` 是对本机最近一条 `Certificate` 的回执。
+    /// `from` 是 QUIC 握手认证过的对方 endpoint ID。
+    fn certificate(&self, from: EndpointId, certificate: &super::PeerCertificate, ack: bool);
 }
 
 /// 挂在 iroh router 的 [`PEER_PAIR_ALPN`](super::PEER_PAIR_ALPN) 上的服务器配对协议。
@@ -110,6 +114,10 @@ impl<H: PeerPairHandler> PeerPairProtocol<H> {
             }
             PeerMessage::Removed { server_name } => {
                 self.handler.removed(remote, &server_name);
+                PeerReply::Ok
+            }
+            PeerMessage::Certificate { certificate, ack } => {
+                self.handler.certificate(remote, &certificate, ack);
                 PeerReply::Ok
             }
         }

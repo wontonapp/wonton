@@ -180,7 +180,7 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 长按菜单、`/`、侧栏），浅色和深色各一例，每步留截图。两例都是新设备（每例换数据目录），**每例要一个码**，一例只给它一个码时
 那一例会 `XCTSkip`；没有一个码时整类跳过。
 
-用 `mini-walkthrough.sh up <名字> <检出> --host 194` 起栈和模拟器，`build` 一次，再 `test <名字> FirstRunWalkthroughUITests`
+用 `mini-walkthrough.sh up <名字> <检出> --host <机>` 起栈和模拟器（`<机>` 是开发机名），`build` 一次，再 `test <名字> FirstRunWalkthroughUITests`
 （它的 `test` 会按用例数现取码）。已知软失败在 `knownIssues` 里放行，新问题照红。
 
 ## 检查
@@ -245,7 +245,7 @@ apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
   重置那条用上一台已删、手里的密钥已作废的状态。栈在别的机器上时这两个命令要在那套栈上跑
   （`ssh <机>-stack dev <栈名> devices` / `revoke <ID>`），在调用机直接跑会打到本机 Docker。
 - 交接那条要比较两端表情：示例打出 `表情：` 那行后，把后面的 7 个符号（一个空格分隔，用例按空格拆）写进 App 容器的
-  `Documents/sas-emoji.txt`。用例只等 120 秒，得用命令写；在 mini 上跑时这三条经 `ssh mini-ios light <名字> -- …` 执行：
+  `Documents/sas-emoji.txt`。用例只等 120 秒，得用命令写；在开发机上跑时这三条经 `ssh mini-ios light <名字> -- …` 执行：
 
 ```bash
 symbols=$(grep '^表情：' <示例日志> | tail -n 1 | sed 's/^表情：//')

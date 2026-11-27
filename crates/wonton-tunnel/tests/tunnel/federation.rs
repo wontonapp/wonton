@@ -168,6 +168,7 @@ impl TestPeer {
             paired_rx,
             PING_INTERVAL,
             PING_TIMEOUT,
+            None,
         )
         .await
         .unwrap();
@@ -229,6 +230,7 @@ impl TestPeer {
                 self.paired.subscribe(),
                 PING_INTERVAL,
                 PING_TIMEOUT,
+                None,
             )
             .await
             {

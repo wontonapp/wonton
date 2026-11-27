@@ -16,9 +16,9 @@ use wonton_matrix::{
 use wonton_protocol::{
     BotChatAvailability, ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus,
     FileAttachment, FileLinks, ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent,
-    MessageStatus, MessageSummary, QuotedMessage, RecoveryStatus, RichBlock, RoomMembership,
-    RoomPreview, RoomRow, SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    extract_file_links,
+    MessageStatus, MessageSummary, QuotedMessage, RecoveryStatus, RichBlock, RoomBot,
+    RoomMembership, RoomPreview, RoomRow, SendState, TimelineContent, TimelineDiff, TimelineItem,
+    TimelineMessage, extract_file_links,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -75,6 +75,7 @@ pub(crate) fn room_row(
     core: &UserId,
     layout: ChatLayout,
     bots: &HashMap<String, BotChatAvailability>,
+    bot: Option<RoomBot>,
     side_chats: bool,
 ) -> RoomRow {
     let is_read_only = room.direct_user_id.as_deref() == Some(core);
@@ -91,6 +92,7 @@ pub(crate) fn room_row(
         direct_user_id: room.direct_user_id.map(|user| user.to_string()),
         plugin: None,
         bot_chat,
+        bot,
         is_encrypted: room.is_encrypted,
         is_read_only,
         membership: match room.membership {
@@ -737,6 +739,7 @@ mod tests {
                 &core,
                 ChatLayout::default(),
                 &bots,
+                None,
                 false,
             );
             assert_eq!(row.bot_chat, expected, "{user}");

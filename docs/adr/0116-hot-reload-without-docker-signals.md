@@ -57,7 +57,7 @@ HAProxy 发 `SIGUSR2` 让 master 软重载。`systemctl restart docker` 之后�
 
 ## 验证结果
 
-红（1k，cargo 经 `cargo-slot.sh`）：
+红（开发机，cargo 经 `cargo-slot.sh`）：
 
 - 入口建容器改回 `unless-stopped`、删 `stop_signal`：`restart_contract_tests::core_created_containers_come_back_after_a_docker_restart`
   报 “入口容器的 restart_policy 只许是 ALWAYS”。

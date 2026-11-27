@@ -479,7 +479,7 @@ extension ChatPanelUITests {
             XCTAssertTrue(waitPaired(timeout: 90), "配对没完成（配对码过期、用过或连不上开发栈）")
         }
         // 落点二选一：引导页、已配对直进的聊天列表。
-        // 不等“新建聊天”：mini 实测聊天列表加载中它不一定出现，侧边栏按钮和列表本体更稳。
+        // 不等“新建聊天”：开发机实测聊天列表加载中它不一定出现，侧边栏按钮和列表本体更稳。
         let arrived = waitAnyButton(
             ["Apps", "应用", "Sidebar", "侧边栏", "側邊欄", "サイドバー",
              "Skip", "跳过", "Next", "下一步", "Done", "完成"],

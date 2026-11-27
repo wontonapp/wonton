@@ -5,7 +5,7 @@
 ## 结果
 
 `stack-slot.sh acquire --priority --project wonton-smoke plat-dev-host-magpie -- ./deploy/dev/core/smoke.sh`
-（1k，端口 18491/18492 避开别的栈，**先在宿主 magpie 上预置一条同名旧凭据**，模型 `upstream/group/main`）：
+（验证机，端口 18491/18492 避开别的栈，**先在宿主 magpie 上预置一条同名旧凭据**，模型 `upstream/group/main`）：
 04:23:09 开跑，05:01:20 结束，38 分钟，151 条断言全过，`端到端冒烟通过：安装 34s，卸载 1s`；跑完旧条还在、
 只删了冒烟建的那条。模型调用 80 次、输入 141,572 / 输出 21,962 token。日志 `plat-dev-host-magpie-host/1k-logs/smoke-1k18.log`。
 
@@ -29,8 +29,8 @@
 
 ## 现场已清
 
-1k 的栈、转发、它 magpie 上的 `upstream` provider、npchy 的 `platdev-upstream` key、1k 的检出和 host 目录都删了；
-194 上没有残留容器。
+验证机的栈、转发、它 magpie 上的 `upstream` provider、开发机的 `platdev-upstream` key、验证机的检出和 host 目录都删了；
+验证机上没有残留容器。
 
 ## 剩下的活
 
@@ -38,7 +38,7 @@
 
 ## 复跑要点
 
-- 1k 默认端口 18481-18483 常被别的栈占，先看 `ss`，必要时 `WONTON_DEV_PORT`/`WONTON_DEV_TUNNEL_PORT` 换一对。
+- 验证机默认端口 18481-18483 常被别的栈占，先看 `ss`，必要时 `WONTON_DEV_PORT`/`WONTON_DEV_TUNNEL_PORT` 换一对。
 - 上游 DeepSeek 会整轮不返回：等 20 分钟或 restart 那个 gateway，探针会换设备重试；冒烟失败即 exit。
 - `KEEP=1` 会留栈，重跑前 reset；`fuser ~/wonton-dev/.core-build.lock` 列出的一并杀掉。
 - 没缓存的镜像先备好，否则撞 `dev install` 的 10 分钟上限。

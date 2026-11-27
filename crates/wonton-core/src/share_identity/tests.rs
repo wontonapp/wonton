@@ -618,6 +618,7 @@ async fn paired_route_skips_dns_and_nondefault_port_fails_closed() {
             rx,
             Duration::from_secs(60),
             Duration::from_secs(1),
+            None,
         )
         .await
         .unwrap(),

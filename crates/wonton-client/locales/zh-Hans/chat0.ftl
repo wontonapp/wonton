@@ -125,3 +125,4 @@ chat-ask-failed-transport = 连不上家里的服务器。
 chat-ask-failed-upstream = 家里的服务器出错了。
 chat-ask-failed-other = 这句话没能发出去。
 chat-ask-target-missing = 没有目标。
+chat-my-bot = 我的 Bot

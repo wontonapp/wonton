@@ -29,7 +29,7 @@
   和表单字段（`secret_inputs` :51-57、`settings` :54）；推送结构里还没有 choices，由下面决策 1 补上。
 - **未读数已经有了**：`RoomInfo::unread_count` 来自 Matrix 的 `room.num_unread_messages()`
   （`crates/wonton-matrix/src/rooms.rs:594`，字段声明 :113），进 `RoomRow.unread_count`
-  （`crates/wonton-protocol/src/chat.rs:323`）。已读由打开房间时发回执清（`crates/wonton-matrix/src/chat_room.rs:535-547`，
+  （`crates/wonton-protocol/src/chat.rs:323`）。已读由打开房间时发回执清（`crates/wonton-matrix/src/chat_room/timeline.rs:244`，
   调用方 `crates/wonton-client/src/chat/ops.rs:16`）。没有总计，也没有任何地方把它交给系统角标。
 - **Agent 进度已经有了**：`AgentRunState` 的 `Working`/`Waiting`/`Done`/`Failed`/`Uncertain`
   （`crates/wonton-protocol/src/agent_run.rs:12-22`，MSC4564 四值 + 客户端合成的 `Uncertain`，ADR-0082 第 4 节），
@@ -143,7 +143,7 @@ NSE 和分享扩展不同：分享扩展是前台、可等；NSE 只有 30 秒�
 - **核心算，壳只写系统角标**。核心加 `unread_total()`（所有房间 `unread_count` 之和，邀请按 1 计）和一个订阅；
   `RoomRow.unread_count` 还是唯一事实源，不新造计数。
   待回答的条目（`choice`、`confirm`、有待答的 `recap`、有动作的 `page`）也算进这个数，`notice` 不算；见 [ADR-0119](0119-pending-inbox.md)（2026-11-25 已接受）。
-- 清零只发生在**真的读过**：房间被打开、回执发出去（`chat_room.rs:535-547`），角标跟着收；App 只是被打开不归零。总数为 0 时角标写 0。
+- 清零只发生在**真的读过**：房间被打开、回执发出去（`chat_room/timeline.rs:244`），角标跟着收；App 只是被打开不归零。总数为 0 时角标写 0。
 - iOS：NSE 里写 `content.badge`（Element X 同期做法是每条 +1，但我们是核心给的绝对数，避免多设备各自加法漂移），
   App 回前台和清零时用 `setBadgeCount`。
 - Android：`NotificationChannel.setShowBadge`（已默认开）；分组摘要通知上用 `setNumber(unread_total)`。
