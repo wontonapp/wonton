@@ -2,7 +2,7 @@
 # 彩色分层和单色两版都由同一张上游图生成。
 # bare 表示只留图形本体、去掉上游自带的圆底（箭头和加号会放进圆钮或成排出现）。
 # fill 表示再给一个带 Fill 的别名（界面按选中态取名；Kubai 不分线框和实心，两个名字是同一张图）。
-# mirror 表示从右到左时要翻转。
+# mirror 表示从右到左时要翻转。widget 表示再出一份单色平面版给系统小组件用（小组件画不了分层图）。
 # Kubai 是 0.x，图形会变：版本和 tarball 的校验值钉死，用到的 SVG 原件放在 kubai/svg/（怎么重取见 README）。
 [upstream.kubai]
 package = "kubai-icons-static"
@@ -29,7 +29,7 @@ slate = { light = "#58667B", dark = "#8896AA" }
 
 [icons]
 add = { bare = true, kubai = "circle-plus", color = "blue" }
-agent = { kubai = "sparkles", color = "purple", fill = true }
+agent = { kubai = "sparkles", color = "purple", fill = true, widget = true }
 apps = { kubai = "grid", color = "indigo", fill = true }
 attach = { kubai = "paperclip", color = "slate" }
 back = { bare = true, kubai = "chevron-left", color = "slate", mirror = true }
@@ -38,7 +38,6 @@ cameraOff = { kubai = "camera-off", color = "slate" }
 chat = { kubai = "messages", color = "blue", fill = true }
 check = { kubai = "circle-check", color = "green" }
 checkCircle = { kubai = "circle-check", color = "green", fill = true }
-checks = { kubai = "eye", color = "sky" }
 clock = { kubai = "clock", color = "sky" }
 close = { kubai = "circle-x", color = "slate" }
 code = { kubai = "code", color = "indigo", fill = true }
@@ -75,6 +74,7 @@ person = { kubai = "user-plus", color = "pink" }
 pin = { kubai = "pin", color = "red", fill = true }
 play = { kubai = "play", color = "blue", fill = true }
 qrCode = { kubai = "scan-qr", color = "indigo" }
+read = { kubai = "eye", color = "sky" }
 refresh = { kubai = "sync", color = "sky" }
 reply = { kubai = "reply", color = "blue", mirror = true }
 search = { kubai = "search", color = "slate" }

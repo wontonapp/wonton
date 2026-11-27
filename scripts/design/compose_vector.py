@@ -4,6 +4,7 @@ ImageVector 没有滤镜、蒙版和文字，所以先把 SVG 改写成它画得
 （`kotlin_file`）。改写后的树仍是合法的 SVG，可以拿去渲染，看 Android 上会是什么样。
 """
 
+import copy
 import math
 import re
 from xml.etree import ElementTree
@@ -25,6 +26,8 @@ CAPS = {"round": "Round", "square": "Square", "butt": "Butt"}
 JOINS = {"round": "Round", "bevel": "Bevel", "miter": "Miter"}
 INHERITED = ("fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin", "fill-opacity", "stroke-opacity",
              "fill-rule", "opacity")
+# 上游写的虚线长度是四舍五入到一位小数的，比量出来的路径长度短这么多以内算“一样长”。
+DASH_SLACK = 0.1
 PARAMETERS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "S": 4, "Q": 4, "T": 2, "A": 7, "Z": 0}
 
 
@@ -95,15 +98,17 @@ def bezier_points(controls):
     return points
 
 
-def path_points(data):
-    """路径经过的点，够用来量包围盒。"""
-    points, current, start, last_control = [], (0.0, 0.0), (0.0, 0.0), None
+def path_subpaths(data):
+    """路径拆成一段一段连续的折线（每个 M 起一段），够用来量包围盒和长度。"""
+    subpaths, current, start, last_control = [], (0.0, 0.0), (0.0, 0.0), None
     for letter, values in path_commands(data):
         relative = letter.islower()
         command = letter.upper()
         ox, oy = current if relative else (0.0, 0.0)
         control = None
         if command == "Z":
+            if subpaths:
+                subpaths[-1].append(start)
             current = start
             continue
         if command == "H":
@@ -125,11 +130,22 @@ def path_points(data):
             segment = bezier_points([current] + pairs)
         if command == "M":
             start = segment[0]
+            subpaths.append([])
+        elif not subpaths:
+            raise Unsupported("路径不是从 M 开始的")
         # 只有同类曲线才接着上一条的控制点对称（S 接 C/S，T 接 Q/T）。
         last_control = control if command in "CSQT" else None
-        points.extend(segment)
+        subpaths[-1].extend(segment)
         current = segment[-1]
-    return points
+    return subpaths
+
+
+def path_points(data):
+    return [point for subpath in path_subpaths(data) for point in subpath]
+
+
+def path_length(data):
+    return sum(math.dist(a, b) for subpath in path_subpaths(data) for a, b in zip(subpath, subpath[1:]))
 
 
 def shape_path(node):
@@ -197,7 +213,7 @@ def flatten(svg):
                 chain = transform_chain(parent, parents(root))
                 if any(Writer.transform(name, values) for item in chain for name, values in TRANSFORM.findall(item)):
                     raise Unsupported("变换里的文字")
-                labels.append({name: child.get(name) for name in ("x", "y", "font-size", "font-weight", "fill")}
+                labels.append({name: child.get(name) for name in ("x", "y", "font-size", "font-weight", "fill", "text-anchor")}
                               | {"text": child.text or ""})
                 parent.remove(child)
             elif child.get("opacity") == "0":
@@ -206,11 +222,27 @@ def flatten(svg):
         if child is not defs:
             push_down(child, {})
     move_outlines(root, defs)
-    for node in root.iter():
-        node.attrib.pop("mask", None)
+    drop_badge_gaps(root, defs)
     for node in defs.findall(TAG + "mask"):
         defs.remove(node)
     return root, labels
+
+
+def drop_badge_gaps(root, defs):
+    """角标的缝：组上挂的蒙版，内容是“整块白，中间一个黑的圆”，在底图上挖出角标周围那一圈。
+    去掉它角标就直接压在底图上。别的蒙版不认识，去掉会悄悄画错，所以失败。"""
+    masks = {node.get("id"): node for node in defs.findall(TAG + "mask")}
+    for node in root.iter():
+        match = URL.fullmatch(node.get("mask", ""))
+        if "mask" not in node.attrib:
+            continue
+        shapes = [
+            (shape.tag.removeprefix(TAG), shape.get("fill", "").lower())
+            for shape in (masks[match.group(1)] if match and match.group(1) in masks else [])
+        ]
+        if node.tag != TAG + "g" or shapes != [("rect", "#fff"), ("circle", "#000")]:
+            raise Unsupported(f'认不出的蒙版 mask="{node.get("mask")}"')
+        del node.attrib["mask"]
 
 
 def push_down(node, inherited):
@@ -252,6 +284,9 @@ def move_outlines(root, defs):
             raise Unsupported(f"描边蒙版 {match.group(1)} 前面没有同一个图形的填充")
         if transform_chain(body, parent_of) != transform_chain(node, parent_of):
             raise Unsupported(f"描边蒙版 {match.group(1)} 和它的填充不在同一个变换里")
+        if any(float(body.get(name, "1")) < 1 for name in ("opacity", "fill-opacity")):
+            # 填充半透明就盖不住里面那半条描边，挪到前面画不等价。
+            raise Unsupported(f"描边蒙版 {match.group(1)} 的填充是半透明的")
         parent_of[node].remove(node)
         home = parent_of[body]
         home.insert(list(home).index(body), node)
@@ -273,6 +308,105 @@ def source_colors(root):
 def long_hex(value):
     value = value if len(value) == 7 else "#" + "".join(c * 2 for c in value[1:])
     return value.upper()
+
+
+def transform_step(name, values):
+    """一步变换的参数（Compose 的 group 参数名）；恒等变换返回空。"""
+    values = [float(v) for v in NUMBER.findall(values)]
+    if name == "translate":
+        x, y = values[0], values[1] if len(values) > 1 else 0.0
+        return {"translationX": x, "translationY": y} if x or y else {}
+    if name == "rotate":
+        if not values[0] % 360:
+            return {}
+        return {"rotate": values[0]} | ({"pivotX": values[1], "pivotY": values[2]} if len(values) == 3 else {})
+    x, y = values[0], values[1] if len(values) > 1 else values[0]
+    return {"scaleX": x, "scaleY": y} if (x, y) != (1.0, 1.0) else {}
+
+
+def silhouette(root):
+    """单色平面版：所有颜色换成不透明的黑，只留形状。系统小组件画不了分层图，整张图由系统染成一个颜色。
+    白色的字和纸面在平面版里没法挖空，带白色的图不能这样用。"""
+    flat = copy.deepcopy(root)
+    defs = flat.find(TAG + "defs")
+    for node in flat.iter():
+        for attribute in ("fill", "stroke"):
+            value = node.get(attribute, "none")
+            if value == "none":
+                continue
+            if HEX.fullmatch(value) and long_hex(value) == "#FFFFFF":
+                raise Unsupported("带白色的图出不了平面版")
+            node.set(attribute, "#000000")
+        for attribute in ("opacity", "fill-opacity", "stroke-opacity"):
+            node.attrib.pop(attribute, None)
+    for node in defs.findall(TAG + "linearGradient"):
+        defs.remove(node)
+    return flat
+
+
+def cropped_svg(root):
+    """裁掉给投影留的边，图形占满画布。"""
+    root = copy.deepcopy(root)
+    root.set("viewBox", f"{number(ORIGIN[0])} {number(ORIGIN[1])} {number(VIEWPORT)} {number(VIEWPORT)}")
+    return ElementTree.tostring(root, encoding="unicode") + "\n"
+
+
+VECTOR_DRAWABLE_GROUP = {
+    "translationX": "translateX", "translationY": "translateY", "rotate": "rotation", "pivotX": "pivotX",
+    "pivotY": "pivotY", "scaleX": "scaleX", "scaleY": "scaleY",
+}
+
+
+def vector_drawable(banner, root):
+    """平面版出成 Android 的 VectorDrawable（Glance 的小组件只收资源，画不了 ImageVector）。"""
+    lines = [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        f"<!-- {banner} -->",
+        '<vector xmlns:android="http://schemas.android.com/apk/res/android"',
+        '    android:width="24dp"',
+        '    android:height="24dp"',
+        f'    android:viewportWidth="{number(VIEWPORT)}"',
+        f'    android:viewportHeight="{number(VIEWPORT)}">',
+        f'    <group android:translateX="{number(-ORIGIN[0])}" android:translateY="{number(-ORIGIN[1])}">',
+    ]
+    defs = root.find(TAG + "defs")
+
+    def walk(node):
+        if node.get("clip-path"):
+            raise Unsupported("平面版里的裁剪路径")
+        steps = [transform_step(name, values) for name, values in TRANSFORM.findall(node.get("transform", ""))]
+        if TRANSFORM.sub("", node.get("transform", "")).strip():
+            raise Unsupported(f'transform="{node.get("transform")}"')
+        steps = [step for step in steps if step]
+        for step in steps:
+            attributes = " ".join(f'android:{VECTOR_DRAWABLE_GROUP[key]}="{number(value)}"' for key, value in step.items())
+            lines.append(f"        <group {attributes}>")
+        if node.tag == TAG + "g":
+            for child in node:
+                walk(child)
+        else:
+            data = shape_path(node)
+            attributes = [f'android:pathData="{data}"']
+            if node.get("fill", "none") != "none":
+                attributes.append('android:fillColor="#FF000000"')
+                if node.get("fill-rule") == "evenodd":
+                    attributes.append('android:fillType="evenOdd"')
+            if node.get("stroke", "none") != "none":
+                check_dash(node, data)
+                attributes.append('android:strokeColor="#FF000000"')
+                attributes.append(f'android:strokeWidth="{number(node.get("stroke-width", "1"))}"')
+                for name, key in (("stroke-linecap", "strokeLineCap"), ("stroke-linejoin", "strokeLineJoin")):
+                    if node.get(name):
+                        attributes.append(f'android:{key}="{node.get(name)}"')
+            if len(attributes) > 1:
+                lines.append(f"        <path {' '.join(attributes)} />")
+        lines.extend("        </group>" for _ in steps)
+
+    for child in root:
+        if child is not defs:
+            walk(child)
+    lines += ["    </group>", "</vector>", ""]
+    return "\n".join(lines)
 
 
 class Writer:
@@ -324,15 +458,8 @@ class Writer:
 
     @staticmethod
     def transform(name, values):
-        values = [float(v) for v in NUMBER.findall(values)]
-        if name == "translate":
-            x, y = values[0], values[1] if len(values) > 1 else 0.0
-            return f"translationX = {number(x)}f, translationY = {number(y)}f" if x or y else None
-        if name == "rotate":
-            pivot = f", pivotX = {number(values[1])}f, pivotY = {number(values[2])}f" if len(values) == 3 else ""
-            return f"rotate = {number(values[0])}f{pivot}" if values[0] % 360 else None
-        x, y = values[0], values[1] if len(values) > 1 else values[0]
-        return f"scaleX = {number(x)}f, scaleY = {number(y)}f" if (x, y) != (1.0, 1.0) else None
+        step = transform_step(name, values)
+        return ", ".join(f"{key} = {number(value)}f" for key, value in step.items()) if step else None
 
     def shape(self, node):
         data = shape_path(node)
@@ -349,8 +476,7 @@ class Writer:
         if len(arguments) == 1:
             return
         if node.get("stroke", "none") != "none":
-            if node.get("stroke-dasharray") and float(node.get("stroke-dashoffset", "0")):
-                raise Unsupported("虚线描边")
+            check_dash(node, data)
             arguments.append(f'strokeLineWidth = {number(node.get("stroke-width", "1"))}f')
             if node.get("stroke-linecap"):
                 arguments.append(f'strokeLineCap = StrokeCap.{CAPS[node.get("stroke-linecap")]}')
@@ -377,12 +503,31 @@ class Writer:
         return f"Brush.verticalGradient({stops}, startY = {number(min(ys))}f, endY = {number(max(ys))}f)"
 
 
+def check_dash(node, data):
+    """上游拿“一段和路径一样长的虚线”做描线动画的起点，静止时就是实线。别的虚线 ImageVector 画不了。"""
+    dash = node.get("stroke-dasharray")
+    if dash is None:
+        return
+    values = NUMBER.findall(dash)
+    solid = len(values) == 1 and NUMBER.fullmatch(dash.strip()) and float(node.get("stroke-dashoffset", "0")) == 0 \
+        and float(values[0]) >= path_length(data) - DASH_SLACK
+    if not solid:
+        raise Unsupported(f'虚线描边 stroke-dasharray="{dash}"')
+
+
+def kotlin_string(text):
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$")
+
+
 def kotlin_label(label, colors):
     """文字相对裁过的视口的位置和大小（0–1），壳按图标实际大小换算。"""
     if label["fill"] is None or not HEX.fullmatch(label["fill"]):
         raise Unsupported("文字的颜色不是具体颜色")
+    if label["text-anchor"] != "middle":
+        # 壳按“x 是字的中线”摆。
+        raise Unsupported(f'文字不是居中对齐的（text-anchor="{label["text-anchor"]}"）')
     return (
-        f'WontonGlyphLabel(text = "{label["text"]}", '
+        f'WontonGlyphLabel(text = "{kotlin_string(label["text"])}", '
         f'centerX = {number((float(label["x"]) - ORIGIN[0]) / VIEWPORT)}f, '
         f'baseline = {number((float(label["y"]) - ORIGIN[1]) / VIEWPORT)}f, '
         f'size = {number(float(label["font-size"]) / VIEWPORT)}f, '

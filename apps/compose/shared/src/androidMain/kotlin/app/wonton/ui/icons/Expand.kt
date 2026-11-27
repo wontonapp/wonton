@@ -37,7 +37,7 @@ val WontonIcon.Expand: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
         name = "Expand",
         light = longArrayOf(0xFF8F9CF0, 0xFF7A8AED, 0xFFCAD0F8, 0xFFAAB4F3, 0xFF4D62E7, 0xFFFFFFFF),
         dark = longArrayOf(0xFF9CA5E1, 0xFF939EE5, 0xFFB5BAD6, 0xFFA7AEDC, 0xFF7F8EEE, 0xFFFFFFFF),
-        mono = longArrayOf(0xFF5F5F5F, 0xFF414141, 0xFFB3B3B3, 0xFF858585, 0xFF000000, 0xFFFFFFFF),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000, 0xFFFFFFFF),
         build = ::art,
     )
 }

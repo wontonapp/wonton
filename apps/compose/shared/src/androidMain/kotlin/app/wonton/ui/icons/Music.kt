@@ -33,7 +33,7 @@ val WontonIcon.Music: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
         name = "Music",
         light = longArrayOf(0xFFE07BA3, 0xFFDA6292, 0xFFF0C1D4, 0xFFE79BB9, 0xFFCD2D6D),
         dark = longArrayOf(0xFFD993AE, 0xFFDB88A9, 0xFFD2B1BE, 0xFFD5A0B5, 0xFFE0719D),
-        mono = longArrayOf(0xFF5F5F5F, 0xFF414141, 0xFFB3B3B3, 0xFF858585, 0xFF000000),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000),
         build = ::art,
     )
 }

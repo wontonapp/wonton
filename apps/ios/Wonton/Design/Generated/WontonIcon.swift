@@ -14,7 +14,6 @@ enum WontonIcon: String {
     case check
     case checkCircle
     case checkCircleFill
-    case checks
     case clock
     case close
     case code
@@ -65,6 +64,7 @@ enum WontonIcon: String {
     case play
     case playFill
     case qrCode
+    case read
     case refresh
     case reply
     case search
@@ -115,7 +115,6 @@ extension WontonIcon {
         case .check: "check"
         case .checkCircle: "checkCircle"
         case .checkCircleFill: "checkCircle"
-        case .checks: "checks"
         case .clock: "clock"
         case .close: "close"
         case .code: "code"
@@ -166,6 +165,7 @@ extension WontonIcon {
         case .play: "play"
         case .playFill: "play"
         case .qrCode: "qrCode"
+        case .read: "read"
         case .refresh: "refresh"
         case .reply: "reply"
         case .search: "search"

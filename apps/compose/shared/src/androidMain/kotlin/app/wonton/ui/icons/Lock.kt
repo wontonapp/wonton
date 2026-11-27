@@ -41,7 +41,7 @@ val WontonIcon.Lock: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
         name = "Lock",
         light = longArrayOf(0xFF6CAF8B, 0xFF51A075, 0xFFBAD9C8, 0xFF8FC2A7, 0xFF54A278, 0xFFFFFFFF, 0xFF158046, 0xFF005F34),
         dark = longArrayOf(0xFF5DB787, 0xFF49B37A, 0xFF98C2AB, 0xFF78BC97, 0xFF4BB47B, 0xFFFFFFFF, 0xFF1CAB5E, 0xFF008047),
-        mono = longArrayOf(0xFF5F5F5F, 0xFF414141, 0xFFB3B3B3, 0xFF858585, 0xFF444444, 0xFFFFFFFF, 0xFF000000, 0xFF000000),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF757575, 0xFFFFFFFF, 0xFF000000, 0xFF000000),
         build = ::art,
     )
 }

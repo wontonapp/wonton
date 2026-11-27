@@ -104,10 +104,52 @@ class FlattenTest(unittest.TestCase):
     def test_text_is_handed_to_the_shell_as_a_label(self):
         out = kotlin(
             f'<path d="{CIRCLE}" fill="#93BBFF"/>'
-            '<text x="15.5" y="18.4" font-size="16" font-weight="700" fill="#FFFFFF">?</text>'
+            '<text x="15.5" y="18.4" text-anchor="middle" font-size="16" font-weight="700" fill="#FFFFFF">?</text>'
         )
         self.assertIn('WontonGlyphLabel(text = "?", centerX = 0.5f', out)
         self.assertIn("bold = true, color = 1)", out)
+
+    def test_label_text_is_escaped_for_kotlin(self):
+        out = kotlin('<text x="1" y="1" text-anchor="middle" font-size="9" fill="#FFFFFF">a"$b\\</text>')
+        self.assertIn('text = "a\\"\\$b\\\\"', out)
+
+    def test_text_that_is_not_centered_fails(self):
+        for anchor in ("", 'text-anchor="start"'):
+            with self.subTest(anchor=anchor), self.assertRaises(vector.Unsupported):
+                kotlin(f'<text x="1" y="1" {anchor} font-size="9" fill="#FFFFFF">?</text>')
+
+    def test_outline_over_a_translucent_fill_fails(self):
+        for attribute in ("opacity", "fill-opacity"):
+            with self.subTest(attribute=attribute), self.assertRaises(vector.Unsupported):
+                kotlin(
+                    f"<defs>{OUTLINE_MASK}</defs>"
+                    f'<path d="{CIRCLE}" fill="#93BBFF" {attribute}="0.5"/>'
+                    f'<path d="{CIRCLE}" mask="url(#ol)" stroke="#5393FF" stroke-width="2"/>'
+                )
+
+    def test_badge_gap_mask_on_a_group_is_dropped(self):
+        out = kotlin(
+            '<defs><mask id="kbk"><rect x="-40" y="-40" width="111" height="109" fill="#fff"/>'
+            '<circle cx="22" cy="18" r="6" fill="#000"/></mask></defs>'
+            f'<g mask="url(#kbk)"><path d="{CIRCLE}" fill="#93BBFF"/></g>'
+        )
+        self.assertEqual(out.count("addPath("), 1)
+
+    def test_any_other_mask_fails(self):
+        gap = ('<rect x="-40" y="-40" width="111" height="109" fill="#fff"/>', '<circle cx="22" cy="18" r="6" fill="#000"/>')
+        cases = {
+            "蒙版挂在图形上": (f'<mask id="m">{gap[0]}{gap[1]}</mask>', f'<path d="{CIRCLE}" fill="#93BBFF" mask="url(#m)"/>'),
+            "黑的不是圆": (f'<mask id="m">{gap[0]}<path d="M0 0h4v4z" fill="#000"/></mask>',
+                      f'<g mask="url(#m)"><path d="{CIRCLE}" fill="#93BBFF"/></g>'),
+            "多一个图形": (f'<mask id="m">{gap[0]}{gap[1]}{gap[1]}</mask>',
+                      f'<g mask="url(#m)"><path d="{CIRCLE}" fill="#93BBFF"/></g>'),
+            "渐隐的蒙版": ('<mask id="m"><rect x="0" y="0" width="9" height="9" fill="#888"/></mask>',
+                      f'<g mask="url(#m)"><path d="{CIRCLE}" fill="#93BBFF"/></g>'),
+            "蒙版不存在": ("", f'<g mask="url(#gone)"><path d="{CIRCLE}" fill="#93BBFF"/></g>'),
+        }
+        for name, (mask, body) in cases.items():
+            with self.subTest(name=name), self.assertRaises(vector.Unsupported):
+                kotlin(f"<defs>{mask}</defs>{body}")
 
     def test_flattened_tree_is_still_svg_without_masks_filters_or_text(self):
         root, _ = vector.flatten(SVG.format(
@@ -165,15 +207,76 @@ class KotlinTest(unittest.TestCase):
     def test_mirror_flag_reaches_the_vector(self):
         self.assertIn("autoMirror = true", kotlin('<path d="M0 0h1" stroke="#5393FF"/>', mirror=True))
 
+    def test_dash_as_long_as_the_path_is_a_solid_stroke(self):
+        out = kotlin('<path d="M0 0h3v4" stroke="#5393FF" stroke-dasharray="7" stroke-dashoffset="0"/>')
+        self.assertEqual(out.count("addPath("), 1)
+
+    def test_other_dashes_fail(self):
+        for dash in (
+            'stroke-dasharray="2"',
+            'stroke-dasharray="7" stroke-dashoffset="1"',
+            'stroke-dasharray="7 2"',
+            'stroke-dasharray="6.5"',
+        ):
+            with self.subTest(dash=dash), self.assertRaises(vector.Unsupported):
+                kotlin(f'<path d="M0 0h3v4" stroke="#5393FF" {dash}/>')
+
+    def test_path_length_skips_the_jump_between_subpaths(self):
+        self.assertAlmostEqual(vector.path_length("M0 0h3M10 10v4"), 7)
+        self.assertAlmostEqual(vector.path_length("M0 0h3v4z"), 12)
+
     def test_things_a_vector_cannot_draw_fail(self):
         for body in (
-            '<path d="M0 0h1" stroke="#5393FF" stroke-dasharray="2" stroke-dashoffset="1"/>',
             '<path d="M0 0h1" stroke="#5393FF" transform="skewX(10)"/>',
             '<rect x="0" y="0" width="4" height="4" rx="1" fill="#5393FF"/>',
             '<image href="x.png"/>',
         ):
             with self.subTest(body=body), self.assertRaises(vector.Unsupported):
                 kotlin(body)
+
+
+class SilhouetteTest(unittest.TestCase):
+    BODY = (
+        '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#93BBFF"/><stop offset="1" stop-color="#7FAEFF"/></linearGradient></defs>'
+        f'<g transform="translate(3 4)"><path d="{CIRCLE}" fill="url(#g)" fill-opacity="0.5"/>'
+        '<path d="M0 0h1" stroke="#5393FF" stroke-width="2" stroke-linecap="round"/></g>'
+    )
+
+    def flat(self, body: str):
+        root, _ = vector.flatten(SVG.format(body))
+        return vector.silhouette(root)
+
+    def test_every_paint_becomes_opaque_black(self):
+        svg = vector.cropped_svg(self.flat(self.BODY))
+        self.assertNotIn("url(", svg)
+        self.assertNotIn("opacity", svg)
+        self.assertEqual(svg.count('"#000000"'), 2)
+        self.assertNotIn('viewBox="-2.5', svg)
+
+    def test_white_details_cannot_be_flattened(self):
+        with self.assertRaises(vector.Unsupported):
+            self.flat(f'<path d="{CIRCLE}" fill="#93BBFF"/><path d="M0 0h1" stroke="#fff"/>')
+
+    def test_vector_drawable_keeps_shapes_and_transforms(self):
+        xml = vector.vector_drawable("banner", self.flat(self.BODY))
+        import xml.etree.ElementTree as tree
+        root = tree.fromstring(xml)
+        android = "{http://schemas.android.com/apk/res/android}"
+        paths = root.findall(".//path")
+        self.assertEqual(len(paths), 2)
+        self.assertEqual(paths[0].get(android + "fillColor"), "#FF000000")
+        self.assertEqual(paths[1].get(android + "strokeColor"), "#FF000000")
+        self.assertEqual(paths[1].get(android + "strokeLineCap"), "round")
+        self.assertTrue(any(group.get(android + "translateX") == "3" for group in root.iter("group")))
+
+    def test_vector_drawable_refuses_clips(self):
+        flat = self.flat(
+            '<defs><clipPath id="c"><path d="M0 0h9v9z"/></clipPath></defs>'
+            f'<g clip-path="url(#c)"><path d="{CIRCLE}" fill="#93BBFF"/></g>'
+        )
+        with self.assertRaises(vector.Unsupported):
+            vector.vector_drawable("banner", flat)
 
 
 if __name__ == "__main__":

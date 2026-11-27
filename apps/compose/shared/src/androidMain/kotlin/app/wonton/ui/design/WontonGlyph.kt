@@ -67,8 +67,8 @@ class WontonGlyph(
 enum class WontonGlyphLook { Light, Dark, Mono }
 
 /**
- * 单色版的图是“主色换成黑”的灰度图：黑是实的，越浅越淡，白是纸面和字。这个矩阵把颜色统一成 [tint]，
- * 不透明度取“原来的不透明度减去亮度”，白的地方就透了，等于把下面挖空。
+ * 单色版的图是灰度图：黑是实的，越浅越淡，白是纸面和字。这个矩阵把颜色统一成 [tint]，
+ * 不透明度取“（原来的不透明度 − 亮度）× tint 的不透明度”，白的地方就透了，等于把下面挖空。
  */
 private fun monoFilter(tint: Color): ColorFilter {
     val full = 255f
@@ -78,7 +78,7 @@ private fun monoFilter(tint: Color): ColorFilter {
                 0f, 0f, 0f, 0f, tint.red * full,
                 0f, 0f, 0f, 0f, tint.green * full,
                 0f, 0f, 0f, 0f, tint.blue * full,
-                -LUMA_RED, -LUMA_GREEN, -LUMA_BLUE, tint.alpha, 0f,
+                -LUMA_RED * tint.alpha, -LUMA_GREEN * tint.alpha, -LUMA_BLUE * tint.alpha, tint.alpha, 0f,
             ),
         ),
     )

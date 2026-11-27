@@ -77,9 +77,9 @@ import app.wonton.ui.design.emphasisFill
 import app.wonton.ui.design.lift
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Check
-import app.wonton.ui.icons.Checks
 import app.wonton.ui.icons.Clock
 import app.wonton.ui.icons.LockKey
+import app.wonton.ui.icons.Read
 import app.wonton.ui.icons.Refresh
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
@@ -476,7 +476,7 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier, inBody: 
 private fun ReceiptMark(status: MessageStatus?, color: Color) {
     val icon = when (status) {
         MessageStatus.SENT -> WontonIcon.Check
-        MessageStatus.READ -> WontonIcon.Checks
+        MessageStatus.READ -> WontonIcon.Read
         else -> return
     }
     // 到这一步只剩送达和已读两种。

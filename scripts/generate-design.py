@@ -26,6 +26,7 @@ from design import compose_vector  # noqa: E402
 
 DESIGN = ROOT / "design"
 IOS = ROOT / "apps/ios/Wonton"
+IOS_ENTRY = ROOT / "apps/ios/SystemEntry"
 COMPOSE = ROOT / "apps/compose/shared/src/androidMain"
 KOTLIN = COMPOSE / "kotlin/app/wonton/ui"
 WEB_GENERATED = ROOT / "crates/wonton-client/src/pages/bridge/generated"
@@ -67,9 +68,6 @@ KUBAI_DARK_WHITE = 0.8
 # 去掉底的图形绕画布中心（15.5, 12.5）放大：上游的线条是按放在圆底里画的，单独用偏小。
 KUBAI_BARE_TRANSFORM = "translate(15.5 12.5) scale(1.5) translate(-15.5 -12.5)"
 # 蒙版的范围照上游自己的蒙版写：比画布（-2.5 -5.5 36 36）大一圈。
-# Compose 的单色版：主色换成黑，浅面就成了深浅不同的灰、白还是白；壳用颜色矩阵把“越白越透明”算成不透明度，
-# 白色的字和纸面就挖空了（ImageVector 没有蒙版，没法像 iOS 那样在图里挖）。
-COMPOSE_MONO_ACCENT = (0, 0, 0)
 KUBAI_MASK_BOX = {"x": "-40", "y": "-40", "width": "111", "height": "109"}
 SVG_MATRIX = re.compile(r'values="([^"]+)"')
 SVG_PAINTS = {"fill", "stroke", "stop-color", "flood-color"}
@@ -585,6 +583,42 @@ def json_bytes(value):
     return (json.dumps(value, indent=2, sort_keys=True) + "\n").encode()
 
 
+def compose_mono_gray(value, base):
+    """Compose 的单色版是一张灰度图，壳用颜色矩阵把不透明度算成“1 减亮度”（ImageVector 没有蒙版，没法像 iOS 那样
+    在图里挖）：白的透掉，等于挖空；别的颜色画多浓和 iOS 的单色版一样，取 kubai_ink。"""
+    if is_white(value):
+        return (255, 255, 255)
+    return (255 * (1 - kubai_ink(hex_rgb(value), base)),) * 3
+
+
+def widget_icons(icons):
+    """系统小组件里的图标：画不了分层图，用同一张上游图的单色平面版，由系统染色。"""
+    files = {}
+    for name, icon, source in kubai_sources(icons):
+        if not icon.get("widget"):
+            continue
+        try:
+            root, labels = compose_vector.flatten(source)
+            if labels:
+                raise compose_vector.Unsupported("带文字的图出不了平面版")
+            flat = compose_vector.silhouette(root)
+            svg = compose_vector.cropped_svg(flat)
+            check_plain_svg(f"{name}（小组件）", svg)
+            drawable = compose_vector.vector_drawable(BANNER.removeprefix("// ").strip(), flat)
+        except compose_vector.Unsupported as error:
+            sys.exit(f"图标 {name} 出不了小组件用的平面版：{error}")
+        folder = IOS_ENTRY / f"EntryAssets.xcassets/Entry{camel_upper(name)}.imageset"
+        contents = {
+            "images": [{"filename": f"Entry{camel_upper(name)}.svg", "idiom": "universal"}],
+            **XCASSETS_INFO,
+            "properties": {"preserves-vector-representation": True, "template-rendering-intent": "template"},
+        }
+        files[folder / "Contents.json"] = json_bytes(contents)
+        files[folder / f"Entry{camel_upper(name)}.svg"] = svg.encode()
+        files[COMPOSE / f"res/drawable/widget_{name}.xml"] = drawable.encode()
+    return files
+
+
 def compose_icons(icons):
     """每个图标一个文件：同一份路径配浅色、深色、单色三套颜色。ImageVector 画不了的东西怎么改写见 compose_vector。"""
     base = hex_rgb(icons["upstream"]["kubai"]["base"])
@@ -595,11 +629,7 @@ def compose_icons(icons):
             flat = ElementTree.tostring(root, encoding="unicode")
             check_plain_svg(f"{name}（Compose）", flat)
             color = icons["palette"][icon["color"]]
-            accents = {
-                "light": (hex_rgb(color["light"]), 1),
-                "dark": (hex_rgb(color["dark"]), KUBAI_DARK_WHITE),
-                "mono": (COMPOSE_MONO_ACCENT, 1),
-            }
+            accents = {"light": (hex_rgb(color["light"]), 1), "dark": (hex_rgb(color["dark"]), KUBAI_DARK_WHITE)}
             colors = compose_vector.source_colors(root) + [compose_vector.long_hex(label["fill"]) for label in labels]
             palettes = {
                 variant: [
@@ -607,6 +637,7 @@ def compose_icons(icons):
                 ]
                 for variant, (accent, white) in accents.items()
             }
+            palettes["mono"] = ["0xFF" + rgb_hex(compose_mono_gray(value, base))[1:] for value in colors]
             text = compose_vector.kotlin_file(BANNER, camel_upper(name), root, labels, palettes, icon.get("mirror"))
         except compose_vector.Unsupported as error:
             sys.exit(f"图标 {name} 转不成 ImageVector：{error}")
@@ -641,6 +672,7 @@ def expected_files():
     }
     files.update(ios_assets(icons))
     files.update(compose_icons(icons))
+    files.update(widget_icons(icons))
     return files
 
 

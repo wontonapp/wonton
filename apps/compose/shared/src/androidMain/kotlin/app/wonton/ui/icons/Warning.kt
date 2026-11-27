@@ -39,7 +39,7 @@ val WontonIcon.Warning: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
         name = "Warning",
         light = longArrayOf(0xFFC09D64, 0xFFB48B47, 0xFFE1D1B6, 0xFFCFB489, 0xFF9B6308, 0xFFFFFFFF),
         dark = longArrayOf(0xFFCE9F52, 0xFFCF963B, 0xFFCDB792, 0xFFCEAA6F, 0xFFD0840A, 0xFFFFFFFF),
-        mono = longArrayOf(0xFF5F5F5F, 0xFF414141, 0xFFB3B3B3, 0xFF858585, 0xFF000000, 0xFFFFFFFF),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000, 0xFFFFFFFF),
         build = ::art,
     )
 }

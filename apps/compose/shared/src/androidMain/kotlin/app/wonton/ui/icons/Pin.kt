@@ -44,7 +44,7 @@ val WontonIcon.Pin: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
         name = "Pin",
         light = longArrayOf(0xFFE87276, 0xFFE3585C, 0xFFF4BDBE, 0xFFED9497, 0xFFAA0000, 0xFFDA1F25),
         dark = longArrayOf(0xFFDF9193, 0xFFE28689, 0xFFD5B0B1, 0xFFDA9FA1, 0xFFB4453C, 0xFFEA6E72),
-        mono = longArrayOf(0xFF5F5F5F, 0xFF414141, 0xFFB3B3B3, 0xFF858585, 0xFF000000, 0xFF000000),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000, 0xFF000000),
         build = ::art,
     )
 }

@@ -1,7 +1,7 @@
 {
   "images": [
     {
-      "filename": "checksColor.svg",
+      "filename": "readColor.svg",
       "idiom": "universal"
     },
     {
@@ -11,7 +11,7 @@
           "value": "dark"
         }
       ],
-      "filename": "checksColorDark.svg",
+      "filename": "readColorDark.svg",
       "idiom": "universal"
     }
   ],

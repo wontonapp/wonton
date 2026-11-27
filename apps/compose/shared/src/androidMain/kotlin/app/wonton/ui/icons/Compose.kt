@@ -46,7 +46,7 @@ val WontonIcon.Compose: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
         name = "Compose",
         light = longArrayOf(0xFFD0926C, 0xFFC87E51, 0xFFE9CCBA, 0xFFDCAC8F, 0xFFB55215, 0xFF893400),
         dark = longArrayOf(0xFFDD9569, 0xFFE08B57, 0xFFD4B29D, 0xFFD9A281, 0xFFE7752F, 0xFFAE4E00),
-        mono = longArrayOf(0xFF5F5F5F, 0xFF414141, 0xFFB3B3B3, 0xFF858585, 0xFF000000, 0xFF000000),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000, 0xFF000000),
         build = ::art,
     )
 }
