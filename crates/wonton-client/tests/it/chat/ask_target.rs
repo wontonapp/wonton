@@ -70,6 +70,15 @@ async fn family_ask_goes_to_the_own_bot_home_room() {
     let bot = home.bot("user-mia", "Mia 的 Bot").await;
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room = bot.create_direct_chat(&owner, false).await.unwrap();
+    // 邀请要先进房间列表，核心才能在默认 Bot 这条路上认到它；并发跑其余用例时会慢到几百毫秒。
+    phone
+        .wait_chat("邀请的默认 Bot 房间进了列表", |view| {
+            view.rooms
+                .iter()
+                .any(|row| row.room_id == room.as_str())
+                .then_some(())
+        })
+        .await;
     set_own_bot(
         &home,
         &phone,
@@ -130,6 +139,15 @@ async fn family_without_a_ready_bot_falls_back_to_the_default_bot() {
     let bot = home.bot("hermes", "Hermes").await;
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room = bot.create_direct_chat(&owner, false).await.unwrap();
+    // 邀请要先进房间列表，核心才能在默认 Bot 这条路上认到它；并发跑其余用例时会慢到几百毫秒。
+    phone
+        .wait_chat("邀请的默认 Bot 房间进了列表", |view| {
+            view.rooms
+                .iter()
+                .any(|row| row.room_id == room.as_str())
+                .then_some(())
+        })
+        .await;
     set_own_bot(
         &home,
         &phone,
@@ -386,6 +404,15 @@ async fn an_owner_without_a_private_bot_asks_the_default_bot() {
     let bot = home.bot("hermes", "Hermes").await;
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room = bot.create_direct_chat(&owner, false).await.unwrap();
+    // 邀请要先进房间列表，核心才能在默认 Bot 这条路上认到它；并发跑其余用例时会慢到几百毫秒。
+    phone
+        .wait_chat("邀请的默认 Bot 房间进了列表", |view| {
+            view.rooms
+                .iter()
+                .any(|row| row.room_id == room.as_str())
+                .then_some(())
+        })
+        .await;
     set_own_bot(
         &home,
         &phone,
