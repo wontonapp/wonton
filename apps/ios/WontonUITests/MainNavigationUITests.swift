@@ -203,15 +203,19 @@ final class MainNavigationUITests: XCTestCase {
         assertOnChatRoot("聊天页从边缘里侧右滑")
     }
 
-    func testNewChatFromSidebarAndChatList() {
-        let title = text("Start a Chat")
-        openFromSidebar("New Chat", "新聊天")
-        XCTAssertTrue(waitHittable(title), "侧边栏的新聊天没打开\n\(app.debugDescription)")
+    /// 新聊天只从侧边栏进，聊天列表上没有浮着的加号（ADR-0095）。
+    func testNewChatFromSidebar() {
+        let field = app.textFields.matching(identifier: "start-chat-field")
+        let newChat = app.buttons.matching(identifier: "sidebar-new-chat")
+        openSidebar()
+        tap(newChat, "侧边栏的新聊天")
+        XCTAssertTrue(waitHittable(field), "侧边栏的新聊天没打开\n\(app.debugDescription)")
         tap(button("Back"), "新聊天页的返回键")
         assertOnChatRoot("新聊天页点返回")
 
-        tap(button("New Chat"), "聊天列表的新聊天按钮")
-        XCTAssertTrue(waitHittable(title), "聊天列表的新聊天按钮没打开\n\(app.debugDescription)")
+        openSidebar()
+        tap(newChat, "侧边栏的新聊天")
+        XCTAssertTrue(waitHittable(field), "第二次没打开新聊天\n\(app.debugDescription)")
         edgeSwipeBack()
         assertOnChatRoot("新聊天页左边缘右滑")
     }
@@ -247,16 +251,20 @@ final class MainNavigationUITests: XCTestCase {
         XCTAssertTrue(waitHittable(appsPage), "没进应用页\n\(app.debugDescription)", file: file, line: line)
     }
 
-    /// 先开侧边栏再找：聊天列表上也有同名的按钮（新聊天），只认侧边栏里点得到的那个。
+    /// 先开侧边栏再找：被盖住的页面上可能有同名的按钮，只认侧边栏里点得到的那个。
     private func openFromSidebar(
         _ label: String, _ name: String, file: StaticString = #filePath, line: UInt = #line
     ) {
+        openSidebar(file: file, line: line)
+        tap(button(label), "侧边栏里的\(name)", file: file, line: line)
+    }
+
+    private func openSidebar(file: StaticString = #filePath, line: UInt = #line) {
         tap(sidebarButton, "侧边栏按钮", file: file, line: line)
         XCTAssertTrue(
             waitHittable(text("My Apps")), "侧边栏没打开\n\(app.debugDescription)",
             file: file, line: line
         )
-        tap(button(label), "侧边栏里的\(name)", file: file, line: line)
     }
 
     /// 回到了聊天根页面：侧边栏按钮看得见、点得到（盖着别的层时它点不到或不在）。

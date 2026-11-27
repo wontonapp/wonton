@@ -66,15 +66,9 @@ struct ChatListView: View {
                     }
                 }
             }
+            .accessibilityIdentifier("chat-list")
             .overlay {
                 if isEmpty { NoChats().allowsHitTesting(false) }
-            }
-            .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-                if !listOnly {
-                    newChatButton
-                        .padding(.trailing, WontonTheme.spacing.s16)
-                        .padding(.bottom, WontonTheme.spacing.s12)
-                }
             }
             .wontonRootScreen(TabText.chat, hasActions: true) { PanelEntryButton() }
             .task { await model.confirmations.observe() }
@@ -119,33 +113,6 @@ struct ChatListView: View {
         case .install, .uninstall:
             guard let source = row.source else { return }
             confirmation = .install(source: source)
-        }
-    }
-
-    @ViewBuilder private var newChatButton: some View {
-        if #available(iOS 26, *) {
-            NavigationLink(value: ChatRoute.startChat) {
-                WontonIcon.add.view()
-                    .foregroundStyle(Color(colors.onPrimary))
-            }
-            .buttonStyle(.glassProminent)
-            .buttonBorderShape(.circle)
-            .controlSize(.large)
-            .tint(Color(colors.primary))
-            .frame(minWidth: WontonTheme.size.floatingActionButton, minHeight: WontonTheme.size.floatingActionButton)
-            .contentShape(Circle())
-            .accessibilityLabel(Text(.Chat1.chatNewChat))
-        } else {
-            NavigationLink(value: ChatRoute.startChat) {
-                WontonIcon.add.view()
-                    .foregroundStyle(Color(colors.textPrimary))
-                    .frame(width: WontonTheme.size.floatingActionButton, height: WontonTheme.size.floatingActionButton)
-                    .background(.ultraThinMaterial, in: Circle())
-                    .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(.Chat1.chatNewChat))
         }
     }
 
@@ -530,6 +497,7 @@ private struct StartChatView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .wontonField()
+                    .accessibilityIdentifier("start-chat-field")
                 Button {
                     model.openDirectChat(with: input)
                 } label: {

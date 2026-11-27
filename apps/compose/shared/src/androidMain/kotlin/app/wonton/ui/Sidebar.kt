@@ -550,6 +550,7 @@ private fun SidebarFooter(
                     role = Role.Button,
                     onClick = { onGo(SidebarDestination.NewChat) },
                 )
+                .testTag("sidebar-new-chat")
                 .padding(horizontal = spacing.s24),
             horizontalArrangement = Arrangement.spacedBy(spacing.s8),
             verticalAlignment = Alignment.CenterVertically,

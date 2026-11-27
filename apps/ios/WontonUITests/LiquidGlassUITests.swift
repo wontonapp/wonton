@@ -22,7 +22,9 @@ final class LiquidGlassUITests: XCTestCase {
         try reachChatList()
         try assertListAndCapture("01-chat-list")
 
-        try tap(Self.newChat)
+        // 新聊天只在侧边栏里（聊天列表上没有浮着的加号）。
+        try tap(Self.sidebar)
+        try tap(["sidebar-new-chat"])
         XCTAssertNotNil(button(Self.back, timeout: 10), app.debugDescription)
         capture("02-new-chat")
         try tap(Self.back)
@@ -97,7 +99,7 @@ final class LiquidGlassUITests: XCTestCase {
             if UITestBackend.skipKeyHandoff(app) { continue }
             if let step = button(onboarding, timeout: 0) {
                 step.tap()
-            } else if button(Self.sidebar, timeout: 0) != nil, button(Self.newChat, timeout: 0) != nil {
+            } else if button(Self.sidebar, timeout: 0) != nil, app.scrollViews["chat-list"].exists {
                 UITestBackend.settleKeyHandoff(app)
                 return
             } else if composer(timeout: 0) != nil, let back = button(Self.back, timeout: 0) {
@@ -111,7 +113,7 @@ final class LiquidGlassUITests: XCTestCase {
 
     private func assertListAndCapture(_ name: String) throws {
         XCTAssertNotNil(button(Self.sidebar, timeout: 10), app.debugDescription)
-        XCTAssertNotNil(button(Self.newChat, timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.scrollViews["chat-list"].waitForExistence(timeout: 10), app.debugDescription)
         capture(name)
     }
 
