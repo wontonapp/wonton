@@ -20,6 +20,7 @@ final class MusicPlayer {
     @ObservationIgnored private var itemObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var started = false
     @ObservationIgnored private lazy var system = MusicSystemControls(player: self)
+    @ObservationIgnored private lazy var audioSession = MusicAudioSessionWatch(player: self)
 
     /// 播放器里装着的是哪条会话的哪一项：两样都没变就不重开流。
     private struct Loaded: Equatable {
@@ -35,6 +36,7 @@ final class MusicPlayer {
     func start() {
         guard !started else { return }
         started = true
+        audioSession.start()
         // 只报音频：视频的播放器另报，后报的覆盖先报的，所以这里把 iOS 原生能解的都写上。
         _ = try? core.reportPlayerSupport(support: PlayerSupport(
             mimeTypes: ["audio/mpeg", "audio/aac", "audio/mp4", "audio/flac", "audio/x-flac", "audio/wav",
@@ -124,6 +126,8 @@ final class MusicPlayer {
         guard loaded != nil, player.rate > 0 else { return }
         positionMs = currentMs
         report(.playing(positionMs: positionMs))
+        // 锁屏和控制中心的进度跟着走：系统按速率外推，拖动、缓冲以后会偏。
+        system.update()
     }
 
     private func report(_ event: PlayerEvent) {

@@ -89,7 +89,8 @@ class MusicPlaybackService : MediaSessionService() {
 
         /** 会话停了：通知收掉、服务退出。 */
         fun stop(context: Context) {
-            bound?.let { context.unbindService(connection) }
+            // 服务被系统回收过，绑定可能已经失效：解绑失败不挡下面的停服务。
+            bound?.let { runCatching { context.unbindService(connection) } }
             bound = null
             context.stopService(Intent(context, MusicPlaybackService::class.java))
         }
