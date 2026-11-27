@@ -1,6 +1,7 @@
 use hyper::header::{HeaderName, HeaderValue};
 
-use super::{MCP_PROTOCOL_HEADERS, control_chars_error, part_name};
+use super::validate::control_chars_error;
+use super::{MCP_PROTOCOL_HEADERS, part_name};
 use crate::l10n::text;
 use crate::plugin::languages::Languages;
 

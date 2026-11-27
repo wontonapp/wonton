@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use hyper::header::HeaderName;
 
 use super::spec::{Part, parse};
-use super::{secret_missing, secret_ok, unknown_secret};
+use super::validate::{secret_missing, secret_ok, unknown_secret};
 use crate::l10n::text;
 use crate::owner::{Owner, internal_email};
 use crate::plugin::languages::Languages;
