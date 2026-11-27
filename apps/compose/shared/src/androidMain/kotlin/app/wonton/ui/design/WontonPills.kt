@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -115,7 +116,13 @@ fun WontonChip(title: String, isSelected: Boolean, onClick: () -> Unit) {
 
 /** 列表行尾的小按钮。图形比按钮矮，命中区还是 48。 */
 @Composable
-fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true, danger: Boolean = false) {
+fun WontonSmallButton(
+    text: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    danger: Boolean = false,
+    icon: ImageVector? = null,
+) {
     val colors = WontonTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -131,11 +138,16 @@ fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true
                 .padding(horizontal = WontonTheme.spacing.s12),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text,
-                style = WontonTheme.typography.supporting,
-                color = (if (danger) colors.danger else colors.textPrimary).toColor(),
-            )
+            val content = (if (danger) colors.danger else colors.textPrimary).toColor()
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                icon?.let {
+                    Icon(it, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall), tint = content)
+                }
+                Text(text, style = WontonTheme.typography.supporting, color = content)
+            }
         }
     }
 }

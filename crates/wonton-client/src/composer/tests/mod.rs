@@ -51,6 +51,8 @@ struct Fake {
     cut_after: Mutex<Option<usize>>,
     drafts: Mutex<Vec<String>>,
     send_error: Mutex<Option<UplinkError>>,
+    /// 交出时卡在这里，等测试放行：用来停在“已交给服务器、消息还没落地”的中间状态。
+    send_gate: Mutex<Option<oneshot::Receiver<()>>>,
 }
 
 impl Fake {
@@ -67,6 +69,7 @@ impl Fake {
             cut_after: Mutex::default(),
             drafts: Mutex::default(),
             send_error: Mutex::default(),
+            send_gate: Mutex::default(),
         })
     }
 
@@ -213,6 +216,7 @@ impl Uplink for Fake {
         if let Some(error) = self.send_error.lock().unwrap().take() {
             return Box::pin(async move { Err(error) });
         }
+        let gate = self.send_gate.lock().unwrap().take();
         let cut = self.cut_after.lock().unwrap().take();
         let total = handover.parts.len();
         let stop = cut.unwrap_or(total);
@@ -226,6 +230,9 @@ impl Uplink for Fake {
             skip: handover.skip,
         });
         Box::pin(async move {
+            if let Some(gate) = gate {
+                let _ = gate.await;
+            }
             match cut {
                 Some(_) => Err(UplinkError::Offline("交到一半断了".into())),
                 None => Ok(()),

@@ -14,6 +14,9 @@ const PHOTOS: &str = "http://app-photos.wonton.localhost:8480";
 
 fn plugin(id: &str, origin: &str, isolated: bool) -> InstalledPlugin {
     InstalledPlugin {
+        bot_shared: false,
+        bot_danger: false,
+        bot_danger_can_toggle: false,
         chat: None,
         id: id.to_owned(),
         title: id.to_owned(),
@@ -130,6 +133,8 @@ fn bot_view(plugin: &str, bot: &str, url: &str, isolated: bool) -> wonton_protoc
         cross_origin_isolated: isolated,
     };
     wonton_protocol::BotView {
+        shared: false,
+        danger: None,
         availability: Default::default(),
         user_id: format!("@{}:{}:wonton.localhost", bot.plugin_id, bot.bot),
         web: Some(wonton_protocol::BotWebView::Ready { page: page.clone() }),

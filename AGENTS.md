@@ -131,12 +131,18 @@
   issue 里留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
 - PR 合并前只等快检查：格式、lint（Clippy、detekt、SwiftLint）、行数门禁、编译、不依赖 Docker 的单元测试，目标十分钟内
   出结果。不要求 PR 先追上 `main`。
-- 合并一律经维护者的 `~/wonton-dev/safe-merge.sh`，不直接 `gh pr merge`，也不自己开 auto-merge。它按顺序拒三种情况，
+- 合并一律经维护者的 `~/wonton-dev/safe-merge.sh` 或下面的批量合并，不直接 `gh pr merge`，也不自己开 auto-merge。它按顺序拒三种情况，
   都过了才开 `gh pr merge --auto --squash`：
   - 复审：PR 当前 head 上最后一条复审结论不是通过。复审员在 PR 上评论一行 `复审通过 <head 前 8 位> 复审：<复审员卡名>`；
     作者卡写的、审的不是当前 head 的都不算，推了新提交要重审，通过之后又来一条“复审要改”也算没过。
   - 冻结：改到冻结路径（`merge-freeze.json` 里登记的，如发版前的 `crates/`、`apps/`）且不在放行名单。
   - 协议排队：改了 `crates/wonton-protocol` 的 PR 串行合，不是队首就报排位等着，轮到时自动合。
+- 默认走批量合并，入口是维护者的 `~/wonton-dev/batch-merge.sh`（和 `safe-merge.sh` 并列，只这两个能合）。成员 PR 开成草稿
+  （草稿只跑轻检查），复审照常对当前 head。脚本对每个成员跑 `safe-merge.sh` 的复审闸、查冻结、要求成员自己的 lint 绿，
+  再把它们原样 merge 进从最新 `main` 切的 `batch/` 分支，开一个非草稿的批量 PR 跑这一次完整 CI，绿了 squash 合；合后
+  `batch-merge.sh finish <批量 PR>` 关掉成员 PR、留链接，并把成员从协议排队里剔掉。成员是关闭而不是合并，分支要手动删；
+  issue 由批量 PR 正文里带过去的 `Closes` 关。和本批前面成员冲突的跳过，作者 rebase 后进下一批。批量 CI 红了，按失败的
+  模块找出是哪个成员，退回它，其余下一批再上。单独跑绿的 PR 和紧急修 `main` 的，仍可用 `safe-merge.sh` 单合。
 - 改了 `crates/wonton-protocol` 的 PR，`main` 在分支切出之后又改过协议时，lint 的“改了协议的 PR 基于最新 main”一步失败：
   先 `git rebase origin/main`、解完冲突再推。只在 PR 的 CI 跑时判断一次；没改协议的 PR 不受影响。
 - 慢的合进 `main` 之后跑，不挡合并：界面测试、镜像构建。新加的测试按这个分界放，哪个工作流在哪一边见

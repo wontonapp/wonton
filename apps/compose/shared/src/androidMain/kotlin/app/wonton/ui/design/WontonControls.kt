@@ -101,6 +101,7 @@ fun WontonButton(
     modifier: Modifier = Modifier,
     kind: WontonButtonKind = WontonButtonKind.PRIMARY,
     enabled: Boolean = true,
+    icon: ImageVector? = null,
 ) {
     val colors = WontonTheme.colors
     val (fill, content) = when (kind) {
@@ -120,7 +121,15 @@ fun WontonButton(
             .padding(horizontal = WontonTheme.spacing.s16),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = WontonTheme.typography.body, color = content.toColor())
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icon?.let {
+                Icon(it, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall), tint = content.toColor())
+            }
+            Text(text, style = WontonTheme.typography.body, color = content.toColor())
+        }
     }
 }
 

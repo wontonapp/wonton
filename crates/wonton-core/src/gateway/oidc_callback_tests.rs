@@ -334,6 +334,7 @@ async fn query_callbacks_keep_the_html_handoff_and_session_requirement() {
 fn member_device(h: &Harness) -> iroh::EndpointId {
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             username: "mia".into(),
             user_id: "@mia:test".into(),
             display_name: "Mia".into(),

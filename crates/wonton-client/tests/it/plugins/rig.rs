@@ -437,6 +437,9 @@ fn owner_json(name: Option<&str>, email: Option<&str>) -> serde_json::Value {
 
 pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
     InstalledPlugin {
+        bot_danger_can_toggle: false,
+        bot_shared: false,
+        bot_danger: false,
         chat: Default::default(),
         id: id.to_owned(),
         title: format!("标题 {id}"),

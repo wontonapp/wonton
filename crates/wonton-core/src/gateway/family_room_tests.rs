@@ -95,6 +95,7 @@ impl Family {
         self.gateway
             .members
             .invite(MemberRecord {
+                invited_by: None,
                 display_name: display_name.to_owned(),
                 role_id: role.to_owned(),
                 wants_private_bot: false,
@@ -113,7 +114,10 @@ impl Family {
                     &self.gateway.tunnel.devices
                 )
                 .unwrap(),
-            JoinCheck::Pending(role.to_owned())
+            JoinCheck::Pending {
+                role_id: role.to_owned(),
+                invited_by: None
+            }
         );
         let id = self
             .gateway

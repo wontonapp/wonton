@@ -84,6 +84,7 @@ async fn ask_one(
         caller,
         draft,
         Audience {
+            on_behalf: None,
             recipients: super::Recipients::Keeper(recipient),
             requester: Some(ConfirmationRequester::Bot {
                 bot: row.bots[0].bot.clone(),

@@ -261,6 +261,7 @@ pub(crate) fn seed_members(members: &Members) {
     for username in ["alice", "bob"] {
         members
             .invite(MemberRecord {
+                invited_by: None,
                 username: username.into(),
                 user_id: format!("@{username}:test"),
                 display_name: username.into(),

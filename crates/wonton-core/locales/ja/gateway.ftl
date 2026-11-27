@@ -122,6 +122,7 @@ gateway-body-unreadable = リクエストボディを読み取れません：{ $
 gateway-body-invalid = リクエストボディが不正です：{ $error }
 gateway-bot-not-found = そのボットはありません：{ $caller }
 gateway-bot-not-in-plugin = アプリ{ $id }にそのボットはありません：{ $caller }
+gateway-danger-owner-bot = 危険モードは主人のボットだけに使えます。
 gateway-tool-not-found = アプリ{ $id }にツール{ $tool }はありません
 gateway-tool-deletes = ツール{ $tool }はデータを削除または上書きするため、毎回確認が必要で、読み取り専用にはできません
 gateway-plugin-not-running = このアプリは起動していないか、ツールを宣言していません

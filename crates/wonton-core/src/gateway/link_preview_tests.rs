@@ -111,6 +111,7 @@ fn kind(reply: &Reply) -> LinkPreviewFailure {
 fn invite(h: &Harness, username: &str) {
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             username: username.to_owned(),
             user_id: format!("@{username}:test"),
             display_name: username.to_owned(),

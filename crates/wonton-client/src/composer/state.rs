@@ -174,9 +174,15 @@ impl Outgoing {
         }
     }
 
-    /// 全部附件合起来的比例；只有字时不确定。
+    /// 附件合起来的上传比例。只有字、或者字节都交给服务器以后是 `None`：前一种没有字节要传，
+    /// 后一种剩下的是等消息落地，不是还在传。
     fn progress(&self) -> Option<f32> {
-        if self.items.is_empty() {
+        if self.items.is_empty()
+            || self
+                .items
+                .iter()
+                .all(|item| item.state == AttachmentState::Ready)
+        {
             return None;
         }
         #[expect(clippy::cast_precision_loss, reason = "at most MAX_ATTACHMENTS items")]

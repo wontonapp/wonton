@@ -404,6 +404,7 @@ async fn a_home_whose_ownership_cannot_be_fixed_is_reported_as_missing_permissio
         gateway
             .members
             .invite(MemberRecord {
+                invited_by: None,
                 role_id: "family".into(),
                 wants_private_bot: false,
                 ..MemberRecord::for_test("alice")

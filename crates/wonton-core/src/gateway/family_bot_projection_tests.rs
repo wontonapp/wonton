@@ -60,6 +60,7 @@ async fn installed_whoami_with_private_bot() -> PrivateBotFixture {
     for name in ["mia", "lee"] {
         h.members
             .invite(MemberRecord {
+                invited_by: None,
                 role_id: "admin".into(),
                 ..MemberRecord::for_test(name)
             })

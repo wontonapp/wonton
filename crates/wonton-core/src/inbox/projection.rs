@@ -156,6 +156,7 @@ mod tests {
 
     fn card() -> ConfirmationCard {
         ConfirmationCard {
+            on_behalf: None,
             id: "abc".into(),
             state: ConfirmationState::Pending,
             title: "安装 Immich？".into(),

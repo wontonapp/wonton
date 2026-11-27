@@ -272,6 +272,9 @@ fn home(server: &str) -> HomeViewModel {
 
 fn plugin(id: &str, title: &str, revision: &str) -> InstalledPlugin {
     InstalledPlugin {
+        bot_danger_can_toggle: false,
+        bot_shared: false,
+        bot_danger: false,
         chat: Default::default(),
         id: id.to_owned(),
         title: title.to_owned(),

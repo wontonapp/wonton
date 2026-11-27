@@ -82,6 +82,9 @@ pub(in crate::client) fn fake_plugin(
     web_url: Option<String>,
 ) -> InstalledPlugin {
     InstalledPlugin {
+        bot_shared: false,
+        bot_danger: false,
+        bot_danger_can_toggle: false,
         id: id.into(),
         title: title.into(),
         summary: String::new(),

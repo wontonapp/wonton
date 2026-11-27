@@ -2,6 +2,8 @@
 <resources>
     <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->
     <string name="problem_apps_not_ready">The app list isn\'t ready yet. Try again shortly.</string>
+    <!-- Problem title: this phone has no home server paired yet. -->
+    <string name="problem_not_paired_title">Not paired with your home server yet</string>
     <!-- Problem title: the app is busy with another task. -->
     <string name="problem_plugin_conflict_title">This app is busy</string>
     <!-- Problem title: the device the app should run on isn't available. -->
