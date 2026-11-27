@@ -43,6 +43,33 @@ async fn ask(setup: &Setup, audience: &str) -> Result<Value, super::ToolFailure>
     Ok(text(result))
 }
 
+/// 经 MCP 总线真调：总线用完整名 `wonton__inbox_ask`，拆完把裸名交给核心工具。
+#[tokio::test]
+async fn the_bus_routes_the_prefixed_name() {
+    let setup = setup_notify().await;
+    let _dir = attach(&setup);
+    let result = setup
+        .call(
+            "wonton__inbox_ask",
+            json!({"questions": question(), "blocking": false, "audience": "keeper"}),
+        )
+        .await;
+    assert_ne!(
+        result.is_error,
+        Some(true),
+        "总线真调不该报错：{:?}",
+        result.content
+    );
+    let reply = text(result);
+    let id = reply["item_id"].as_str().unwrap();
+    let inbox = setup.bus.inbox().unwrap();
+    let item = inbox
+        .view("owner", id, crate::inbox::now_ms())
+        .unwrap()
+        .item;
+    assert_eq!(item.kind, InboxType::Choice);
+}
+
 /// 主人 Bot（recipient None）也能发，落成主人的收件箱条目，不是 400。
 #[tokio::test]
 async fn the_owner_bot_can_ask() {

@@ -138,6 +138,8 @@ pub async fn call(
     activity: Guard,
 ) -> CallToolResult {
     let name = naming::join(naming::CORE, tool);
+    // 总线拆完只交裸名；直接拿完整名调的也认。
+    let bare = tool.strip_prefix("wonton__").unwrap_or(tool);
     let value = Value::Object(args.clone());
     let read = match tool {
         LIST => Ok(list(bus)),
@@ -164,9 +166,19 @@ pub async fn call(
         panel_tools::PIN | panel_tools::UNPIN | panel_tools::LIST => {
             return panel_tools::call(bus, caller, tool, args, activity).await;
         }
-        INBOX_ASK_TOOL | INBOX_PRESENT_TOOL | INBOX_RECAP_TOOL | INBOX_CONFIRM_TOOL
-        | INBOX_NOTICE_TOOL | INBOX_WAIT_TOOL | INBOX_CANCEL_TOOL | INBOX_UPDATE_TOOL => {
-            return match crate::inbox::call(bus, caller, tool, args).await {
+        _ if matches!(
+            naming::join(naming::CORE, bare).as_str(),
+            INBOX_ASK_TOOL
+                | INBOX_PRESENT_TOOL
+                | INBOX_RECAP_TOOL
+                | INBOX_CONFIRM_TOOL
+                | INBOX_NOTICE_TOOL
+                | INBOX_WAIT_TOOL
+                | INBOX_CANCEL_TOOL
+                | INBOX_UPDATE_TOOL
+        ) =>
+        {
+            return match crate::inbox::call(bus, caller, bare, args).await {
                 Ok(result) => result,
                 Err(failure) => bus.deny(caller, &name, &value, &failure),
             };
