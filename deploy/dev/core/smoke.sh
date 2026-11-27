@@ -250,15 +250,19 @@ start_phone() {
   done
   docker logs "$phone" 2>/dev/null | grep -q '^本地代理' || fail "手机没起来：$(docker logs "$phone" 2>&1 | tail -3)"
   credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
-  # 监听先出来、隧道后连上：连上以前经代理的请求是 502 transport-unavailable，
-  # 后面「未登记的设备被隧道拒绝」要在连上之后才问得到 403。
-  local code
+  # 监听先出来、隧道后连上、核心随后就绪：这两种状态经代理的请求分别是 502
+  # transport-unavailable 和 503 not_ready，后面「未登记的设备被隧道拒绝」要等两者都过去
+  # 才能问得到 403。分段跑时手机可能已经配对过，所以不放行只看 403。
+  local reply
   for _ in $(seq 60); do
-    code="$(t -o /dev/null -w '%{http_code}' "$core_url/_wonton/health" 2>/dev/null || true)"
-    [[ -n "$code" && "$code" != 502 ]] && break
+    reply="$(t -o /dev/null -D - "$core_url/_wonton/health" 2>/dev/null || true)"
+    grep -q 'x-wonton-tunnel-error: transport-unavailable' <<<"$reply" || \
+      grep -q 'x-wonton-error: not_ready' <<<"$reply" || break
     sleep 1
   done
-  [[ -n "$code" && "$code" != 502 ]] || fail "手机的隧道没连上（最后应答 ${code:-无}）：$(docker logs "$phone" 2>&1 | tail -3)"
+  grep -q 'x-wonton-tunnel-error: transport-unavailable' <<<"$reply" || \
+    grep -q 'x-wonton-error: not_ready' <<<"$reply" && \
+    fail "手机的隧道没连上或核心没就绪：$(head -1 <<<"$reply")；$(docker logs "$phone" 2>&1 | tail -3)"
 }
 # 拿不到隧道 id（假 docker 的用例里）就起不了手机，整段跳过；真跑的每一步都靠它。
 if [[ -n "$server_id" ]]; then
