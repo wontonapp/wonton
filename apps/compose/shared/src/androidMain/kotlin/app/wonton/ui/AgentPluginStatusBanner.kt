@@ -100,9 +100,7 @@ internal fun PluginStatusNotice(
             val problem = start.problem.problem
             WontonNotice(WontonIcon.Warning, problem.titleText, lines = listOfNotNull(problem.nextStepText)) {
                 if (canStart) WontonButton(stringResource(R.string.common_retry), launch)
-                problem.detail?.let {
-                    ProblemDetail(it, modifier = Modifier.heightIn(min = 48.dp))
-                }
+                problem.detail?.let { DetailInCard(it) }
             }
         }
         null -> PluginStateNotice(status, canStart, title, stoppedText, launch, degradedLine)
@@ -128,7 +126,7 @@ private fun PluginStateNotice(
         ) {
             // 原因是核心按语言写的，个别场景夹着原始报错；没有内容时不给一个展开是空的详情。
             if (status.reason.isNotBlank()) {
-                ProblemDetail(status.reason, modifier = Modifier.heightIn(min = 48.dp))
+                DetailInCard(status.reason)
             }
         }
         is PluginState.NeedsConfiguration -> WontonNotice(
@@ -141,6 +139,23 @@ private fun PluginStateNotice(
         is PluginState.Running -> Unit
     }
 }
+
+/**
+ * 卡片里收起的详情：内容再长也只长到 [DETAIL_MAX_HEIGHT] 就在里面滚。卡片钉在聊天顶上，
+ * 不封顶会把同屏的照片和文字挤出列表（#701）。
+ */
+@Composable
+private fun DetailInCard(text: String) {
+    ProblemDetail(
+        text,
+        modifier = Modifier.heightIn(min = 48.dp),
+        toggleTag = "agent-detail-toggle",
+        expandedMaxHeight = DETAIL_MAX_HEIGHT,
+    )
+}
+
+/** 够看四行左右；再长的原因在详情里滚，卡片至多长高这么多。 */
+private val DETAIL_MAX_HEIGHT = 72.dp
 
 @Composable
 private fun PluginStarting(text: String) {

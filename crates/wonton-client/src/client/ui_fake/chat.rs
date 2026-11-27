@@ -18,6 +18,22 @@ pub(in crate::client) const CALL_ROOM_ID: &str = "!ui-fake-call:home.example";
 /// 没人说话的群，转发时多一个去处。
 const NOTES_ROOM_ID: &str = "!ui-fake-notes:home.example";
 
+/// AI 管家降级的原因：核心会把原始报错一起带上，够长才能看出展开会不会把聊天顶掉。
+const ECHO_DEGRADED_REASON: &str = "连接模型服务失败：请求超时（30 秒）\n\
+    \n\
+    服务 https://llm.example.com/v1 连续 3 次都没在 30 秒内回话，最后一次在 09:41。\n\
+    模型 gpt-4o-mini；上一次成功是今天 09:12。\n\
+    \n\
+    原始报错：\n\
+    provider error: request timeout\n\
+    · method=POST path=/v1/chat/completions\n\
+    · connect=3.2s tls=0.4s ttfb=30.0s total=30.1s\n\
+    · status=(-) trace=7f3c9a2e\n\
+    · retry=1/3 2/3 3/3\n\
+    \n\
+    容器 app-example-echo 还在跑（healthy），重启不一定有用。\n\
+    先到「应用 → Echo → Models」换一个能连上的服务，或者稍后再发一次。";
+
 /// 假聊天列表：私聊、通话中的群、没人说话只给转发用的群。
 pub(super) fn fake_rooms() -> Vec<RoomRow> {
     vec![
@@ -27,7 +43,14 @@ pub(super) fn fake_rooms() -> Vec<RoomRow> {
             name: "Echo".into(),
             is_direct: true,
             direct_user_id: Some("@echo:home.example".into()),
-            plugin: None,
+            plugin: Some(RoomPlugin {
+                plugin_id: "app.example.echo".into(),
+                status: PluginState::Degraded {
+                    reason: ECHO_DEGRADED_REASON.into(),
+                },
+                start: None,
+                can_start: false,
+            }),
             bot_chat: None,
             bot: None,
             is_encrypted: true,
