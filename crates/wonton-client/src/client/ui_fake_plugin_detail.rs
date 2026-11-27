@@ -78,6 +78,7 @@ pub(super) fn app(
         source: None,
         id: id.into(),
         title: title.into(),
+        subtitle: None,
         summary: summary.into(),
         about: None,
         setup: None,

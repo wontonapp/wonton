@@ -2,6 +2,7 @@
 
 use wonton_client::{ChatAccount, ChatFailure};
 
+use super::accept_the_bots_invite;
 use super::support::{Home, OWNER, Phone};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -54,4 +55,71 @@ async fn a_matrix_login_refused_while_tuwunel_restarts_retries_by_itself() {
         "应该重登过：{}",
         home.login_tokens()
     );
+}
+
+/// 隧道断了又回来：代理没了先断开、离线恢复，代理回来再用它接上（follow_home）。消息照常收到，设备不变
+/// （是恢复不是新登录），也不来回重登。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_tunnel_that_drops_and_comes_back_resumes_the_same_session() {
+    use wonton_client::{ChatSync, MessageSummary};
+
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let mut home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    let (_, device) = phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
+
+    // 隧道断掉：旧代理已经拆了，同步报“连不上”（断得快时先看到的可能是断开）。
+    home.stop_tunnel().await;
+    phone
+        .wait_chat("连接断掉", |view| {
+            (matches!(view.account, ChatAccount::SignedOut)
+                || matches!(
+                    &view.sync,
+                    ChatSync::Failed {
+                        reason: ChatFailure::TransportUnavailable,
+                        ..
+                    }
+                ))
+            .then_some(())
+        })
+        .await;
+
+    // 隧道回来，手机用新的本地代理恢复会话。
+    home.start_tunnel().await;
+    // Bot 直连核心，不经隧道：这条消息只能靠手机经新代理重新同步收进来。
+    bot_room
+        .send_text("换了地址以后发的", &[])
+        .await
+        .expect("Bot 发消息");
+    phone
+        .wait_chat("隧道回来后收到消息", |view| {
+            view.rooms
+                .iter()
+                .any(|row| {
+                    row.room_id == room_id.as_str()
+                        && row.preview.as_ref().is_some_and(|preview| {
+                            preview.body
+                                == MessageSummary::Text {
+                                    text: "换了地址以后发的".to_owned(),
+                                }
+                        })
+                })
+                .then_some(())
+        })
+        .await;
+    assert_eq!(
+        phone.signed_in().await.1,
+        device,
+        "应还是原来的设备，不是新设备"
+    );
+    assert_eq!(home.login_tokens(), 1, "恢复会话不该再要登录令牌");
+
+    // 不来回重登：安稳一阵以后还是同一个设备、还登录着。
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    assert_eq!(phone.signed_in().await.1, device);
 }

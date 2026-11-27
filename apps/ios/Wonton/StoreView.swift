@@ -381,6 +381,12 @@ private struct StoreItemRow: View {
                             .wontonText(WontonTheme.typography.itemTitle)
                             .foregroundStyle(Color(colors.textPrimary))
                             .lineLimit(1)
+                        if let subtitle = item.subtitle {
+                            Text(subtitle)
+                                .wontonText(WontonTheme.typography.supporting)
+                                .foregroundStyle(Color(colors.textPrimary))
+                                .lineLimit(1)
+                        }
                         Text(item.summary)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))

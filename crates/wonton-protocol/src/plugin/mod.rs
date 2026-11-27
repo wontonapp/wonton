@@ -138,6 +138,10 @@ pub struct InstalledPlugins {
 pub struct InstalledPlugin {
     pub id: String,
     pub title: String,
+    /// 清单的 `subtitle`：标题下面的一句用途；清单没写或旧核心不给时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub subtitle: Option<String>,
     /// 一句话说明（清单的 `description`）。
     pub summary: String,
     pub version: String,
@@ -429,6 +433,10 @@ pub struct StoreItem {
     pub source: String,
     pub id: String,
     pub title: String,
+    /// 清单的 `subtitle`：标题下面的一句用途；清单没写或旧核心不给时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub subtitle: Option<String>,
     pub summary: String,
     pub icon: Option<PluginIcon>,
     pub tags: Vec<String>,

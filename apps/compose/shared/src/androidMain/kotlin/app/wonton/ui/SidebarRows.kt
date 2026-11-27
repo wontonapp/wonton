@@ -74,7 +74,8 @@ internal fun SidebarAppRow(
         title = app.title,
         selected = choice != null && choice == current,
         interactive = interactive,
-        subtitle = stringResource(R.string.sidebar_opens_in_browser).takeIf { inBrowser },
+        // 交给系统浏览器的提示比用途要紧，两样都有时只放得下一行，留提示。
+        subtitle = if (inBrowser) stringResource(R.string.sidebar_opens_in_browser) else app.subtitle,
         badgeMark = SidebarAppBadge(app.badge.update, app.badge.problem, app.badge.stopped),
         onClick = {
             when (val open = app.open) {

@@ -36,6 +36,10 @@ pub struct SidebarApp {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tab: Option<TabRef>,
     pub title: String,
+    /// 插件行标题下面的一句用途（清单的 `subtitle`）；页面行、改过名的行和清单没写时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub subtitle: Option<String>,
     /// 点了这一行打开什么。
     pub open: SidebarOpen,
     /// 没有时壳画占位。
@@ -100,6 +104,7 @@ mod tests {
                         page: Some("feed".into()),
                     }),
                     title: "订阅".into(),
+                    subtitle: None,
                     open: SidebarOpen::Page {
                         tab: TabRef::Plugin {
                             plugin_id: "app.example.rss".into(),
@@ -117,6 +122,7 @@ mod tests {
                     plugin_id: Some("bot.hermes".into()),
                     tab: None,
                     title: "Hermes".into(),
+                    subtitle: None,
                     open: SidebarOpen::BotChat {
                         bot_user_id: "@hermes:home".into(),
                     },
@@ -129,6 +135,7 @@ mod tests {
                         url: "https://example.com/weather".into(),
                     }),
                     title: "天气".into(),
+                    subtitle: None,
                     open: SidebarOpen::Page {
                         tab: TabRef::Url {
                             url: "https://example.com/weather".into(),
@@ -141,6 +148,7 @@ mod tests {
                     plugin_id: Some("app.example.weather".into()),
                     tab: None,
                     title: "天气".into(),
+                    subtitle: None,
                     open: SidebarOpen::ExternalBrowser {
                         url: "https://example.com/weather".into(),
                     },

@@ -17,6 +17,7 @@ pub(super) fn detail() -> PluginDetail {
         source: Some(format!("github:owner/{ID}")),
         id: ID.to_owned(),
         title: format!("标题 {ID}"),
+        subtitle: None,
         summary: String::new(),
         about: None,
         setup: None,

@@ -148,3 +148,21 @@ async fn a_removed_peer_can_pair_again_by_scanning_it() {
         "新配对成立，不再是对方已断开"
     );
 }
+
+/// 删配对：两边名单各自撤掉，对方收到通知后留在列表里，标成“对方已断开连接”。
+#[tokio::test]
+async fn removing_a_pairing_notifies_the_peer() {
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let b = TestCore::start("Alice", "b.example.internal").await;
+    pair(&a, &b).await;
+
+    assert!(a.peers.remove("b.example.internal").await.unwrap());
+    a.wait_gone("b.example.internal").await;
+    // 被删的一方留着记录，只是标成“对方删了”：联邦名单和查找都不再认它。
+    b.wait_removed("a.example.internal").await;
+    assert!(!a.paired_names.borrow().contains("b.example.internal"));
+    assert!(b.row("a.example.internal").is_some());
+
+    // 再删一次：没有这条记录了。
+    assert!(!a.peers.remove("b.example.internal").await.unwrap());
+}
