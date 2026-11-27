@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::provider::{kind_param, segment};
+use super::provider::{ArtworkQuery, kind_param, segment};
 use super::session::{PlaybackSession, PlaybackSessionId, Revision};
 use super::task::{MediaFailure, MediaTask, PauseReason, TaskId, TaskKind};
 use super::view::{DeviceCommand, QueueOp};
@@ -102,9 +102,9 @@ pub fn items_path() -> String {
     format!("{MEDIA_API_PREFIX}/items")
 }
 
-/// `GET /items/{id}/artwork?kind=…&source=…`：封面、海报、缩略图的字节，按条目的种类和来源找提供方。
-/// 要哪一张、多宽，在后面接 `&` 和 [`super::provider::ArtworkQuery::pairs`]。
-pub fn item_artwork_path(item: &super::MediaItemRef) -> String {
+/// `GET /items/{id}/artwork?kind=…&source=…&type=…&width=…`：封面、海报、缩略图的字节，按条目的种类和来源找
+/// 提供方；`artwork` 说要哪一张、多宽，原样转给提供方。
+pub fn item_artwork_path(item: &super::MediaItemRef, artwork: &ArtworkQuery) -> String {
     let mut path = format!(
         "{MEDIA_API_PREFIX}/items/{}/artwork?kind={}",
         segment(&item.id),
@@ -112,6 +112,11 @@ pub fn item_artwork_path(item: &super::MediaItemRef) -> String {
     );
     if let Some(source) = &item.source {
         path.push_str(&format!("&source={}", segment(source)));
+    }
+    let pairs = artwork.pairs();
+    if !pairs.is_empty() {
+        path.push('&');
+        path.push_str(&pairs);
     }
     path
 }
@@ -243,6 +248,7 @@ pub type ItemsPage = super::provider::ItemsPage;
 mod tests {
     use super::*;
     use crate::media::MediaKind;
+    use crate::media::provider::ArtworkKind;
 
     #[test]
     fn routes_live_under_the_media_prefix() {
@@ -268,13 +274,17 @@ mod tests {
         album.kind = MediaKind::Audio;
         album.source = None;
         assert_eq!(
-            item_artwork_path(&album),
+            item_artwork_path(&album, &ArtworkQuery::default()),
             "/_wonton/api/media/items/al%201/artwork?kind=audio"
         );
         album.source = Some("app.example.music".into());
+        let backdrop = ArtworkQuery {
+            artwork: Some(ArtworkKind::Backdrop),
+            width: Some(640),
+        };
         assert_eq!(
-            item_artwork_path(&album),
-            "/_wonton/api/media/items/al%201/artwork?kind=audio&source=app.example.music"
+            item_artwork_path(&album, &backdrop),
+            "/_wonton/api/media/items/al%201/artwork?kind=audio&source=app.example.music&type=backdrop&width=640"
         );
         assert_eq!(queue_path(), "/_wonton/api/media/queue");
         assert_eq!(

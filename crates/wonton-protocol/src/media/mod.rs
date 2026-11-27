@@ -42,14 +42,19 @@ macro_rules! known_or_other {
                     _ => None,
                 }
             }
+
+            /// 线上的取值；拼路径、查询串时用它，取值表只写在这一处。
+            pub(crate) fn wire(&self) -> &str {
+                match self {
+                    $(Self::$variant => $raw,)*
+                    Self::Other(raw) => raw.as_str(),
+                }
+            }
         }
 
         impl serde::Serialize for $ty {
             fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                serializer.serialize_str(match self {
-                    $(Self::$variant => $raw,)*
-                    Self::Other(raw) => raw.as_str(),
-                })
+                serializer.serialize_str(self.wire())
             }
         }
 

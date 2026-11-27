@@ -35,12 +35,7 @@ pub fn segment(id: &str) -> String {
 
 /// 种类写进查询串的值，同它的 JSON 取值。
 pub fn kind_param(kind: &MediaKind) -> &str {
-    match kind {
-        MediaKind::Photo => "photo",
-        MediaKind::Video => "video",
-        MediaKind::Audio => "audio",
-        MediaKind::Other(raw) => raw,
-    }
+    kind.wire()
 }
 
 /// `GET /items/{id}/download`
@@ -86,13 +81,7 @@ known_or_other!(ArtworkKind {
 
 impl ArtworkKind {
     pub fn as_str(&self) -> &str {
-        match self {
-            Self::Primary => "primary",
-            Self::Backdrop => "backdrop",
-            Self::Thumb => "thumb",
-            Self::Logo => "logo",
-            Self::Other(raw) => raw,
-        }
+        self.wire()
     }
 }
 

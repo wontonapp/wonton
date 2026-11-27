@@ -521,7 +521,8 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 1. 请求带了来源就用它：条目的 `MediaItemRef.source`（起播、下载、取封面）、上传的 `TaskOptions.source`、列条目和相册浏览的
    `?source=`。这一家不在跑、没声明这次的操作或种类回 `plugin_unavailable`，这个人用不了它回 `permission_denied`；不改去别家。
 2. 没带就在“合格的”里挑：在跑、清单声明的 `operations` 含这次的操作、`kinds` 含条目的种类（上传只看 `upload`）、这个人
-   用得了。合格的里有主人在能力设置给 `media_source` 定的默认，用默认。
+   用得了。这个人用不了的那家不算合格：别家合格就用别家，不因为它回 `source_required`；能做的都用不了才回
+   `permission_denied`。合格的里有主人在能力设置给 `media_source` 定的默认，用默认。
 3. 没定默认、合格的只有一家，用它。
 4. 合格的有几家又没定默认，回 `source_required`，App 请用户选一家再带 `source` 来；不静默取“第一个”。一家都没有回
    `plugin_unavailable`。
