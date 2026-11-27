@@ -1,7 +1,7 @@
 import UIKit
 
 /// 上面一页跟着手指往右走、左边带一道阴影，下面一页从左边三成处跟进来、先压暗一点再亮起来。
-/// 返回（`EdgePopAnimator`）和关盖子（`EdgeDismiss`）共用这一套视图和动画。
+/// 返回（`EdgePopAnimator`）和旁聊盖子的滑走（`EdgeDismiss`）共用这一套视图和动画。
 ///
 /// 上面一页拖的是它的快照，本身原地不动、只是先藏起来：SwiftUI 在转场途中按视图当时的位置记下辅助功能里的
 /// 坐标，弹回以后不再更新。直接挪这一页（frame、transform 都试过）的话，拖到一半弹回后读屏和界面测试拿到的
@@ -91,7 +91,7 @@ struct EdgePopScene {
         if showingFrom { from.layer.opacity = 1 }
     }
 
-    private static func shadow(frame: CGRect) -> UIView {
+    static func shadow(frame: CGRect) -> UIView {
         let shadow = UIView(frame: frame)
         shadow.isUserInteractionEnabled = false
         shadow.layer.shadowColor = UIColor.black.cgColor
