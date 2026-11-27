@@ -62,9 +62,15 @@ pub fn parse_security_opt(opt: &str, langs: &Languages) -> Result<SecurityOpt, S
 pub fn validate_optional(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
     for (permission, optional) in &manifest.optional_permissions {
         if !permission.spec().optional {
+            // 硬盘单独说一句：作者最常想把它做成可选，通用的那句说不清为什么不行。
+            let key = if *permission == Permission::DevicesDisk {
+                "plugin-install-device-disk-not-optional"
+            } else {
+                "plugin-install-optional-not-allowed"
+            };
             return Err(ManifestError::Invalid(text(
                 langs,
-                "plugin-install-optional-not-allowed",
+                key,
                 &[("permission", permission.to_string().into())],
             )));
         }

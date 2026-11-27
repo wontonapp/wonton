@@ -141,10 +141,9 @@ permission_table! {
         text: "permission-devices-usb", notice: Text("permission-notice-devices-usb"),
         supported: true,
     },
-    // 硬盘能读到整盘上的数据，还带着能发写命令的 SYS_RAWIO。清单这一层放它过可选的名单，由核心的设备校验
-    // 拒绝并说清为什么不能可选，所以没有注入变量。
+    // 硬盘能读到整盘上的数据，还带着能发写命令的 SYS_RAWIO。
     DevicesDisk = "devices.disk" {
-        risk: VeryHigh, optional: true, env: None,
+        risk: VeryHigh, optional: false, env: None,
         text: "permission-devices-disk", notice: Text("permission-notice-devices-disk"),
         supported: true,
     },
