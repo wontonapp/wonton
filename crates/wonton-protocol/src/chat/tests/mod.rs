@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use super::*;
 use crate::{
     Action, CoreError, InstallProgress, InstallStage, NotificationCategory, PluginOperation,
-    PushContent, PushStatus, SecretString,
+    PushContent, PushNotification, PushStatus, SecretString,
 };
 
 /// 测试用的恢复密钥原文。

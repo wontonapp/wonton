@@ -6,179 +6,22 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    BotView, ChatLayout, ChatLayoutChoice, InstallProgress, PluginFailure, PluginIcon,
-    PluginOperation, PushNotification, PushStatus, SecretString, VerificationFlow,
+    ChatLayout, InstallProgress, PluginFailure, PluginIcon, PluginOperation, SecretString,
+    VerificationFlow,
 };
 
-/// 聊天页的 ViewModel。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ChatViewModel {
-    pub account: ChatAccount,
-    pub sync: ChatSync,
-    pub encryption: EncryptionStatus,
-    /// 有 Bot 的插件在装、在升级、装失败时的占位行，显示在 `rooms` 上面。装好、Bot 的私聊出现在 `rooms` 里以后
-    /// 由那一行代替，这里不再有它。
-    #[serde(default)]
-    pub installing_bots: Vec<BotInstallRow>,
-    /// 房间，按最近活动排序：最近有消息的在前，正在发送的在最前。
-    pub rooms: Vec<RoomRow>,
-    /// 新建聊天里的可选的人和 Bot（不能用的也留着，带 [`ChatContact::access`] 的原因）：
-    /// 核心按当前权限把装着的 Bot、本人 Bot 和私聊过的人合成一表，能用的在前；壳只按搜索词过滤。
-    #[serde(default)]
-    pub shared_contacts: Vec<ChatContact>,
-    /// 最近一次在后台失败的操作（加入房间、发起私聊、设置恢复等）；壳显示后用
-    /// [`ChatAction::DismissChatProblem`](crate::ChatAction::DismissChatProblem) 清掉。
-    pub problem: Option<ChatProblem>,
-    /// 推送：App 被杀或锁屏时，新消息能不能弹出通知。
-    pub push: PushStatus,
-    /// 等主人回答的确认卡片，最早到期的在前。主人不在卡片所在的房间时，壳提示他去回答。
-    pub pending_confirmations: Vec<PendingConfirmation>,
-    /// 这台设备知道已经不用回答的卡片 ID：壳撤下它们的通知。
-    pub settled_confirmations: Vec<String>,
-    /// 收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive) 且 App 在后台时，同步到的、按 Matrix
-    /// 推送规则该通知的消息，先到的在前。壳逐条弹出系统通知，同一个 `event_id` 用同一个通知标签，重复给不会重复弹；
-    /// 回到前台时核心清空。
-    pub background_notifications: Vec<PushNotification>,
-    /// 已装插件的 Bot：名字、头像、状态头像和此刻的状态（ADR-0044）。壳按 [`RoomRow::direct_user_id`] 找私聊对方是哪个 Bot。
-    pub bots: Vec<BotView>,
-    /// 本人私人 Bot 的身份事实；失败走 [`Self::own_private_bot_problem`]，不占全局 `problem`。
-    /// 旧核心的流里没有这个键时逐字段 serde(default) 取 None，壳不能把缺键当成确认 Absent。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub own_private_bot: Option<OwnPrivateBotView>,
-    /// 读取本人私人 Bot 失败的问题。读取成功或恢复后由核心清掉。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub own_private_bot_problem: Option<OwnBotProblem>,
-    /// 最近一次“问 Bot”（[`ChatAction::AskAgent`](crate::ChatAction::AskAgent)）的回执：核心解析出哪个
-    /// Bot、哪个房间，以及发没发出去。壳用 `request_id` 对上自己发起的那一次，按 `room_id` 打开私聊，
-    /// 失败按 `problem.reason` 写人话并提供重试。还没问过、或者上一次已被
-    /// [`ChatAction::DismissChatProblem`](crate::ChatAction::DismissChatProblem) 清掉时为空。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub ask: Option<AskReceipt>,
-    /// 聊天显示方式的全局默认里用户改过的项（ADR-0060），设置页的“聊天显示”读它。
-    pub chat_layout_default: ChatLayoutChoice,
-}
-
-/// 本人私人 Bot 的身份事实，不表示主房间可发送。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum OwnPrivateBotView {
-    NotApplicable,
-    Absent,
-    Ready {
-        bot: crate::BotRef,
-        user_id: String,
-        home_room: Option<String>,
-        room_problem: Option<crate::PrivateBotRoomProblem>,
-    },
-    #[serde(other)]
-    Other,
-}
-
-/// 读取本人私人 Bot 身份时的问题，与聊天收发错误分开。
-/// 壳按 `category` 复用既有 Problem/ProblemRow 控件，`detail` 进正文；`kind` 不直接显示。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct OwnBotProblem {
-    pub category: OwnBotFailure,
-    /// 核心给出的机器类别，不用于生成直接显示的文字。
-    pub kind: Option<String>,
-    pub status: Option<u16>,
-    /// 不含服务器原始消息或输入值的本地化详情。
-    pub detail: String,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum OwnBotFailure {
-    TransportUnavailable,
-    Unauthorized,
-    PermissionDenied,
-    CapabilityUnknown,
-    NotReady,
-    RecordInconsistent,
-    StorageUnavailable,
-    StorageCorrupt,
-    Upstream,
-    Protocol,
-    #[serde(other)]
-    Other,
-}
-
-/// 一次“问 Bot”动作的回执。同一次动作只有一份，按 `request_id` 归属；壳只认自己发起的那一个。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct AskReceipt {
-    /// 壳发起动作时给的 ID；旧壳没给时为空。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub request_id: Option<u32>,
-    /// 这次动作解析出的房间：`Pending` 时还没解析出来为空；`Sent` 时是实际发送的房间；`Failed` 时是试过、
-    /// 被拒的房间（没有目标时为空）。壳只按它打开私聊，不按对方用户 ID 扫房间。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub room_id: Option<String>,
-    pub state: AskState,
-    /// 失败的原因和详情；`Pending`、`Sent` 时为空。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub problem: Option<AskProblem>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum AskState {
-    /// 核心已经接下这次动作，正在找房间或发送。
-    Pending,
-    /// 已经交给 Matrix 服务器；只说明服务器收下了，不说明 Bot 读过。
-    Sent,
-    Failed,
-    #[serde(other)]
-    Other,
-}
-
-/// 问 Bot 失败的原因。类别由核心给，主句由壳按类别写；`detail` 是核心按 App 语言写的补充。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct AskProblem {
-    pub reason: AskFailure,
-    /// 原始原因（含服务器给的说明），给默认收起的“详情”用；没有时为空，主句由壳按类别写。
-    pub detail: String,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum AskFailure {
-    /// 当前人没有可用的 Bot：没有本人 Bot，默认 Bot 也不可用。
-    NoBot,
-    /// 有 Bot，但它还没就绪（身份待核实、主房间还没同步、私人 Bot 还在建）。
-    BotNotReady,
-    /// Bot 的身份或主房间记录坏了。
-    BotProblem,
-    /// 壳给的房间不是这个人的 Bot 私聊，也不是本人 Bot 的主房间。
-    NotInRoom,
-    /// 壳给的房间是只读的通知私聊。
-    ReadOnlyRoom,
-    /// 网关拒绝：对方还不是这个 Bot 的联系人。
-    ContactRequired,
-    /// 连不上家里的服务器。
-    TransportUnavailable,
-    /// 服务器不让发（登录还有效）。
-    Forbidden,
-    /// 服务器或会话还没就绪。
-    NotReady,
-    /// 服务器或 Matrix SDK 出错。
-    Upstream,
-    #[serde(other)]
-    Other,
-}
+mod ask;
+mod contacts;
+mod encryption;
+mod install;
+mod media;
+mod own_bot;
+mod pending;
+mod rooms;
+mod session;
+#[cfg(test)]
+mod tests;
+mod view;
 
 /// 聊天列表最上面的一行：有 Bot 的插件在装、在升级、装失败了。
 /// 装好、Bot 的私聊出现以后它由私聊那一行代替，不并排显示。
@@ -624,5 +467,6 @@ impl std::fmt::Debug for ImageThumbnail {
     }
 }
 
-#[cfg(test)]
-mod tests;
+pub use ask::{AskFailure, AskProblem, AskReceipt, AskState};
+pub use own_bot::{OwnBotFailure, OwnBotProblem, OwnPrivateBotView};
+pub use view::ChatViewModel;
