@@ -1,18 +1,19 @@
 mod family;
 mod session;
+mod settings;
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
     Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, CredentialEntry,
-    DeviceNetwork, EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget,
-    InstallPreview, MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest,
-    NotificationCategory, OnboardingTip, PluginAudience, PushEndpoint, PushMethod,
-    PutIngressRequest, RelaySettingsAction, SecretString, ShareGrantUpdate, TabRef, TextSize,
-    ThemeMode, UploadSource,
+    DeviceNetwork, EntryKind, FileId, FriendBlockScope, FriendBlockTarget, InstallPreview,
+    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest, OnboardingTip,
+    PluginAudience, PushEndpoint, PushMethod, PutIngressRequest, RelaySettingsAction, SecretString,
+    ShareGrantUpdate, TabRef, UploadSource,
 };
 pub use family::FamilyAction;
 pub use session::SessionAction;
+pub use settings::SettingsAction;
 
 /// 家庭服务器、服务器列表、生命周期和外部 Matrix 登录的操作。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -364,26 +365,6 @@ pub enum PluginAction {
     SkipCoreUpgrade { digest: String },
     /// 允许插件网页使用摄像头和麦克风；设为不允许会清除原决定，下次重新询问。
     SetPluginMediaPermission { plugin_id: String, allow: bool },
-}
-
-/// 客户端本地外观与通知内容设置操作。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum SettingsAction {
-    /// App 使用的语言在第一项，后接系统语言偏好（BCP 47）；壳在启动和语言改变时发送。客户端详情用第一项，服务器按列表挑插件文字。
-    SetLanguages { languages: Vec<String> },
-    /// 选明暗。
-    SetThemeMode { mode: ThemeMode },
-    /// 选字号。
-    SetTextSize { size: TextSize },
-    /// 选字体，只从 [`AppearanceViewModel::fonts`](crate::AppearanceViewModel::fonts) 里选。
-    SetFont { font: FontStyle },
-    /// 设置指定通知类别是否在锁屏隐藏内容。
-    SetLockScreenContent {
-        category: NotificationCategory,
-        hidden: bool,
-    },
 }
 
 /// 新用户引导操作。
