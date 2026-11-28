@@ -3,7 +3,8 @@
 use wonton_l10n::l10n;
 use wonton_protocol::{PluginFailure, PluginProblem, SettingsProblem, is_older};
 
-use super::{ErrorBody, not_connected};
+use super::not_connected;
+use super::response::ErrorBody;
 use crate::l10n::{CATALOG, language};
 
 /// 按核心的错误类别区分原因（ADR-0017）；没有错误体的响应来自核心之外：本地代理连不上隧道时回 502，隧道拒绝这台设备时
