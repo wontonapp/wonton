@@ -562,7 +562,6 @@ fn arguments_line(arguments: &Value, langs: &Languages) -> CardLine {
     ))
 }
 
-/// Agent 自己的工具要动手（ADR-0035）：按钮是 Agent 给的选项，没有拒绝类选项时加一个“取消”。
 /// Bot 想往主人的主面板钉页（ADR-0052）：标题和说明由工具给，按钮是同意和拒绝。
 pub fn pin_main(title: String, note: String, allow: &str, deny: &str) -> Draft {
     Draft {
@@ -579,6 +578,7 @@ pub fn pin_main(title: String, note: String, allow: &str, deny: &str) -> Draft {
     }
 }
 
+/// Agent 自己的工具要动手（ADR-0035）：按钮是 Agent 给的选项，没有拒绝类选项时加一个“取消”。
 pub fn agent_permission(
     requester: &str,
     request: &AgentPermissionRequest,

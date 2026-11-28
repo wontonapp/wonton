@@ -85,8 +85,23 @@ pub(super) async fn list(
         Err(e) => return failed(e),
     };
     let mut pins = Vec::new();
+    let mut consents = Vec::new();
     for (id, record) in all {
         for (bot, entry) in record.bots {
+            if entry.main_consent || !entry.pins.is_empty() {
+                let name = gateway
+                    .plugins
+                    .bot_name(&id, &bot)
+                    .map(|name| crate::mcp::card_text(&name))
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or_else(|| bot.clone());
+                consents.push(BotPinOwner {
+                    plugin_id: id.as_str().to_owned(),
+                    bot: bot.clone(),
+                    name,
+                    main_consent: entry.main_consent,
+                });
+            }
             pins.extend(
                 entry
                     .pins
@@ -95,33 +110,6 @@ pub(super) async fn list(
             );
         }
     }
-    let consents = match gateway.plugins.store().pins().all() {
-        Ok(all) => all,
-        Err(e) => return failed(e),
-    }
-    .into_iter()
-    .flat_map(|(id, record)| {
-        record
-            .bots
-            .into_iter()
-            .filter(|(_, entry)| entry.main_consent || !entry.pins.is_empty())
-            .map(move |(bot, entry)| (id.clone(), bot, entry.main_consent))
-    })
-    .map(|(id, bot, main_consent)| {
-        let name = gateway
-            .plugins
-            .bot_name(&id, &bot)
-            .map(|name| crate::mcp::card_text(&name))
-            .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| bot.clone());
-        BotPinOwner {
-            plugin_id: id.as_str().to_owned(),
-            bot,
-            name,
-            main_consent,
-        }
-    })
-    .collect();
     Json(BotPanelPins { pins, consents }).into_response()
 }
 

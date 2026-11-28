@@ -687,6 +687,7 @@ fn list(bus: &Arc<Bus>, caller: &Caller) -> Result<Value, ToolFailure> {
         .load(&context.plugin)
         .map_err(storage)?;
     let entry = record.bots.get(&context.bot).cloned().unwrap_or_default();
+    let main_consent = entry.main_consent;
     let pins: Vec<BotPanelPin> = entry
         .pins
         .into_iter()
@@ -707,7 +708,7 @@ fn list(bus: &Arc<Bus>, caller: &Caller) -> Result<Value, ToolFailure> {
             plugin_id: context.plugin.as_str().to_owned(),
             bot: context.bot.clone(),
             name: context.name.clone(),
-            main_consent: record.bots[&context.bot].main_consent,
+            main_consent,
         }],
     })
     .map_err(|e| ToolFailure::new("storage", e.to_string()))
