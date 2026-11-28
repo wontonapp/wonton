@@ -22,6 +22,7 @@ use crate::plugin::names::LABEL_INSTANCE;
 use crate::test_docker::{Names, ensure_image};
 
 mod acme_dns;
+mod connector;
 mod helper;
 mod infra;
 
@@ -173,29 +174,6 @@ async fn wait_http(url: &str, root: Option<&Path>) -> Result<()> {
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
-}
-
-// 连接器：PROXY v2 把客户端的真实来源交给入口。
-fn connector_up(case: &mut Case) {
-    let connector = case.names.oneshot_container("connector");
-    let connector_config = case.dir.path().join("connector.cfg");
-    write(
-        &connector_config,
-        "global\ndefaults\n  mode tcp\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nresolvers docker\n  nameserver docker 127.0.0.11:53\n  resolve_retries 1\n  timeout resolve 1s\n  timeout retry 1s\n  hold valid 10s\nfrontend c\n  bind :8443\n  default_backend entry\nbackend entry\n  server entry entry-edge.wonton.internal:8443 resolvers docker init-addr libc,none send-proxy-v2\n",
-    );
-    start(
-        &case.names,
-        &case.network,
-        &connector,
-        None,
-        &case.connector_ip,
-        &["connector.wonton.internal"],
-        &[(connector_config, "/config/connector.cfg".into())],
-        &case.haproxy,
-        "haproxy",
-        &["-W", "-db", "-f", "/config/connector.cfg"],
-    );
-    case.connector = connector;
 }
 
 // Pebble：临时 CA 签发带 IP SAN 的叶证书给自己的 HTTPS，DNS 指到辅助容器。
@@ -587,7 +565,7 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
         acme_dns::up(&mut case).await;
     }
     helper::up(&mut case);
-    connector_up(&mut case);
+    connector::up(&mut case);
     pebble_up(&mut case).await;
     let manager = issuance_issue(&mut case, provider).await;
     certificate_check(&case, &manager);
