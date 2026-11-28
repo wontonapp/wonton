@@ -9,13 +9,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, CredentialEntry,
-    DeviceNetwork, EntryKind, FriendBlockScope, FriendBlockTarget, InstallPreview,
-    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest, PluginAudience,
-    PushEndpoint, PushMethod, PutIngressRequest, RelaySettingsAction, SecretString,
+    DeviceNetwork, EntryKind, InstallPreview, MatrixOidcCallback, MatrixOidcLogin,
+    MatrixPasswordLogin, NewPasswordRequest, PluginAudience, PushEndpoint, PushMethod,
+    PutIngressRequest, RelaySettingsAction, SecretString,
 };
 mod sharing;
 pub use family::FamilyAction;
+mod friends;
 pub use file::FileAction;
+pub use friends::FriendsAction;
 pub use onboarding::OnboardingAction;
 pub use pages::PageAction;
 pub use session::SessionAction;
@@ -423,40 +425,6 @@ pub enum BotContactAction {
     RejectBotContact { bot: BotRef, user_id: String },
     /// 删掉联系人、取消自己发出的请求，或清掉“对方拒绝了”“没有这个人”的行；同时通知对方。
     RemoveBotContact { bot: BotRef, user_id: String },
-}
-
-/// 好友和屏蔽操作。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum FriendsAction {
-    /// 取当前账号的好友、请求和屏蔽名单；外部 Matrix 账号同样可用。
-    RefreshFriends,
-    /// 发送带 app.wonton.friend 的标准 Matrix 私聊邀请，user_id 必须为完整 Matrix ID。
-    AddFriend {
-        user_id: String,
-    },
-    ApproveFriendRequest {
-        room_id: String,
-    },
-    RejectFriendRequest {
-        room_id: String,
-    },
-    CancelFriendRequest {
-        room_id: String,
-    },
-    /// 同时收回这个人所有插件访问，不退出私聊。
-    RemoveFriend {
-        user_id: String,
-    },
-    BlockFriend {
-        target: FriendBlockTarget,
-        scope: FriendBlockScope,
-    },
-    UnblockFriend {
-        target: FriendBlockTarget,
-        scope: FriendBlockScope,
-    },
 }
 
 /// 第三方客户端和公网访问（ADR-0021、ADR-0089、ADR-0090）的操作；“HTTPS 和域名”页（ADR-0089）也在里面。
