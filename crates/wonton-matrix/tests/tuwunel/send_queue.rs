@@ -20,41 +20,8 @@ const THUMBNAIL: &[u8] = b"a smaller preview of the PNG";
 
 mod offline;
 mod rejected;
+mod session_rebuild;
 mod sync;
-
-/// 会话释放时还没发出去的存在本机，下次建好会话就接着发，不用打开那个房间，也不用等同步。
-#[tokio::test]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn messages_left_unsent_go_out_once_the_session_is_back() {
-    let store = TempStore::create();
-    let chat = Chat::open(store.config()).await;
-    chat.relay.cut();
-    send(&chat.alice_room, "重建前没发出去的").await;
-    failed(&chat.alice_room, "重建前没发出去的", true).await;
-
-    let Chat {
-        alice_room,
-        bob_room,
-        alice,
-        relay,
-        server,
-        ..
-    } = chat;
-    let saved = alice.saved().expect("登录状态");
-    alice.stop_sync().await;
-    drop(alice_room);
-    drop(alice);
-
-    relay.restore();
-    let config = SessionConfig {
-        homeserver_url: relay.url().to_owned(),
-        ..server.config("Alice 的手机", store.config())
-    };
-    let _alice = MatrixSession::restore(&config, saved)
-        .await
-        .expect("恢复会话");
-    receives_in_order(&bob_room, &["重建前没发出去的"]).await;
-}
 
 /// 断网时发的图片马上以本地回显出现，原图和缩略图从本机取得到；连接恢复后发出去，对方收到的和原图一样。这次
 /// 启动还没向服务器要过上传上限，要不到也照样进队列。
