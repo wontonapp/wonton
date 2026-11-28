@@ -63,11 +63,22 @@ struct InstallProviderSections: View {
     /// 装的是提供方：已装并想用这个能力的插件（ADR-0053 第 3 条）。外层装提供方时勾选的才接上；
     /// 随批安装的提供方内层带不了连接，只列出来。
     private var wanting: [CapabilityProviderRef] {
-        if !preview.wantingPlugins.isEmpty { return preview.wantingPlugins }
-        return preview.installProviders.compactMap { $0.selected?.preview.wantingPlugins }.first ?? []
+        if !preview.wantingPlugins.isEmpty {
+            return deduped(preview.wantingPlugins)
+        }
+        return deduped(
+            preview.installProviders.flatMap { $0.selected?.preview.wantingPlugins ?? [] }
+        )
     }
 
-    private var isDirect: Bool { !preview.wantingPlugins.isEmpty }
+    /// 多个提供方各自有人想用时按 ID 去重：一节里的应用不能重复出现。
+    private func deduped(_ plugins: [CapabilityProviderRef]) -> [CapabilityProviderRef] {
+        var seen = Set<String>()
+        return plugins.filter { seen.insert($0.id).inserted }
+    }
+
+    /// 升级请求不带上连接（UpgradeRequest 没有这个字段），开关勾了不生效，升级时只列出来。
+    private var isDirect: Bool { !preview.wantingPlugins.isEmpty && preview.upgradeFrom == nil }
 
     private var thirdPartyTag: some View {
         Tag(text: String(localized: .Install.installProviderThirdParty), tint: colors.textSecondary)

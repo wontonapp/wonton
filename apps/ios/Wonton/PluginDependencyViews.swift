@@ -276,6 +276,7 @@ struct InstallConnectedApps: View {
                         ))
                         .labelsHidden()
                         .toggleStyle(WontonToggleStyle())
+                        .accessibilityLabel(plugin.title)
                     }
                 }
             }

@@ -111,6 +111,11 @@ pub(super) fn detail(route: &PluginDetailRoute) -> Option<PluginDetail> {
             "Follows the season and grabs new episodes",
             "Follows the season and grabs new episodes",
         ),
+        super::ui_fake_install::PROVIDER_SOURCE => (
+            "qBittorrent",
+            "The household's downloads",
+            "The household's downloads",
+        ),
         _ => return None,
     };
     let mut detail = super::ui_fake_plugin_detail::app(&id_of(source), title, summary, None);

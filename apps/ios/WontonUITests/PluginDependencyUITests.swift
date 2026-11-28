@@ -1,7 +1,7 @@
 import XCTest
 
 /// 依赖的界面走查（ADR-0053）：确认页要列出一起装的提供方和它的权限、密钥；卸载提供方要被在用的
-/// 应用拦下，并给出一同卸载或先停掉的选择。假数据里是 Autobangumi（要 torrent_client）和 qBittorrent。
+/// 应用拦下，并给出一同卸载或先停掉的选择。假数据里是 Autobangumi（要 download_client）和 qBittorrent。
 final class PluginDependencyUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -34,7 +34,7 @@ final class PluginDependencyUITests: XCTestCase {
         XCTAssertTrue(install.waitForExistence(timeout: 10), "详情页没有获取按钮\n\(app.debugDescription)")
         install.tap()
 
-        let capability = app.staticTexts["torrent_client"].firstMatch
+        let capability = app.staticTexts["download_client"].firstMatch
         XCTAssertTrue(capability.waitForExistence(timeout: 10), "确认页没有缺的能力\n\(app.debugDescription)")
         let provider = app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS[c] %@", "qBittorrent")
@@ -51,7 +51,38 @@ final class PluginDependencyUITests: XCTestCase {
             "确认页没有列出想用这个提供方的应用\n\(app.debugDescription)"
         )
         XCTAssertTrue(app.staticTexts["Audio Book"].firstMatch.exists, "想用的应用没列出来")
+        // 随批装的提供方：只列出来，开关在单独装提供方时才有。
+        XCTAssertFalse(app.switches["Audio Book"].exists, "随批装的提供方不该有开关")
         attach("install-provider")
+    }
+
+    func testInstallingTheProviderOffersToConnectIt() {
+        openStore()
+        let link = app.staticTexts["qBittorrent"].firstMatch
+        for _ in 0..<10 where !link.exists {
+            app.swipeUp()
+        }
+        XCTAssertTrue(link.waitForExistence(timeout: 10), "商店里没有 qBittorrent\n\(app.debugDescription)")
+        link.tap()
+        XCTAssertTrue(
+            app.staticTexts["The household's downloads"].firstMatch.waitForExistence(timeout: 10),
+            "没打开提供方详情页\n\(app.debugDescription)"
+        )
+        let install = app.buttons.matching(
+            NSPredicate(format: "label IN %@", ["Install", "Get"])
+        ).firstMatch
+        XCTAssertTrue(install.waitForExistence(timeout: 10), "详情页没有获取按钮\n\(app.debugDescription)")
+        install.tap()
+        XCTAssertTrue(
+            app.staticTexts["These apps want it"].firstMatch.waitForExistence(timeout: 10),
+            "单独装提供方没有列出想用的应用\n\(app.debugDescription)"
+        )
+        let toggle = app.switches["Audio Book"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "想用的应用没有开关\n\(app.debugDescription)")
+        XCTAssertEqual(toggle.value as? String, "0", "默认不该接上")
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "1", "点了没接上")
+        attach("install-provider-direct")
     }
 
     func testUninstallProviderShowsDependents() {

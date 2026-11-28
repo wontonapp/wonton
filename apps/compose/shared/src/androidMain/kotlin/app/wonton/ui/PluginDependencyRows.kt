@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.CapabilityProvider
 import app.wonton.protocol.InstallPreview
 import app.wonton.protocol.InstallProvider
@@ -111,11 +113,14 @@ private fun row(missing: MissingCapability, required: Boolean, colors: ThemeColo
 @Composable
 internal fun ConnectedSection(preview: InstallPreview, onUpdate: (InstallPreview) -> Unit) {
     val colors = WontonTheme.colors
-    val direct = preview.wantingPlugins.isNotEmpty()
-    val wanting = if (direct) {
-        preview.wantingPlugins
+    // 升级请求不带上连接（UpgradeRequest 没有这个字段），开关勾了不生效，升级时只列出来。
+    val direct = preview.wantingPlugins.isNotEmpty() && preview.upgradeFrom == null
+    val wanting = if (preview.wantingPlugins.isNotEmpty()) {
+        preview.wantingPlugins.distinctBy { it.id }
     } else {
-        preview.installProviders.mapNotNull { it.selected?.preview?.wantingPlugins }.firstOrNull().orEmpty()
+        preview.installProviders
+            .flatMap { it.selected?.preview?.wantingPlugins.orEmpty() }
+            .distinctBy { it.id }
     }
     if (wanting.isEmpty()) return
     DetailSection(stringResource(R.string.install_wants_connected_title)) {
@@ -133,7 +138,7 @@ internal fun ConnectedSection(preview: InstallPreview, onUpdate: (InstallPreview
                 if (direct) {
                     WontonSwitch(plugin.id in preview.connectedPlugins, { on ->
                         onUpdate(preview.withConnected(plugin.id, on))
-                    }, true)
+                    }, true, Modifier.semantics { contentDescription = plugin.title })
                 }
             }
         }
