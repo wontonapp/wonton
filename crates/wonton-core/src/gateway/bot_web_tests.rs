@@ -29,6 +29,7 @@ mod metadata;
 mod oidc;
 mod plugin_source;
 mod sessions;
+mod visibility;
 
 pub(super) fn bot(name: &str) -> BotRef {
     BotRef {
