@@ -13,6 +13,7 @@ use crate::plugin::manager::now_secs;
 use crate::plugin::store::{remove_file, write_json_synced};
 
 impl Files {
+    /// 上传作废了：客户端取消了，tusd 没有它了，或者很久没有进度。调用方排着这个上传的队。
     pub(super) async fn abandon_upload(self: &Arc<Self>, id: &FileId) {
         let files = self.clone();
         let id = id.clone();

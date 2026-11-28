@@ -23,7 +23,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-pub(super) use pending::{Pending, Placing};
+pub(in crate::files::uploads) use pending::{Pending, Placing};
 pub(super) use room::has_room;
 pub use state::{NewUpload, UploadState};
 pub use turns::UploadTurn;

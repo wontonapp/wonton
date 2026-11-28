@@ -13,7 +13,7 @@ use crate::plugin::store::read_json;
 
 /// 还没传完的上传。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(in crate::files) struct Pending {
+pub(super) struct Pending {
     pub(super) id: FileId,
     pub(super) name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -32,7 +32,7 @@ pub(in crate::files) struct Pending {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(in crate::files) struct Placing {
+pub(super) struct Placing {
     pub(super) name: String,
     pub(super) snapshot: Snapshot,
 }
