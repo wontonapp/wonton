@@ -26,6 +26,7 @@ mod availability;
 mod hosts;
 mod login;
 mod metadata;
+mod oidc;
 
 pub(super) fn bot(name: &str) -> BotRef {
     BotRef {
