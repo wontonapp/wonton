@@ -1,7 +1,6 @@
 //! 核心的插件管理接口（ADR-0017 的“管理接口”）：请求走本地代理，核心凭隧道身份认出这台已配对设备。请求不带
 //! `Origin` 和 `Sec-Fetch-Site`，核心据此知道它不是网页发起的。
 
-#[path = "api_error.rs"]
 mod error;
 use error::core_error;
 pub(crate) use error::failure_kind;
