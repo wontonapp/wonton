@@ -1,3 +1,5 @@
+use super::super::record::Accessor;
+use super::super::share_fs::ShareRef;
 use super::super::share_fs::UPLOAD_TEMP_PREFIX;
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
@@ -6,6 +8,7 @@ use super::*;
 use crate::files::new_upload_id as new_id;
 use crate::files::test_support::Fixture;
 use crate::files::test_support::any_langs;
+use wonton_protocol::FileSource;
 
 pub(super) fn new_upload(size: u64) -> NewUpload<'static> {
     NewUpload {

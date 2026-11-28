@@ -7,6 +7,7 @@
 //! 网关要在最后一个 PATCH 的响应之前等 [`Files::finish_upload`]，204 才等于文件可用（实测见 ADR-0020 的“验证结果”）。
 
 mod creating;
+mod pending;
 #[cfg(test)]
 mod private_tests;
 mod room;
@@ -18,20 +19,20 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+pub(super) use pending::{Pending, Placing};
 pub(super) use room::{has_room, out_of_inodes, quota};
-use serde::{Deserialize, Serialize};
-use wonton_protocol::{FileFailure, FileId, FileSource};
+use wonton_protocol::{FileFailure, FileId};
 
-use super::record::{Accessor, FileRecord, Lookup, Origin};
+use super::record::{FileRecord, Lookup, Origin};
 use super::share_fs::from_io;
-use super::share_fs::{Abandoned, Names, ShareError, ShareRef, Snapshot, TRANSFERS, sanitize_name};
+use super::share_fs::{Abandoned, Names, ShareError, Snapshot, TRANSFERS, sanitize_name};
 use super::{DELETED_UNSYNCED, Failure, FileEvent, Files, OpenError};
 use crate::l10n;
 use crate::plugin::hostdir::{self, Owner};
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::{
-    StoreError, create_private_dir, read_json, remove_file, write_json, write_json_synced,
+    StoreError, create_private_dir, remove_file, write_json, write_json_synced,
 };
 
 /// 这么久没有进度的上传被清掉。tusd 没有实现 tus 的 expiration，只能由核心来清。
@@ -42,60 +43,6 @@ pub const UPLOAD_TTL_SECS: u64 = 24 * 60 * 60;
 const KEEP_FREE_PERCENT: u64 = 5;
 /// 客户端走了的编号记这么久：tusd 的 pre-create 钩子晚到时要认得出来，钩子不会晚这么多。
 const WITHDRAWN_KEEP_SECS: u64 = 60 * 60;
-
-/// 还没传完的上传。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct Pending {
-    id: FileId,
-    name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    mime_type: Option<String>,
-    size: u64,
-    device: String,
-    username: String,
-    accessor: Accessor,
-    created_at: u64,
-    /// 要放到哪个名字上、文件这时的样子，链接之前写好。作废时靠它分清名字上的文件是放下时的样子，还是主人后来改过的。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    placing: Option<Placing>,
-    /// 作废了，清理到一半（崩溃了，或者有东西删不掉）。数据可能还是完整的，也不能再放：客户端已经被告知要重传，放了就多一份。
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    abandoned: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct Placing {
-    name: String,
-    snapshot: Snapshot,
-}
-
-impl Pending {
-    /// 放在 `name` 上的文件的记录。`name` 是目录里现在的名字，主人和插件都能改，显示给人看的要和别的不可信的名字一样清洗；引用保留原样，
-    /// 否则找不到文件。链接没发出去之前一直带过期时间，授权给房间或者发到设备时清掉。
-    fn record(&self, name: String, placed: Snapshot) -> FileRecord {
-        FileRecord {
-            id: self.id.clone(),
-            name: sanitize_name(&name),
-            mime_type: self.mime_type.clone(),
-            declared_size: Some(self.size),
-            source: FileSource::Device,
-            origin: Origin::Upload {
-                reference: ShareRef {
-                    share: TRANSFERS.to_owned(),
-                    path: vec![name],
-                },
-                placed,
-                username: self.username.clone(),
-            },
-            access: [self.accessor.clone()].into(),
-            rooms: Default::default(),
-            owner_granted: Default::default(),
-            registered: None,
-            created_at: now_secs(),
-            expires_at: Some(now_secs().saturating_add(UPLOAD_TTL_SECS)),
-        }
-    }
-}
 
 /// 创建上传时 tusd 转来的信息，都是客户端声明的，编号除外（网关定的）。
 #[derive(Debug, Clone, Copy)]
@@ -177,14 +124,6 @@ impl Uploads {
             #[cfg(test)]
             abandon_stalled: tokio::sync::RwLock::default(),
         })
-    }
-
-    fn pending_path(&self, id: &FileId) -> PathBuf {
-        self.pending.join(format!("{id}.json"))
-    }
-
-    fn load_pending(&self, id: &FileId) -> Result<Option<Pending>, Failure> {
-        read_json(&self.pending_path(id)).map_err(|e| Failure::internal(e.to_string()))
     }
 
     /// 删掉 tusd 留下的文件，都删掉了才为真。`.lock` 只有清理时才删：放文件时 tusd 可能还拿着它。
