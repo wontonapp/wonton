@@ -6,6 +6,7 @@
 //!
 //! 路径和工具名是核心与 App、插件之间的契约：改这里要同时改网关、MCP 总线和服务端实现。
 
+mod action;
 mod limits;
 mod paths;
 
@@ -156,34 +157,6 @@ pub enum InboxRisk {
     Highest,
     #[serde(other)]
     Other,
-}
-
-/// 动作按钮的样式。壳按它决定主按钮/危险按钮的外观。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum InboxActionStyle {
-    #[default]
-    Default,
-    Primary,
-    Destructive,
-    #[serde(other)]
-    Other,
-}
-
-/// 页面或收尾底下的一个按钮。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct InboxAction {
-    /// 答案里原样带回；在一条条目里唯一，`[a-z0-9_-]{1,32}`。
-    pub id: String,
-    /// 按钮文字，≤40 字。
-    pub label: String,
-    #[serde(default)]
-    pub style: InboxActionStyle,
-    /// 点这个按钮必须写备注。
-    #[serde(default)]
-    pub requires_comment: bool,
 }
 
 /// 谁发的（显示用）。
@@ -757,5 +730,7 @@ pub use paths::{
     inbox_answer_path, inbox_cancel_path, inbox_item_path, inbox_page_path, inbox_read_path,
     inbox_snooze_path, inbox_withdraw_path, inbox_worker_path, inbox_worker_resolve_path,
 };
+
+pub use action::{InboxAction, InboxActionStyle};
 
 pub use crate::inbox_request::*;
