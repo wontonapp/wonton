@@ -7,24 +7,39 @@
 //! 路径和工具名是核心与 App、插件之间的契约：改这里要同时改网关、MCP 总线和服务端实现。
 
 mod action;
+mod answer;
 mod choice;
 mod confirm;
+mod item;
+mod kind;
 mod limits;
 mod notice;
 mod page;
 mod paths;
 mod payload;
 mod recap;
-
-mod answer;
-mod item;
-mod kind;
 mod status;
 mod view;
 
 #[cfg(test)]
 #[path = "../inbox_tests.rs"]
 mod tests;
+
+pub use action::{InboxAction, InboxActionStyle};
+
+pub use answer::{
+    InboxAnswer, InboxAnswerAction, InboxAnswerInput, InboxQuestionAnswer, InboxShellAction,
+    InboxSnoozePreset,
+};
+
+pub(crate) use choice::default_true;
+pub use choice::{ChoicePayload, InboxOption, InboxQuestion};
+
+pub use confirm::{ConfirmAction, ConfirmChoice, ConfirmPayload, InboxRisk};
+
+pub use item::{InboxItem, InboxRecipient, InboxSender, InboxSenderKind, InboxSource};
+
+pub use kind::InboxType;
 
 pub use limits::{
     INBOX_ID_PREFIXES, INBOX_RESOURCE_SCHEME, MAX_INBOX_ACTION_LABEL_CHARS, MAX_INBOX_ACTIONS,
@@ -38,6 +53,10 @@ pub use limits::{
     MAX_PENDING_INBOX_ITEMS, MAX_PENDING_INBOX_PAGES, MIN_INBOX_OPTIONS,
 };
 
+pub use notice::{InboxLevel, NoticePayload};
+
+pub use page::PagePayload;
+
 pub use paths::{
     INBOX_ASK_TOOL, INBOX_CANCEL_TOOL, INBOX_CONFIRM_TOOL, INBOX_NOTICE_TOOL,
     INBOX_PAGE_TOKEN_TTL_SECS, INBOX_PATH, INBOX_PRESENT_TOOL, INBOX_REANSWER_WINDOW_SECS,
@@ -46,31 +65,11 @@ pub use paths::{
     inbox_snooze_path, inbox_withdraw_path, inbox_worker_path, inbox_worker_resolve_path,
 };
 
-pub use action::{InboxAction, InboxActionStyle};
-
-pub(crate) use choice::default_true;
-pub use choice::{ChoicePayload, InboxOption, InboxQuestion};
-
-pub use page::PagePayload;
+pub use payload::InboxPayload;
 
 pub use recap::RecapPayload;
 
-pub use confirm::{ConfirmAction, ConfirmChoice, ConfirmPayload, InboxRisk};
-
-pub use notice::{InboxLevel, NoticePayload};
-
-pub use payload::InboxPayload;
-
-pub use kind::InboxType;
-
 pub use status::{InboxOutcome, InboxStatus};
-
-pub use answer::{
-    InboxAnswer, InboxAnswerAction, InboxAnswerInput, InboxQuestionAnswer, InboxShellAction,
-    InboxSnoozePreset,
-};
-
-pub use item::{InboxItem, InboxRecipient, InboxSender, InboxSenderKind, InboxSource};
 
 pub use view::{InboxCounts, InboxList, InboxListItem, InboxPageView, InboxView, InboxViewModel};
 
