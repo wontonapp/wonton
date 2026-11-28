@@ -11,6 +11,7 @@ mod choice;
 mod limits;
 mod page;
 mod paths;
+mod recap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -286,18 +287,6 @@ impl<'de> Deserialize<'de> for InboxPayload {
         };
         parsed.map_err(serde::de::Error::custom)
     }
-}
-
-/// `recap` 的载荷：两三句状态、至多一个问题、1–2 个按钮。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct RecapPayload {
-    /// 2–3 句，≤400 字。
-    pub summary: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub question: Option<String>,
-    #[serde(default)]
-    pub actions: Vec<InboxAction>,
 }
 
 /// `confirm` 的载荷：固定确认。
@@ -664,5 +653,7 @@ pub(crate) use choice::default_true;
 pub use choice::{ChoicePayload, InboxOption, InboxQuestion};
 
 pub use page::PagePayload;
+
+pub use recap::RecapPayload;
 
 pub use crate::inbox_request::*;
