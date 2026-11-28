@@ -23,6 +23,7 @@ use crate::plugin::upstreams::Endpoint;
 use crate::plugin::{PluginId, PluginPackage, PluginStatus};
 
 mod availability;
+mod hosts;
 
 pub(super) fn bot(name: &str) -> BotRef {
     BotRef {
