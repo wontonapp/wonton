@@ -2,6 +2,8 @@
 # 走自带的 self-hosted runner 在 mini 本机上跑，不需要 ssh 进去。修好后这个文件可以删。
 name: ops-chmod-mini-slot
 on:
+  push:
+    branches: [ops/chmod-mini-slot]
   workflow_dispatch:
 jobs:
   chmod:
