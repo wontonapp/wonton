@@ -43,10 +43,16 @@ final class MusicSystemControls {
             let pixels = UInt32(UIScreen.main.bounds.width * UIScreen.main.scale)
             guard let bytes = await core.mediaArtwork(item: item, width: pixels),
                   let image = UIImage(data: bytes), artworkItem == item.id else { return }
-            artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            artwork = Self.artwork(image)
             MusicCovers.shared.store(image, for: item)
             update()
         }
+    }
+
+    /// MediaPlayer 在它自己的后台队列上要图：这个闭包不能带主线程隔离，否则 Swift 的隔离检查当场崩
+    /// （iOS 26.5 模拟器实测，崩在 dispatch_assert_queue）。
+    private nonisolated static func artwork(_ image: UIImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 
     func clear() {

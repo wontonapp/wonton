@@ -25,19 +25,28 @@ struct MusicMiniPlayer: View {
 
     private func bar(_ item: MediaItemRef) -> some View {
         HStack(spacing: WontonTheme.spacing.s12) {
-            MusicArtwork(item: item, side: 40)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(item.title)
-                    .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(colors.textPrimary))
-                if let artist = item.artist {
-                    Text(artist)
-                        .wontonText(WontonTheme.typography.caption)
-                        .foregroundStyle(Color(colors.textSecondary))
+            // 点开播放页的是左边这一块；整条挂点按会把播放、下一首并进同一个无障碍元素，旁白点不到它们。
+            Button { showsPlayer = true } label: {
+                HStack(spacing: WontonTheme.spacing.s12) {
+                    MusicArtwork(item: item, side: 40)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(item.title)
+                            .wontonText(WontonTheme.typography.body)
+                            .foregroundStyle(Color(colors.textPrimary))
+                        if let artist = item.artist {
+                            Text(artist)
+                                .wontonText(WontonTheme.typography.caption)
+                                .foregroundStyle(Color(colors.textSecondary))
+                        }
+                    }
+                    .lineLimit(1)
+                    Spacer(minLength: 0)
                 }
+                .contentShape(Rectangle())
             }
-            .lineLimit(1)
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: .Music0.musicNowPlaying))
+            .accessibilityValue(item.title)
             MusicPlayPauseButton(player: player, side: WontonTheme.size.icon)
             Button(action: player.next) {
                 Image(systemName: "forward.fill").font(.title3)
@@ -50,10 +59,6 @@ struct MusicMiniPlayer: View {
         .padding(.leading, WontonTheme.spacing.s8)
         .padding(.vertical, WontonTheme.spacing.s4)
         .wontonGlassSurface(in: Capsule())
-        .contentShape(Capsule())
-        .onTapGesture { showsPlayer = true }
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(String(localized: .Music0.musicNowPlaying))
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .padding(.bottom, WontonTheme.spacing.s8)
     }

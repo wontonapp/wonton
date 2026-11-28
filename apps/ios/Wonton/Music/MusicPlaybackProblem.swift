@@ -8,7 +8,7 @@ extension MediaError {
     }
 }
 
-extension MediaFailure {
+extension WontonClient.MediaFailure {
     /// 放歌没成：类别由核心给，文字按类别写在这里，原话收进详情。
     var problem: Problem {
         switch code {

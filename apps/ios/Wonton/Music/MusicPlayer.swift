@@ -66,8 +66,10 @@ final class MusicPlayer {
             } catch let error as MediaError {
                 problem = error.problem
             } catch {
-                problem = MediaFailure(code: .other(error.localizedDescription), message: "", retryAfterSecs: nil)
-                    .problem
+                let failure = WontonClient.MediaFailure(
+                    code: .other(error.localizedDescription), message: "", retryAfterSecs: nil
+                )
+                problem = failure.problem
             }
         }
     }
@@ -142,7 +144,10 @@ final class MusicPlayer {
         do {
             try core.dispatch(action: .media(action: .control(session: session.id, ctl: ctl)))
         } catch {
-            problem = MediaFailure(code: .transportUnavailable, message: "\(error)", retryAfterSecs: nil).problem
+            let failure = WontonClient.MediaFailure(
+                code: .transportUnavailable, message: "\(error)", retryAfterSecs: nil
+            )
+            problem = failure.problem
         }
     }
 
