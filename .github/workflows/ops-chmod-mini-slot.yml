@@ -1,20 +1,14 @@
-# 临时：修 mini 上 jiale 那份被 644 落盘的 mini-slot.sh（2026-11-28 部署时 tee 丢了执行位，受限 ssh 入口 exec 不了它）。
-# runner 用的账户是 runner、跑的是 /Users/runner/wonton-dev 下它自己那份，摸不到 /Users/jiale（700）；需要时借 runner 的无密码 sudo。
 name: ops-chmod-mini-slot
 on:
   push:
     branches: [ops/chmod-mini-slot]
   workflow_dispatch:
 jobs:
-  chmod:
+  who:
     runs-on: xcode-27
     timeout-minutes: 5
     steps:
-      - name: 执行位
-        run: |
-          ls -ld /Users/jiale /Users/jiale/wonton-dev || true
-          chmod 755 /Users/jiale/wonton-dev/mini-slot.sh || sudo -n chmod 755 /Users/jiale/wonton-dev/mini-slot.sh
-          ls -l /Users/jiale/wonton-dev/mini-slot.sh /Users/runner/wonton-dev/mini-slot.sh
-          md5 /Users/jiale/wonton-dev/mini-slot.sh /Users/runner/wonton-dev/mini-slot.sh || true
-      - name: 能跑
-        run: bash /Users/jiale/wonton-dev/mini-slot.sh status
+      - run: |
+          id; echo "HOME=$HOME"
+          ls -ld /Users/* 2>&1 | head -20
+          dscl . -list /Users NFSHomeDirectory 2>/dev/null | grep -i jiale
