@@ -181,6 +181,15 @@ clients-credentials-unavailable = アプリが実行されていないため、�
 clients-credentials-missing-command = マニフェストに { $op } コマンドがありません
 clients-credentials-failed = アプリ内のコマンドが失敗しました：{ $error }
 gateway-entry-credentials-not-issued = アプリのパスワードがまだないため、入口は閉じたままです
+clients-guests-not-declared = このアプリはゲストリンクを受け付けません
+clients-guests-entry-closed = 先にこのアプリの LAN 入口か公開入口を開いてください
+clients-guests-label = リンクに 1〜128 文字の名前を付けてください。改行は使えません
+clients-guests-ttl = リンクの有効期間は最長 7 日です
+clients-guests-path = 開いた先のパスは / で始まり、このアプリ内である必要があります
+clients-guests-max = このアプリには有効なリンクがすでに 20 本あります。先に 1 本取り消してください
+clients-guests-not-found = このリンクは取り消されたか、期限が切れています
+clients-guests-unavailable = ゲストリンクを今読めません
+gateway-guest-invalid = このリンクは無効か、期限が切れています
 clients-domain-read-failed = ドメイン設定を読めませんでした：{ $error }
 clients-public-access-save-failed = 外部アクセスのスイッチを保存できませんでした：{ $error }
 # 外部アクセスのスイッチの各ゲート：できなかったことをゲートごとに書く（ADR-0090）。

@@ -181,6 +181,15 @@ clients-credentials-unavailable = The app isn't running, so passwords can't be i
 clients-credentials-missing-command = The app manifest has no { $op } command
 clients-credentials-failed = The command in the app failed: { $error }
 gateway-entry-credentials-not-issued = The app has no password yet, so its entry stays closed
+clients-guests-not-declared = This app doesn't accept guest links
+clients-guests-entry-closed = Turn on the app's LAN or public entry first
+clients-guests-label = Give the link a name of 1-128 characters without line breaks
+clients-guests-ttl = A link can stay valid for at most 7 days
+clients-guests-path = The landing path must start with / and stay inside this app
+clients-guests-max = This app already has 20 valid links; revoke one first
+clients-guests-not-found = This link was revoked or has expired
+clients-guests-unavailable = The guest links can't be read right now
+gateway-guest-invalid = This link has expired or isn't right
 clients-domain-read-failed = Couldn't read the domain settings: { $error }
 clients-public-access-save-failed = Couldn't save the public access switch: { $error }
 # The public access switch's gates: what didn't get done, per gate (ADR-0090).

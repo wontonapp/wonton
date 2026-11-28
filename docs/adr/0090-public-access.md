@@ -119,6 +119,9 @@ Home Assistant 的教训：cloudhook 关了 Remote UI 还开着、单个关掉�
 - 错的令牌按验证失败计数（核心加 `X-Wonton-Auth-Failure`，ADR-0021），同一来源试多了就被封。
 - 审计：建、收回、每次换 Cookie（来源、链接名），请求只按链接聚合计数，不记内容。
 - 默认不加密码，靠应用自己的房间码。
+- 实现细节：Cookie 名是 `__Host-wonton_guest`，值就是令牌，路径外的同枚 Cookie 由网关在转发前删掉；交换成功回 302，
+  带 `Referrer-Policy: no-referrer`。令牌路径 `/_wonton/guest/<令牌>` 是核心自己的，不受这个入口 `public` 规则约束
+  （落地后的请求照受约束）。列表里的链接不带地址，取单独一条时才给地址并记审计。
 
 **它不是 ADR-0051 否掉的“访客通道 `wonton/guest/0`”。** 那个是给好友另造一套身份；访客链接没有身份，不进 `friends.json`，不能聊天，
 不能用 Bot，只能用这一个应用的网页，到期就没了。
@@ -209,7 +212,7 @@ Halo 这类就是 `clients.http` + `auth: app` + `public.deny` 挡掉后台和�
 - Cloudflare 远程管理的隧道能否用通配符公开主机名 `*.<后缀>`，后台能否打开 “Match SNI to Host”；Universal SSL 对二级子域名不签证书。
 - cloudflared 的令牌能否经文件传入（`--token-file`）而不是环境变量；以非 root、只读根文件系统、`cap_drop: ALL` 能否运行；远程诊断能否关掉。
 - 桌面上的隐藏虚拟机（ADR-0062）里，路由器转发的端口怎么从 Mac、Windows 的局域网地址进到虚拟机。
-- 访客 Cookie 的 `SameSite=Lax` 在 scribble-rs 的 WebSocket 上能否带上。
+- ~~访客 Cookie 的 `SameSite=Lax` 在 scribble-rs 的 WebSocket 上能否带上。~~ 开发栈实测（2026-11-28，`guest-demo` 测试插件、Pebble 真证书、入口 LAN 前端 + `lan-forward` PROXY v2）：302 换出的 `__Host-wonton_guest` Cookie 在 `/ws` 握手上带着能到应用并升级 101，收回后立即断开；浏览器里经同一条 LAN 地址打开还没走查。
 
 ## 依赖
 

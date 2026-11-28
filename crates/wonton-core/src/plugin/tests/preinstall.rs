@@ -85,7 +85,11 @@ fn exited() -> Value {
 
 fn creates(docker: &FakeDocker) -> usize {
     let create = "POST /containers/create";
-    docker.writes().iter().filter(|w| *w == create).count()
+    docker
+        .writes()
+        .iter()
+        .filter(|w| w.starts_with(create))
+        .count()
 }
 
 /// 核心重启：新的管理器按记录恢复后再预装一遍。

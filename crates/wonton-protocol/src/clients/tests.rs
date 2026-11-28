@@ -62,6 +62,7 @@ fn plugin() -> ClientsPlugin {
             },
         ],
         auth: ClientAuthKind::Credentials,
+        guests: true,
         username: Some("owner".into()),
         passwords: vec![password_summary()],
         public_rules: Some(PublicRules {
@@ -459,7 +460,7 @@ fn plugin_serde() -> serde_json::Value {
             {"kind": {"kind": "lan"}, "enabled": true},
             {"kind": {"kind": "tcp", "name": "ssh"}, "enabled": false},
         ],
-        "auth": "credentials", "username": "owner",
+        "auth": "credentials", "guests": true, "username": "owner",
         "passwords": [{
             "id": "pw1", "label": "家里的 iPad", "created_by_device": "iPad",
             "last_viewed_by": ["Mac"], "pending": "revoke",

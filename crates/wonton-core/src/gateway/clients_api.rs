@@ -29,6 +29,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
             get(clients_domain::providers),
         )
         .merge(super::clients_passwords::routes())
+        .merge(super::clients_guests::routes())
         .merge(super::clients_status::routes())
         .layer(axum::extract::DefaultBodyLimit::max(16 << 10))
         .layer(middleware::from_fn_with_state(
@@ -86,7 +87,11 @@ pub(super) fn failure(failure: ClientsFailure, message: &str) -> Response {
     failure_with_status(status, failure, message)
 }
 
-fn failure_with_status(status: StatusCode, failure: ClientsFailure, message: &str) -> Response {
+pub(super) fn failure_with_status(
+    status: StatusCode,
+    failure: ClientsFailure,
+    message: &str,
+) -> Response {
     let body = ClientsErrorBody {
         error: ClientsProblem {
             kind: failure,

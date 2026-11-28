@@ -48,8 +48,15 @@ fn crt_list(names: &[String]) -> String {
     format!("{CERT_FILE} {}\n", names.join(" "))
 }
 
+/// 名字解析 `init-addr last,none`：先信上次的地址，没有就先起成 DOWN。
+/// `libc` 不能放进这一串：入口接上 `lanfwd` 网后，libc 查一次名称会先打那条网的 DNS、一卡 10 秒
+/// （实测），启动死等它，整个 worker 起不来，重载一路超时。
 fn preamble(out: &mut String) {
-    out.push_str("global\n  log stdout format raw local0\n  maxconn 1024\n");
+    // `hard-stop-after` 让进入 soft-stop 的 worker 最多再活 5 秒：Docker 停容器的宽限期是 10 秒，
+    // 不设时开着 keep-alive 的连接能把宽限期吃光，每次换成 SIGKILL 都算一次超时。重载同样走 soft-stop，
+    // 所以任何入口配置变化（任一应用的入口、总开关）5 秒后也会切断旧 worker 上已升级的 WebSocket，
+    // 带 WS 的访客房间会看到一次断开（HAProxy 3.4 手册 hard-stop-after）。
+    out.push_str("global\n  log stdout format raw local0\n  maxconn 1024\n  hard-stop-after 5s\n");
     out.push_str(&format!(
         "  stats socket {RUNTIME_SOCKET} level operator\n\n"
     ));
@@ -181,12 +188,12 @@ fn paired_frontend(out: &mut String, suffix: &str) {
 /// 配对前端默认去 Tuwunel 的明文 8008；端点由核心在同一个 compose 项目里给（clients 网络的别名）。
 fn tuwunel(out: &mut String) {
     out.push_str(&format!(
-        "backend tuwunel\n  server tuwunel {TUWUNEL_ADDRESS} resolvers docker init-addr libc,none\n"
+        "backend tuwunel\n  server tuwunel {TUWUNEL_ADDRESS} resolvers docker init-addr last,none\n"
     ));
 }
 
 fn gateway(out: &mut String) {
     out.push_str(&format!(
-        "backend gateway\n  server core {GATEWAY_ADDRESS} resolvers docker init-addr libc,none\n"
+        "backend gateway\n  server core {GATEWAY_ADDRESS} resolvers docker init-addr last,none\n"
     ));
 }
