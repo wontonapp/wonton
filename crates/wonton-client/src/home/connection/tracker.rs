@@ -31,3 +31,36 @@ pub(in crate::home) struct Tracker {
     /// 隧道客户端报来的断开次数上一次看到的值，见 [`Self::observe_drops`]。
     pub(super) seen_disconnects: u32,
 }
+
+impl Tracker {
+    pub(in crate::home) fn relay(&self) -> ConnectionCheck {
+        self.relay
+    }
+
+    /// 换了服务器：之前的断开不算到它头上。
+    pub(in crate::home) fn new_server(&mut self) {
+        *self = Self {
+            network: self.network,
+            catching_up: self.catching_up,
+            ..Self::default()
+        };
+    }
+
+    pub(in crate::home) fn network(&self) -> Option<DeviceNetwork> {
+        self.network
+    }
+
+    /// 返回有没有真的变化：追赶指示流同值也发，没变就不用重算。
+    pub(in crate::home) fn set_catching_up(&mut self, catching_up: bool) -> bool {
+        if self.catching_up == catching_up {
+            return false;
+        }
+        self.catching_up = catching_up;
+        true
+    }
+
+    /// 上次连上之后最近一次断开的原因；连上、换服务器、回前台或网络恢复后清空（新一轮先给建连机会）。
+    pub(in crate::home) fn known_failure(&self) -> Option<HomeFailure> {
+        self.known_failure
+    }
+}
