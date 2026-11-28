@@ -27,6 +27,12 @@ pub struct TimelineUpdate {
     /// 壳停在最新一条。未读的“以下是新消息”由 [`TimelineUpdate::unread_jump`](crate::TimelineUpdate::unread_jump)
     /// 的会话锚点单独画，不再决定这里的落点。
     pub anchor: Option<String>,
+    /// 打开的房间的面板（ADR-0052）：每一批都给当前的列表，空的时候壳画大加号。
+    #[serde(default)]
+    pub panel: Vec<crate::PanelItem>,
+    /// 房间面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel_selected: Option<crate::TabRef>,
     /// 时间线里有本设备解不开的消息时，给主人的下一步；没有或者这台设备已经有密钥时长这样。
     ///
     /// 由核心按账号的恢复状态给出，壳在输入栏上方显示一行说明和按钮，按类别跳到备份页。

@@ -27,7 +27,7 @@ mod login;
 mod media;
 mod mentions;
 mod message;
-mod my_apps;
+mod panels;
 pub mod platform_tls;
 mod profile;
 mod push;
@@ -70,7 +70,7 @@ pub use message::{
     FileContent, ImageContent, Message, MessageBody, OwnReaction, Reaction, SendStatus,
     UploadProgress,
 };
-pub use my_apps::{LAYOUT_EVENT, LayoutContent};
+pub use panels::{LAYOUT_EVENT, LayoutContent, ROOM_PANEL_EVENT, RoomPanelContent};
 pub use profile::UserProfile;
 pub use push::{BackgroundNotification, Notification, PusherConfig};
 pub use read_position::entry_id;

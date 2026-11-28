@@ -116,6 +116,7 @@ tabs-storage-problem = マイアプリを保存できません。次回の起動
 
 tabs-view-plugin-no-page = このアプリには開けるウェブページがありません。
 
+tabs-page-not-placed = このページはパネルにありません。
 
 # ナビゲーションバーの設定ファイル（tabs.json）のエラー。CoreError の理由として出ます。
 # $path は設定ファイルのパス、$reason は元のパースまたは入出力エラーです。

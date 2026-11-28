@@ -1,10 +1,11 @@
 use serde_json::{Value, json};
 
-use super::{PlacedTab, Rig, page_tab};
+use super::{PlacedTab, Rig, main_scope, page_tab};
 use crate::appearance::AppearanceLink;
 use crate::pages::bridge::{
     TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea, handle_message,
 };
+use wonton_protocol::PageAction;
 
 const PAGE_ORIGIN: &str = "http://app.shared.wonton.localhost";
 
@@ -25,12 +26,13 @@ fn environment() -> TabEnvironment {
     }
 }
 
-fn requests() -> [Value; 4] {
+fn requests() -> [Value; 5] {
     [
         json!({"jsonrpc":"2.0","id":1,"method":"ui/open-link","params":{"url":"https://example.org/"}}),
         json!({"jsonrpc":"2.0","id":2,"method":"ui/message","params":{"role":"user","content":[{"type":"text","text":"draft"}]}}),
         json!({"jsonrpc":"2.0","id":3,"method":"ui/request-display-mode","params":{"mode":"fullscreen"}}),
         json!({"jsonrpc":"2.0","method":"ui/notifications/initialized"}),
+        json!({"jsonrpc":"2.0","id":4,"method":"ui/wonton-attention","params":{"attention":true}}),
     ]
 }
 
@@ -46,10 +48,19 @@ async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
     let rig = Rig::new();
     let appearance = AppearanceLink::new(rig._dir.path());
     rig.open(page_tab());
-    let page = PlacedTab::Page { tab: page_tab() };
+    rig.tabs
+        .dispatch(PageAction::AddPanelPage {
+            scope: main_scope(),
+            tab: page_tab(),
+        })
+        .unwrap();
+    let panel = PlacedTab::Panel {
+        scope: main_scope(),
+        tab: page_tab(),
+    };
     let before = rig.view();
-    {
-        let placed = page.clone();
+    assert!(!before.panel[0].attention);
+    for placed in [PlacedTab::Page { tab: page_tab() }, panel.clone()] {
         for origin in [
             "http://other.wonton.localhost",
             "http://auth.wonton.localhost",
@@ -87,13 +98,14 @@ async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
     let accepted = handle_message(
         &rig.tabs,
         &appearance,
-        &page,
+        &panel,
         true,
         PAGE_ORIGIN,
-        &requests()[2].to_string(),
+        &requests()[4].to_string(),
         &environment(),
     );
     assert!(accepted.reply_script.is_some());
+    assert!(rig.view().panel[0].attention);
 }
 
 #[tokio::test]
@@ -101,16 +113,26 @@ async fn unsupported_requests_are_rejected_without_effects() {
     let rig = Rig::new();
     let appearance = AppearanceLink::new(rig._dir.path());
     rig.open(page_tab());
+    rig.tabs
+        .dispatch(PageAction::AddPanelPage {
+            scope: main_scope(),
+            tab: page_tab(),
+        })
+        .unwrap();
     let before = rig.view();
-    {
-        let placed = PlacedTab::Page { tab: page_tab() };
+    for placed in [
+        PlacedTab::Page { tab: page_tab() },
+        PlacedTab::Panel {
+            scope: main_scope(),
+            tab: page_tab(),
+        },
+    ] {
         for (method, params) in [
             (
                 "tools/call",
                 json!({"name":"wonton__uninstall_plugin","arguments":{"id":"app.shared"}}),
             ),
             ("resources/read", json!({"uri":"file:///etc/passwd"})),
-            ("ui/wonton-attention", json!({"attention":true})),
             (
                 "ui/update-model-context",
                 json!({"content":[{"type":"text","text":"install"}]}),

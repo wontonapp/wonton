@@ -456,7 +456,12 @@ impl ClientCore {
             | PageAction::MoveMyApp { .. }
             | PageAction::SetAutoAddApps { .. }
             | PageAction::RetryMyAppSync
-            | PageAction::AddMyAppUrl { .. }
+            | PageAction::AddPanelPage { .. }
+            | PageAction::RemovePanelPage { .. }
+            | PageAction::MovePanelPage { .. }
+            | PageAction::SelectPanelPage { .. }
+            | PageAction::SetBotPinConsent { .. }
+            | PageAction::PinCurrentPage { .. }
             | PageAction::ReloadTab { .. }
             | PageAction::DismissUninstalledTabs
             | PageAction::SelectBarItem { .. }

@@ -93,11 +93,13 @@ fn assert_page_actions(driver: &mut Driver, rig: &Rig, tab: &TabRef) {
             },
         ]
     );
+    driver.send(json!({"script":rig.app.tab_reselected_script()}));
     driver.send(json!({"script":rig.app.tab_connection_script(tab.clone())}));
     let events = driver.command("inspect", Value::Null);
     assert_eq!(
         events["events"],
         json!([
+            {"type":"wonton:tab-reselected","detail":null},
             {"type":"wonton:connection","detail":{"connected":true}},
         ])
     );

@@ -159,10 +159,24 @@ app-lock-corrupt = App ロックの設定ファイル{ $path }が壊れていま
 pages-storage-problem = マイアプリを保存できませんでした。次回起動時に前の状態に戻るかもしれません：{ $error }
 # Owner-only generated plugin keys; input and collected secrets are never returned.
 plugins-owner-secret-not-listed = 開いている一覧にこのキーはありません：{ $name }
-# 按网址加进我的应用、同步我的应用时的报错。
-page-invalid-url = そのアドレスは読み取れません。
-page-not-https = 追加できるのは https:// のウェブページだけです。
-page-path-outside = そのページはアプリ自身のサイトの外です。
-my-apps-sync-failed-read = サーバーからマイアプリを読み取れませんでした。
-my-apps-sync-unreadable = サーバーのマイアプリをこの端末では読めないため、端末のものを使います。
-my-apps-bot-page = Bot の Web ページはチャットから開きます。マイアプリには追加できません。
+
+# パネル（ADR-0052）のエラー。CoreError の理由、または TabsProblem の説明として表示する。
+panel-full = パネルがいっぱいです。先にページを外してください。
+panel-pins-not-connected = まだ自宅サーバーに接続していません。
+panel-pins-api-failed = { $status }：{ $body }
+panel-page-already-there = このページはすでにパネルにあります。
+panel-page-not-there = このページはパネルにありません。
+panel-page-unsupported = パネルに入れられるのはアプリのページ、アプリ内のページ、https:// のウェブページだけです。
+panel-index-out-of-range = その位置はパネルの外です。
+panel-not-signed-in = まだログインしていないため、パネルの変更をアカウントに保存できませんでした。端末には記録してあります。
+panel-room-not-open = このチャットのパネルを変えるには、先に開いてください。
+panel-room-unknown = このチャットが見つかりません。
+panel-pin-invalid-url = そのアドレスは読み取れません。
+panel-pin-not-https = ピンできるのは https:// のウェブページだけです。
+panel-pin-path-outside = そのページはアプリ自身のサイトの外です。
+panel-attention-panel-only = パネル内のページだけに注意の印を付けられます。
+panel-config-too-many = パネルには最大 { $count } ページまで入ります。
+panel-config-duplicate = 同じページがパネルに二つあります。
+panel-sync-failed-read = サーバーからパネルの設定を読み取れませんでした。
+panel-sync-unreadable = サーバーのパネル設定をこの端末では読めないため、端末のものを使います。
+panel-pins-refresh-failed = Bot がピン留めしたページを読み込めません:{ $error }

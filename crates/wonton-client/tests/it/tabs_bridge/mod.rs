@@ -5,7 +5,8 @@ pub(crate) mod support;
 mod widget;
 
 use serde_json::json;
-use wonton_client::{Action, CoreError, TabRef};
+use wonton_client::{Action, CoreError, PlacedTab, TabRef};
+use wonton_protocol::PanelScope;
 
 use crate::plugins::rig::Rig;
 
@@ -81,27 +82,42 @@ async fn public_pages_get_no_document_script_or_bridge() {
             action: wonton_protocol::PageAction::OpenPage { tab: tab.clone() },
         })
         .unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::AddPanelPage {
+                scope: PanelScope::Main,
+                tab: tab.clone(),
+            },
+        })
+        .unwrap();
 
-    let placed = bar(&tab);
-    for error in [
-        rig.app.tab_document_script(placed.clone(), environment()),
-        rig.app.tab_context_script(placed.clone(), environment()),
+    for placed in [
+        bar(&tab),
+        PlacedTab::Panel {
+            scope: PanelScope::Main,
+            tab: tab.clone(),
+        },
     ] {
-        assert!(matches!(error, Err(CoreError::InvalidInput { .. })));
+        for error in [
+            rig.app.tab_document_script(placed.clone(), environment()),
+            rig.app.tab_context_script(placed.clone(), environment()),
+        ] {
+            assert!(matches!(error, Err(CoreError::InvalidInput { .. })));
+        }
+        let reply = rig.app.tab_handle_message(
+            placed,
+            true,
+            "https://example.com".to_owned(),
+            json!({"jsonrpc":"2.0","id":"draft","method":"ui/message","params":
+                {"role":"user","content":[{"type":"text","text":"hello"}]}})
+            .to_string(),
+            environment(),
+        );
+        assert!(reply.action.is_none());
+        let reply = response(&reply);
+        assert_eq!(reply["id"], "draft");
+        assert_eq!(reply["error"]["code"], -32001);
     }
-    let reply = rig.app.tab_handle_message(
-        placed,
-        true,
-        "https://example.com".to_owned(),
-        json!({"jsonrpc":"2.0","id":"draft","method":"ui/message","params":
-            {"role":"user","content":[{"type":"text","text":"hello"}]}})
-        .to_string(),
-        environment(),
-    );
-    assert!(reply.action.is_none());
-    let reply = response(&reply);
-    assert_eq!(reply["id"], "draft");
-    assert_eq!(reply["error"]["code"], -32001);
 
     // 通知没有 id，不回话，也不算初始化完成。
     let notification = rig.app.tab_handle_message(

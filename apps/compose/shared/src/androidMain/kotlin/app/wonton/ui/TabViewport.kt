@@ -28,17 +28,19 @@ import java.util.TimeZone
 internal fun tabSafeInsets(): PaddingValues =
     WindowInsets.systemBars.union(WindowInsets.displayCutout).asPaddingValues()
 
+/** [edge] 为假时（面板里按 Inset 排版的页）网页已经让开了系统栏，安全区报 0。 */
 @Composable
-internal fun tabEnvironment(top: Dp, bottom: Dp, safe: PaddingValues): TabEnvironment {
+internal fun tabEnvironment(top: Dp, bottom: Dp, safe: PaddingValues, edge: Boolean = true): TabEnvironment {
     val direction = LocalLayoutDirection.current
+    fun side(value: Dp): Double = if (edge) value.value.toDouble() else 0.0
     return TabEnvironment(
         appLanguageTag(), TimeZone.getDefault().id, TabPlatform.ANDROID,
         WontonTheme.isDark, top.value.toDouble(), bottom.value.toDouble(),
         TabSafeArea(
-            safe.calculateTopPadding().value.toDouble(),
-            safe.calculateRightPadding(direction).value.toDouble(),
-            safe.calculateBottomPadding().value.toDouble(),
-            safe.calculateLeftPadding(direction).value.toDouble(),
+            side(safe.calculateTopPadding()),
+            side(safe.calculateRightPadding(direction)),
+            side(safe.calculateBottomPadding()),
+            side(safe.calculateLeftPadding(direction)),
         ),
     )
 }

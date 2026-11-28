@@ -73,26 +73,23 @@ async fn forgetting_the_session_rejects_a_pending_room_open() {
 }
 
 #[tokio::test]
-async fn a_timeline_does_not_receive_another_rooms_widgets() {
+async fn a_timeline_does_not_receive_another_rooms_panel() {
     let (chat, _dir) = rig();
     let room: OwnedRoomId = "!room:example.com".parse().unwrap();
     let other: OwnedRoomId = "!other:example.com".parse().unwrap();
-    let widget = wonton_protocol::RoomWidget {
-        tab: wonton_protocol::TabRef::Url {
-            url: "https://example.com/call".to_owned(),
-        },
-        title: "通话".to_owned(),
-        icon: None,
-        entry: wonton_protocol::WidgetEntry::VideoCall,
+    let selected = wonton_protocol::TabRef::Url {
+        url: "https://example.com/report".to_owned(),
     };
-    let view = |room_id| {
-        Some(Arc::new(crate::pages::RoomView {
+    let panel = |room_id| {
+        Some(Arc::new(crate::pages::RoomPanelView {
             room_id,
-            widgets: vec![widget.clone()],
+            panel: Vec::new(),
+            selected: Some(selected.clone()),
+            widgets: Vec::new(),
         }))
     };
     let (sender, mut updates) = mpsc::unbounded_channel();
-    let room_view = watch::Sender::new(view(other));
+    let room_view = watch::Sender::new(panel(other));
     let outbox = Outbox::new(
         sender,
         Arc::default(),
@@ -115,9 +112,9 @@ async fn a_timeline_does_not_receive_another_rooms_widgets() {
         )
         .unwrap();
     let update = updates.try_recv().unwrap();
-    assert!(update.widgets.is_empty());
+    assert_eq!(update.panel_selected, None);
 
-    room_view.send_replace(view(room));
+    room_view.send_replace(panel(room));
     outbox
         .send(
             &Vector::new(),
@@ -131,7 +128,7 @@ async fn a_timeline_does_not_receive_another_rooms_widgets() {
         )
         .unwrap();
     let update = updates.try_recv().unwrap();
-    assert_eq!(update.widgets, vec![widget]);
+    assert_eq!(update.panel_selected, Some(selected));
 }
 
 /// 受控核心：数请求、按到达次序回不同的 Ready，第一笔可卡在响应前。

@@ -81,6 +81,10 @@ impl ClientCore {
         )
     }
 
+    pub fn tab_reselected_script(&self) -> String {
+        bridge::reselected_script()
+    }
+
     /// 连接变化时派发真实的核心状态；不把不确定状态当成已连接。
     pub fn tab_connection_script(&self, tab: TabRef) -> String {
         let scope = self.scope();

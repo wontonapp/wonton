@@ -76,6 +76,12 @@ async fn switching_servers_discards_previous_pages_and_reload_counts() {
         plugin_id: "app.shared".to_owned(),
         path: "/report".to_owned(),
     };
+    rig.tabs
+        .dispatch(PageAction::AddPanelPage {
+            scope: main_scope(),
+            tab: inner.clone(),
+        })
+        .unwrap();
     rig.open(inner.clone());
     rig.tabs
         .reload(PlacedTab::Page { tab: page_tab() })
@@ -86,10 +92,11 @@ async fn switching_servers_discards_previous_pages_and_reload_counts() {
     rig.tabs.recompute();
     rig.plugins.send_replace(plugins("new-content"));
     rig.tabs.recompute();
-    // 插件和插件里的某一页都绑在上一台服务器上，栈整个清掉。
+    // 插件和插件里的某一页都绑在上一台服务器上；面板整个清掉（账号数据按服务器存）。
     let view = rig.view();
     assert!(view.stack.is_empty());
     assert_eq!(view.tab, BarEntry::Agent);
+    assert!(panel_tabs(&rig).is_empty());
 
     assert_eq!(rig.my_app_titles(), ["new-content"]);
     rig.open(page_tab());
@@ -141,17 +148,24 @@ async fn switching_servers_does_not_seed_apps_from_the_previous_server() {
     assert!(rig.view().stack.is_empty());
 }
 
-/// 重启 App：打开过的页面不恢复，回到根页面；壳不会一启动就盖上一个整页的插件页。
+/// 重启 App：打开过的页面不恢复，回到根页面；钉在面板里的页面是存下来的偏好，照旧在。
+/// 壳不会一启动就盖上一个整页的插件页。
 #[tokio::test]
-async fn restart_comes_back_to_the_root() {
+async fn restart_comes_back_to_the_root_and_keeps_the_panel() {
     let rig = Rig::new();
+    rig.tabs
+        .dispatch(PageAction::AddPanelPage {
+            scope: main_scope(),
+            tab: page_tab(),
+        })
+        .unwrap();
     rig.open(page_tab());
     rig.open(url_tab("https://example.com/report"));
     assert_eq!(rig.view().stack.len(), 2);
 
     let restarted = PagesLink::new(
         Handle::current(),
-        rig.home_link.clone(),
+        rig.tabs.home_link.clone(),
         rig.tabs.plugins.clone(),
         rig._dir.path(),
         None,
@@ -160,9 +174,25 @@ async fn restart_comes_back_to_the_root() {
     );
     let view = restarted.view();
     assert!(view.stack.is_empty(), "{:?}", view.stack);
-    // 没有页面开着：关的什么也不做。
+    assert_eq!(
+        view.panel
+            .iter()
+            .map(|item| item.tab.clone())
+            .collect::<Vec<_>>(),
+        vec![page_tab()]
+    );
+    // 没有页面开着：关的什么也不做，不会把别的东西（这里是面板）弹掉。
     restarted.dispatch(PageAction::ClosePage).unwrap();
     assert!(restarted.view().stack.is_empty());
+    assert_eq!(
+        restarted
+            .view()
+            .panel
+            .iter()
+            .map(|item| item.tab.clone())
+            .collect::<Vec<_>>(),
+        vec![page_tab()]
+    );
 }
 
 #[tokio::test]

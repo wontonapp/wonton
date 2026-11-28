@@ -1,4 +1,5 @@
-//! 页面的动作：打开、关闭、我的应用的增删排序和自动加入。按网址加的在 [`add_url`](super::add_url)。
+//! 页面的动作：打开、关闭、我的应用的增删排序和自动加入。
+//! 面板的动作在 [`panel`](super::panel)。
 use super::*;
 
 use wonton_protocol::{MAX_BAR_ITEMS, TabLayout};

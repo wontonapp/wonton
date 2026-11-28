@@ -11,6 +11,7 @@ use super::layout::{
     DAY_BREAK_INDEX, ECHO, FIRST_AT_MS, ITEMS, OWNER, SIDE_ITEMS, SIDE_ROOT_INDEX, TOP_INDEX, at_ms,
 };
 use super::message::text_message;
+use super::pages::panel;
 
 /// 房间的第一批：全部条目，落点在第三条。之后的批次由 `ui_fake_timeline` 按壳的操作推。
 /// 通话中的那个群聊（`ui_fake::CALL_ROOM_ID`）另带顶栏的 widget 入口和“通话中”。
@@ -41,6 +42,8 @@ pub(crate) fn timeline(room_id: &str) -> TimelineUpdate {
         back_pagination: BackPagination::ReachedStart,
         viewport: TimelineViewport::Away { new_messages: 0 },
         scroll_to_bottom: false,
+        panel: panel(),
+        panel_selected: None,
         key_notice: None,
         // Echo 的房间里挂着一张等回答的确认卡片，输入框上方的入口由界面测试看。
         confirmations: if room_id == ui_fake::ROOM_ID {

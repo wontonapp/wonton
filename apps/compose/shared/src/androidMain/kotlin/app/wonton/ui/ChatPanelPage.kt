@@ -1,0 +1,230 @@
+package app.wonton.ui
+
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.webkit.WebViewFeature
+import app.wonton.client.TabBridgeAction
+import app.wonton.protocol.PageAction
+import app.wonton.protocol.Action
+import app.wonton.protocol.AppearanceViewModel
+import app.wonton.protocol.HomeStatus
+import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.PanelItem
+import app.wonton.protocol.PanelScope
+import app.wonton.protocol.PlacedTab
+import app.wonton.protocol.TabLayout
+import app.wonton.protocol.TabPage
+import app.wonton.protocol.TabRef
+import app.wonton.protocol.TabState
+import kotlin.math.roundToInt
+
+/**
+ * 面板里的一页：网页一直按整页排版（第 1 级只是被聊天页盖住一截，不改大小），
+ * 只在第 2 级挂胶囊。公网网页没有桥、没有注入脚本，单独一个网站数据存储（ADR-0052）。
+ */
+@Suppress("CyclomaticComplexMethod", "LongMethod") // 一页的网页、状态、胶囊和手势都在这，摊平反而要来回跳。
+@Composable
+internal fun PanelPage(
+    item: PanelItem,
+    scope: PanelScope,
+    panel: ChatPanelState,
+    tabs: PagesState,
+    home: HomeViewModel,
+    appearance: AppearanceViewModel,
+    active: Boolean,
+    current: Boolean,
+    touch: PanelPageTouch,
+    modifier: Modifier,
+    onDraft: (String) -> Unit,
+    onDetails: (String) -> Unit,
+) {
+    val sourcePage = item.page
+    val tab = item.tab
+    val public = tab is TabRef.Url
+    val plugin = tabs.installedPlugin(tab)
+    val access = botWebPageAccess(tab, sourcePage.url, plugin, rememberChat(tabs.core).bots)
+    val page = if (access.allowed) sourcePage else sourcePage.copy(url = null, state = TabState.Unknown)
+    val loginAcknowledged = remember(page.url) { mutableStateOf(false) }
+    val awaitingLogin = access.disclosure && !loginAcknowledged.value
+    val place = remember(scope, tab) { PlacedTab.Panel(scope, tab) }
+    val state = remember(place) { WebPageState(place, tabs) }
+    val safe = tabSafeInsets()
+    val direction = LocalLayoutDirection.current
+    val density = LocalDensity.current
+    val edge = page.layout == TabLayout.EDGE_TO_EDGE
+    val panelTop = if (panel.edge == PanelEdge.BOTTOM) panel.height - panel.shiftPx else 0f
+    val top = with(density) { (panel.safeTop - panelTop).coerceAtLeast(0f).toDp() }
+    val pageSafe = PaddingValues(
+        top = top, bottom = safe.calculateBottomPadding(),
+        start = safe.calculateLeftPadding(direction), end = safe.calculateRightPadding(direction),
+    )
+    val cover = if (panel.level == PanelLevel.FULL) panel.safeBottom else panel.strip
+    val environment = tabEnvironment(
+        top, with(density) { cover.toDp() }, pageSafe, edge,
+    )
+    val inset = if (edge) {
+        PaddingValues(0.dp)
+    } else {
+        PaddingValues(top = top, bottom = safe.calculateBottomPadding())
+    }
+    val environmentKey = environment
+    val canConnect = public || home.status is HomeStatus.Connected
+    LaunchedEffect(active, canConnect, page.state) {
+        if (active && canConnect && page.state is TabState.Ready) state.started = true
+    }
+    val loadableNow = page.state is TabState.Ready || page.state is TabState.Upgrading
+    val script = remember(page.url, appearance, environmentKey, public, loadableNow) {
+        if (public || !loadableNow) null else state.script(environmentKey, document = true)
+    }
+    LaunchedEffect(appearance, environmentKey, public, loadableNow) {
+        if (!public && loadableNow && state.started) state.script(environmentKey)?.let {
+            state.controller.evaluateJavascript(it)
+        }
+    }
+    LaunchedEffect(home.status) {
+        if (!public) state.controller.evaluateJavascript(state.pages.core.tabConnectionScript(state.tab))
+    }
+    val capsule = state.capsule
+    // 没铺满的页面网页框已经从状态栏下沿开始，铺满的要把状态栏那一截算进去。
+    val visibleTop = if (edge) with(density) { top.toPx() } else 0f
+    if (current) SideEffect { touch.visibleTop = { visibleTop } }
+    DisposableEffect(state.controller, current, touch) {
+        // 拉满时网页自己滚动，不再旁听拉面板的手势。
+        state.controller.touchObserver = { event ->
+            if (panel.level != PanelLevel.FULL) touch.observe(event)
+        }
+        if (current) panel.controller = state.controller
+        onDispose {
+            state.controller.touchObserver = null
+            if (panel.controller === state.controller) panel.controller = null
+        }
+    }
+    val takeover = pageTakeover(tab, tabs, current && panel.level == PanelLevel.FULL)
+    val supported = remember(public) {
+        if (public) {
+            publicProfilesSupported() && WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
+        } else {
+            pageFeaturesSupported()
+        }
+    }
+    val crossOriginBlocked = !public && page.opensInBrowser
+    val openLink = externalLinkOpener { state.problem = it }
+    val admitted = access.allowed && !awaitingLogin
+    val loadable = admitted && page.url?.takeIf { !crossOriginBlocked } != null && (public || home.proxy != null)
+    val webView = state.started && supported && loadable
+    androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
+        if (webView) {
+            val shown = active && (state.loaded || state.failed)
+            PageWebView(
+                state, page, home, environmentKey, script.orEmpty(), inset,
+                visible = shown, openLink = openLink, onDraft = onDraft, publicPage = public,
+            )
+        }
+        // 没有网页框的页（还没连上、加载出错）没有东西转发触摸，露一截时由这层接手翻页。
+        if (panel.level == PanelLevel.PEEK && current && !webView) PeekTouchCatcher(touch)
+        BotPageDisclosure(page, active, awaitingLogin, tabs,
+            onContinue = { loginAcknowledged.value = true }, cancel = { panel.move(PanelLevel.CLOSED) })
+        PanelStatusOverlay(
+            state, page, tab, supported, crossOriginBlocked, inset, public, onDetails,
+            browserAttempted = remember { mutableStateOf(false) }, browserAllowed = admitted,
+        )
+        if (panel.level == PanelLevel.FULL && current) {
+            PluginPageChrome(safe, 0.dp, shortStatus(page), takeover) {
+                PluginPageCapsule(tab, tabs, capsule, state.controller, takeover,
+                    onClosePage = { panel.closePage() },
+                    onClose = { panel.move(PanelLevel.CLOSED) },
+                    onReload = { tabs.send(Action.Pages(PageAction.ReloadTab(place))) },
+                    onDetails = onDetails,
+                    onEditPanel = { panel.editing = true })
+            }
+        }
+    }
+    DisposableEffect(current) { onDispose { if (current) takeover?.end() } }
+}
+
+@Composable
+private fun PanelStatusOverlay(
+    state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, crossOriginBlocked: Boolean,
+    inset: PaddingValues, public: Boolean, onDetails: (String) -> Unit, browserAttempted: MutableState<Boolean>,
+    browserAllowed: Boolean,
+) {
+    PageStatusOverlay(
+        state, page, tab, supported, crossOriginBlocked, inset, onDetails, browserAttempted, browserAllowed,
+        unsupported = if (public) stringResource(R.string.panel_public_unsupported) else null,
+    )
+}
+
+@Composable
+private fun PeekTouchCatcher(touch: PanelPageTouch) {
+    Box(Modifier.fillMaxSize().pointerInteropFilter { event ->
+        touch.observe(event)
+        true
+    })
+}
+
+/**
+ * 面板页的网页：公网网页不注入脚本、不挂桥，单独的数据存储；插件页和底栏一样走隧道和桥。
+ * 给 `PageWebView` 用，`publicPage` 由这里传。
+ */
+@Composable
+private fun PageWebView(
+    state: WebPageState,
+    page: app.wonton.protocol.TabPage,
+    home: HomeViewModel,
+    environment: app.wonton.client.TabEnvironment,
+    script: String,
+    inset: PaddingValues,
+    visible: Boolean,
+    openLink: (String) -> Unit,
+    onDraft: (String) -> Unit,
+    publicPage: Boolean,
+) {
+    val url = page.url ?: return
+    val proxy = if (publicPage) null else home.proxy ?: return
+    val density = LocalDensity.current
+    if (!publicPage) state.controller.permissionHandler = state.media::handle
+    PluginWebView(
+        url, proxy, page.reload,
+        onLoaded = { state.loadFinished(environment, scripts = !publicPage) },
+        onFailed = state::loadFailed,
+        modifier = Modifier.padding(inset),
+        darkTheme = environment.dark,
+        controller = state.controller,
+        documentStartScript = script,
+        onBridgeMessage = { origin, main, message ->
+            if (!publicPage) {
+                val reply = state.pages.core.tabHandleMessage(
+                    state.place, main, origin.toString(), message, environment,
+                )
+                reply.replyScript?.let { state.controller.evaluateJavascript(it) }
+                if (reply.initialized) state.loaded = true
+                when (val action = reply.action) {
+                    is TabBridgeAction.OpenLink -> openLink(action.url)
+                    is TabBridgeAction.DraftMessage -> onDraft(action.text)
+                    null -> Unit
+                }
+            }
+        },
+        onOpenLink = openLink,
+        onRendererGone = state::loadStarted,
+        onLoadStarted = state::loadStarted,
+        visible = visible,
+        textZoom = (density.fontScale * 100).roundToInt(),
+        publicPage = publicPage,
+    )
+}

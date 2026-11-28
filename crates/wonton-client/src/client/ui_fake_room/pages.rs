@@ -1,10 +1,33 @@
-//! 本机夹具网页和回环地址上的小服务：整页打开的那页。
+//! 本机夹具网页和回环地址上的小服务：面板里带浮层的那页、整页打开的那页。
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::LazyLock;
 
-use wonton_protocol::{TabIcon, TabLayout, TabPage, TabRef, TabState};
+use wonton_protocol::{PanelItem, PanelSource, TabIcon, TabLayout, TabPage, TabRef, TabState};
+
+/// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
+pub(crate) fn panel() -> Vec<PanelItem> {
+    let Some(url) = fixture_url() else {
+        return Vec::new();
+    };
+    vec![PanelItem {
+        tab: TabRef::Url { url: url.clone() },
+        page: TabPage {
+            title: "Player".into(),
+            icon: TabIcon::Plugin { icon: None },
+            url: Some(url),
+            layout: TabLayout::default(),
+            state: TabState::Ready,
+            reload: 0,
+            native: None,
+            opens_in_browser: false,
+        },
+        attention: false,
+        source: PanelSource::User,
+        movable: true,
+    }]
+}
 
 /// 整页打开的那张网页：`cover` 为真的那份写了 `viewport-fit=cover`，自己按 `env(safe-area-inset-*)` 让。
 /// 本机端口占不上时没有。
@@ -22,6 +45,59 @@ pub(crate) fn corner() -> Option<(TabRef, TabPage)> {
     };
     Some((TabRef::Url { url }, page))
 }
+
+/// 面板里的那张网页。播放按钮放一段现场拼成 WAV 的两分钟轻方波，页面把播放位置写在 `#audio` 里：
+/// 面板收起时页面的声音断没断，界面测试看这个位置还在不在走。
+const PAGE: &str = r##"<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Player</title>
+<style>
+html, body { margin: 0; background: #101418; color: #fff; font: 17px system-ui; }
+#library { height: 300vh; }
+#player { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1b2733; }
+#close { position: fixed; top: 78px; right: 8px; width: 60px; height: 60px; font-size: 28px; }
+#play { position: fixed; top: 160px; left: 120px; width: 120px; height: 60px; }
+</style></head>
+<body>
+<div id="library">Fixture library</div>
+<div id="player"><p>Fixture player</p><p id="audio">Fixture audio idle</p><p id="path">Fixture path</p><p id="loads">Fixture load</p><button id="same" onclick="history.pushState({}, '', '/same'); history.replaceState({}, '', '/')">Fixture same document</button><a href="#/album" id="fragment">Fixture fragment</a> <a href="/corner-cover">Fixture cover</a></div>
+<button id="close" aria-label="Fixture close" onclick="this.setAttribute('aria-label', 'Fixture closed')">×</button>
+<button id="play" aria-label="Fixture play" onclick="play()">▶</button>
+<script>
+const audio = new Audio();
+let pauses = 0;
+function tone(seconds) {
+  const rate = 8000, count = rate * seconds, view = new DataView(new ArrayBuffer(44 + count));
+  const text = (at, value) => { for (let i = 0; i < value.length; i++) view.setUint8(at + i, value.charCodeAt(i)); };
+  text(0, 'RIFF'); view.setUint32(4, 36 + count, true); text(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate, true);
+  view.setUint16(32, 1, true); view.setUint16(34, 8, true);
+  text(36, 'data'); view.setUint32(40, count, true);
+  for (let i = 0; i < count; i++) view.setUint8(44 + i, i % 40 < 20 ? 129 : 127);
+  return URL.createObjectURL(new Blob([view.buffer], { type: 'audio/wav' }));
+}
+function report() {
+  document.getElementById('audio').textContent =
+    'Fixture audio ' + (audio.paused ? 'paused ' : 'playing ') + Math.floor(audio.currentTime) + ' pauses ' + pauses;
+}
+function play() { audio.src = tone(120); audio.play().then(report, report); }
+audio.addEventListener('pause', () => { pauses += 1; report(); });
+function showPath() {
+  document.getElementById('path').textContent = 'Fixture path ' + location.pathname + location.hash;
+}
+addEventListener('hashchange', showPath);
+addEventListener('popstate', showPath);
+showPath();
+const loads = (Number(sessionStorage.getItem('loads')) || 0) + 1;
+sessionStorage.setItem('loads', String(loads));
+document.getElementById('loads').textContent = 'Fixture load ' + loads;
+audio.addEventListener('timeupdate', report);
+document.addEventListener('visibilitychange', report);
+setInterval(report, 500);
+</script>
+</body></html>"##;
 
 /// 整页的那张网页。`{viewport}` 换成有没有 `viewport-fit=cover`；`#probe` 写着是哪一份、页面自己量到的安全区和视口高度，
 /// 界面测试失败时带进报错里。页面比屏幕长，滚下去以后固定的栏还在原位。
@@ -84,8 +160,9 @@ setInterval(probe, 500);
 
 fn body(path: &str) -> String {
     match path {
+        "/corner" => CORNER.replace("{viewport}", ""),
         "/corner-cover" => CORNER.replace("{viewport}", ", viewport-fit=cover"),
-        _ => CORNER.replace("{viewport}", ""),
+        _ => PAGE.to_owned(),
     }
 }
 

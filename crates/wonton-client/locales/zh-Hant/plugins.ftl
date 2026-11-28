@@ -116,6 +116,7 @@ tabs-storage-problem = 我的應用存不下，下次啟動可能恢復舊狀態
 
 tabs-view-plugin-no-page = 這個應用程式沒有可開啟的網頁。
 
+tabs-page-not-placed = 這個頁面不在面板裡。
 
 # 底部導覽列設定檔（tabs.json）的錯誤，作為 CoreError 的 reason 顯示。
 # $path 是設定檔的路徑，$reason 是原始的剖析或讀寫錯誤。

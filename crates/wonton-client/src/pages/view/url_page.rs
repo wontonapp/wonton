@@ -1,4 +1,4 @@
-//! 公网网页的一页：我的应用和栈里的入口。
+//! 公网网页的一页：钉页和栈里的入口。
 use url::Url;
 use wonton_protocol::{
     CoreError, PlacedTab, PluginsViewModel, TabIcon, TabLayout, TabPage, TabRef, TabState,
@@ -45,7 +45,7 @@ pub(crate) fn build_url_page(
         }
     } else {
         TabState::Failed {
-            reason: l10n!(CATALOG, language(), "page-not-https"),
+            reason: l10n!(CATALOG, language(), "panel-pin-not-https"),
         }
     };
     page_from_metadata(
@@ -64,7 +64,7 @@ pub(crate) fn stored_url_item(
     title: Option<String>,
 ) -> Result<StoredItem, CoreError> {
     if !is_https_url(url) {
-        return Err(invalid(&l10n!(CATALOG, language(), "page-not-https")));
+        return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
     }
     let host = url
         .parse::<Url>()

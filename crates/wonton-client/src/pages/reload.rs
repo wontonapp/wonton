@@ -1,14 +1,29 @@
 //! 页面实例的重新加载：哪些实例还在，插件起来或变了时它的每份实例都重新加载。
 
-use wonton_protocol::{PlacedTab, TabRef};
+use wonton_protocol::{PanelEntry, PanelScope, PlacedTab, TabRef};
 
 use super::PagesState;
 
-/// 这个实例所在的地方现在有没有这个页面：栈里的看栈，内容窗口的看内容窗口。
+/// 这个实例所在的地方现在有没有这个页面：栈里的看栈，面板的看那块面板。
 pub(super) fn state_has_page(state: &PagesState, placed: &PlacedTab) -> bool {
     match placed {
         PlacedTab::Page { tab } => state.stack.iter().any(|item| item.tab == *tab),
         PlacedTab::Content { tab } => state.content.contains_key(tab),
+        PlacedTab::Panel { scope, tab } => {
+            panel_pages(state, scope)
+                .is_some_and(|panel| panel.iter().any(|entry| entry.tab == *tab))
+                || state
+                    .bot_pins
+                    .iter()
+                    .any(|pin| pin.scope == *scope && pin.tab == *tab)
+        }
+    }
+}
+
+fn panel_pages<'a>(state: &'a PagesState, scope: &PanelScope) -> Option<&'a Vec<PanelEntry>> {
+    match scope {
+        PanelScope::Main => Some(&state.config.panel),
+        PanelScope::Room { room_id } => state.rooms.get(room_id).map(|room| &room.panel.pages),
     }
 }
 
@@ -30,6 +45,37 @@ pub(super) fn reload_plugin_pages(state: &mut PagesState, plugin_id: &str) {
     }
     for tab in state.content.keys() {
         consider(tab, PlacedTab::Page { tab: tab.clone() });
+    }
+    for entry in &state.config.panel {
+        consider(
+            &entry.tab,
+            PlacedTab::Panel {
+                scope: PanelScope::Main,
+                tab: entry.tab.clone(),
+            },
+        );
+    }
+    for (room_id, room) in &state.rooms {
+        for entry in &room.panel.pages {
+            consider(
+                &entry.tab,
+                PlacedTab::Panel {
+                    scope: PanelScope::Room {
+                        room_id: room_id.to_string(),
+                    },
+                    tab: entry.tab.clone(),
+                },
+            );
+        }
+    }
+    for pin in &state.bot_pins {
+        consider(
+            &pin.tab,
+            PlacedTab::Panel {
+                scope: pin.scope.clone(),
+                tab: pin.tab.clone(),
+            },
+        );
     }
     for instance in placed {
         state.failures.remove(&instance);

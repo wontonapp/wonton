@@ -1,5 +1,11 @@
 use super::*;
 
+use wonton_client::PanelScope;
+
+fn main_scope() -> PanelScope {
+    PanelScope::Main
+}
+
 fn reload(view: &PagesViewModel, page_tab: &TabRef) -> u64 {
     item(view, page_tab).reload
 }
@@ -17,15 +23,28 @@ async fn refresh_page(rig: &Rig, page_tab: &TabRef, mut plugin: InstalledPlugin,
 }
 
 #[tokio::test]
-async fn same_version_content_change_reloads_an_open_page_once() {
+async fn same_version_content_change_reloads_stack_and_panel_instances_once() {
     let (rig, pinned, mut plugin) = connected_page_rig("app.revision", "home").await;
     assert_eq!(reload(&rig.app.pages(), &pinned), 0);
-    let stack_before = reload(&rig.app.pages(), &pinned);
+    // 同一个页面在栈里和面板里是两份实例：都重新加载，各记各的计数。
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::AddPanelPage {
+                scope: main_scope(),
+                tab: pinned.clone(),
+            },
+        })
+        .unwrap();
+    let before = rig.app.pages();
+    let stack_before = reload(&before, &pinned);
+    let panel_before = before.panel[0].page.reload;
+    assert_eq!(panel_before, 0);
     let version = plugin.version.clone();
     plugin.revision = "opaque/new-content".to_owned();
     refresh_page(&rig, &pinned, plugin.clone(), "changed").await;
     let changed = rig.app.pages();
     assert_eq!(reload(&changed, &pinned), stack_before + 1);
+    assert_eq!(changed.panel[0].page.reload, panel_before + 1);
     assert_eq!(
         rig.app.plugins().installed.unwrap().plugins[0].version,
         version
@@ -34,6 +53,7 @@ async fn same_version_content_change_reloads_an_open_page_once() {
     refresh_page(&rig, &pinned, plugin, "same-content").await;
     let unchanged = rig.app.pages();
     assert_eq!(reload(&unchanged, &pinned), stack_before + 1);
+    assert_eq!(unchanged.panel[0].page.reload, panel_before + 1);
 }
 
 #[tokio::test]

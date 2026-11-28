@@ -2,7 +2,7 @@
 
 use url::Url;
 use wonton_l10n::l10n;
-use wonton_protocol::{CoreError, PlacedTab, TabRef};
+use wonton_protocol::{CoreError, PanelScope, PlacedTab, TabRef};
 
 use super::bridge::page_of;
 use super::{PagesLink, lock, make_view, placed_tab_ref};
@@ -212,6 +212,13 @@ fn page_open(state: &super::PagesState, place: &PlacedTab) -> bool {
     match place {
         PlacedTab::Content { tab } => state.content.contains_key(tab),
         PlacedTab::Page { tab } => state.stack.iter().any(|item| &item.tab == tab),
+        PlacedTab::Panel { scope, tab } => match scope {
+            PanelScope::Main => state.config.panel.iter().any(|entry| &entry.tab == tab),
+            PanelScope::Room { room_id } => state
+                .rooms
+                .get(room_id)
+                .is_some_and(|room| room.panel.pages.iter().any(|entry| &entry.tab == tab)),
+        },
     }
 }
 
@@ -229,6 +236,13 @@ fn page_id(page: &PlacedTab) -> String {
     let (placement, tab) = match page {
         PlacedTab::Page { tab } => ("page", tab),
         PlacedTab::Content { tab } => ("content", tab),
+        PlacedTab::Panel { scope, tab } => (
+            match scope {
+                PanelScope::Main => "panel/main",
+                PanelScope::Room { .. } => "panel/room",
+            },
+            tab,
+        ),
     };
     let name = match tab {
         TabRef::Plugin { page, .. } | TabRef::Bot { path: page, .. } => match page.as_deref() {
