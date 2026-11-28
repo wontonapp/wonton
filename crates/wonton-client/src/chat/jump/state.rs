@@ -1,12 +1,10 @@
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
 use wonton_protocol::{JumpState, TimelineFocus, UnreadJumpState, UnreadJumpUnavailable};
-
-use super::super::lock;
 
 /// 一个时间线订阅的跳转状态。壳通过 [`TimelineSubscription::jump_to`] / [`TimelineSubscription::jump_back`] 发请求，
 /// 转发循环在下一批里对上条目；未读胶囊走 [`Jumps::request_first_unread`] 和
@@ -94,17 +92,5 @@ impl Jumps {
             task: Mutex::default(),
             paging: AtomicBool::new(false),
         })
-    }
-
-    pub(super) fn wake(&self) {
-        self.pending
-            .send_modify(|count| *count = count.wrapping_add(1));
-    }
-
-    pub(super) fn abort(&self) {
-        self.paging.store(false, Ordering::SeqCst);
-        if let Some(task) = lock(&self.task).take() {
-            task.abort();
-        }
     }
 }
