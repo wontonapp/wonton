@@ -46,8 +46,7 @@ plugins-tasks-preview-no-source = 这份预览没有来源，装不了。
 plugins-tasks-dependent-in-use = 没能卸载「{ $id }」：还有应用在用它。{ $detail }
 # $capability 是缺着的必需能力。
 plugins-tasks-preview-no-provider = 缺的必需能力 { $capability } 在商店里没有提供方，装不了。
-plugins-tasks-provider-needs-own-confirm = 「{ $title }」有需要单独确认的权限，先单独装上它，再回来装这个插件。
-plugins-tasks-preview-old-core = 这台核心太旧，不能跟着一起装提供方；先单独装 { $capability }，再回来试。
+plugins-tasks-preview-old-core = 这台核心太旧，不能跟着一起装提供方；先单独装提供它的插件（{ $capability }），再回来试。
 # $provider 和 $got 是插件 ID。
 plugins-capability-wrong-provider = 「{ $provider }」的来源现在指向别的插件（{ $got }），重新预览。
 

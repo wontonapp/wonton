@@ -1,4 +1,4 @@
-//! 假数据入口里的安装预览和卸载预览：一个要 `download_client` 的动画自动下载器，提供方是 qBittorrent。
+//! 假数据入口里的安装预览和卸载预览：一个要 `x-acme.download-client` 的动画自动下载器，提供方是 qBittorrent。
 //! 界面测试看确认页怎么列提供方、它的权限和密钥，以及卸载提供方时的拦截；没有后端，确认后不会真的装。
 //!
 //! 卸载被挡时列出依赖方，卸载使用方时不列（它没人再用）。
@@ -103,18 +103,33 @@ fn provider() -> InstallPreview {
     let mut preview = base(PROVIDER_SOURCE, "qBittorrent");
     preview.trust = PluginTrust::Community;
     preview.provider = Some("example.com/example/wonton-qbittorrent".into());
-    preview.permissions = vec![wonton_protocol::PermissionLine {
-        permission: "storage.share.downloads:write".into(),
-        text: "Write to the downloads folder".into(),
-        risk: None,
-        notice: Some("Finished downloads land in the downloads folder".into()),
-        supported: true,
-        added: false,
-        optional: false,
-        enabled: false,
-        off_loss: None,
-        opened: None,
-    }];
+    preview.permissions = vec![
+        wonton_protocol::PermissionLine {
+            permission: "storage.share.downloads:write".into(),
+            text: "Write to the downloads folder".into(),
+            risk: None,
+            notice: Some("Finished downloads land in the downloads folder".into()),
+            supported: true,
+            added: false,
+            optional: false,
+            enabled: false,
+            off_loss: None,
+            opened: None,
+        },
+        // 第三方能力看提供方的权限定高权限：有了它，想用 qBittorrent 的已装应用才列得出来。
+        wonton_protocol::PermissionLine {
+            permission: "network.lan".into(),
+            text: "Reach the home network".into(),
+            risk: Some(wonton_protocol::PermissionRisk::High),
+            notice: Some("Can reach other devices on the home network".into()),
+            supported: true,
+            added: false,
+            optional: false,
+            enabled: false,
+            off_loss: None,
+            opened: None,
+        },
+    ];
     preview.secret_inputs = vec![SecretInput {
         name: "api_key".into(),
         title: "API key".into(),
@@ -139,17 +154,17 @@ fn consumer() -> InstallPreview {
     preview.trust = PluginTrust::Community;
     preview.summary = "Follows the season and grabs new episodes".into();
     preview.missing_requires = vec![wonton_protocol::MissingCapability {
-        capability: "download_client".into(),
+        capability: "x-acme.download-client".into(),
         third_party: true,
         providers: vec![candidate()],
     }];
     preview.missing_wants = vec![wonton_protocol::MissingCapability {
-        capability: "indexer".into(),
+        capability: "x-acme.indexer".into(),
         third_party: true,
         providers: Vec::new(),
     }];
     preview.install_providers = vec![InstallProvider {
-        capability: "download_client".into(),
+        capability: "x-acme.download-client".into(),
         third_party: true,
         providers: vec![candidate()],
         selected: Some(SelectedProvider {

@@ -40,5 +40,5 @@
     <string name="plugin_dependencyOptional">任意：「%1$@」</string>
     <string name="plugin_dependencyProvidedBy">%1$@ が提供</string>
     <string name="plugin_dependencies_missing">不足している機能</string>
-    <string name="plugin_uninstall_together_keeps_data">データは残ります。</string>
+    <string name="plugin_uninstall_together_keeps_data">一緒にアンインストールするとデータは残ります。</string>
 </resources>

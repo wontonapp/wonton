@@ -424,11 +424,11 @@ async fn the_same_provider_twice_writes_one_connection_line() {
 
 fn wanting_provider_compose() -> String {
     format!(
-        "services:\n  web:\n    image: nginx\n    expose: [8080]\n    volumes:\n      \
-         - /var/run/docker.sock:/var/run/docker.sock\nx-wonton:\n  spec: '{}'\n  id: {PROVIDER}\n  \
+        "services:\n  web:\n    image: nginx\n    expose: [8080]\nx-wonton:\n  spec: '{}'\n  id: {PROVIDER}\n  \
          version: 1.0.0\n  kind: app\n  title: {{zh: 搜索, en: Search}}\n  \
-         description: {{zh: 搜索, en: Search}}\n  permissions: [docker.socket]\n  provides:\n    \
-         x-acme.search: {{service: web, port: 8080}}\n    \
+         description: {{zh: 搜索, en: Search}}\n  permissions: [network.lan]\n  lan:\n    ports:\n      \
+         - service: web\n        port: 8080\n  provides:\n    \
+         x-acme.download-client: {{service: web, port: 8080}}\n    \
          torrent_client: {{service: web, port: 8080}}\n",
         spec()
     )
@@ -440,7 +440,7 @@ fn wanting_consumer_compose() -> String {
         "services:\n  web:\n    image: nginx\nx-wonton:\n  spec: '{}'\n  id: {CONSUMER}\n  \
          version: 1.0.0\n  kind: app\n  title: {{zh: 用搜索的, en: Consumer}}\n  \
          description: {{zh: 用搜索的, en: Consumer}}\n  permissions: []\n  \
-         wants: [torrent_client, x-acme.search]\n",
+         wants: [torrent_client, x-acme.download-client]\n",
         spec()
     )
 }

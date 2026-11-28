@@ -90,13 +90,13 @@ struct UninstallSheet: View {
                 title: String(localized: .Plugin3.pluginUninstallInUse(target.title)),
                 lines: dependents.map(\.title)
             )
-            Text(.Plugin0.pluginUninstallTogetherKeepsData)
-                .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.textSecondary))
             Button(String(localized: .Plugin0.pluginUninstallTogether)) {
                 close { uninstall(keepData: true, dependents: dependents.map(\.id)) }
             }
             .buttonStyle(WontonButtonStyle())
+            Text(.Plugin2.pluginUninstallTogetherKeepsData)
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
             Button(String(localized: .Plugin1.pluginUninstallStopDependents)) {
                 close {
                     for dependent in dependents {

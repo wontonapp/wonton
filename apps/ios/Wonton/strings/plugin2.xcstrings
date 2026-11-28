@@ -543,31 +543,31 @@
       }
     },
     "plugin.uninstallTogetherKeepsData": {
-      "comment": "Supporting line when uninstalling dependents together: their data is kept.",
+      "comment": "Supporting line under the uninstall-together button: their data is kept.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Their data is kept."
+            "value": "Uninstalling them together keeps their data."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "它们的数据会留着。"
+            "value": "一起卸载会保留它们的数据。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "它們的資料會留著。"
+            "value": "一起解除安裝會保留它們的資料。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "データは残ります。"
+            "value": "一緒にアンインストールするとデータは残ります。"
           }
         }
       }

@@ -1,7 +1,7 @@
 import XCTest
 
 /// 依赖的界面走查（ADR-0053）：确认页要列出一起装的提供方和它的权限、密钥；卸载提供方要被在用的
-/// 应用拦下，并给出一同卸载或先停掉的选择。假数据里是 Autobangumi（要 download_client）和 qBittorrent。
+/// 应用拦下，并给出一同卸载或先停掉的选择。假数据里是 Autobangumi（要 x-acme.download-client）和 qBittorrent。
 final class PluginDependencyUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -34,7 +34,7 @@ final class PluginDependencyUITests: XCTestCase {
         XCTAssertTrue(install.waitForExistence(timeout: 10), "详情页没有获取按钮\n\(app.debugDescription)")
         install.tap()
 
-        let capability = app.staticTexts["download_client"].firstMatch
+        let capability = app.staticTexts["x-acme.download-client"].firstMatch
         XCTAssertTrue(capability.waitForExistence(timeout: 10), "确认页没有缺的能力\n\(app.debugDescription)")
         let provider = app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS[c] %@", "qBittorrent")
@@ -45,7 +45,7 @@ final class PluginDependencyUITests: XCTestCase {
             "确认页没有列出提供方的权限\n\(app.debugDescription)"
         )
         XCTAssertTrue(app.staticTexts["API key"].firstMatch.exists, "确认页没有列出提供方要填的密钥")
-        XCTAssertTrue(app.staticTexts["indexer"].firstMatch.exists, "缺的可选能力没有列出来")
+        XCTAssertTrue(app.staticTexts["x-acme.indexer"].firstMatch.exists, "缺的可选能力没有列出来")
         XCTAssertTrue(
             app.staticTexts["These apps want it"].firstMatch.waitForExistence(timeout: 10),
             "确认页没有列出想用这个提供方的应用\n\(app.debugDescription)"

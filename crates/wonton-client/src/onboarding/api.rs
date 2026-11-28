@@ -1,8 +1,8 @@
 //! 引导状态、资料、模型设置网页和安装预览的接口调用。网页里的模型修改不经这里保存。
 
 use wonton_protocol::{
-    InstallPreview, InstallSource, Me, ModelSettings, ModelSettingsFailure, ModelSettingsProblem,
-    Onboarding, OnboardingUpdate, OwnerProfileUpdate, PluginProblem,
+    Me, ModelSettings, ModelSettingsFailure, ModelSettingsProblem, Onboarding, OnboardingUpdate,
+    OwnerProfileUpdate, PluginProblem,
 };
 
 use crate::plugins::api::{CoreApi, CoreApiError, READ_TIMEOUT, SOURCE_TIMEOUT};
@@ -33,14 +33,6 @@ pub(crate) async fn save_me(
     update: &OwnerProfileUpdate,
 ) -> Result<Me, PluginProblem> {
     api.put(&["me"], update, READ_TIMEOUT).await
-}
-
-pub(crate) async fn preview(api: &CoreApi, source: &str) -> Result<InstallPreview, PluginProblem> {
-    let source = InstallSource {
-        source: source.to_owned(),
-    };
-    api.post(&["plugins", "preview"], &source, SOURCE_TIMEOUT)
-        .await
 }
 
 fn map_error(error: CoreApiError) -> ModelSettingsProblem {

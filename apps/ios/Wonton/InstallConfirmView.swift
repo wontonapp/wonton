@@ -219,7 +219,9 @@ private struct PreviewContent: View {
                     }
                 }
                 if !preview.notices.isEmpty { NoticeLines(lines: preview.notices) }
-                if !preview.installProviders.isEmpty || !preview.missingWants.isEmpty || !preview.wantingPlugins.isEmpty {
+                if !preview.installProviders.isEmpty
+                    || !preview.missingWants.isEmpty
+                    || !preview.wantingPlugins.isEmpty {
                     InstallProviderSections(
                         model: model, preview: preview, update: update, fillProfile: fillProfile
                     )

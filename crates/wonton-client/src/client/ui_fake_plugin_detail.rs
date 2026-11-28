@@ -74,7 +74,7 @@ fn budget(installed: Option<InstalledPlugin>) -> PluginDetail {
     detail
 }
 
-/// 要 `download_client` 的自动下载器：依赖的提供方没在运行，详情页给提示和能力选择。
+/// 要 `x-acme.download-client` 的自动下载器：依赖的提供方没在运行，详情页给提示和能力选择。
 fn dependent(installed: Option<InstalledPlugin>) -> PluginDetail {
     let mut detail = app(
         &super::ui_fake_install::consumer_id(),
@@ -90,7 +90,7 @@ fn dependent(installed: Option<InstalledPlugin>) -> PluginDetail {
         capability: None,
     }];
     detail.capability_providers = vec![wonton_protocol::ConsumerCapabilitySetting {
-        capability: "download_client".into(),
+        capability: "x-acme.download-client".into(),
         third_party: true,
         providers: vec![provider_ref()],
         selected: None,

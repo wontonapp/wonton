@@ -181,26 +181,9 @@ pub(super) fn install_together(
 }
 
 /// 一个提供方的安装决定：它预览里列出的权限照授、主人填的密钥带上，内层不再带别的依赖（ADR-0053）。
+/// 提供方的权限和醒目提示已列在确认页，最高级的也走过确认（ADR-0036），不再要求单独装。
 fn provider_install(selected: &SelectedProvider) -> Result<InstallTogether, CoreError> {
     let mut preview = selected.preview.clone();
-    // 一起装时确认页只有使用方的预览：提供方自己的高风险权限（ADR-0036 的各级，最高级的
-    // “单独确认”在内）和醒目提示（高权限能力的“谁连上谁”在里面，ADR-0053）都没经过主人，
-    // 丢掉提示就照连不行。这种提供方请主人先单独装，装它的确认页把提示和确认走全。
-    if preview
-        .permissions
-        .iter()
-        .any(|line| !line.optional && line.risk.is_some())
-        || preview.notices.iter().any(|notice| notice.emphasis)
-    {
-        return Err(CoreError::NotReady {
-            reason: l10n!(
-                CATALOG,
-                language(),
-                "plugins-tasks-provider-needs-own-confirm",
-                title = selected.provider.title.as_str()
-            ),
-        });
-    }
     if let Some(blocked) = preview.blocked.clone().or(preview.missing_profile.clone()) {
         return Err(CoreError::NotReady { reason: blocked });
     }

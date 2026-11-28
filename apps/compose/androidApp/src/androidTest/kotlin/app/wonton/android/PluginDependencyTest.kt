@@ -35,7 +35,7 @@ import org.junit.runner.RunWith
 
 /**
  * 依赖的界面走查（ADR-0053）：确认页列出一起装的提供方和它的权限、密钥；卸载提供方被在用的应用拦下，
- * 给出一起卸载或先停掉的选择。假数据里是 Autobangumi（要 download_client）和 qBittorrent。
+ * 给出一起卸载或先停掉的选择。假数据里是 Autobangumi（要 x-acme.download-client）和 qBittorrent。
  */
 @RunWith(AndroidJUnit4::class)
 class PluginDependencyTest {
@@ -80,12 +80,15 @@ class PluginDependencyTest {
         // 商店列表每行也有“Get”：详情页的按钮在最后。
         val gets = compose.onAllNodes(hasText(installLabel()), useUnmergedTree = true)
         gets[gets.fetchSemanticsNodes().size - 1].performClick()
-        compose.onNodeWithText("download_client", useUnmergedTree = true).performScrollTo()
+        compose.onNodeWithText("x-acme.download-client", useUnmergedTree = true).performScrollTo()
         compose.onAllNodesWithText("qBittorrent", useUnmergedTree = true, substring = true)[0].performScrollTo()
         compose.onNodeWithText("Write to the downloads folder", useUnmergedTree = true).performScrollTo()
         compose.onNodeWithText("API key", useUnmergedTree = true).performScrollTo()
-        compose.onNodeWithText("indexer", useUnmergedTree = true).performScrollTo()
-        compose.onNodeWithText(strings.getString(R.string.install_wants_connected_title), useUnmergedTree = true).performScrollTo()
+        compose.onNodeWithText("x-acme.indexer", useUnmergedTree = true).performScrollTo()
+        compose.onNodeWithText(
+            strings.getString(R.string.install_wants_connected_title),
+            useUnmergedTree = true,
+        ).performScrollTo()
         compose.onNodeWithText("Audio Book", useUnmergedTree = true).performScrollTo()
         // 随批装的提供方：只列出来，开关在单独装提供方时才有。
         assertTrue(
@@ -122,7 +125,10 @@ class PluginDependencyTest {
         openApps()
         compose.onNodeWithText("qBittorrent", useUnmergedTree = true).performScrollTo().performClick()
         scroll().performScrollToNode(hasText(strings.getString(R.string.plugin_uninstall_action)))
-        compose.onNodeWithText(strings.getString(R.string.plugin_uninstall_action), useUnmergedTree = true).performClick()
+        compose.onNodeWithText(
+            strings.getString(R.string.plugin_uninstall_action),
+            useUnmergedTree = true,
+        ).performClick()
         compose.onNodeWithText("These apps still need qBittorrent", useUnmergedTree = true).performScrollTo()
         compose.onNodeWithText("Autobangumi", useUnmergedTree = true).performScrollTo()
         compose.onNodeWithText("Uninstall them too", useUnmergedTree = true).assertIsDisplayed()
