@@ -40,4 +40,5 @@
     <string name="plugin_dependencyOptional">可选：「%1$@」</string>
     <string name="plugin_dependencyProvidedBy">由 %1$@ 提供</string>
     <string name="plugin_dependencies_missing">缺少的能力</string>
+    <string name="plugin_uninstall_together_keeps_data">它们的数据会留着。</string>
 </resources>

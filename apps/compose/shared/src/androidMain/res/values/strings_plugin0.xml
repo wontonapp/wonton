@@ -48,4 +48,5 @@
     <string name="plugin_dependencyOptional">Optional: %1$@</string>
     <string name="plugin_dependencyProvidedBy">Provided by %1$@</string>
     <string name="plugin_dependencies_missing">Missing capabilities</string>
+    <string name="plugin_uninstall_together_keeps_data">Their data is kept.</string>
 </resources>

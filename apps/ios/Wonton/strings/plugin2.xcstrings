@@ -542,6 +542,36 @@
         }
       }
     },
+    "plugin.uninstallTogetherKeepsData": {
+      "comment": "Supporting line when uninstalling dependents together: their data is kept.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Their data is kept."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它们的数据会留着。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它們的資料會留著。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "データは残ります。"
+          }
+        }
+      }
+    },
     "plugin.uninstallUnusedProviders": {
       "comment": "Heading over the providers nothing else uses; the owner may uninstall them together.",
       "extractionState": "manual",

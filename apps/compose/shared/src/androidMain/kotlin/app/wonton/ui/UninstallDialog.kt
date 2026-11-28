@@ -135,6 +135,11 @@ private fun UninstallInUseDialog(
                 isError = false,
                 lines = dependents.map { it.title },
             )
+            Text(
+                stringResource(R.string.plugin_uninstall_together_keeps_data),
+                style = WontonTheme.typography.supporting,
+                color = WontonTheme.colors.textSecondary.toColor(),
+            )
         },
     )
 }

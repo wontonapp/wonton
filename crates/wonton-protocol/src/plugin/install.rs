@@ -98,7 +98,8 @@ pub struct InstallPreview {
     #[serde(default)]
     pub wanting_plugins: Vec<CapabilityProviderRef>,
     /// [`InstallPreview::wanting_plugins`] 里主人勾选要接上的插件 ID；默认一个都不接。
-    /// 装使用方、升级时不影响，内层提供方请求的 `connect_plugins` 也保持空。
+    /// 只用于安装：内层提供方请求的 `connect_plugins` 保持空；升级请求还没有这个字段，确认页在
+    /// `upgrade_from` 有值时只列出来、不给开关。
     #[serde(default)]
     pub connected_plugins: Vec<String>,
     /// 升级或换版本时是装着的版本；新装时为空。
