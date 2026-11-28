@@ -25,6 +25,7 @@ mod owner_secrets;
 mod profile;
 mod registry_mirror;
 pub mod rig;
+mod secrets;
 mod server_switch;
 mod settle;
 mod share_recipients;
