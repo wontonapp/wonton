@@ -1,3 +1,5 @@
+//! 管家活动接口的假回应：一条可订阅的通道，测试改一次、等着的请求就回一次。
+
 use std::sync::Mutex;
 use std::time::Duration;
 
