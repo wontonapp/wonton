@@ -491,8 +491,16 @@ async fn upgrade_echo(mut req: Request) -> Response {
         if let Ok(upgraded) = on_upgrade.await {
             let mut io = hyper_util::rt::TokioIo::new(upgraded);
             let mut buf = [0u8; 64];
-            if let Ok(n) = io.read(&mut buf).await {
-                let _ = io.write_all(&buf[..n]).await;
+            // 一直回显到对端关掉（读到 0）或写不出去：只回一次的话，测试在断开前就 EOF，断连断言是空的。
+            loop {
+                match io.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if io.write_all(&buf[..n]).await.is_err() {
+                            break;
+                        }
+                    }
+                }
             }
         }
     });
