@@ -1,4 +1,4 @@
-//! 假扮的家里服务器：隧道的对面是假核心。
+//! 起一台假的家里服务器：本机回环上的核心路由，外面套真的隧道服务端。
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -12,6 +12,7 @@ use wonton_tunnel::{Allowlist, TunnelServer};
 use super::router::fake_core;
 use super::state::CoreState;
 
+/// 假扮的家里服务器：隧道的对面是假核心。
 pub struct FakeHome {
     pub core: Arc<CoreState>,
     pub allowed: Allowlist,

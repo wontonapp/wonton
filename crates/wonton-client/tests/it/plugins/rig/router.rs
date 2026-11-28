@@ -233,6 +233,7 @@ async fn onboarding_routes(
 
 pub(super) fn owner_json(name: Option<&str>, email: Option<&str>) -> serde_json::Value {
     serde_json::json!({
+        "user_id": "@owner:wonton.localhost",
         "username": "owner",
         "is_owner": true,
         "display_name": name,
