@@ -85,6 +85,7 @@ impl PluginManager {
                     }
                     None => (false, ClientAuthKind::App, None, None),
                 };
+            // 只声明 `webui.guests` 的插件也按 `App` 列出：它没有核心验证方式；壳按 `guests` 分辨访客链接。
             result.push(ClientPlugin {
                 id: id.clone(),
                 title: listed.manifest.title.clone(),

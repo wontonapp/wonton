@@ -201,10 +201,7 @@ async fn admit_and_forward(
         guest_entry::GuestAuth::None => None,
     };
     let cancel = match &guest {
-        Some(guest) => proxy::Cancel::Both {
-            entry: resolved.revoked.clone(),
-            password: guest.revoke.clone(),
-        },
+        Some(guest) => proxy::Cancel::Guest(guest.revoke.clone()),
         None => proxy::Cancel::Entry(resolved.revoked.clone()),
     };
     // 规范对外地址只在声明了 `single_host` 时改写 `Host`（ADR-0089 第 5 节）；值在入口快照里算好。

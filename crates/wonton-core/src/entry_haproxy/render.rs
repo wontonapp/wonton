@@ -52,8 +52,10 @@ fn crt_list(names: &[String]) -> String {
 /// `libc` 不能放进这一串：入口接上 `lanfwd` 网后，libc 查一次名称会先打那条网的 DNS、一卡 10 秒
 /// （实测），启动死等它，整个 worker 起不来，重载一路超时。
 fn preamble(out: &mut String) {
-    // `hard-stop-after` 让收到 SIGTERM 的 worker 最多再活 5 秒：Docker 停容器的宽限期是 10 秒，
-    // 不设时开着 keep-alive 的连接能把宽限期吃光，每次换成 SIGKILL 都算一次超时。
+    // `hard-stop-after` 让进入 soft-stop 的 worker 最多再活 5 秒：Docker 停容器的宽限期是 10 秒，
+    // 不设时开着 keep-alive 的连接能把宽限期吃光，每次换成 SIGKILL 都算一次超时。重载同样走 soft-stop，
+    // 所以任何入口配置变化（任一应用的入口、总开关）5 秒后也会切断旧 worker 上已升级的 WebSocket，
+    // 带 WS 的访客房间会看到一次断开（HAProxy 3.4 手册 hard-stop-after）。
     out.push_str("global\n  log stdout format raw local0\n  maxconn 1024\n  hard-stop-after 5s\n");
     out.push_str(&format!(
         "  stats socket {RUNTIME_SOCKET} level operator\n\n"

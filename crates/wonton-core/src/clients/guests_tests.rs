@@ -17,15 +17,13 @@ fn token_is_128_bit_lower_base32() {
     let text = std::fs::read_to_string(_dir.path().join(FILE_NAME)).unwrap();
     let file: File = serde_json::from_str(&text).unwrap();
     let token = &file.plugins["app.demo"][0].token;
+    // 16 字节按 5 位一组编码成 26 个字符，小写字母表之外只出现 2–7。
+    assert_eq!(token.len(), 26);
     assert!(
         token
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || matches!(byte, b'2'..=b'7'))
     );
-    assert!(token.bytes().all(
-        |byte| byte.is_ascii_lowercase() && byte != b'0' && byte != b'1'
-            || matches!(byte, b'2'..=b'7')
-    ));
 }
 
 #[test]

@@ -21,7 +21,7 @@ const READ_SLICE: Duration = Duration::from_secs(1);
 /// 从第一次尝试算起的截止；主进程处理完初始装载就会接。宿主满载时连管理端口也可能慢过 10 秒
 /// （2026-11-28 开发栈实测：Docker 停容器要 10 秒以上，入口刚回来时连接超时），留 120 秒。
 const PENDING: Duration = Duration::from_secs(120);
-/// 单次连接的等待：入口重建时旧 IP 会短暂黑 Hole 住 SYN，一直等到截止就再没有重试的机会；
+/// 单次连接的等待：入口重建时旧 IP 会短暂黑洞住 SYN，一直等到截止就再没有重试的机会；
 /// 每 2 秒放弃一次、重新解析再连，换到新容器的地址。
 const CONNECT_SLICE: Duration = Duration::from_secs(2);
 
@@ -59,7 +59,9 @@ pub async fn reload_haproxy(addr: &str) -> Result<(), EntryError> {
         let (reason, delay) = match attempt(addr, deadline).await {
             Attempt::Done => return Ok(()),
             Attempt::Rejected(logs) => return Err(EntryError::Reload(logs)),
-            Attempt::Retry(reason) if reason == IN_PROGRESS_TEXT => (reason, IN_PROGRESS_DELAY),
+            Attempt::Retry(reason) if reason.contains(IN_PROGRESS_TEXT) => {
+                (reason, IN_PROGRESS_DELAY)
+            }
             Attempt::Retry(reason) => (reason, RETRY_DELAY),
         };
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());

@@ -163,6 +163,10 @@ impl Home {
         .await
     }
 
+    fn crt_list(&self, kind: &str) -> String {
+        std::fs::read_to_string(self.install.join(format!("entry/certs/{kind}.crt-list"))).unwrap()
+    }
+
     fn cookie_header(token: &str) -> String {
         format!("{COOKIE_NAME}={token}")
     }
@@ -221,11 +225,25 @@ async fn entry_closed_without_entry() {
     assert_eq!(closed.status, StatusCode::CONFLICT);
     assert_eq!(closed.error_kind(), Some("entry_closed"));
 
-    // 只开公网、总开关关着，同样建不了。
-    home.switch(id.as_str(), "public", true).await;
+    // 先确认 guest-only 真能走 apply（不被当成“没这个能力”）：总开关开着时打开，公网证书列表里有这个标签。
+    let opened = home.switch(id.as_str(), "public", true).await;
+    assert_eq!(opened.status, StatusCode::OK, "{}", opened.text());
+    assert_eq!(opened.json()["blocked"], serde_json::Value::Null);
+    assert_eq!(opened.json()["guests"], true);
+    assert_eq!(opened.json()["auth"], "app");
+    assert_eq!(opened.json()["entries"].as_array().unwrap().len(), 2);
+    assert!(
+        home.crt_list("public").contains("guestapp."),
+        "{}",
+        home.crt_list("public")
+    );
+    // 再关掉总开关：开关留着，但如实报 public_access_off，链接建不了。
     home.gateway
         .public_access
         .store(false, std::sync::atomic::Ordering::Relaxed);
+    let closed = home.switch(id.as_str(), "public", true).await;
+    assert_eq!(closed.status, StatusCode::OK, "{}", closed.text());
+    assert_eq!(closed.json()["blocked"], "public_access_off");
     let off = home
         .api(
             Method::POST,
@@ -354,6 +372,12 @@ async fn exchange_sets_host_cookie_and_no_referrer() {
     // 不写落地路径时回首页。
     let (_, plain) = home.guest(&id, None).await;
     assert_eq!(home.open(&host, "lan", &plain).await.location(), "/");
+    // 非 ASCII 的落地路径要编码进 `Location`，不能静默落回首页。
+    let (_, chinese) = home.guest(&id, Some("/房间")).await;
+    assert_eq!(
+        home.open(&host, "lan", &chinese).await.location(),
+        "/%E6%88%BF%E9%97%B4"
+    );
 
     // 已经收回的链接 409。
     let revoke = home
@@ -488,6 +512,34 @@ async fn guest_only_plugin_rejects_without_cookie_and_outside_scope() {
         )
         .await;
     assert_eq!(inside.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn revoked_link_is_a_403_invalid_page() {
+    let home = Home::start().await;
+    let id = home.register_guests(GUEST_ONLY, "guestapp", true, false);
+    let (guest, token) = home.guest(&id, None).await;
+    let host = home.lan_host("guestapp");
+    let revoke = home
+        .api(
+            Method::DELETE,
+            &wonton_protocol::clients_guest_path(id.as_str(), &guest),
+            "",
+        )
+        .await;
+    assert_eq!(revoke.status, StatusCode::NO_CONTENT);
+    let after = home
+        .get(
+            &host,
+            "/room",
+            &[
+                ("x-wonton-entry", "lan"),
+                ("cookie", &Home::cookie_header(&token)),
+            ],
+        )
+        .await;
+    assert_eq!(after.status, StatusCode::FORBIDDEN);
+    assert_eq!(after.error_kind(), Some("entry_closed"));
 }
 
 #[tokio::test]

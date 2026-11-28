@@ -38,7 +38,8 @@ async fn reload_reports_the_startup_logs_of_a_failed_reload() {
 }
 
 /// 容器刚起来：主进程还在初始装载，第一次回“还在重载”，隔一会儿重发后成功。
-#[tokio::test]
+/// 忙一次要等 15 秒，拨快时钟别真睡。
+#[tokio::test(start_paused = true)]
 async fn reload_retries_while_another_reload_is_in_progress() {
     let (addr, hits) = master_sequence(vec![
         "Success=0\n--\nAnother reload is still in progress.\n",
@@ -61,7 +62,7 @@ async fn reload_retries_a_connection_closed_without_a_reply() {
     assert_eq!(hits.load(Ordering::SeqCst), 2);
 }
 
-/// 连上却一个字都不回：不能吃光 10 秒预算，隔一小段换连接重发。
+/// 连上却一个字都不回：不能吃光整段预算，隔一小段换连接重发。
 #[tokio::test]
 async fn reload_retries_a_silent_connection() {
     let (addr, hits) = master_silent_then(vec!["Success=1\n"]).await;

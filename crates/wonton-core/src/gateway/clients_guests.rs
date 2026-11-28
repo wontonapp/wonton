@@ -132,10 +132,9 @@ async fn create(
             source: source(&headers),
         },
     );
-    let url = format!(
-        "{base}/_wonton/guest/{}",
-        token(&gateway, id.as_str(), &created)
-    );
+    let Some(url) = url_for(&gateway, &base, id.as_str(), &created) else {
+        return guest_error(GuestError::NotFound, &langs);
+    };
     no_store((StatusCode::CREATED, Json(view(created, Some(url)))).into_response())
 }
 
@@ -183,10 +182,9 @@ async fn read(
             source: source(&headers),
         },
     );
-    let url = format!(
-        "{base}/_wonton/guest/{}",
-        token(&gateway, id.as_str(), &link)
-    );
+    let Some(url) = url_for(&gateway, &base, id.as_str(), &link) else {
+        return guest_error(GuestError::NotFound, &langs);
+    };
     no_store(Json(view(link, Some(url))).into_response())
 }
 
@@ -272,11 +270,14 @@ fn reachable_base(gateway: &Gateway, record: &InstalledRecord) -> Option<String>
 }
 
 /// 一条链接的令牌；列表和取地址都要拼进 URL，库里只在需要时给出。
-fn token(gateway: &Gateway, plugin: &str, guest: &Guest) -> String {
-    let Some(store) = &gateway.plugins.client_guests else {
-        return String::new();
-    };
-    store.token(plugin, &guest.id).unwrap_or_default()
+/// 拼完整地址；令牌取不到（并发收回）时由调用方回“链接已经不在”。
+fn url_for(gateway: &Gateway, base: &str, plugin: &str, guest: &Guest) -> Option<String> {
+    let token = gateway
+        .plugins
+        .client_guests
+        .as_ref()?
+        .token(plugin, &guest.id)?;
+    Some(format!("{base}/_wonton/guest/{token}"))
 }
 
 fn view(guest: Guest, url: Option<String>) -> GuestLink {

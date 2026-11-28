@@ -8,6 +8,8 @@ use axum::extract::Request;
 use axum::response::Response;
 use hyper::header::{CACHE_CONTROL, HeaderValue, LOCATION, REFERER};
 use hyper::{Method, StatusCode};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+use serde::Serialize;
 
 use super::{Gateway, pages, session};
 use crate::clients::guests::{Authenticated, COOKIE_NAME};
@@ -18,6 +20,26 @@ use crate::plugin::languages::Languages;
 
 /// 核心在插件主机名上给访客链接留的前缀；其余的 `/_wonton/` 仍是一律 404。
 pub(super) const PREFIX: &str = "/_wonton/guest/";
+
+/// `Location` 只收可见 ASCII，非 ASCII 的落地路径（如 `/房间`）按 UTF-8 百分号编码。
+const LOCATION_ENCODE: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`')
+    .add(b'\\');
+
+/// 换 Cookie 的审计：来源、链接名（ADR-0090 第 5 节）。
+#[derive(Serialize)]
+struct ExchangeEvent<'a> {
+    event: &'static str,
+    by: &'static str,
+    plugin: &'a str,
+    guest: &'a str,
+    label: &'a str,
+    source: Option<&'a str>,
+}
 
 /// 路径正好是 `/_wonton/guest/<令牌>` 时给出令牌。
 pub(super) fn token(path: &str) -> Option<&str> {
@@ -103,14 +125,30 @@ pub(super) fn exchange(
         Err(crate::clients::guests::TokenError::Gone) => return invalid(langs, format, false),
     };
     let remaining =
-        std::time::Duration::from_millis(guest.expires_at_ms.saturating_sub(now_ms()).max(1));
-    let location = guest.path.as_deref().unwrap_or("/");
+        std::time::Duration::from_millis(guest.expires_at_ms.saturating_sub(now_ms()).max(1))
+            // `Max-Age` 是整秒，不足一秒会写成 0，浏览器当场把刚设的 Cookie 删掉。
+            .max(std::time::Duration::from_secs(1));
+    let location =
+        utf8_percent_encode(guest.path.as_deref().unwrap_or("/"), LOCATION_ENCODE).to_string();
+    if let Some(audit) = &gateway.audit {
+        audit.record(&ExchangeEvent {
+            event: "guest_link_exchange",
+            by: "guest",
+            plugin: id.as_str(),
+            guest: &guest.id,
+            label: &guest.label,
+            source: req
+                .headers()
+                .get("x-real-ip")
+                .and_then(|value| value.to_str().ok()),
+        });
+    }
     let mut response = Response::new(axum::body::Body::empty());
     *response.status_mut() = StatusCode::FOUND;
     let headers = response.headers_mut();
     headers.insert(
         LOCATION,
-        HeaderValue::from_str(location).unwrap_or_else(|_| HeaderValue::from_static("/")),
+        HeaderValue::from_str(&location).expect("Location 编码后都是可见 ASCII"),
     );
     headers.append(
         hyper::header::SET_COOKIE,

@@ -81,6 +81,7 @@ pub struct Guest {
 #[derive(Debug)]
 pub(crate) struct Authenticated {
     pub id: String,
+    pub label: String,
     pub path: Option<String>,
     pub expires_at_ms: u64,
     /// 置位就是收回或过期。
@@ -269,6 +270,7 @@ impl GuestStore {
             .unwrap_or_else(|| watch::channel(false).1);
         Ok(Authenticated {
             id: record.id.clone(),
+            label: record.label.clone(),
             path: record.path.clone(),
             expires_at_ms: record.expires_at_ms,
             revoke,
