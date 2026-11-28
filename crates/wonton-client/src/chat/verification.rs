@@ -17,6 +17,9 @@ use super::{ChatLink, handoff, invalid, lock, view};
 
 // 秘密 gossip 需要多个同步往返；30 秒覆盖正常交换，又不让缺密钥的设备一直显示恢复中。
 const KEYS_TIMEOUT: Duration = Duration::from_secs(30);
+// 进了“正在确认”、对方却一直不送密钥（会话被换掉、对端同步断着）时最多等这么久，到点自己取消：交接页不能停在
+// “正在确认”上，页自己会重新出码。
+const START_TIMEOUT: Duration = Duration::from_secs(60);
 // 取钥匙期间再要几次缺的秘密：开始取后 1、3、7、15 秒（间隔翻倍），都在 KEYS_TIMEOUT 之内。验证完成时 SDK 要的那一次
 // 可能比对方把本机记成“已验证”早到，被对方直接丢掉（ADR-0046）；正常 0.1–0.3 秒就取齐，用不到第一次。
 const FIRST_ASK: Duration = Duration::from_secs(1);
@@ -63,6 +66,8 @@ struct Flow {
     finished: bool,
     /// 交接中的新设备发出请求后，到这时还没人接就告诉主人（[`handoff::ANSWER_WAIT`]）。
     answer_by: Option<Instant>,
+    /// 交接里进了“正在确认”的截止时刻（[`START_TIMEOUT`]）。
+    start_by: Option<Instant>,
 }
 
 impl ChatLink {
@@ -220,6 +225,8 @@ async fn run(
 ) {
     let mut flow: Option<Flow> = None;
     let mut encryption = Box::pin(session.encryption_states());
+    // 页面上还挂着上一个会话的确认：SAS 不跨会话恢复，这条新任务没有它的对象，也收不到它的事件。
+    let mut orphan = orphan_handoff(&chat, &session);
     loop {
         let deadline = flow.as_ref().and_then(|flow| flow.keys_deadline);
         // 期限过了还在等迟到的秘密时也算“在等”，秘密一齐就当场收尾，不用等下一次状态变化。
@@ -230,6 +237,8 @@ async fn run(
             .and_then(|flow| flow.next_ask)
             .filter(|_| !keys_ready);
         let answer_by = flow.as_ref().and_then(|flow| flow.answer_by);
+        let orphan_at = orphan.as_ref().map(|(_, at)| *at);
+        let start_by = flow.as_ref().and_then(|flow| flow.start_by);
         tokio::select! {
             command = commands.recv() => {
                 let Some(command) = command else { return };
@@ -276,6 +285,21 @@ async fn run(
                 }
                 let Some(link) = current_link(&chat, &session) else { return };
                 handoff::no_answer(&link);
+            }
+            () = sleep_until(start_by) => {
+                if let Some(flow) = flow.as_mut() {
+                    flow.start_by = None;
+                }
+                let Some(link) = current_link(&chat, &session) else { return };
+                cancel_stuck_start(&link, &mut flow).await;
+            }
+            () = sleep_until(orphan_at) => {
+                if let Some((flow_id, _)) = orphan.take() {
+                    let Some(link) = current_link(&chat, &session) else { return };
+                    if flow.is_none() {
+                        end_stuck(&link, &flow_id);
+                    }
+                }
             }
         }
     }
@@ -434,6 +458,7 @@ fn install(link: &ChatLink, flow: &mut Option<Flow>, verification: SelfVerificat
                 late_asked: 0,
                 finished: false,
                 answer_by: waiting.then(|| Instant::now() + handoff::ANSWER_WAIT),
+                start_by: None,
             });
             update(link, flow, snapshot);
         }
@@ -458,6 +483,12 @@ fn update(link: &ChatLink, flow: &mut Option<Flow>, snapshot: VerificationFlow) 
             flow.late = false;
             flow.late_asked = 0;
         }
+        let handoff = link.view.borrow().encryption.key_handoff.is_some();
+        if handoff && *stage == VerificationStage::Starting {
+            flow.start_by.get_or_insert(Instant::now() + START_TIMEOUT);
+        } else {
+            flow.start_by = None;
+        }
     }
     let terminal = !active(stage);
     let finished = flow.as_ref().is_some_and(|f| f.finished);
@@ -474,6 +505,61 @@ fn update(link: &ChatLink, flow: &mut Option<Flow>, snapshot: VerificationFlow) 
         flow.late = false;
         flow.next_ask = None;
     }
+    if ended {
+        handoff::verification_ended(link);
+    }
+}
+
+/// 交接里停在了“正在确认”：对方的密钥一直没来（会话被换掉、对端同步断着）。
+///
+/// 页面上以超时结束，再朝对方发一条取消；发不出去也不影响本地收尾。`flow` 拿掉以后不再跟这条的后续变化，
+/// 迟到的快照不会把结果盖回“正在确认”。
+async fn cancel_stuck_start(link: &ChatLink, flow: &mut Option<Flow>) {
+    let Some(stuck) = flow.as_ref() else { return };
+    if link.view.borrow().encryption.key_handoff.is_none() {
+        return;
+    }
+    let Ok(snapshot) = stuck.verification.flow() else {
+        return;
+    };
+    if snapshot.stage != VerificationStage::Starting {
+        return;
+    }
+    let verification = stuck.verification.clone();
+    *flow = None;
+    end_stuck(link, &snapshot.flow_id);
+    if let Err(error) = verification.cancel().await {
+        tracing::info!(%error, "could not cancel the stuck handoff verification");
+    }
+}
+
+/// 上一个会话留下的、还停在“正在确认”的交接流程。
+fn orphan_handoff(
+    chat: &Weak<ChatLink>,
+    session: &Arc<MatrixSession>,
+) -> Option<(String, Instant)> {
+    let link = current_link(chat, session)?;
+    let view = link.view.borrow();
+    let flow = view.encryption.verification_flow.as_ref()?;
+    let stuck = view.encryption.key_handoff.is_some() && active(&flow.stage);
+    stuck.then(|| (flow.flow_id.clone(), Instant::now() + START_TIMEOUT))
+}
+
+/// 把停在“正在确认”的这一条在页面上按超时结束，交接页跟着收尾（旧设备那边会重新出码）。
+fn end_stuck(link: &ChatLink, flow_id: &str) {
+    let ended = link.view.send_if_modified(|view| {
+        let Some(snapshot) = view.encryption.verification_flow.as_mut() else {
+            return false;
+        };
+        if snapshot.flow_id != flow_id || snapshot.stage != VerificationStage::Starting {
+            return false;
+        }
+        snapshot.stage = VerificationStage::Cancelled {
+            reason: VerificationCancel::Timeout,
+        };
+        super::recovery::refresh(&mut view.encryption);
+        true
+    });
     if ended {
         handoff::verification_ended(link);
     }
