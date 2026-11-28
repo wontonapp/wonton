@@ -58,8 +58,12 @@ chat-action-not-connected = 还没连上家里的服务器
 # $error 是房间 ID 解析器的原始错误。
 chat-invalid-room-id = 房间 ID 不合法：{ $error }
 
-# $room 是原始的房间 ID。
-chat-room-not-subscribed = 要先订阅房间 { $room } 的时间线
+# $conversation 是会话的名字；名字取不到时是「这个会话」「这个私聊」「这个群聊」。
+chat-room-not-subscribed = 要先订阅 { $conversation } 的时间线
+
+chat-conversation-this = 这个会话
+chat-conversation-direct = 这个私聊
+chat-conversation-group = 这个群聊
 
 # 还没选默认 Agent 就问它时显示。
 chat-no-default-agent = 还没有默认 Agent：先在设置里选一个

@@ -28,7 +28,6 @@ use super::onboarding;
 use super::pending;
 use super::previews;
 use super::send;
-use super::target;
 use super::util::{invalid, lock};
 use super::{CardSuccess, ChatChannels, ChatLink, ChatStorage, TimelineKey, TimelineSubscription};
 use crate::home::HomeLink;
@@ -273,7 +272,7 @@ impl ChatLink {
         lock(&self.open)
             .get(key)
             .and_then(|open| open.subscription.upgrade())
-            .ok_or_else(|| target::not_subscribed(key))
+            .ok_or_else(|| self.not_subscribed(key))
     }
 
     /// 测试用：`stop_typing` 收到的目标。

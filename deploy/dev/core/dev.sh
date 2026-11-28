@@ -314,7 +314,8 @@ compose() {
 build_image() {
   local flags=()
   if [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
-    flags+=(--network host --allow network.host)
+    # 经典 builder（DOCKER_BUILDKIT=0）不认 --allow。
+    flags+=(--network host)
     local var
     for var in HTTP_PROXY HTTPS_PROXY http_proxy https_proxy; do
       flags+=(--build-arg "$var=$WONTON_DEV_BUILD_PROXY")
@@ -323,7 +324,15 @@ build_image() {
   if [[ -n "${WONTON_DEV_BUILD_JOBS:-}" ]]; then
     flags+=(--build-arg "CARGO_BUILD_JOBS=$WONTON_DEV_BUILD_JOBS")
   fi
-  docker build ${flags[@]+"${flags[@]}"} "$@"
+  # 基础镜像在本地就先用本地的：buildkit 每次仍会去 registry 解析 tag，代理抖一下整轮构建就白跑。
+  # 构建机的 BuildKit 卡住时退回经典 builder；它没有自动的 TARGETARCH/BUILDARCH，按本机补上。
+  local arch
+  case $(uname -m) in
+    x86_64) arch=amd64 ;;
+    aarch64 | arm64) arch=arm64 ;;
+    *) arch=$(uname -m) ;;
+  esac
+  DOCKER_BUILDKIT=0 docker build --pull=false ${flags[@]+"${flags[@]}"} --build-arg TARGETARCH="$arch" --build-arg BUILDARCH="$arch" "$@"
 }
 
 # 镜像里是哪份代码：当前检出的提交号；构建上下文（Cargo 工作区）里有没提交的改动时加 -dirty。

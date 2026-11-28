@@ -11,6 +11,8 @@ struct ChatListView: View {
     @State private var confirmation: PluginConfirmation?
     /// 这次会话里刚关掉的提醒：关了立刻收横幅；换类提醒由 onChange 重新看存下来的记忆。
     @State private var locallyDismissed = false
+    /// 走查探针只发一次（见 `probeToastIfRequested`）。
+    @State private var probedToast = false
     private let reminderDismissals = BackupReminderDismissals()
 
     var body: some View {
@@ -78,12 +80,25 @@ struct ChatListView: View {
             }
             .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
             .task { await model.confirmations.observe() }
+            .onChange(of: model.viewModel.rooms.first?.roomId, initial: true) { _, _ in probeToastIfRequested() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
             .environment(\.goToInstalledApps, { pages.select(.apps) })
             .onChange(of: model.viewModel.encryption.backupReminder?.text, initial: true) { _, _ in
                 // 换一类提醒（保存↔输入）时重新看关没关过；核心清掉提醒后也落回未关。
                 locallyDismissed = false
             }
+    }
+
+    /// 走查用：带 `-wonton-toast-probe` 启动时，给列表里最后一个房间发一次打字（`SetTyping`）。这时那条时间线
+    /// 还没订阅上，核心回「要先订阅…」的 NotReady，正好是这条提示；不依赖回前台那场竞态，截图稳定。
+    /// 用最后一个：新配对的设备可能直接落在第一个（主 Bot）房间里，那个可能已经订阅上了。
+    private func probeToastIfRequested() {
+        guard !probedToast,
+              ProcessInfo.processInfo.arguments.contains("-wonton-toast-probe"),
+              let room = model.viewModel.rooms.last else { return }
+        probedToast = true
+        let target = TimelineTarget(roomId: room.roomId, threadRoot: nil)
+        _ = model.send(.timeline(action: .setTyping(target: target, typing: true)))
     }
 
     private func select(_ route: ChatRoute) {

@@ -2,11 +2,12 @@
 //!
 //! 同一目标的窗口共享 Matrix 时间线，每份订阅独立保存滚动位置与消息菜单。
 
+use std::borrow::Cow;
 use std::sync::{Arc, Mutex, Weak};
 
 use wonton_l10n::l10n;
 use wonton_matrix::{ChatRoom, OwnedEventId, OwnedRoomId};
-use wonton_protocol::{CoreError, TimelineTarget};
+use wonton_protocol::{BotView, CoreError, RoomRow, TimelineTarget};
 
 use super::menu::Menus;
 use super::{TimelineSubscription, invalid};
@@ -59,14 +60,6 @@ impl TimelineKey {
 
     pub(crate) fn thread(&self) -> Option<&wonton_matrix::EventId> {
         self.thread_root.as_deref()
-    }
-
-    /// 错误信息里怎么写这条时间线。
-    pub(crate) fn describe(&self) -> String {
-        match &self.thread_root {
-            Some(root) => format!("{} / {root}", self.room_id),
-            None => self.room_id.to_string(),
-        }
     }
 }
 
@@ -166,14 +159,61 @@ impl Drop for TimelineOpening {
     }
 }
 
-/// 这条时间线没在订阅着。
-pub(crate) fn not_subscribed(key: &TimelineKey) -> CoreError {
+/// 这条时间线没在订阅着。`conversation` 是给人看的会话叫法，见 [`conversation_label`]。
+pub(crate) fn not_subscribed(conversation: &str) -> CoreError {
     CoreError::NotReady {
         reason: l10n!(
             CATALOG,
             language(),
             "chat-room-not-subscribed",
-            room = key.describe()
+            conversation = conversation
         ),
     }
 }
+
+/// 弹给用户看的会话叫法：房间名。名字取不到时用对方的名字、会话类型，都没有时是“这个会话”。
+///
+/// 房间 ID、用户 ID 和 SDK 的 `Empty Room` 占位名都不算名字。
+pub(crate) fn conversation_label<'a>(
+    rooms: &'a [RoomRow],
+    bots: &'a [BotView],
+    key: &TimelineKey,
+) -> Cow<'a, str> {
+    let Some(row) = rooms.iter().find(|row| row.room_id == key.room_id.as_str()) else {
+        return Cow::Owned(l10n!(CATALOG, language(), "chat-conversation-this"));
+    };
+    if let Some(name) = usable_name(&row.name, &row.room_id) {
+        return Cow::Borrowed(name);
+    }
+    if let Some(name) = row
+        .direct_user_id
+        .as_deref()
+        .and_then(|user| bots.iter().find(|bot| bot.user_id == user))
+        .and_then(|bot| usable_name(&bot.name, &row.room_id))
+    {
+        return Cow::Borrowed(name);
+    }
+    Cow::Owned(l10n!(
+        CATALOG,
+        language(),
+        if row.is_direct {
+            "chat-conversation-direct"
+        } else {
+            "chat-conversation-group"
+        }
+    ))
+}
+
+/// 这个名字能不能拿来指这个会话：空白、原始 ID、SDK 的占位名都不能。
+fn usable_name<'a>(name: &'a str, room_id: &str) -> Option<&'a str> {
+    let name = name.trim();
+    let placeholder = name.is_empty()
+        || name == room_id
+        || name.starts_with('@')
+        || name.starts_with("Empty Room");
+    (!placeholder).then_some(name)
+}
+
+#[cfg(test)]
+#[path = "target_tests.rs"]
+mod target_tests;

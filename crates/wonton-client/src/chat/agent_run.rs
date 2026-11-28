@@ -164,7 +164,7 @@ impl ChatLink {
         // 状态行可能在主对话里，也可能在打开着的旁聊里（ADR-0093）：在哪条时间线里找到就在哪里回答。
         let rooms = lock(&self.open).all_in(&room_id);
         if rooms.is_empty() {
-            return Err(super::target::not_subscribed(&TimelineKey::main(room_id)));
+            return Err(self.not_subscribed(&TimelineKey::main(room_id)));
         }
         let item_id = item_id.to_owned();
         let key = key.to_owned();
