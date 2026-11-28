@@ -60,7 +60,7 @@ final class TabWebViewStore {
 extension PlacedTab {
     var tab: TabRef {
         switch self {
-        case let .page(tab), let .content(tab): tab
+        case let .page(tab), let .content(tab), let .panel(_, tab): tab
         }
     }
 }

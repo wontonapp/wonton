@@ -249,7 +249,7 @@ extension PagesFailure {
         case .transportUnavailable:
             return Problem(
                 title: String(localized: .Problem1.problemTransportTitle),
-                nextStep: String(localized: .Problem2.problemTransportNext),
+                nextStep: String(localized: .Problem0.problemTransportNext),
                 detail: detail
             )
         case .notReady:
