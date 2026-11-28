@@ -30,6 +30,11 @@ pub(super) fn provider_store_id() -> String {
     format!("{}-store", id_of(PROVIDER_SOURCE))
 }
 
+/// 装着的那份的“旧核”替身：同样的提供方，但升级预览里 `upgrade_connects` 为假。
+pub(super) fn old_core_id() -> String {
+    format!("{}-old-core", id_of(PROVIDER_SOURCE))
+}
+
 /// 这个来源的安装预览；假数据里没有别的来源。
 pub(super) fn preview(source: &str) -> Option<InstallPreview> {
     match source {
@@ -37,6 +42,21 @@ pub(super) fn preview(source: &str) -> Option<InstallPreview> {
         PROVIDER_SOURCE => Some(provider()),
         _ => None,
     }
+}
+
+/// 点“更新”时给的预览：提供方拿出一项想用它的应用还要接上的能力。旧核那份不带 `upgrade_connects`，
+/// 升级页只列不勾。别的插件假数据里升不了。
+pub(super) fn upgrade_preview(id: &str) -> Option<InstallPreview> {
+    let old_core = id == old_core_id();
+    if !old_core && id != provider_id() {
+        return None;
+    }
+    let mut preview = provider();
+    preview.id = id.to_owned();
+    preview.version = "1.1.0".into();
+    preview.upgrade_from = Some("1.0.0".into());
+    preview.upgrade_connects = !old_core;
+    Some(preview)
 }
 
 /// 假数据下的插件操作：从商店点“获取”时直接把预览放进确认页，关掉确认页时清空。
@@ -49,6 +69,15 @@ pub(super) fn dispatch(core: &ClientCore, action: &PluginAction) -> Result<bool,
             })?;
             core.views().plugins.send_modify(|view| {
                 view.confirmation = Some(StoreConfirmation::Install { preview });
+            });
+            Ok(true)
+        }
+        PluginAction::UpgradeNow { plugin_id } => {
+            let preview = upgrade_preview(plugin_id).ok_or_else(|| CoreError::NotReady {
+                reason: format!("no fake upgrade preview for {plugin_id}"),
+            })?;
+            core.views().plugins.send_modify(|view| {
+                view.confirmation = Some(StoreConfirmation::Upgrade { preview });
             });
             Ok(true)
         }
@@ -212,6 +241,7 @@ fn base(source: &str, title: &str) -> InstallPreview {
         missing_wants: Vec::new(),
         wanting_plugins: Vec::new(),
         connected_plugins: Vec::new(),
+        upgrade_connects: false,
         upgrade_from: None,
         release_notes: None,
         blocked: None,

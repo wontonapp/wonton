@@ -30,6 +30,7 @@ pub(crate) async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_n
         secrets: Default::default(),
         settings: Default::default(),
         lan_webui: false,
+        connect_plugins: Vec::new(),
     };
     let err = m
         .upgrade_source(&id(), &not_confirmed, &super::langs())

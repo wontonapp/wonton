@@ -398,6 +398,7 @@ async fn network_mode_upgrade_recreates_the_target_and_every_sidecar() {
             &UpgradeSwitches::Requested(Vec::new()),
             false,
             &[],
+            &[],
             Default::default(),
         )
         .await

@@ -46,6 +46,13 @@ pub(super) fn detail(
     if id == &super::ui_fake_install::provider_id() {
         return Some(required_provider(installed));
     }
+    // 同一份提供方的旧核替身：详情页照 qBittorrent 给，只换 ID 和标题。
+    if id == &super::ui_fake_install::old_core_id() {
+        let mut detail = required_provider(installed);
+        detail.id = id.clone();
+        detail.title = "qBittorrent (old core)".into();
+        return Some(detail);
+    }
     // main 侧的“安装失败”详情：别的应用装着且带安装失败时，拿它自己的头面给一份；从空白底子起，
     // 不带 hub 的设备、问题，也不带 hub 的分享状态（那是 Home Hub 的，不是这个插件的）。
     let installed = installed.filter(|plugin| plugin.install_failure.is_some())?;

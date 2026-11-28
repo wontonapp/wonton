@@ -2,9 +2,9 @@
 
 use axum::http::Method;
 use wonton_client::{
-    Action, InstallPreview, InstallProgress, InstallStage, InstalledPlugin, PluginFailure,
-    PluginState, PluginTaskState, PluginsViewModel, StoreConfirmation, StoreUpdateState,
-    UpgradeOffer,
+    Action, CapabilityProviderRef, InstallPreview, InstallProgress, InstallStage, InstalledPlugin,
+    PluginFailure, PluginState, PluginTaskState, PluginsViewModel, StoreConfirmation,
+    StoreUpdateState, UpgradeOffer,
 };
 
 use super::rig::{Canned, Rig, core_error, installed, listing, preview, running};
@@ -144,6 +144,88 @@ async fn one_tap_upgrade_asks_when_permissions_grow_and_clears_on_confirm() {
     assert!(matches!(state, PluginTaskState::Succeeded), "{state:?}");
     let view = rig.app.plugins();
     assert!(view.confirmation.is_none() && view.pending.is_empty());
+}
+
+/// 升级预览里有想用它的应用、核心也收勾选：一键升级停下让主人决定，勾上的进请求（ADR-0053 第 3 条）。
+#[tokio::test]
+async fn one_tap_upgrade_asks_for_wanting_apps_and_sends_the_checks() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![upgradable(PHOTOS)]]);
+    let mut wanted = asking_preview(PHOTOS);
+    wanted.permissions[0].added = false;
+    wanted.upgrade_from = Some("1.0.0".to_owned());
+    wanted.upgrade_connects = true;
+    wanted.wanting_plugins = vec![CapabilityProviderRef {
+        id: "app.music".to_owned(),
+        title: "音乐".to_owned(),
+        high_privilege: true,
+    }];
+    answer_json(&rig, Method::POST, upgrade_preview_path(PHOTOS), &wanted);
+    answer_json(&rig, Method::POST, upgrade_path(PHOTOS), &{});
+    connected_with_store(&rig).await;
+
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradeNow {
+                plugin_id: PHOTOS.to_owned(),
+            },
+        })
+        .unwrap();
+    let view = rig.wait_for(|view| view.confirmation.is_some()).await;
+    let mut taken = taking_confirmation(&view, PHOTOS);
+    assert_eq!(taken.wanting_plugins.len(), 1);
+    assert!(taken.connected_plugins.is_empty(), "默认一个都不接");
+    taken.connected_plugins.push("app.music".to_owned());
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradePlugin {
+                preview: taken,
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
+        })
+        .unwrap();
+    let state = rig
+        .task(PHOTOS, |state| !matches!(state, PluginTaskState::Running))
+        .await;
+    assert!(matches!(state, PluginTaskState::Succeeded), "{state:?}");
+    let sent: serde_json::Value =
+        serde_json::from_str(&rig.core.seen(&Method::POST, &upgrade_path(PHOTOS))[0].body).unwrap();
+    assert_eq!(sent["connect_plugins"], serde_json::json!(["app.music"]));
+}
+
+/// 旧核不带 `upgrade_connects`：预览里虽然列了想用它的应用，也没有开关，静默升级就行。
+#[tokio::test]
+async fn one_tap_upgrade_skips_the_page_when_the_core_cannot_connect() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![upgradable(PHOTOS)]]);
+    let mut wanted = asking_preview(PHOTOS);
+    wanted.permissions[0].added = false;
+    wanted.upgrade_from = Some("1.0.0".to_owned());
+    wanted.wanting_plugins = vec![CapabilityProviderRef {
+        id: "app.music".to_owned(),
+        title: "音乐".to_owned(),
+        high_privilege: true,
+    }];
+    answer_json(&rig, Method::POST, upgrade_preview_path(PHOTOS), &wanted);
+    answer_json(&rig, Method::POST, upgrade_path(PHOTOS), &{});
+    connected_with_store(&rig).await;
+
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradeNow {
+                plugin_id: PHOTOS.to_owned(),
+            },
+        })
+        .unwrap();
+    let state = rig
+        .task(PHOTOS, |state| !matches!(state, PluginTaskState::Running))
+        .await;
+    assert!(matches!(state, PluginTaskState::Succeeded), "{state:?}");
+    assert!(rig.app.plugins().confirmation.is_none());
+    let sent: serde_json::Value =
+        serde_json::from_str(&rig.core.seen(&Method::POST, &upgrade_path(PHOTOS))[0].body).unwrap();
+    assert_eq!(sent["connect_plugins"], serde_json::json!([]));
 }
 
 #[tokio::test]

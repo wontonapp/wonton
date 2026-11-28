@@ -121,6 +121,58 @@ class PluginDependencyTest {
     }
 
     @Test
+    fun upgradePreviewOffersToConnectWantingApps() {
+        openUpgrade("qBittorrent")
+        compose.onNodeWithText(
+            strings.getString(R.string.install_wants_connected_title),
+            useUnmergedTree = true,
+        ).performScrollTo()
+        val switch = compose.onNodeWithContentDescription("Audio Book", useUnmergedTree = true)
+        switch.assertIsOff()
+        switch.performClick()
+        switch.assertIsOn()
+        shot("upgrade-connect")
+    }
+
+    /// 旧核的升级预览列了想用的应用，但收不了勾选：整节不显示（ADR-0053 第 3 条）。
+    @Test
+    fun oldCoreUpgradeHasNoConnectionSection() {
+        openUpgrade("qBittorrent (old core)")
+        assertTrue(
+            compose.onAllNodes(
+                hasText(strings.getString(R.string.install_wants_connected_title)),
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes().isEmpty(),
+        )
+        assertTrue(
+            compose.onAllNodes(hasContentDescription("Audio Book"), useUnmergedTree = true)
+                .fetchSemanticsNodes().isEmpty(),
+        )
+        shot("upgrade-connect-old-core")
+    }
+
+    /// 从应用页的“更新”进升级确认页，等预览的版本行出来。
+    private fun openUpgrade(title: String) {
+        openApps()
+        compose.onNodeWithText(title, useUnmergedTree = true).performScrollTo().performClick()
+        compose.waitUntil(WAIT_MS) {
+            compose.onAllNodes(
+                hasText(strings.getString(R.string.install_action_upgrade)),
+                useUnmergedTree = true,
+            ).fetchSemanticsNodes().isNotEmpty()
+        }
+        val updates = compose.onAllNodes(
+            hasText(strings.getString(R.string.install_action_upgrade)),
+            useUnmergedTree = true,
+        )
+        updates[updates.fetchSemanticsNodes().size - 1].performClick()
+        compose.waitUntil(WAIT_MS) {
+            compose.onAllNodes(hasText("1.0.0 → 1.1.0"), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+    }
+
+    @Test
     fun uninstallProviderShowsDependents() {
         openApps()
         compose.onNodeWithText("qBittorrent", useUnmergedTree = true).performScrollTo().performClick()

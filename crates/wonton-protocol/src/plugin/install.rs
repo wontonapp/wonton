@@ -93,15 +93,18 @@ pub struct InstallPreview {
     /// 缺的 `wants` 能力（ADR-0053）：照装，少点能力。
     #[serde(default)]
     pub missing_wants: Vec<MissingCapability>,
-    /// 装的是提供方、而已装的插件正 `wants` 这个能力时（ADR-0053 的“高权限能力”），列出它们：不自动
-    /// 接上，主人在安装请求里勾选的才接上；没勾的以后在它们的详情页里接。
+    /// 装或升级的是提供方、而已装的插件正 `wants` 这个能力时（ADR-0053 的“高权限能力”），列出它们：不自动
+    /// 接上，主人在请求里勾选的才接上；没勾的以后在它们的详情页里接。
     #[serde(default)]
     pub wanting_plugins: Vec<CapabilityProviderRef>,
-    /// [`InstallPreview::wanting_plugins`] 里主人勾选要接上的插件 ID；默认一个都不接。
-    /// 只用于安装：内层提供方请求的 `connect_plugins` 保持空；升级请求还没有这个字段，确认页在
-    /// `upgrade_from` 有值时只列出来、不给开关。
+    /// [`InstallPreview::wanting_plugins`] 里主人勾选要接上的插件 ID；默认一个都不接，安装和升级请求都带它。
+    /// 只用于最外层：一起装或换版本的内层请求没有这一层。
     #[serde(default)]
     pub connected_plugins: Vec<String>,
+    /// 升级请求也接受 [`UpgradeRequest::connect_plugins`]：升级页对 `wanting_plugins` 给开关。
+    /// 旧核不写这个字段，升级页连节都不显示（旧核收下也不认）。
+    #[serde(default)]
+    pub upgrade_connects: bool,
     /// 升级或换版本时是装着的版本；新装时为空。
     pub upgrade_from: Option<String>,
     /// 这个版本的更新说明。
@@ -204,4 +207,8 @@ pub struct UpgradeRequest {
     /// 同 [`InstallRequest::lan_webui`]。
     #[serde(default)]
     pub lan_webui: bool,
+    /// 要接上的已装使用方插件 ID（ADR-0053 的“高权限能力”）：升的是提供方、预览里列了
+    /// `wanting_plugins`，主人勾选的才接上。旧核忽略这个字段。
+    #[serde(default)]
+    pub connect_plugins: Vec<String>,
 }

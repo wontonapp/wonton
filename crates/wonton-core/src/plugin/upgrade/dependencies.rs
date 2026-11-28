@@ -7,6 +7,7 @@ use super::super::package::PluginPackage;
 use super::{UpgradeSwitches, installed_package};
 
 impl PluginManager {
+    #[allow(clippy::too_many_arguments)] // 几样各管各的来源，和安装侧同一个形状。
     pub(in crate::plugin) async fn upgrade_checked(
         &self,
         package: PluginPackage,
@@ -14,6 +15,7 @@ impl PluginManager {
         switches: &UpgradeSwitches,
         lan_webui: bool,
         devices: &[String],
+        connect_plugins: &[String],
         settings: super::super::settings::Values,
     ) -> Result<(), InstallError> {
         let _changing = self.dependencies.changing.lock().await;
@@ -40,7 +42,8 @@ impl PluginManager {
             let reconciled = async {
                 self.prune_dependency_connections(&manifest, &langs).await?;
                 self.prune_provider_capabilities(&manifest, &langs).await?;
-                self.capabilities_installed(&manifest, &[], true).await
+                self.capabilities_installed(&manifest, connect_plugins, true)
+                    .await
             }
             .await;
             if let Err(cleanup) = reconciled {

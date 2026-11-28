@@ -471,6 +471,7 @@ async fn upgrading_away_the_optional_one_drops_the_mount() {
         &UpgradeSwitches::Requested(Vec::new()),
         false,
         &[],
+        &[],
         Default::default(),
     )
     .await
@@ -497,6 +498,7 @@ async fn a_kept_upgrade_drops_an_option_the_new_version_removed() {
         &UpgradeSwitches::Kept,
         false,
         &[],
+        &[],
         Default::default(),
     )
     .await
@@ -516,6 +518,7 @@ async fn a_kept_upgrade_grants_an_option_the_new_version_requires() {
         &granted,
         &UpgradeSwitches::Kept,
         false,
+        &[],
         &[],
         Default::default(),
     )
@@ -573,6 +576,7 @@ async fn an_old_app_grant_records_only_the_required_permissions() {
         &UpgradeSwitches::Requested(Vec::new()),
         false,
         &[],
+        &[],
         Default::default(),
     )
     .await
@@ -598,6 +602,7 @@ async fn opening_an_option_an_old_app_recorded_as_granted_counts_from_now() {
         &[],
         &UpgradeSwitches::Requested(opened("docker.socket")),
         false,
+        &[],
         &[],
         Default::default(),
     )

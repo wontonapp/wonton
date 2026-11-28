@@ -34,12 +34,19 @@ pub(in crate::client) fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsV
         },
         None,
     ));
-    installed.push(fake_plugin(
+    installed.push(upgradable(fake_plugin(
         "qBittorrent",
         &super::super::ui_fake_install::provider_id(),
         PluginState::Stopped,
         None,
-    ));
+    )));
+    // 同一份提供方的旧核替身：升级页不给连接开关。
+    installed.push(upgradable(fake_plugin(
+        "qBittorrent (old core)",
+        &super::super::ui_fake_install::old_core_id(),
+        PluginState::Stopped,
+        None,
+    )));
     installed.push(fake_plugin(
         super::super::ui_fake_plugin_detail::HUB_TITLE,
         super::super::ui_fake_plugin_detail::HUB_ID,
@@ -77,6 +84,15 @@ pub(in crate::client) fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsV
         warning: Some(wonton_protocol::PortMappingWarning::PublicRelayBandwidth),
     }];
     plugins
+}
+
+fn upgradable(mut plugin: InstalledPlugin) -> InstalledPlugin {
+    plugin.upgrade = Some(wonton_protocol::UpgradeOffer {
+        version: "1.1.0".into(),
+        release_notes: None,
+        permissions_changed: false,
+    });
+    plugin
 }
 
 fn sidebar_app(title: &str, subtitle: Option<&str>, id: &str) -> SidebarApp {

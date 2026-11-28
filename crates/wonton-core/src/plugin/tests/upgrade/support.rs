@@ -98,6 +98,7 @@ pub(crate) async fn upgrade(m: &Arc<PluginManager>) -> Result<(), InstallError> 
         secrets: Default::default(),
         settings: Default::default(),
         lan_webui: false,
+        connect_plugins: Vec::new(),
     };
     m.upgrade_source(&id(), &request, &super::langs()).await
 }

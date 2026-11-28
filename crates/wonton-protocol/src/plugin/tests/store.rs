@@ -115,6 +115,7 @@ fn one_tap_requests_round_trip() {
         secrets: SecretValues::new(),
         settings: SettingValues::new(),
         lan_webui: false,
+        connect_plugins: Vec::new(),
     };
     assert_eq!(round_trip(&upgrade), upgrade);
 }

@@ -190,6 +190,7 @@ impl PluginManager {
             install_providers: Vec::new(),
             wanting_plugins: dependencies.wanting_plugins,
             connected_plugins: Vec::new(),
+            upgrade_connects: false,
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,

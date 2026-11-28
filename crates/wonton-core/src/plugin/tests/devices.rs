@@ -344,6 +344,7 @@ async fn upgrades_keep_the_chosen_devices_and_uninstall_releases_them() {
         &UpgradeSwitches::Requested(Vec::new()),
         false,
         &[],
+        &[],
         Default::default(),
     )
     .await
@@ -503,6 +504,7 @@ async fn missing_selected_disk_prevents_upgrade_without_discarding_other_choices
             &UpgradeSwitches::Requested(Vec::new()),
             false,
             &[],
+            &[],
             Default::default(),
         )
         .await
@@ -560,6 +562,7 @@ async fn nvme_upgrade_refreshes_controller_and_deduplicates_disks_shared_by_serv
             &[Permission::DevicesDisk],
             &UpgradeSwitches::Requested(Vec::new()),
             false,
+            &[],
             &[],
             Default::default(),
         )
@@ -640,6 +643,7 @@ async fn switching_disk_type_changes_only_the_disk_service_and_its_risk() {
             &UpgradeSwitches::Requested(Vec::new()),
             false,
             &nvme,
+            &[],
             Default::default(),
         )
         .await
@@ -664,6 +668,7 @@ async fn switching_disk_type_changes_only_the_disk_service_and_its_risk() {
             &UpgradeSwitches::Requested(Vec::new()),
             false,
             &sata,
+            &[],
             Default::default(),
         )
         .await
