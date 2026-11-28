@@ -1,6 +1,7 @@
 # ADR-0129 在 App 里原生接模型：Agent 插件声明模型接入命令，核心转发，壳用 App 内浏览器登录和取 key；默认 Agent 叫云吞
 
-- 状态：已接受（2026-11-27，主人当天的反馈起草，取舍主人同日定，见“主人已定”）
+- 状态：已接受（2026-11-27，主人当天的反馈起草，取舍主人同日定，见“主人已定”）；2026-11-28 修订第 3 节的设备码、回跳和
+  Android 浏览器（实现时的复审）
 - 取代：[ADR-0034](0034-onboarding-and-help.md) 2026-11-19 修订里“模型一步只剩‘沿用当前模型’，登录和填 key 在上游自己的设置页里做”；
   “接模型”一节打开插件网页的做法
 - 补充：[ADR-0108](0108-hermes-default-kernel.md) 第 4 节（模型仍只走 Hermes 自带的供应商接入，本篇只加 App 侧的入口和插件侧的合同）；
@@ -122,11 +123,13 @@ agent:
 1. 顶上是在用的模型：服务商、模型名、最近一次测试的结果；没选时是一句“还没接模型”和下面的服务商列表。
 2. 服务商列表：插件标了推荐的在前，其余收进“更多”，带搜索；已接好的带勾和账号名或尾号。
 3. 点一个服务商进它的一页，按它的 `auth` 给按钮：
-   - **登录**（`device_login`）：点了先在 App 里打开登录网址，码在网址里带着时自动填好，没带时页面上大字显示码、可一键复制；
-     客户端核心按 `interval` 轮询，`approved` 时自动关掉浏览器、回到这一页，接着进选模型。`denied`、`expired`、`failed`
+   - **登录**（`device_login`）：没有码或码已经拼在登录网址里时，点了直接在 App 里打开登录网址；码要人抄的，先在页面上
+     大字显示码，点“复制并打开登录页”才打开，这时关掉浏览器回来看码不算取消，取消用页面上的按钮。客户端核心按 `interval` 轮询，`approved` 时自动关掉浏览器、回到这一页，接着进选模型。`denied`、`expired`、`failed`
      如实说，给“重新登录”。
-   - **一键登录**（`browser_login`）：iOS 用 `ASWebAuthenticationSession`、Android 用 Auth Tab（不支持时退到 Custom Tabs 加
-     回跳的 intent filter），回跳后壳把网址交回核心，核心调 `login_finish`；用户关掉授权页算取消，不报错。
+   - **一键登录**（`browser_login`）：iOS 用 `ASWebAuthenticationSession`，Android 用 Custom Tabs 加回跳的 intent filter，
+     回跳后壳把网址交回核心，核心调 `login_finish`；用户关掉授权页算取消，不报错。授权网址带 `state`：客户端核心记下发起时的值，
+     回跳的地址不是 `wonton://model-login` 或 `state` 对不上时不交给插件，这次登录按失败作废；插件换凭据前再校验一次，
+     一个会话只换一次（规范里写明）。Android 的 Auth Tab 要另接一套结果回调，等有服务商真走回跳再评估。
    - **填 key**（`api_key`）：一个密码框、一个“去拿 key”按钮（有 `key_url` 时）。按钮在 App 里打开网址，回到 App 后输入框旁边
      是粘贴按钮：iOS 用系统的 `PasteButton`，点它不弹读剪贴板的询问；Android 回到前台时读剪贴板，内容以 `key_prefix` 开头就直接
      提示“粘贴刚复制的 key”。iOS 不主动读剪贴板，主动读会弹询问。保存时插件先试 key：`rejected` 停在这一页说 key 不对，`unverified` 照存并说明“这家没法提前验证”。
@@ -138,7 +141,7 @@ agent:
 | 场景 | iOS | Android |
 | --- | --- | --- |
 | 去拿 key、设备码登录（没有回跳） | `SFSafariViewController`，批准后 App 自己关 | Custom Tabs，批准后 App 把自己的页面拉回前台 |
-| 有回跳的授权（`browser_login`） | `ASWebAuthenticationSession`，回跳地址用 App 的 `wonton://` 链接 | Auth Tab；没有时 Custom Tabs + intent filter |
+| 有回跳的授权（`browser_login`） | `ASWebAuthenticationSession`，回跳地址用 App 的 `wonton://model-login` | Custom Tabs + intent filter |
 
 不用 `ASWebAuthenticationSession` 打开没有回跳的网页：它会弹“要使用某网站登录”的系统询问，对“拿 key”是误导，而且等不到回跳只能
 让用户自己点取消。
