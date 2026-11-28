@@ -15,6 +15,7 @@ mod family_bot_projection_race_tests;
 #[path = "family_bot_projection_tests.rs"]
 mod family_bot_projection_tests;
 
+mod identity_recheck;
 mod private_bots;
 
 pub(super) async fn app_with_contact_facts(h: &Harness) -> (axum::Router, tempfile::TempDir) {
