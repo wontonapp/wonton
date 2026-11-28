@@ -10,6 +10,7 @@ mod api;
 mod loopback;
 #[cfg(test)]
 mod loopback_tests;
+mod play;
 mod player_bridge;
 #[cfg(test)]
 mod player_bridge_tests;

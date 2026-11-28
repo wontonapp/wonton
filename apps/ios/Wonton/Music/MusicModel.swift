@@ -12,7 +12,7 @@ final class MusicPageModel {
     var actionProblem: Problem?
     let pluginId: String
     @ObservationIgnored private let core: ClientCore
-    @ObservationIgnored private let subscription: MusicPageSubscription
+    @ObservationIgnored let subscription: MusicPageSubscription
 
     /// 订阅跟着模型活：页面盖住、露出来不重订（重订就是重取一遍），弹出页面模型释放时取消。
     init(core: ClientCore, pluginId: String, page: MusicPage) {
@@ -57,6 +57,13 @@ final class MusicCovers {
               let image = UIImage(data: bytes) else { return nil }
         images.setObject(image, forKey: key as NSString)
         return image
+    }
+
+    /// 播放中那一项的封面（经核心找提供方取的），按条目记。
+    func artwork(for item: MediaItemRef) -> UIImage? { cached("item/\(item.id)") }
+
+    func store(_ image: UIImage, for item: MediaItemRef) {
+        images.setObject(image, forKey: "item/\(item.id)" as NSString)
     }
 }
 

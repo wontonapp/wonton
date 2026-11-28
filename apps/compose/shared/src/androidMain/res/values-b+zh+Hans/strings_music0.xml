@@ -40,4 +40,10 @@
     <string name="music_problem_unknown_title">音乐库回了一个没见过的错误</string>
     <!-- Problem title: the music library's reply could not be understood. -->
     <string name="music_problem_protocol_title">看不懂音乐库的回复</string>
+    <!-- Title of the full-screen player and accessibility label of the mini player: the song playing now. -->
+    <string name="music_now_playing">正在播放</string>
+    <!-- Player button: go back to the previous song, or to the start of this one. -->
+    <string name="music_previous">上一首</string>
+    <!-- Problem title: playing the song failed for a reason this app does not know. -->
+    <string name="music_playback_failed_title">没能放这首歌</string>
 </resources>

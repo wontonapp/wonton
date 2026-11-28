@@ -51,6 +51,9 @@ internal class MusicPageModel(core: ClientCore, pluginId: String, val page: Musi
 
     fun act(action: MusicPageAction) = subscription.act(action)
 
+    /** 从这一页上的这首歌起放。 */
+    suspend fun play(songId: String) = subscription.play(songId)
+
     fun close() = subscription.cancel()
 }
 
@@ -112,6 +115,9 @@ internal class MusicNavigator(val core: ClientCore, val pluginId: String, privat
 }
 
 internal val LocalMusic = compositionLocalOf<MusicNavigator> { error("MusicNavigator is not provided") }
+
+/** 点了这一页上的一首歌（歌的 id）；为空时歌不能点。 */
+internal val LocalMusicPlay = compositionLocalOf<((String) -> Unit)?> { null }
 
 /** 封面图：按插件、封面、边长缓存在内存里。 */
 internal object MusicCovers {

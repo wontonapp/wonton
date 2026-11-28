@@ -46,4 +46,16 @@
     <string name="music_problem_not_found_title">この項目はミュージックライブラリにありません</string>
     <!-- Problem title: the music library itself returned an error. -->
     <string name="music_problem_upstream_title">ミュージックライブラリでエラーが発生しました</string>
+    <!-- Player button: start or continue playing. -->
+    <string name="music_play">再生</string>
+    <!-- Player button: pause. -->
+    <string name="music_pause">一時停止</string>
+    <!-- Player button: skip to the next song. -->
+    <string name="music_next">次へ</string>
+    <!-- Problem title: the song's format cannot be played on this device. -->
+    <string name="music_playback_unsupported_title">この曲はこのデバイスで再生できません</string>
+    <!-- Next step under the can't-play-on-this-device problem. -->
+    <string name="music_playback_unsupported_next_step">ミュージックライブラリがこのデバイスで再生できる形式に変換できませんでした。</string>
+    <!-- Next step under the playback-failed problem. -->
+    <string name="music_playback_failed_next_step">しばらくしてからもう一度お試しください。</string>
 </resources>

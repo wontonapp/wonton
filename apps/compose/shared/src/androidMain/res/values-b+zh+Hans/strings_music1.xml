@@ -46,4 +46,16 @@
     <string name="music_problem_not_found_title">音乐库里没有这一项了</string>
     <!-- Problem title: the music library itself returned an error. -->
     <string name="music_problem_upstream_title">音乐库出错了</string>
+    <!-- Player button: start or continue playing. -->
+    <string name="music_play">播放</string>
+    <!-- Player button: pause. -->
+    <string name="music_pause">暂停</string>
+    <!-- Player button: skip to the next song. -->
+    <string name="music_next">下一首</string>
+    <!-- Problem title: the song's format cannot be played on this device. -->
+    <string name="music_playback_unsupported_title">这首歌在这台设备上放不了</string>
+    <!-- Next step under the can't-play-on-this-device problem. -->
+    <string name="music_playback_unsupported_next_step">音乐库没能把它转成这台设备能放的格式。</string>
+    <!-- Next step under the playback-failed problem. -->
+    <string name="music_playback_failed_next_step">稍后再试一次。</string>
 </resources>

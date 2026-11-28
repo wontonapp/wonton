@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use wonton_protocol::media::provider::{ItemsPage, ItemsQuery};
 use wonton_protocol::media::{
-    DeviceProfile, MediaError, MediaFailure, MediaFailureCode, MediaTask, PlaybackRequest,
-    PlaybackViewModel, TaskCreate,
+    DeviceProfile, MediaError, MediaFailure, MediaFailureCode, MediaItemRef, MediaTask,
+    PlaybackRequest, PlaybackSessionId, PlaybackViewModel, TaskCreate,
 };
 
 use super::ClientCore;
@@ -73,6 +73,26 @@ impl ClientCore {
         let scope = self.scope();
         let media = scope.media.clone();
         run(&scope, async move { media.create_task(create).await }).await
+    }
+
+    /// 播放器连的地址（本机回环）。只认会话：换了条目还是这个地址，壳看播放视图里的条目变了就重新打开。
+    /// `session` 是播放视图里会话的 `id`。
+    pub async fn playback_stream_url(&self, session: String) -> Result<String, MediaError> {
+        let session: PlaybackSessionId = session
+            .parse()
+            .map_err(|_| failure(MediaFailureCode::Protocol, "session id is not a UUID"))?;
+        let scope = self.scope();
+        let media = scope.media.clone();
+        run(&scope, async move { media.stream_url(session).await }).await
+    }
+
+    /// 条目的封面字节，`width` 是要显示的像素宽；取不到为空，壳画占位。
+    pub async fn media_artwork(&self, item: MediaItemRef, width: u32) -> Option<Vec<u8>> {
+        let scope = self.scope();
+        let media = scope.media.clone();
+        run(&scope, async move { media.artwork(&item, width).await })
+            .await
+            .ok()
     }
 
     /// 按种类翻提供方的条目（`kind` 必填）。

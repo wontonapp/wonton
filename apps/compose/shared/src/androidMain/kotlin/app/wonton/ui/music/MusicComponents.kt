@@ -146,7 +146,9 @@ internal fun MusicAlbumTile(album: AlbumTile, modifier: Modifier = Modifier, sho
 internal fun MusicTrackRow(track: TrackRow, inAlbum: Boolean = false) {
     val colors = WontonTheme.colors
     val subtitle = if (inAlbum) track.artist else listOfNotNull(track.artist, track.album).joinToString(" · ")
-    MusicStarMenuBox(track.starred, MusicTarget.Song(track.id), onClick = null, Modifier.fillMaxWidth()) {
+    val play = LocalMusicPlay.current
+    val onClick = play?.let { { it(track.id) } }
+    MusicStarMenuBox(track.starred, MusicTarget.Song(track.id), onClick, Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target).padding(vertical = WontonTheme.spacing.s4),
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),

@@ -30,9 +30,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import app.wonton.media.MusicPlayback
 import app.wonton.protocol.Action
 import app.wonton.protocol.MusicPage
 import app.wonton.protocol.MusicPageAction
@@ -112,8 +114,17 @@ internal fun MusicLibraryPage(
 
 @Composable
 private fun MusicScreen(entry: MusicEntry, root: MusicRootActions?) {
+    val music = LocalMusic.current
+    val context = LocalContext.current
+    val play: (String) -> Unit = remember(entry) {
+        { songId -> MusicPlayback.play(music.core, context) { entry.model.play(songId) } }
+    }
     WontonScreen(bar = { MusicBar(entry, root) }) {
-        if (entry.page is MusicPage.Search) MusicSearchBody(entry.model) else MusicStateBody(entry.model)
+        CompositionLocalProvider(LocalMusicPlay provides play) {
+            MusicPlayerFrame {
+                if (entry.page is MusicPage.Search) MusicSearchBody(entry.model) else MusicStateBody(entry.model)
+            }
+        }
     }
 }
 

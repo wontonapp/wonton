@@ -17,6 +17,8 @@ final class AppNavigation {
     let push: PushModel
     let onboarding: OnboardingModel
     let shareIn: ShareInModel
+    /// 原生音乐的播放器：只有一个，离开音乐页也接着放。
+    let music: MusicPlayer
     private(set) var presentationRevision = 0
     private(set) var opensSettings = false
     /// 链接要求直接打开“其他服务器”页并滚到“请求”；由 MainView 取走。
@@ -33,6 +35,7 @@ final class AppNavigation {
         push = PushModel(core: chat.core)
         onboarding = OnboardingModel(core: chat.core)
         shareIn = ShareInModel(core: chat.core)
+        music = MusicPlayer(core: chat.core)
         Self.shared = self
     }
 
