@@ -4,20 +4,26 @@
 use std::sync::{Arc, Mutex};
 
 use wonton_client::{
-    Action, BackupReminder, ChatViewModel, DeviceInvite, DeviceVerification, KeyHandoff, KeyNotice,
-    MessageContent, PairingStage, PairingStatus, RecoveryNextStep, RecoveryStatus, SecretString,
-    TabRef, TimelineContent, VerificationCancel, VerificationFlow, VerificationStage,
+    Action, BackupReminder, ChatViewModel, DeviceInvite, DeviceVerification, KeyHandoff,
+    MessageContent, RecoveryNextStep, RecoveryStatus, SecretString, TimelineContent,
+    VerificationFlow, VerificationStage,
 };
-use wonton_matrix::{ChatRoom, OwnedRoomId};
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
-use super::accept_the_bots_encrypted_invite;
-use super::support::{Home, Phone, Timeline, WAIT};
+use super::support::{Home, Phone, WAIT};
 
-const HISTORY: [&str; 2] = ["before adding a device one", "before adding a device two"];
+mod cancel;
+mod cannot_give;
+mod first_phone;
+mod handoff;
+mod pair_again;
+mod timeline;
+mod unanswered;
+
+pub(super) const HISTORY: [&str; 2] = ["before adding a device one", "before adding a device two"];
 
 /// 旧手机：登录、开启备份、抄下恢复密钥。`backup` 为假时服务器拒绝建备份，旧手机已验证但自己没有完整的密钥。
-async fn old_phone(home: &Home, phone: &Phone, backup: bool) {
+pub(super) async fn old_phone(home: &Home, phone: &Phone, backup: bool) {
     home.reject_backup_creation(!backup);
     phone.connect(home);
     phone.signed_in().await;
@@ -54,7 +60,7 @@ async fn old_phone(home: &Home, phone: &Phone, backup: bool) {
 }
 
 /// 旧手机打开“添加设备”，拿到给新手机扫的码。
-async fn invite(phone: &Phone) -> String {
+pub(super) async fn invite(phone: &Phone) -> String {
     phone
         .dispatch(Action::Home {
             action: wonton_protocol::HomeAction::InviteDevice,
@@ -74,25 +80,7 @@ async fn invite(phone: &Phone) -> String {
         .unwrap_or_else(|_| panic!("“添加设备”没拿到码：{:?}", phone.home().invite))
 }
 
-/// 等到一个和 `previous` 不同的新码（上一轮失败后核心应重新出码）。
-async fn renewed_invite(phone: &Phone, previous: &str) -> String {
-    let subscription = phone.subscribe_home();
-    let waiting = async {
-        loop {
-            let view = subscription.next().await.expect("连接订阅提前结束");
-            if let Some(DeviceInvite::Ready { code, .. }) = view.invite
-                && code.expose() != previous
-            {
-                return code.expose().to_owned();
-            }
-        }
-    };
-    tokio::time::timeout(WAIT, waiting)
-        .await
-        .unwrap_or_else(|_| panic!("“添加设备”没换新码：{:?}", phone.home().invite))
-}
-
-fn pair(phone: &Phone, code: String) {
+pub(super) fn pair(phone: &Phone, code: String) {
     phone
         .dispatch(Action::Home {
             action: wonton_protocol::HomeAction::PairHome {
@@ -104,7 +92,7 @@ fn pair(phone: &Phone, code: String) {
 }
 
 /// 记下新手机的每一份聊天快照，事后断言整个过程里没出现过恢复密钥的提示。
-struct Recorder {
+pub(super) struct Recorder {
     views: Arc<Mutex<Vec<ChatViewModel>>>,
     task: tokio::task::JoinHandle<()>,
 }
@@ -144,7 +132,7 @@ impl Recorder {
     }
 }
 
-async fn flow_at(
+pub(super) async fn flow_at(
     phone: &Phone,
     what: &str,
     check: impl Fn(&VerificationFlow, Option<KeyHandoff>) -> bool,
@@ -165,7 +153,7 @@ fn compare(stage: &VerificationStage) -> bool {
 }
 
 /// 两边都出了同一组表情：新手机在等它（交接中），旧手机是自动接上的那一方。
-async fn both_compare(old: &Phone, new: &Phone) -> String {
+pub(super) async fn both_compare(old: &Phone, new: &Phone) -> String {
     let left = flow_at(old, "旧手机自动接上并出表情", |flow, handoff| {
         !flow.started_here && compare(&flow.stage) && handoff == Some(KeyHandoff::Giving)
     })
@@ -181,7 +169,7 @@ async fn both_compare(old: &Phone, new: &Phone) -> String {
     left.flow_id
 }
 
-fn assert_without_keys(phone: &Phone) {
+pub(super) fn assert_without_keys(phone: &Phone) {
     let encryption = phone.chat().encryption;
     assert_eq!(encryption.verification, DeviceVerification::Unverified);
     assert_ne!(encryption.recovery, RecoveryStatus::Enabled);
@@ -195,7 +183,7 @@ fn assert_without_keys(phone: &Phone) {
     );
 }
 
-fn paginate_backwards(phone: &Phone, room_id: &str) {
+pub(super) fn paginate_backwards(phone: &Phone, room_id: &str) {
     phone
         .dispatch(Action::Timeline {
             action: TimelineAction::PaginateBackwards {
@@ -208,7 +196,7 @@ fn paginate_backwards(phone: &Phone, room_id: &str) {
         .unwrap();
 }
 
-fn message_text(content: &TimelineContent) -> Option<&str> {
+pub(super) fn message_text(content: &TimelineContent) -> Option<&str> {
     match content {
         TimelineContent::Message { message } => match &message.body {
             MessageContent::Text { body, .. } => Some(body),
@@ -216,647 +204,4 @@ fn message_text(content: &TimelineContent) -> Option<&str> {
         },
         _ => None,
     }
-}
-
-fn confirm_handoff(old: &Phone, new: &Phone, flow_id: &str) {
-    for phone in [old, new] {
-        phone
-            .dispatch(Action::Chat {
-                action: wonton_protocol::ChatAction::ConfirmVerification {
-                    flow_id: flow_id.to_owned(),
-                },
-            })
-            .unwrap();
-    }
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_paired_phone_gets_the_keys_from_the_add_device_page_without_the_recovery_key() {
-    let old_dir = tempfile::tempdir().unwrap();
-    let new_dir = tempfile::tempdir().unwrap();
-    let old = Phone::open(old_dir.path());
-    let new = Phone::open(new_dir.path());
-    let home = Home::start(&[old.device_id()]).await;
-    old_phone(&home, &old, true).await;
-    let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_encrypted_invite(&home, &old, &bot).await;
-    let bot_room = bot.open_room(&room_id).await.unwrap();
-    let mut old_timeline = Timeline::open(&old, room_id.as_str()).await;
-    for body in HISTORY {
-        bot_room.send_text(body, &[]).await.unwrap();
-        old_timeline
-            .until("旧手机读到加密历史", |item| {
-                message_text(&item.content)
-                    .filter(|text| *text == body)
-                    .map(|_| ())
-            })
-            .await;
-    }
-
-    let code = invite(&old).await;
-    let recorder = Recorder::start(&new);
-    pair(&new, code);
-    new.signed_in().await;
-    let flow_id = both_compare(&old, &new).await;
-    // 解不开的历史在交接期间也不给“输入恢复密钥”的入口。
-    new.wait_chat("新手机同步到私聊", |view| {
-        view.rooms
-            .iter()
-            .any(|room| room.room_id == room_id.as_str())
-            .then_some(())
-    })
-    .await;
-    let mut timeline = Timeline::open(&new, room_id.as_str()).await;
-    paginate_backwards(&new, room_id.as_str());
-    timeline
-        .until("新手机的历史还解不开", |item| {
-            match &item.content {
-                TimelineContent::Message { message }
-                    if message.body == MessageContent::Undecryptable =>
-                {
-                    Some(())
-                }
-                _ => None,
-            }
-        })
-        .await;
-    assert_eq!(timeline.notice, None::<KeyNotice>);
-
-    confirm_handoff(&old, &new, &flow_id);
-    new.wait_chat_within("新手机拿齐密钥、交接结束", WAIT * 2, |view| {
-        (view.encryption.verification == DeviceVerification::Verified
-            && view.encryption.recovery == RecoveryStatus::Enabled
-            && view.encryption.key_handoff.is_none()
-            && view.encryption.backup_reminder.is_none()
-            && view.encryption.recovery_next_step == RecoveryNextStep::None)
-            .then_some(())
-    })
-    .await;
-    flow_at(&old, "旧手机那页显示已加好", |flow, handoff| {
-        flow.flow_id == flow_id
-            && flow.stage == VerificationStage::Done
-            && handoff == Some(KeyHandoff::Giving)
-    })
-    .await;
-    timeline
-        .until_items("配对前的历史在新手机上解开", |items| {
-            HISTORY
-                .iter()
-                .all(|body| {
-                    items
-                        .iter()
-                        .any(|item| message_text(&item.content) == Some(body))
-                })
-                .then_some(())
-        })
-        .await;
-    recorder.assert_never_asked_for_the_recovery_key();
-
-    // 关掉“添加设备”页：旧手机那一方的情况跟着页走。
-    old.dispatch(Action::Home {
-        action: wonton_protocol::HomeAction::CloseDeviceInvite,
-    })
-    .unwrap();
-    assert_eq!(old.home().invite, None);
-    assert_eq!(old.chat().encryption.key_handoff, None);
-
-    // 重启后不再交接：标记随密钥到齐一起清掉。
-    drop(timeline);
-    drop(new);
-    let new = Phone::open(new_dir.path());
-    new.signed_in().await;
-    new.wait_chat("重启后已验证、不再交接", |view| {
-        (view.encryption.verification == DeviceVerification::Verified
-            && view.encryption.recovery == RecoveryStatus::Enabled)
-            .then_some(())
-    })
-    .await;
-    assert_eq!(new.chat().encryption.key_handoff, None);
-}
-
-/// 旧手机没开“添加设备”：请求不自动接受，旧手机上是待接受的请求；新手机 60 秒后告诉主人去另一台设备上打开
-/// “添加设备”。主人打开以后在新手机上“再试一次”，换一个新请求被自动接上；表情对不上就停，新手机仍在交接、没拿到密钥。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn an_unanswered_request_is_reported_after_a_minute_and_a_mismatch_hands_over_nothing() {
-    let old_dir = tempfile::tempdir().unwrap();
-    let new_dir = tempfile::tempdir().unwrap();
-    let old = Phone::open(old_dir.path());
-    let new = Phone::open(new_dir.path());
-    let home = Home::start(&[old.device_id()]).await;
-    old_phone(&home, &old, true).await;
-
-    pair(&new, home.pairing_code());
-    new.signed_in().await;
-    let first = flow_at(&new, "新手机自动发出请求", |flow, handoff| {
-        flow.started_here
-            && flow.stage == VerificationStage::Requested
-            && handoff == Some(KeyHandoff::Receiving { unanswered: false })
-    })
-    .await;
-    flow_at(
-        &old,
-        "旧手机收到待接受的请求",
-        |flow, handoff| {
-            flow.flow_id == first.flow_id
-                && flow.stage == VerificationStage::Incoming
-                && handoff.is_none()
-        },
-    )
-    .await;
-    let view = new
-        .wait_chat_within("一分钟没人接", WAIT * 2, |view| {
-            (view.encryption.key_handoff == Some(KeyHandoff::Receiving { unanswered: true }))
-                .then(|| view.clone())
-        })
-        .await;
-    assert_eq!(
-        view.encryption.backup_reminder,
-        Some(BackupReminder::ContinueOnOtherDevice)
-    );
-    assert_eq!(
-        view.encryption.recovery_next_step,
-        RecoveryNextStep::WaitForOtherDevice
-    );
-    assert_eq!(
-        view.encryption.verification_flow.map(|flow| flow.stage),
-        Some(VerificationStage::Requested)
-    );
-
-    let used = invite(&old).await;
-    new.dispatch(Action::Chat {
-        action: wonton_protocol::ChatAction::StartDeviceVerification,
-    })
-    .unwrap();
-    let flow_id = both_compare(&old, &new).await;
-    assert_ne!(flow_id, first.flow_id);
-    // 两台设备几乎同时点“不一样”：后点的这一台落在已经结束的流程上，也按完成算，不弹“没准备好”。
-    for phone in [&old, &new] {
-        phone
-            .dispatch(Action::Chat {
-                action: wonton_protocol::ChatAction::DenyVerification {
-                    flow_id: flow_id.clone(),
-                },
-            })
-            .unwrap();
-    }
-    for phone in [&old, &new] {
-        flow_at(phone, "两边都以表情不一样结束", |flow, _| {
-            flow.flow_id == flow_id
-                && flow.stage
-                    == VerificationStage::Cancelled {
-                        reason: VerificationCancel::Mismatch,
-                    }
-        })
-        .await;
-        assert_eq!(phone.chat().problem, None, "再点一次不该报错");
-    }
-    assert_without_keys(&new);
-
-    // 码是一次性的，失败这一次已经用掉了：旧手机那页离开“交出密钥”，自动换一个新码给下一台设备。
-    old.wait_chat("旧手机不再替人交密钥", |view| {
-        view.encryption.key_handoff.is_none().then_some(())
-    })
-    .await;
-    let renewed = renewed_invite(&old, &used).await;
-    assert_ne!(renewed, used);
-
-    // 重开“添加设备”页：上一轮的确认结果不留在顶上。
-    old.dispatch(Action::Home {
-        action: wonton_protocol::HomeAction::CloseDeviceInvite,
-    })
-    .unwrap();
-    old.dispatch(Action::Home {
-        action: wonton_protocol::HomeAction::InviteDevice,
-    })
-    .unwrap();
-    assert_eq!(old.chat().encryption.verification_flow, None);
-}
-
-/// 旧手机自己没有完整的密钥：开着“添加设备”也不自动接上，页上说明；新手机仍在等，不转去恢复密钥。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn an_old_phone_without_complete_keys_does_not_accept() {
-    let old_dir = tempfile::tempdir().unwrap();
-    let new_dir = tempfile::tempdir().unwrap();
-    let old = Phone::open(old_dir.path());
-    let new = Phone::open(new_dir.path());
-    let home = Home::start(&[old.device_id()]).await;
-    old_phone(&home, &old, false).await;
-
-    let code = invite(&old).await;
-    pair(&new, code);
-    new.signed_in().await;
-    let request = flow_at(&old, "旧手机不自动接上", |flow, handoff| {
-        !flow.started_here
-            && flow.stage == VerificationStage::Incoming
-            && handoff == Some(KeyHandoff::CannotGive)
-    })
-    .await;
-    flow_at(&new, "新手机还在等", |flow, _| {
-        flow.flow_id == request.flow_id && flow.stage == VerificationStage::Requested
-    })
-    .await;
-    assert_without_keys(&new);
-}
-
-/// 取消在哪边点的都如实报出来，新手机仍在交接；“手边没有别的设备”才结束交接、回到恢复密钥，重启后也不再交接。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn cancelling_keeps_the_handoff_until_the_owner_has_no_other_device() {
-    let old_dir = tempfile::tempdir().unwrap();
-    let new_dir = tempfile::tempdir().unwrap();
-    let old = Phone::open(old_dir.path());
-    let new = Phone::open(new_dir.path());
-    let home = Home::start(&[old.device_id()]).await;
-    old_phone(&home, &old, true).await;
-
-    let code = invite(&old).await;
-    pair(&new, code);
-    new.signed_in().await;
-    let flow_id = both_compare(&old, &new).await;
-    old.dispatch(Action::Chat {
-        action: wonton_protocol::ChatAction::CancelDeviceVerification {
-            flow_id: flow_id.clone(),
-        },
-    })
-    .unwrap();
-    flow_at(&new, "新手机看到对方取消", |flow, _| {
-        flow.flow_id == flow_id
-            && flow.stage
-                == VerificationStage::Cancelled {
-                    reason: VerificationCancel::ByOther,
-                }
-    })
-    .await;
-    assert_without_keys(&new);
-
-    new.dispatch(Action::Chat {
-        action: wonton_protocol::ChatAction::SkipKeyHandoff,
-    })
-    .unwrap();
-    new.wait_chat("交接结束，回到恢复密钥", |view| {
-        (view.encryption.key_handoff.is_none()
-            && view.encryption.verification_flow.is_none()
-            && view.encryption.backup_reminder == Some(BackupReminder::EnterRecoveryKey)
-            && matches!(
-                view.encryption.recovery_next_step,
-                RecoveryNextStep::EnterKey | RecoveryNextStep::ChooseDeviceOrKey
-            ))
-        .then_some(())
-    })
-    .await;
-    assert!(matches!(
-        new.dispatch(Action::Chat {
-            action: wonton_protocol::ChatAction::SkipKeyHandoff
-        }),
-        Err(wonton_client::CoreError::InvalidInput { .. })
-    ));
-
-    drop(new);
-    let new = Phone::open(new_dir.path());
-    new.signed_in().await;
-    new.wait_chat("重启后照旧提示恢复密钥", |view| {
-        (view.encryption.backup_reminder == Some(BackupReminder::EnterRecoveryKey)).then_some(())
-    })
-    .await;
-    assert_eq!(new.chat().encryption.key_handoff, None);
-}
-
-/// 账号里只有这一台设备：不交接，从没出现过交接页。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn the_first_phone_of_an_account_skips_the_key_handoff() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[phone.device_id()]).await;
-    let recorder = Recorder::start(&phone);
-    pair(&phone, home.pairing_code());
-    phone.signed_in().await;
-    phone
-        .wait_chat("第一台手机自动开启备份、没有交接", |view| {
-            (view.encryption.verification == DeviceVerification::Verified
-                && view.encryption.recovery == RecoveryStatus::Enabled
-                && view.encryption.key_handoff.is_none())
-            .then_some(())
-        })
-        .await;
-    recorder.task.abort();
-    let views = recorder.views.lock().unwrap();
-    assert!(
-        views.iter().all(|view| !matches!(
-            view.encryption.key_handoff,
-            Some(KeyHandoff::Receiving { .. })
-        )),
-        "第一台手机不该出现交接页"
-    );
-}
-
-/// 一批增量里带的条目 ID：新消息到了没有数它。
-fn diff_items(diff: &wonton_client::TimelineDiff) -> &[wonton_client::TimelineItem] {
-    match diff {
-        wonton_client::TimelineDiff::Append { items }
-        | wonton_client::TimelineDiff::Reset { items } => items,
-        wonton_client::TimelineDiff::PushFront { item }
-        | wonton_client::TimelineDiff::PushBack { item }
-        | wonton_client::TimelineDiff::Insert { item, .. }
-        | wonton_client::TimelineDiff::Set { item, .. } => std::slice::from_ref(item),
-        _ => &[],
-    }
-}
-
-/// 排到订阅安静下来：300 ms 没有新批次算安静，最多等 3 秒。返回用了多久、共收到几批、有没有等到安静。
-/// 订阅空转时一秒几千批，永远等不到这 300 ms。
-async fn until_quiet(
-    subscription: &wonton_client::TimelineSubscription,
-) -> (std::time::Duration, usize, bool) {
-    use std::time::{Duration, Instant};
-    let started = Instant::now();
-    let mut batches = 0usize;
-    while started.elapsed() < Duration::from_secs(3) {
-        match tokio::time::timeout(Duration::from_millis(300), subscription.next()).await {
-            Ok(Some(_)) => batches += 1,
-            Ok(None) => return (started.elapsed(), batches, false),
-            Err(_) => return (started.elapsed(), batches, true),
-        }
-    }
-    (started.elapsed(), batches, false)
-}
-
-/// 场景：老手机有加密历史，新手机配了对但没拿到钥匙，历史在房间里全解不开。返回假核心（确认卡片往它塞）、
-/// Bot、房间和新手机的时间线订阅。数据目录直接留着，测试结束时一起没。
-async fn phone_with_undecryptable_history() -> (
-    (Phone, Phone),
-    Home,
-    ChatRoom,
-    OwnedRoomId,
-    Arc<wonton_client::TimelineSubscription>,
-) {
-    let old_dir = Box::leak(Box::new(tempfile::tempdir().unwrap()));
-    let new_dir = Box::leak(Box::new(tempfile::tempdir().unwrap()));
-    let old = Phone::open(old_dir.path());
-    let new = Phone::open(new_dir.path());
-    let home = Home::start(&[old.device_id()]).await;
-    old_phone(&home, &old, true).await;
-    let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_encrypted_invite(&home, &old, &bot).await;
-    let bot_room = bot.open_room(&room_id).await.unwrap();
-    let mut old_timeline = Timeline::open(&old, room_id.as_str()).await;
-    for body in HISTORY {
-        bot_room.send_text(body, &[]).await.unwrap();
-        old_timeline
-            .until("旧手机读到加密历史", |item| {
-                message_text(&item.content)
-                    .filter(|text| *text == body)
-                    .map(|_| ())
-            })
-            .await;
-    }
-    let code = invite(&old).await;
-    pair(&new, code);
-    new.signed_in().await;
-    new.wait_chat("新手机同步到私聊", |view| {
-        view.rooms
-            .iter()
-            .any(|room| room.room_id == room_id.as_str())
-            .then_some(())
-    })
-    .await;
-    new.wait_ready().await;
-    let subscription = new
-        .subscribe_timeline(TimelineTarget {
-            room_id: room_id.as_str().to_owned(),
-            thread_root: None,
-        })
-        .await
-        .unwrap();
-    paginate_backwards(&new, room_id.as_str());
-    ((old, new), home, bot_room, room_id, subscription)
-}
-
-/// 行为：新手机没拿到密钥、房间里是解不开的历史时，时间线空闲下来（一秒几千批会把壳的主线程占死，输入都排不上），
-/// 新消息到了照样送到，解不开的条目照实显示为解不开。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn an_undecryptable_timeline_settles_instead_of_flooding_the_shell() {
-    use std::collections::HashSet;
-    use std::time::{Duration, Instant};
-    // 两台手机留着：核心一放，订阅就跟着没了。
-    let (_phones, home, bot_room, room_id, subscription) = phone_with_undecryptable_history().await;
-
-    // 解不开的历史照实送到：是解不开的条目，不是空白或假的正文。
-    let mut seen: HashSet<String> = HashSet::new();
-    let mut undecryptable = false;
-    let deadline = Instant::now() + WAIT;
-    while Instant::now() < deadline {
-        let Ok(Some(update)) =
-            tokio::time::timeout(Duration::from_millis(200), subscription.next()).await
-        else {
-            continue;
-        };
-        for item in update.diffs.iter().flat_map(diff_items) {
-            seen.insert(item.id.clone());
-            if let TimelineContent::Message { message } = &item.content
-                && message.body == MessageContent::Undecryptable
-            {
-                undecryptable = true;
-            }
-        }
-        if undecryptable {
-            break;
-        }
-    }
-    assert!(undecryptable, "解不开的历史没有送到");
-
-    let (took, batches, quiet) = until_quiet(&subscription).await;
-    println!("解不开的历史：排空用了 {took:?}，共 {batches} 批");
-    assert!(quiet, "解不开的历史送来后 3 秒都没安静（{batches} 批）");
-    assert!(batches <= 100, "解不开的历史送来后还发了 {batches} 批");
-
-    // 确认卡片到了（这个房间的）：卡片的变化也是一次，之后同样该安静。等卡片用每轮新克隆的接收者去等
-    // `changed()` 的话，这里会一直有货。
-    let expires_at_ms = (std::time::SystemTime::now() + Duration::from_secs(600))
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
-    home.set_confirmations(
-        vec![serde_json::json!({
-            "id": "after-the-history",
-            "state": {"type": "pending"},
-            "title": "还要确认",
-            "lines": [],
-            "choices": [{"answer": "accept", "label": "好"}],
-            "expires_at_ms": expires_at_ms,
-            "origin": {"room_id": room_id.as_str()},
-        })],
-        vec![],
-    );
-    let (took, batches, quiet) = until_quiet(&subscription).await;
-    println!("确认卡片：排空用了 {took:?}，共 {batches} 批");
-    assert!(quiet, "确认卡片到了以后 3 秒都没安静（{batches} 批）");
-    assert!(batches <= 100, "确认卡片到了以后还发了 {batches} 批");
-
-    // 空闲不是不动了：新消息到了照样送到。
-    bot_room
-        .send_text("after the undecryptable history", &[])
-        .await
-        .unwrap();
-    let deadline = Instant::now() + WAIT;
-    let mut arrived = false;
-    while Instant::now() < deadline && !arrived {
-        let Ok(Some(update)) =
-            tokio::time::timeout(Duration::from_millis(200), subscription.next()).await
-        else {
-            continue;
-        };
-        arrived = update
-            .diffs
-            .iter()
-            .flat_map(diff_items)
-            .any(|item| !seen.contains(&item.id));
-    }
-    assert!(arrived, "新消息没有送到");
-}
-
-/// 让服务端拖住下一次配对的回应：同步换槽要发生在回话和登录之前。返回配对前的登录次数。
-async fn pair_again_while_server_stalls(new: &Phone, home: &Home) -> usize {
-    let old_slot = new
-        .servers()
-        .servers
-        .iter()
-        .find(|server| server.current)
-        .unwrap()
-        .id
-        .clone();
-    let tokens = home.login_tokens();
-    new.dispatch(Action::Pages {
-        action: wonton_protocol::PageAction::OpenPage {
-            tab: TabRef::Url {
-                url: "https://example.test/".to_owned(),
-            },
-        },
-    })
-    .unwrap();
-    assert_eq!(new.pages().stack.len(), 1);
-
-    // 服务端拖住回应：同步成功已经换了槽，登录和交接都还没开始。
-    home.slow_next_pairing();
-    new.dispatch(Action::Home {
-        action: wonton_protocol::HomeAction::PairHome {
-            code: SecretString::new(home.pairing_code()),
-            device_name: "new-phone".to_owned(),
-        },
-    })
-    .unwrap();
-    let subscription = new.subscribe_home();
-    let waiting = async {
-        loop {
-            let view = subscription.next().await.expect("配对状态订阅提前结束");
-            if matches!(
-                view.pairing,
-                Some(PairingStatus::InProgress {
-                    stage: PairingStage::Confirming,
-                    ..
-                })
-            ) {
-                return;
-            }
-        }
-    };
-    tokio::time::timeout(WAIT, waiting)
-        .await
-        .unwrap_or_else(|_| panic!("没等到服务端确认：{:?}", new.home().pairing));
-    assert!(new.chat().encryption.key_handoff.is_none());
-    // 槽位在服务端回话前就换了：当前已经是不配对的新槽位，旧的那台不再挂着。
-    let servers = new.servers();
-    assert_eq!(servers.servers.len(), 1);
-    assert_eq!(servers.servers[0].id, old_slot);
-    assert!(!servers.servers[0].current);
-    assert!(servers.adding);
-    assert!(new.home().server_id.is_none());
-    assert_eq!(home.login_tokens(), tokens, "还没登录");
-    assert!(new.pages().stack.is_empty(), "原来开着的那一页随旧槽位没了");
-
-    tokens
-}
-
-/// 走查的第 5 步：已经配好、交接也已经跳过，进程被杀后再扫一次自己的家。`PairHome` 同步成功就把槽位换掉，
-/// 服务端回话和登录都还在后台；登录成功会重新点起交接页，主人再点“跳过”时那一次点在活动中的交接上，
-/// 只能原地结束，不能再把壳切回恢复密钥。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn pairing_again_arms_the_handoff_and_skipping_afterwards_ends_it() {
-    let old_dir = tempfile::tempdir().unwrap();
-    let new_dir = tempfile::tempdir().unwrap();
-    let old = Phone::open(old_dir.path());
-    let new = Phone::open(new_dir.path());
-    let home = Home::start(&[old.device_id()]).await;
-    old_phone(&home, &old, true).await;
-    pair(&new, home.pairing_code());
-    new.signed_in().await;
-    new.wait_chat("第一次交接出现", |view| {
-        matches!(
-            view.encryption.key_handoff,
-            Some(KeyHandoff::Receiving { .. })
-        )
-        .then_some(())
-    })
-    .await;
-    new.dispatch(Action::Chat {
-        action: wonton_protocol::ChatAction::SkipKeyHandoff,
-    })
-    .unwrap();
-    new.wait_chat("第一次交接跳过", |view| {
-        (view.encryption.key_handoff.is_none()
-            && view.encryption.backup_reminder == Some(BackupReminder::EnterRecoveryKey))
-        .then_some(())
-    })
-    .await;
-
-    let tokens = pair_again_while_server_stalls(&new, &home).await;
-
-    // 服务端回话、登录成功：交接页重新点起来。
-    new.wait_chat("配上并重新登录后再次出现交接", |view| {
-        matches!(
-            view.encryption.key_handoff,
-            Some(KeyHandoff::Receiving { .. })
-        )
-        .then_some(())
-    })
-    .await;
-    assert!(home.login_tokens() > tokens);
-    // 配上后同一台的旧槽位被删掉，只剩登录成功的这一个。
-    let servers = new.servers();
-    assert_eq!(servers.servers.len(), 1);
-    assert!(servers.servers[0].current);
-    let marker = new_dir
-        .path()
-        .join("servers")
-        .join(&servers.servers[0].id)
-        .join("matrix")
-        .join("key-handoff");
-    assert!(marker.is_file(), "新槽的交接标记在");
-
-    // 交接正进行着就跳过：接管这一次，标记清掉，不再回到恢复密钥。
-    new.dispatch(Action::Chat {
-        action: wonton_protocol::ChatAction::SkipKeyHandoff,
-    })
-    .unwrap();
-    assert!(!marker.exists(), "跳过就地清掉标记");
-    new.wait_chat("跳过后停住", |view| {
-        (view.encryption.key_handoff.is_none()
-            && view.encryption.verification_flow.is_none()
-            && view.encryption.backup_reminder == Some(BackupReminder::EnterRecoveryKey))
-        .then_some(())
-    })
-    .await;
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    assert!(
-        new.chat().encryption.key_handoff.is_none(),
-        "不会再点起一次：{:?}",
-        new.chat().encryption.key_handoff
-    );
-    assert!(!marker.exists());
-    assert_eq!(home.login_tokens(), tokens + 1, "也没再登录一次");
 }
