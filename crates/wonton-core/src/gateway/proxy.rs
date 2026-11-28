@@ -77,8 +77,11 @@ pub(crate) enum Cancel {
         entry: watch::Receiver<bool>,
         password: watch::Receiver<bool>,
     },
-    /// 访客链接被收回或过期：按入口页面的“链接已失效”回。
-    Guest(watch::Receiver<bool>),
+    /// 访客链接被收回或过期、入口开关关闭：两个原因都断，页面各回各的 403。
+    Guest {
+        entry: watch::Receiver<bool>,
+        guest: watch::Receiver<bool>,
+    },
 }
 
 impl Cancel {
@@ -92,7 +95,12 @@ impl Cancel {
                     _ = wait_for_revoke(password) => {},
                 }
             }
-            Self::Guest(guest) => wait_for_revoke(guest).await,
+            Self::Guest { entry, guest } => {
+                tokio::select! {
+                    _ = wait_for_revoke(entry) => {},
+                    _ = wait_for_revoke(guest) => {},
+                }
+            }
         }
     }
 }
@@ -314,10 +322,17 @@ fn revoked_response(cancel: &Cancel, langs: &Languages, format: pages::Format) -
             langs,
             format,
         ),
-        Cancel::Guest(_) => pages::error(
+        Cancel::Guest { guest, .. } if *guest.borrow() => pages::error(
             StatusCode::FORBIDDEN,
             "entry_closed",
             &l10n::text(langs, "gateway-guest-invalid", &[]),
+            langs,
+            format,
+        ),
+        Cancel::Guest { .. } => pages::error(
+            StatusCode::FORBIDDEN,
+            "entry_closed",
+            &l10n::text(langs, "gateway-entry-closed", &[]),
             langs,
             format,
         ),

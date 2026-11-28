@@ -543,6 +543,20 @@ async fn revoked_link_is_a_403_invalid_page() {
 }
 
 #[tokio::test]
+async fn closing_the_entry_drops_the_guest_websocket() {
+    let home = Home::start().await;
+    let id = home.register_guests(GUEST_ONLY, "guestapp", true, false);
+    let (_, token) = home.guest(&id, None).await;
+    let host = home.lan_host("guestapp");
+    let mut stream = connect_upgraded(&home, &host, &Home::cookie_header(&token)).await;
+    let switched = home.switch(id.as_str(), "lan", false).await;
+    assert_eq!(switched.status, StatusCode::OK, "{}", switched.text());
+    let mut closed = Vec::new();
+    let read = tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut closed)).await;
+    assert!(read.is_ok(), "关开关后访客连接也应断开");
+}
+
+#[tokio::test]
 async fn guest_cookie_beats_entry_auth_only_inside_scope() {
     let home = Home::start().await;
     let id = home.register_guests(GUEST_AND_HTTP, "guesthttp", true, false);

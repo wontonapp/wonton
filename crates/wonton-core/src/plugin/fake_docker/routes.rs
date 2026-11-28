@@ -93,8 +93,13 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
     if *method == Method::GET && path == "/events" {
         return events_response(fake.events.subscribe());
     }
-    let call = format!("{method} {path}");
     let query = uri.query().unwrap_or_default();
+    // 写操作带上 query：容器名这类参数只在 query 里，顺序断言要靠它。
+    let call = if query.is_empty() {
+        format!("{method} {path}")
+    } else {
+        format!("{method} {path}?{query}")
+    };
     let mut docker = fake.lock();
     if *method != Method::GET {
         docker.writes.push(call.clone());
