@@ -27,7 +27,7 @@
 - 主界面的根是两个平级的页：**Agent**（默认 Agent 的会话列表）和**应用**，开口是选中的那一页。
 - Agent 页是默认 Agent 的会话列表：主 Agent 一行、分身各一行（[ADR-0122](0122-primary-agent-and-profiles.md)），照最近活动排；
   一行显示头像、名字、最后一条和未读，点开进那一间会话。列表下面是给默认 Agent 的输入框：左边“+”、占位字“问 <名字> 点什么”、
-  右边麦克风，发送走已有的 [`ChatAction::AskAgent`](../../crates/wonton-protocol/src/action_domains.rs)，进主对话。默认 Agent
+  右边麦克风，发送走已有的 [`ChatAction::AskAgent`](../../crates/wonton-protocol/src/action_domains/mod.rs)，进主对话。默认 Agent
   没装或没选时输入框照常在，点了在上方如实说“还没有主 Agent”，给去设置的入口。语音结果落回输入框，人看过再发，不确定时
   原文和转换结果都亮出来。
 - 主界面顶部：左上开侧边栏（[ADR-0095](0095-no-tab-bar.md) 的同一个），右上是一枚收件箱铃铛（带未处理数），见“收件箱铃铛”；侧边栏里同一入口在“新聊天”下面。
