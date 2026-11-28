@@ -112,6 +112,16 @@ impl ChatLink {
             }
             Target::External => (String::new(), None),
         };
+        // 等锁的时候同一次连接的另一个触发已经把登录做完了（隧道刚通时代理一到、配好对、回到前台都会来这里，
+        // 它们几乎同时进）：照样用这个代理的会话，不再清一次。刚发出的设备确认请求是跟着会话走的，SAS 不跨会话恢复，
+        // 清掉就只能靠对端超时，而新会话还排在旧同步后面等存储锁。
+        if let Some(proxy) = &proxy
+            && lock(&self.signing_proxy).as_ref() == Some(proxy)
+            && !matches!(self.view.borrow().account, ChatAccount::Failed { .. })
+        {
+            tracing::info!(server = %server_id, "same proxy is already signing in, keeping the session");
+            return;
+        }
         self.retire_active(&mut active).await;
         let Some(proxy) = self.proxy_after_forget(&target, &server_id, proxy) else {
             return;
