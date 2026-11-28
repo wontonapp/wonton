@@ -46,6 +46,7 @@ use panel_view::*;
 mod reload;
 use reload::*;
 mod actions;
+mod add_url;
 mod bot;
 mod content;
 mod panel;
@@ -264,6 +265,7 @@ impl PagesLink {
                 bot,
                 allowed,
             } => self.set_bot_consent(plugin_id, bot, allowed),
+            PageAction::AddMyAppUrl { url, title } => self.add_my_app_url(&url, title),
             PageAction::RetryMyAppSync => {
                 let weak = lock(&self.weak).clone();
                 if let Some(link) = weak.upgrade() {

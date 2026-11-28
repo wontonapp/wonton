@@ -456,6 +456,7 @@ impl ClientCore {
             | PageAction::MoveMyApp { .. }
             | PageAction::SetAutoAddApps { .. }
             | PageAction::RetryMyAppSync
+            | PageAction::AddMyAppUrl { .. }
             | PageAction::AddPanelPage { .. }
             | PageAction::RemovePanelPage { .. }
             | PageAction::MovePanelPage { .. }

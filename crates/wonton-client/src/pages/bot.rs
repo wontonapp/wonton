@@ -214,6 +214,15 @@ pub(super) fn classify_pin(state: &PagesState, parsed: &Url) -> Option<(TabRef, 
     })
 }
 
+/// 这个网址和某个已核实的 Bot 网页同源。
+pub(super) fn owns_url(state: &PagesState, url: &Url) -> bool {
+    state.bots.iter().any(|view| {
+        ready_page(state, &view.bot)
+            .and_then(|page| Url::parse(&page.url).ok())
+            .is_some_and(|base| base.origin() == url.origin())
+    })
+}
+
 fn relative_path(url: &Url) -> String {
     let mut path = url.path().to_owned();
     if let Some(query) = url.query() {

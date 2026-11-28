@@ -246,6 +246,30 @@ extension PagesFailure {
                 nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: detail
             )
+        case .transportUnavailable:
+            return Problem(
+                title: String(localized: .Problem1.problemTransportTitle),
+                nextStep: String(localized: .Problem2.problemTransportNext),
+                detail: detail
+            )
+        case .notReady:
+            return Problem(
+                title: String(localized: .Problem0.problemNotReadyTitle),
+                nextStep: String(localized: .Problem2.problemPagesInvalidNextStep),
+                detail: detail
+            )
+        case .invalidInput:
+            return Problem(
+                title: String(localized: .Problem2.problemInvalidInputTitle),
+                nextStep: String(localized: .Problem3.problemInvalidInputNextStep),
+                detail: detail
+            )
+        case .unauthorized, .forbidden, .invalidResponse, .protocol, .upstream, .notFound:
+            return Problem(
+                title: String(localized: .Problem1.problemGenericTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
+                detail: detail
+            )
         }
     }
 }
