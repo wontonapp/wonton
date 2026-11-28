@@ -48,6 +48,7 @@ mod lan;
 mod limits;
 mod media;
 mod media_sources;
+mod media_video;
 mod music;
 mod my_avatar;
 mod page_color;
@@ -86,6 +87,8 @@ mod ui_fake_settings;
 mod ui_fake_store;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_timeline;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_video;
 mod views;
 mod widget;
 
