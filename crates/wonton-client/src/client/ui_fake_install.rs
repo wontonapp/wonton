@@ -1,4 +1,4 @@
-//! 假数据入口里的安装预览和卸载预览：一个要 `torrent_client` 的动画自动下载器，提供方是 qBittorrent。
+//! 假数据入口里的安装预览和卸载预览：一个要 `download_client` 的动画自动下载器，提供方是 qBittorrent。
 //! 界面测试看确认页怎么列提供方、它的权限和密钥，以及卸载提供方时的拦截；没有后端，确认后不会真的装。
 //!
 //! 卸载被挡时列出依赖方，卸载使用方时不列（它没人再用）。
@@ -139,8 +139,8 @@ fn consumer() -> InstallPreview {
     preview.trust = PluginTrust::Community;
     preview.summary = "Follows the season and grabs new episodes".into();
     preview.missing_requires = vec![wonton_protocol::MissingCapability {
-        capability: "torrent_client".into(),
-        third_party: false,
+        capability: "download_client".into(),
+        third_party: true,
         providers: vec![candidate()],
     }];
     preview.missing_wants = vec![wonton_protocol::MissingCapability {
@@ -149,8 +149,8 @@ fn consumer() -> InstallPreview {
         providers: Vec::new(),
     }];
     preview.install_providers = vec![InstallProvider {
-        capability: "torrent_client".into(),
-        third_party: false,
+        capability: "download_client".into(),
+        third_party: true,
         providers: vec![candidate()],
         selected: Some(SelectedProvider {
             provider: candidate(),

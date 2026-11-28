@@ -421,3 +421,71 @@ async fn the_same_provider_twice_writes_one_connection_line() {
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert!(!installed(&h, LATER_PROVIDER));
 }
+
+fn wanting_provider_compose() -> String {
+    format!(
+        "services:\n  web:\n    image: nginx\n    expose: [8080]\n    volumes:\n      \
+         - /var/run/docker.sock:/var/run/docker.sock\nx-wonton:\n  spec: '{}'\n  id: {PROVIDER}\n  \
+         version: 1.0.0\n  kind: app\n  title: {{zh: 搜索, en: Search}}\n  \
+         description: {{zh: 搜索, en: Search}}\n  permissions: [docker.socket]\n  provides:\n    \
+         x-acme.search: {{service: web, port: 8080}}\n    \
+         torrent_client: {{service: web, port: 8080}}\n",
+        spec()
+    )
+}
+
+/// 只要能力的插件（`wants`，不 `requires`）。
+fn wanting_consumer_compose() -> String {
+    format!(
+        "services:\n  web:\n    image: nginx\nx-wonton:\n  spec: '{}'\n  id: {CONSUMER}\n  \
+         version: 1.0.0\n  kind: app\n  title: {{zh: 用搜索的, en: Consumer}}\n  \
+         description: {{zh: 用搜索的, en: Consumer}}\n  permissions: []\n  \
+         wants: [torrent_client, x-acme.search]\n",
+        spec()
+    )
+}
+
+/// 高权限的提供方在预览里列出装着、`wants` 这个能力的插件（ADR-0053 第 3 条）：未知能力看提供方的
+/// 权限，已知的非高权限能力（torrent_client）不列；同一个使用方几项能力只出现一次。
+#[tokio::test]
+async fn a_high_privilege_provider_lists_consumers_that_want_it() {
+    let index = tempfile::tempdir().unwrap();
+    let provider =
+        PluginPackage::parse(&wanting_provider_compose(), &Languages::default()).unwrap();
+    crate::plugin::storefront::index::IndexEntry::of(
+        &provider,
+        "github:example/search",
+        &"b".repeat(40),
+    )
+    .unwrap()
+    .write_to(index.path(), &provider)
+    .unwrap();
+    let h = Harness::start_with_store(
+        None,
+        crate::plugin::storefront::StoreConfig {
+            index_dir: Some(index.path().to_owned()),
+            community: false,
+        },
+    )
+    .await;
+    h.manager
+        .install_package(
+            PluginPackage::parse(&wanting_consumer_compose(), &Languages::default()).unwrap(),
+            &[],
+            Languages::default(),
+        )
+        .await
+        .unwrap();
+    let offered = h
+        .manager
+        .preview_source("github:example/search", &Languages::default())
+        .await
+        .unwrap();
+    let wanting: Vec<&str> = offered
+        .wanting_plugins
+        .iter()
+        .map(|plugin| plugin.id.as_str())
+        .collect();
+    assert_eq!(wanting, [CONSUMER]);
+    assert!(offered.wanting_plugins[0].high_privilege);
+}
