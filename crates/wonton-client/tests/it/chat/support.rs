@@ -21,6 +21,7 @@ use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
 use wonton_tunnel::pair::PairProtocol;
 use wonton_tunnel::{Allowlist, TunnelServer};
 
+mod backup;
 mod confirmations;
 mod diagnostics;
 mod endpoint;
@@ -365,22 +366,6 @@ impl Home {
     /// 上一次 [`Self::expire_room_list_sync`] 已经用掉。
     pub fn room_list_sync_expired(&self) -> bool {
         !self.core.expire_room_list.load(Ordering::SeqCst)
-    }
-
-    pub fn reject_backup_creation(&self, reject: bool) {
-        self.core
-            .reject_backup_creation
-            .store(reject, Ordering::SeqCst);
-    }
-
-    pub fn fail_verification(&self, status: u16) {
-        self.core
-            .verification_failure
-            .store(status as usize, Ordering::SeqCst);
-    }
-
-    pub fn hold_backup_read(&self, hold: bool) {
-        self.core.hold_backup_read.send_replace(hold);
     }
 }
 
