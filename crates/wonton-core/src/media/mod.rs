@@ -12,6 +12,7 @@ mod leave;
 pub(crate) mod prefetch;
 pub(crate) mod provider;
 mod quota;
+pub(crate) mod service_error;
 pub mod session_service;
 pub mod store;
 pub mod task_service;

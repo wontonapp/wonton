@@ -43,6 +43,7 @@ impl Bus {
             agent_chains: OnceLock::new(),
             friends: OnceLock::new(),
             inbox: OnceLock::new(),
+            media: OnceLock::new(),
             peers: Mutex::new(Vec::new()),
         });
         bus.watch_plugins();
@@ -103,6 +104,21 @@ impl Bus {
     pub fn attach_agent_chains(&self, chains: Arc<crate::gateway::agent_chains::AgentChains>) {
         if self.agent_chains.set(chains).is_err() {
             tracing::warn!("调用链的服务接了两次，用先接上的");
+        }
+    }
+
+    /// 接上媒体服务（ADR-0113 第 5 节）。`devices` 是隧道的设备登记表：工具按它列一个人的设备。只接一次。
+    pub fn attach_media(
+        &self,
+        media: Arc<crate::media::Media>,
+        devices: Arc<crate::device::Devices>,
+    ) {
+        if self
+            .media
+            .set(super::media_tools::MediaDesk { media, devices })
+            .is_err()
+        {
+            tracing::warn!("媒体服务接了两次，用先接上的");
         }
     }
 
