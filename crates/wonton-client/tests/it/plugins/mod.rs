@@ -15,6 +15,7 @@ mod detail;
 mod dropped_results;
 mod egress;
 mod failure_categories;
+mod list;
 mod now;
 mod offline_tasks;
 mod onboarding;
@@ -48,58 +49,6 @@ use wonton_protocol::{
 /// 之后 settle 自己在最后一次成功读取 120s 后转不确定（UNREACHABLE_LIMIT），合计 219s；取 240s。
 /// 预算不足时超时会报出当时状态。
 const READ_BACKSTOP: Duration = Duration::from_secs(240);
-
-#[tokio::test]
-async fn the_list_arrives_once_the_tunnel_is_up_and_says_why_before_that() {
-    let rig = Rig::new().await;
-    rig.core
-        .set_lists(vec![vec![running("ai.usemagpie.magpie")]]);
-    rig.app
-        .dispatch(Action::Settings {
-            action: wonton_protocol::SettingsAction::SetLanguages {
-                languages: vec!["zh-Hans-CN".to_owned(), "en".to_owned()],
-            },
-        })
-        .unwrap();
-
-    // 比隧道早发的刷新不留下问题，连上后自动取。
-    rig.app
-        .dispatch(Action::Plugins {
-            action: wonton_protocol::PluginAction::RefreshPlugins,
-        })
-        .unwrap();
-
-    rig.connect();
-    let view = rig
-        .wait_for(|view| view.installed.is_some() && view.problem.is_none() && !view.refreshing)
-        .await;
-    assert_eq!(view.installed.unwrap().plugins[0].id, "ai.usemagpie.magpie");
-
-    let seen = rig.core.seen(&Method::GET, "/_wonton/api/plugins");
-    assert_eq!(seen[0].language.as_deref(), Some("zh-Hans-CN,en"));
-    assert!(!seen[0].from_page, "核心靠这个认出请求不是网页发的");
-}
-
-#[tokio::test]
-async fn a_plugin_that_is_still_installing_updates_without_a_refresh() {
-    let rig = Rig::new().await;
-    rig.core.set_lists(vec![
-        vec![installed(
-            "com.nousresearch.hermes",
-            PluginState::Installing,
-        )],
-        vec![running("com.nousresearch.hermes")],
-    ]);
-    rig.connected().await;
-    let view = rig
-        .wait_for(|view| {
-            view.installed.as_ref().is_some_and(|installed| {
-                matches!(installed.plugins[0].status, PluginState::Running { .. })
-            })
-        })
-        .await;
-    assert!(view.problem.is_none());
-}
 
 #[tokio::test]
 async fn store_load_is_fetched_refreshed_and_searched() {
