@@ -6,7 +6,8 @@ mod error;
 mod response;
 mod version;
 
-pub(crate) use client::{CoreApi, INSTALL_TIMEOUT, READ_TIMEOUT, SOURCE_TIMEOUT};
+pub(super) use client::INSTALL_TIMEOUT;
+pub(crate) use client::{CoreApi, READ_TIMEOUT, SOURCE_TIMEOUT};
 pub(super) use client::{not_connected, not_paired, proxied_client};
 pub(crate) use error::failure_kind;
 pub(crate) use response::{CoreApiError, to_core_error};

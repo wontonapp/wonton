@@ -24,18 +24,18 @@ pub(crate) const READ_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const SOURCE_TIMEOUT: Duration = Duration::from_secs(120);
 /// 安装和升级：响应要等拉完镜像、通过健康检查。Hermes 的镜像约 1 GB，慢的网络要很久；超时后核心照样做完，
 /// 结果从已安装列表里看。核心等健康至多 60 分钟（按插件的 healthcheck.start_period 放宽），再留出拉镜像的时间。
-pub(crate) const INSTALL_TIMEOUT: Duration = Duration::from_secs(90 * 60);
+pub(in crate::plugins) const INSTALL_TIMEOUT: Duration = Duration::from_secs(90 * 60);
 
 const IMAGE_PREFIX: &str = "/_wonton/api/images/";
 
 /// 一次请求要用的连接信息：核心的地址、本地代理，以及主人的语言。
 #[derive(Clone)]
 pub(crate) struct CoreApi {
-    pub(crate) base: Url,
-    pub(crate) client: Client,
-    pub(crate) languages: String,
+    pub(in crate::plugins) base: Url,
+    pub(in crate::plugins) client: Client,
+    pub(in crate::plugins) languages: String,
     /// 这台服务器报过的版本。只有接口回 404 时才去取一次，取不到就不判旧。
-    pub(crate) version: ServerVersion,
+    pub(in crate::plugins) version: ServerVersion,
 }
 
 /// 建本地代理的 HTTP 客户端。
