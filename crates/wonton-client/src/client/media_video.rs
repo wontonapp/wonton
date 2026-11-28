@@ -197,7 +197,39 @@ impl ClientCore {
 
     /// 删掉这一条在这台设备上的离线副本。
     pub fn video_remove_offline(&self, item_id: String) -> Result<(), MediaError> {
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            super::ui_fake_video::remove_offline(&item_id);
+            return Ok(());
+        }
         Ok(self.scope().media.remove_offline(&item_id)?)
+    }
+
+    /// 离线副本是 `Failed` 时再下一次，接着上次下到的地方。上一次重试还没回来时再调什么也不做。
+    pub async fn video_retry_download(&self, item_id: String) -> Result<(), MediaError> {
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Err(super::ui_fake_video::no_stream().into());
+        }
+        let scope = self.scope();
+        let media = scope.media.clone();
+        run(&scope, async move { media.retry_download(&item_id).await }).await
+    }
+
+    /// 离线副本是 `Paused` 时接着下。
+    pub async fn video_resume_download(&self, item_id: String) -> Result<(), MediaError> {
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Err(super::ui_fake_video::no_stream().into());
+        }
+        let scope = self.scope();
+        let media = scope.media.clone();
+        run(&scope, async move { media.resume_download(&item_id).await }).await
+    }
+
+    /// 当前服务器和账号的标识。壳的图片缓存按它分开：换了服务器或账号，同一条路径是另一张图。
+    pub fn video_cache_scope(&self) -> String {
+        self.scope().slot.clone()
     }
 }
 

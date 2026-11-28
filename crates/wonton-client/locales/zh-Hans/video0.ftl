@@ -1,3 +1,6 @@
+# Detail when resuming an offline download that the server hasn't marked as paused.
+video-download-not-paused = 这一条没有暂停的下载可以继续。
+
 # Detail when the server's playback reply has no plan.
 video-plan-missing = 起播的回应里没有播放计划。
 
