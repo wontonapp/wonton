@@ -1,6 +1,6 @@
-//! 主人看到的服务器列表、请求和拒绝过的行，以及每行的状态和“详情”。
+//! 主人看到的服务器列表、请求和拒绝过的行，每行的状态和“详情”，以及按服务器名的查找。
 
-use iroh::EndpointId;
+use iroh::{EndpointAddr, EndpointId};
 use wonton_protocol::{PeerRequestRow, PeerRow, PeerStatus, PeersView, RejectedPeerRow};
 use wonton_tunnel::federation::PeerStatus as FederationStatus;
 
@@ -16,6 +16,14 @@ impl Peers {
             .get(server_name)
             .is_some_and(|record| record.phase == Phase::Paired);
         paired.then(|| self.forwarded_status(server_name))
+    }
+
+    /// 联邦出站的查找函数：Matrix 服务器名 → 配对时记下的对方 endpoint ID 和地址。只认已配对的记录；
+    /// 一个服务器名只会转发到配对时绑定的 endpoint ID（ADR-0050 的“代价与风险”）。
+    pub fn lookup(&self, server_name: &str) -> Option<(EndpointId, EndpointAddr)> {
+        let peers = self.lock();
+        let record = peers.peers.get(server_name)?;
+        (record.phase == Phase::Paired).then(|| (record.endpoint_id, record.endpoint_addr()))
     }
 
     /// 主人看到的服务器列表、发来的请求和拒绝过的那几条。

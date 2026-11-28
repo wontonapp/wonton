@@ -25,7 +25,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use iroh::{EndpointAddr, EndpointId};
 use tokio::sync::watch;
 use wonton_tunnel::Allowlist;
 use wonton_tunnel::federation::PeerStates;
@@ -111,14 +110,4 @@ pub(crate) fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
         .unwrap_or_default()
-}
-
-impl Peers {
-    /// 联邦出站的查找函数：Matrix 服务器名 → 配对时记下的对方 endpoint ID 和地址。只认已配对的记录；
-    /// 一个服务器名只会转发到配对时绑定的 endpoint ID（ADR-0050 的“代价与风险”）。
-    pub fn lookup(&self, server_name: &str) -> Option<(EndpointId, EndpointAddr)> {
-        let peers = self.lock();
-        let record = peers.peers.get(server_name)?;
-        (record.phase == Phase::Paired).then(|| (record.endpoint_id, record.endpoint_addr()))
-    }
 }
