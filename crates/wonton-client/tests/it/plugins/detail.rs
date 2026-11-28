@@ -120,6 +120,8 @@ async fn an_uncertain_uninstall_that_removed_the_plugin_closes_the_page() {
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: ID.to_owned(),
                 delete_data: false,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();
@@ -161,6 +163,8 @@ async fn an_uncertain_uninstall_waits_out_a_dropped_connection_before_closing() 
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: ID.to_owned(),
                 delete_data: false,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();
@@ -197,6 +201,8 @@ async fn a_finished_uninstall_closes_without_reading_the_detail_again() {
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: ID.to_owned(),
                 delete_data: false,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();
@@ -229,6 +235,8 @@ async fn a_failed_uninstall_reloads_the_detail() {
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: ID.to_owned(),
                 delete_data: false,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();

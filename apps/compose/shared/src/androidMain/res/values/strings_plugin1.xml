@@ -24,4 +24,10 @@
     <!-- Status of a finished update task. -->
     <string name="plugin_task_upgrade_done">Updated</string>
     <string name="plugin_clear_failure_title">Clear the failed installation of %1$s?</string>
+    <string name="plugin_dependency_stopped">%1$s isn’t running, so this app can’t use it right now.</string>
+    <string name="plugin_capabilities_title">Capabilities</string>
+    <string name="plugin_uninstall_stop_dependents">Stop them first</string>
+    <string name="plugin_dependencyNoProvider">No provider in the store</string>
+    <string name="plugin_dependency_requires">Needs %1$s</string>
+    <string name="plugin_dependency_provided_by">Provided by %1$s</string>
 </resources>

@@ -325,6 +325,7 @@ impl ClientCore {
                 Ok(())
             }
             PluginAction::StartPlugin { plugin_id } => scope.plugins.start(plugin_id),
+            PluginAction::StopPlugin { plugin_id } => scope.plugins.stop(plugin_id),
             PluginAction::SetPortMapping { plugin_id, enabled } => {
                 scope.plugins.set_port_mapping(plugin_id, enabled)
             }
@@ -343,9 +344,14 @@ impl ClientCore {
                 settings,
             } => scope.plugins.upgrade(preview, secrets, settings),
             PluginAction::RetryPluginInstall { id } => scope.plugins.retry_install(id),
-            PluginAction::UninstallPlugin { id, delete_data } => {
-                scope.plugins.uninstall(id, delete_data)
-            }
+            PluginAction::UninstallPlugin {
+                id,
+                delete_data,
+                providers,
+                dependents,
+            } => scope
+                .plugins
+                .uninstall(id, delete_data, providers, dependents),
             PluginAction::SetPluginAudience { id, audience } => {
                 scope.plugins.set_plugin_audience(id, audience)
             }

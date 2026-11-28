@@ -2,6 +2,126 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "plugin.dependencyConnect": {
+      "comment": "Button that connects to the suggested provider app.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接上"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接上"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続"
+          }
+        }
+      }
+    },
+    "plugin.dependencyNoProvider": {
+      "comment": "No app in the store provides this capability.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No provider in the store"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商店里没有提供方"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商店裡沒有提供方"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストアに提供元がありません"
+          }
+        }
+      }
+    },
+    "plugin.dependencyNotConnected": {
+      "comment": "$provider is the app title, $capability the capability name. The owner can connect it here.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ isn't connected yet, so %2$@ doesn't work."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没接上「%1$@」，「%2$@」用不了。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒接上「%1$@」，「%2$@」用不了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」にまだ接続していないため、「%2$@」は使えません。"
+          }
+        }
+      }
+    },
+    "plugin.dependencyOptional": {
+      "comment": "An optional capability that has no provider.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional: %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选：「%1$@」"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可選：「%1$@」"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意：「%1$@」"
+          }
+        }
+      }
+    },
     "plugin.deviceSerial": {
       "comment": "Fallback name for an authorized host serial device when no name is supplied. Keep short.",
       "extractionState": "manual",
@@ -28,6 +148,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "シリアルデバイス"
+          }
+        }
+      }
+    },
+    "plugin.info.version": {
+      "comment": "Information row: the app's version.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "版本"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バージョン"
           }
         }
       }
@@ -212,6 +362,36 @@
         }
       }
     },
+    "plugin.task.checkInstalled": {
+      "comment": "Button on an uncertain task that opens the installed list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check installed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查已安装"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查已安裝"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール済みを確認"
+          }
+        }
+      }
+    },
     "plugin.task.installRunning": {
       "comment": "Status of a running install task.",
       "extractionState": "manual",
@@ -268,36 +448,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "結果が不確定です：%@"
-          }
-        }
-      }
-    },
-    "plugin.task.checkInstalled": {
-      "comment": "Button on an uncertain task that opens the installed list.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Check installed"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "检查已安装"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "檢查已安裝"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "インストール済みを確認"
           }
         }
       }
@@ -362,36 +512,6 @@
         }
       }
     },
-    "plugin.info.version": {
-      "comment": "Information row: the app's version.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Version"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "版本"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "版本"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "バージョン"
-          }
-        }
-      }
-    },
     "plugin.uninstall.title": {
       "comment": "Uninstall dialog title. Argument: the app's name.",
       "extractionState": "manual",
@@ -418,6 +538,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "「%@」をアンインストールしますか？"
+          }
+        }
+      }
+    },
+    "plugin.uninstallTogetherKeepsData": {
+      "comment": "Supporting line under the uninstall-together button: their data is kept.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uninstalling them together keeps their data."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一起卸载会保留它们的数据。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一起解除安裝會保留它們的資料。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一緒にアンインストールするとデータは残ります。"
+          }
+        }
+      }
+    },
+    "plugin.uninstallUnusedProviders": {
+      "comment": "Heading over the providers nothing else uses; the owner may uninstall them together.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing else uses these:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些也没人用了："
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這些也沒人用了："
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかに使っているアプリはありません："
           }
         }
       }

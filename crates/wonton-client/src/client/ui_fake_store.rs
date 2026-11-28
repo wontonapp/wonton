@@ -30,7 +30,27 @@ pub(super) fn listing() -> StoreListing {
         },
         added: Vec::new(),
         community: StoreSection {
-            plugins: vec![item("LAN Scan", None, LAN_SOURCE, None)],
+            plugins: {
+                let mut bangumi = item(
+                    "Autobangumi",
+                    Some("Follows the season and grabs new episodes"),
+                    super::ui_fake_install::CONSUMER_SOURCE,
+                    None,
+                );
+                bangumi.id = super::ui_fake_install::store_id();
+                let mut downloader = item(
+                    "qBittorrent",
+                    Some("The household's downloads"),
+                    super::ui_fake_install::PROVIDER_SOURCE,
+                    None,
+                );
+                downloader.id = super::ui_fake_install::provider_store_id();
+                vec![
+                    item("LAN Scan", None, LAN_SOURCE, None),
+                    bangumi,
+                    downloader,
+                ]
+            },
             fetched_at_ms: Some(1_793_000_000_000),
             problem: None,
             unreadable: Vec::new(),
@@ -86,10 +106,26 @@ pub(super) fn detail(route: &PluginDetailRoute) -> Option<PluginDetail> {
             MUSIC_SUBTITLE,
             "The household's records, playable from anywhere",
         ),
+        super::ui_fake_install::CONSUMER_SOURCE => (
+            "Autobangumi",
+            "Follows the season and grabs new episodes",
+            "Follows the season and grabs new episodes",
+        ),
+        super::ui_fake_install::PROVIDER_SOURCE => (
+            "qBittorrent",
+            "The household's downloads",
+            "The household's downloads",
+        ),
         _ => return None,
     };
     let mut detail = super::ui_fake_plugin_detail::app(&id_of(source), title, summary, None);
     detail.source = Some(source.clone());
+    // 商店那一行和装着的那一份是不同的 ID：不然详情会被当成已装的，只给“打开”。
+    if source == super::ui_fake_install::CONSUMER_SOURCE {
+        detail.id = super::ui_fake_install::store_id();
+    } else if source == super::ui_fake_install::PROVIDER_SOURCE {
+        detail.id = super::ui_fake_install::provider_store_id();
+    }
     detail.subtitle = Some(subtitle.into());
     Some(detail)
 }

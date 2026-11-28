@@ -83,6 +83,24 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(catalogs.layout_problems(found, "android"), {})
 
 
+class SwiftNamespaceTest(unittest.TestCase):
+    def test_member_from_another_catalog_is_reported(self):
+        members = {
+            "Plugin0": {"pluginUninstallTogether"},
+            "Plugin2": {"pluginUninstallTogetherKeepsData"},
+        }
+        problems = catalogs.swift_reference_problems(
+            "Text(.Plugin0.pluginUninstallTogetherKeepsData)", members
+        )
+        self.assertEqual(problems[0][0], 1)
+        self.assertIn("plugin2.xcstrings", problems[0][1])
+
+    def test_known_member_is_clean(self):
+        members = {"Plugin2": {"pluginUninstallTogetherKeepsData"}}
+        text = "Text(.Plugin2.pluginUninstallTogetherKeepsData)"
+        self.assertEqual(catalogs.swift_reference_problems(text, members), [])
+
+
 class AndroidPairsTest(unittest.TestCase):
     def test_missing_translation_is_reported_on_the_en_file(self):
         problems = catalogs.android_problems(ANDROID_CATALOG, {"ja": None, "zh-Hans": ANDROID_CATALOG, "zh-Hant": ANDROID_CATALOG})

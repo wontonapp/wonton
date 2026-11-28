@@ -528,6 +528,7 @@ pub fn preview(id: &str) -> InstallPreview {
         missing_requires: Vec::new(),
         missing_wants: Vec::new(),
         wanting_plugins: Vec::new(),
+        connected_plugins: Vec::new(),
         upgrade_from: None,
         release_notes: None,
         missing_profile: None,
@@ -538,6 +539,7 @@ pub fn preview(id: &str) -> InstallPreview {
         always_allowed: Vec::new(),
         audience: None,
         install_gate: wonton_client::Gate::Allow,
+        install_providers: Vec::new(),
     }
 }
 

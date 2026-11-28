@@ -2,6 +2,126 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "plugin.clearFailure": {
+      "comment": "Button that clears a failed installation but keeps the app's data.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear failed installation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除失败的安装"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除失敗的安裝"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗したインストールを消去"
+          }
+        }
+      }
+    },
+    "plugin.dependenciesMissing": {
+      "comment": "Section heading listing capabilities the app lacks.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Missing capabilities"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺少的能力"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺少的能力"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不足している機能"
+          }
+        }
+      }
+    },
+    "plugin.dependencyMissing": {
+      "comment": "$capability is an optional capability with no provider in the store.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing provides %1$@; this app works without it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有提供「%1$@」的插件，这个应用少点能力。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有提供「%1$@」的插件，這個應用程式少點能力。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」の提供元がないため、このアプリは少し機能が減ります。"
+          }
+        }
+      }
+    },
+    "plugin.dependencyRequires": {
+      "comment": "A required capability the app needs. $capability is the capability name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要「%1$@」"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要「%1$@」"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」が必要"
+          }
+        }
+      }
+    },
     "plugin.deviceOther": {
       "comment": "Fallback name for an authorized host hardware device of an unrecognized kind. Keep short.",
       "extractionState": "manual",
@@ -28,6 +148,96 @@
           "stringUnit": {
             "state": "translated",
             "value": "その他のデバイス"
+          }
+        }
+      }
+    },
+    "plugin.info.author": {
+      "comment": "Information row: who wrote the app.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Author"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作者"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作者"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作者"
+          }
+        }
+      }
+    },
+    "plugin.info.license": {
+      "comment": "Information row: the app's license.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "License"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "许可证"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授權條款"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライセンス"
+          }
+        }
+      }
+    },
+    "plugin.info.tags": {
+      "comment": "Information row: the app's tags.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tags"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标签"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標籤"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タグ"
           }
         }
       }
@@ -422,122 +632,32 @@
         }
       }
     },
-    "plugin.info.tags": {
-      "comment": "Information row: the app's tags.",
+    "plugin.uninstallTogether": {
+      "comment": "Button: uninstall the apps that still need this one (keeping their data), then this one.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tags"
+            "value": "Uninstall them too"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "标签"
+            "value": "一起卸载"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "標籤"
+            "value": "一起解除安裝"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タグ"
-          }
-        }
-      }
-    },
-    "plugin.info.author": {
-      "comment": "Information row: who wrote the app.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Author"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "作者"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "作者"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "作者"
-          }
-        }
-      }
-    },
-    "plugin.info.license": {
-      "comment": "Information row: the app's license.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "License"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "许可证"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "授權條款"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ライセンス"
-          }
-        }
-      }
-    },
-    "plugin.clearFailure": {
-      "comment": "Button that clears a failed installation but keeps the app's data.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clear failed installation"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "清除失败的安装"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "清除失敗的安裝"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "失敗したインストールを消去"
+            "value": "一緒にアンインストール"
           }
         }
       }

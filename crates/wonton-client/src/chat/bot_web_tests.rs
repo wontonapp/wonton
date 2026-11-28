@@ -409,6 +409,7 @@ fn known_denial_is_preserved_but_transport_or_unknown_errors_have_no_page() {
         kind: Some(kind.into()),
         message: String::new(),
         problem: None,
+        plugins: Vec::new(),
     };
     assert_eq!(
         failure(error("not_shared")),

@@ -96,6 +96,12 @@ struct PluginDetailView: View {
                     if let failure = failedInstall, task == nil {
                         InstallFailureNotice(model: model, failure: failure)
                     }
+                    if let task, task.failureReason == .inUse, !task.dependents.isEmpty {
+                        UninstallDependents(
+                            model: model, title: detail.title, id: detail.id,
+                            dependents: task.dependents
+                        )
+                    }
                     if failedInstall != nil, !isUncertain {
                         Button(role: .destructive) {
                             uninstalling = UninstallTarget(id: detail.id, title: detail.title, keepDataOnly: true)
@@ -113,6 +119,13 @@ struct PluginDetailView: View {
                         ProblemRow(problem: problem.problem) {
                             Task { await load() }
                         }
+                    }
+                    PluginDependencyHints(model: model, detail: detail) { loaded = .success($0) }
+                    PluginMissingCapabilities(
+                        requires: detail.missingRequires, wants: detail.missingWants
+                    )
+                    if isInstalled, isOwner, !detail.capabilityProviders.isEmpty {
+                        PluginCapabilityChoices(model: model, detail: detail) { loaded = .success($0) }
                     }
                     if detail.installed != nil, let audience = detail.audience {
                         if audience.choices.isEmpty {
@@ -637,45 +650,5 @@ private struct DetailSections: View {
             rows.append((String(localized: .Plugin3.pluginInfoRepository), link))
         }
         return rows
-    }
-}
-
-extension View {
-    /// 卸载前确认：可以保留数据，也可以连数据一起删。只清失败的安装时数据一定保留，只有一个确认按钮。
-    func uninstallDialog(_ target: Binding<UninstallTarget?>, model: PluginsModel) -> some View {
-        let id = target.wrappedValue?.id ?? ""
-        let keepDataOnly = target.wrappedValue?.keepDataOnly ?? false
-        return wontonDialog(
-            keepDataOnly
-                ? String(localized: .Plugin3.pluginClearFailureTitle(target.wrappedValue?.title ?? ""))
-                : String(localized: .Plugin2.pluginUninstallTitle(target.wrappedValue?.title ?? "")),
-            message: keepDataOnly
-                ? String(localized: .Plugin1.pluginClearFailureMessage)
-                : String(localized: .Plugin1.pluginUninstallDeleteDataWarning),
-            isPresented: Binding(
-                get: { target.wrappedValue != nil },
-                set: { isShowing in
-                    if !isShowing { target.wrappedValue = nil }
-                }
-            ),
-            actions: [
-                WontonDialogAction(
-                    title: keepDataOnly
-                        ? String(localized: .Plugin0.pluginClearFailure)
-                        : String(localized: .Plugin1.pluginUninstallKeepData),
-                    kind: keepDataOnly ? .danger : .secondary
-                ) {
-                    model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: false)))
-                }
-            ]
-            + (keepDataOnly ? [] : [
-                WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallDeleteData), kind: .danger) {
-                    model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: true)))
-                }
-            ])
-            + [
-                WontonDialogAction(title: String(localized: .Common.commonCancel))
-            ]
-        )
     }
 }

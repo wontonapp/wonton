@@ -186,7 +186,10 @@ impl PluginManager {
             install_gate: wonton_protocol::Gate::Allow,
             missing_requires: dependencies.missing_requires,
             missing_wants: dependencies.missing_wants,
+            // 提供方自己的预览由客户端按来源取，核心只给缺的能力和候选（ADR-0053）。
+            install_providers: Vec::new(),
             wanting_plugins: dependencies.wanting_plugins,
+            connected_plugins: Vec::new(),
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,

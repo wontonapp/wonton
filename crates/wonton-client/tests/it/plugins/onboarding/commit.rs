@@ -6,6 +6,7 @@ use wonton_client::{
     OnboardingReviewDetail, OnboardingReviewKind, OnboardingStep, OnboardingViewModel,
     PluginFailure,
 };
+use wonton_protocol::{CapabilityProvider, MissingCapability};
 
 use super::super::rig::{Canned, Rig, core_error, preview};
 use super::{
@@ -95,6 +96,52 @@ async fn finish_saves_every_choice_then_installs_in_the_background() {
         },
     );
     at(&rig, OnboardingStep::Finished).await;
+}
+
+/// 引导的预览也要配好缺的必需能力：带 requires 的应用不再被当成旧核心的预览停下。
+#[tokio::test]
+async fn an_app_that_needs_a_provider_is_installed_together() {
+    let rig = flow_rig(with_photos(onboarding("profile"))).await;
+    let mut consumer = preview("app.photos");
+    consumer.missing_requires = vec![MissingCapability {
+        capability: "x-acme.download-client".to_owned(),
+        third_party: true,
+        providers: vec![CapabilityProvider {
+            id: "app.downloader".to_owned(),
+            title: "下载器".to_owned(),
+            source: "github:owner/app.downloader@v1.0.0".to_owned(),
+            high_privilege: true,
+        }],
+    }];
+    let provider = preview("app.downloader");
+    for body in [&consumer, &provider] {
+        rig.core.answer(
+            Method::POST,
+            PREVIEW,
+            Canned(200, serde_json::to_string(body).unwrap()),
+        );
+    }
+    let view = walk_to_review(&rig).await;
+    assert_eq!(
+        state(&view, "app.photos"),
+        OnboardingItemState::Ready,
+        "预览配了提供方就该能装"
+    );
+
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
+    let done = settled(&rig).await;
+    assert_eq!(state(&done, "app.photos"), OnboardingItemState::Done);
+    let sent = body(&rig, &Method::POST, INSTALL);
+    assert_eq!(sent[0]["install_together"][0]["id"], "app.downloader");
+    assert_eq!(
+        sent[0]["install_together"][0]["request"]["grant"][0], "storage.share.photos:read",
+        "提供方的必需权限要随请求带上"
+    );
 }
 
 #[tokio::test]

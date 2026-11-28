@@ -14,6 +14,7 @@ use wonton_protocol::{
     OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
     PluginImage, PluginsViewModel, PrivacyViewModel, RoomTransfers, SecretString, ServersViewModel,
     SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
+    UninstallOutcome,
 };
 
 use crate::app_lock::AppLockLink;
@@ -76,6 +77,8 @@ mod ui_fake_devices;
 mod ui_fake_failed_install;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_family;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_install;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_plugin_detail;
 #[cfg(feature = "ui-fake")]

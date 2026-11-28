@@ -47,4 +47,15 @@
     <string name="install_audience_title">このアプリを開ける人</string>
     <string name="install_audience_shared_data">このアプリは個人別のアカウントに対応していません。利用者は同じデータを閲覧・変更できる場合があります。</string>
     <string name="install_request_admin">管理者にインストールを依頼</string>
+    <string name="install_required_capabilities">必要な必須機能</string>
+    <string name="install_optional_capabilities">任意の機能</string>
+    <string name="install_provider_third_party">サードパーティの機能</string>
+    <string name="install_provider_high_privilege">高権限</string>
+    <string name="install_provider_missing">ストアに提供元がなく、インストールできません。</string>
+    <string name="install_provider_connects">「%1$s」は「%2$s」経由で「%3$s」を使えるようになります。</string>
+    <string name="install_wants_missing">「%1$s」の提供元がないため、少し機能が減った状態でインストールします。</string>
+    <string name="install_provider_wrong">「%1$s」の取得元は別のプラグインでした。</string>
+    <string name="install_provider_permission_title">「%1$s」が求める権限</string>
+    <string name="install_provider_secret_title">「%1$s」が求めるシークレット</string>
+    <string name="install_wants_connected_title">これらのアプリが使いたがっています</string>
 </resources>

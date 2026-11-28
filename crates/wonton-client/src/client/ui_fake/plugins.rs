@@ -27,6 +27,20 @@ pub(in crate::client) fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsV
         fake_plugin(title, id, status, Some(web_url(id)))
     }));
     installed.push(fake_plugin(
+        "Autobangumi",
+        &super::super::ui_fake_install::consumer_id(),
+        PluginState::Degraded {
+            reason: "qBittorrent isn't running".into(),
+        },
+        None,
+    ));
+    installed.push(fake_plugin(
+        "qBittorrent",
+        &super::super::ui_fake_install::provider_id(),
+        PluginState::Stopped,
+        None,
+    ));
+    installed.push(fake_plugin(
         super::super::ui_fake_plugin_detail::HUB_TITLE,
         super::super::ui_fake_plugin_detail::HUB_ID,
         super::super::ui_fake_plugin_detail::status(),

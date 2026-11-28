@@ -301,7 +301,20 @@ pub enum PluginAction {
     /// 安装失败回滚后，使用核心保留的原始清单和主人已确认的输入重装，不重新弹确认页。
     RetryPluginInstall { id: String },
     /// 卸载。`delete_data` 为真时同时删除它的数据、密钥和 Bot 账号，不可恢复。
-    UninstallPlugin { id: String, delete_data: bool },
+    UninstallPlugin {
+        id: String,
+        delete_data: bool,
+        /// 一起卸的、再没有别的插件在用的提供方（ADR-0053）。
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default = []))]
+        providers: Vec<String>,
+        /// 一起卸的依赖方插件（ADR-0053 的卸载被拦）：按顺序先卸它们，保留数据，再卸这个。
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default = []))]
+        dependents: Vec<String>,
+    },
+    /// 停止一个正在运行的插件；依赖它的插件会随之变成异常，照常显示原因。
+    StopPlugin { plugin_id: String },
     /// 主人修改哪些角色能打开这个应用。
     SetPluginAudience {
         id: String,

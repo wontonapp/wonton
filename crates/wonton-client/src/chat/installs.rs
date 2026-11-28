@@ -383,6 +383,7 @@ mod tests {
             install_progress: None,
             waiting_for_connection: false,
             added_tools: None,
+            dependents: Vec::new(),
         }
     }
 
@@ -419,6 +420,7 @@ mod tests {
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
             wanting_plugins: Vec::new(),
+            connected_plugins: Vec::new(),
             upgrade_from: None,
             release_notes: None,
             blocked: None,
@@ -429,6 +431,7 @@ mod tests {
             always_allowed: Vec::new(),
             audience: None,
             install_gate: wonton_protocol::Gate::Allow,
+            install_providers: Vec::new(),
         }
     }
 

@@ -151,6 +151,7 @@ fn sidebar_view_model_round_trip() {
             added_tools: Some(AddedTools::NotCompared {
                 reason: "插件没有运行，列不出工具".into(),
             }),
+            dependents: Vec::new(),
         }],
         updatable: vec![UpdatablePlugin {
             plugin_id: "app.memos".into(),

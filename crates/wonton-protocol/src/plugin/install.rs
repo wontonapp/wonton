@@ -97,6 +97,11 @@ pub struct InstallPreview {
     /// 接上，主人在安装请求里勾选的才接上；没勾的以后在它们的详情页里接。
     #[serde(default)]
     pub wanting_plugins: Vec<CapabilityProviderRef>,
+    /// [`InstallPreview::wanting_plugins`] 里主人勾选要接上的插件 ID；默认一个都不接。
+    /// 只用于安装：内层提供方请求的 `connect_plugins` 保持空；升级请求还没有这个字段，确认页在
+    /// `upgrade_from` 有值时只列出来、不给开关。
+    #[serde(default)]
+    pub connected_plugins: Vec<String>,
     /// 升级或换版本时是装着的版本；新装时为空。
     pub upgrade_from: Option<String>,
     /// 这个版本的更新说明。
@@ -116,6 +121,11 @@ pub struct InstallPreview {
     pub lan_webui: Option<LanWebuiOffer>,
     /// 升级时已经对这个插件始终允许的 Bot（ADR-0024）：新版本多出来的工具也算在内，主人在确认页可以关。新装时为空。
     pub always_allowed: Vec<BotSwitch>,
+    /// 缺的 `requires` 能力选中的提供方和它们自己的预览（ADR-0053）：确认页单独一节列出名字、来源、
+    /// 权限和密钥，一起装。没有提供方的能力在这里也有一项，`selected` 为空。升级预览里为空：
+    /// [`UpgradeRequest`] 不带这一层。
+    #[serde(default)]
+    pub install_providers: Vec<super::InstallProvider>,
 }
 
 /// `POST /_wonton/api/plugins` 的请求体（JSON）：按来源安装。

@@ -34,11 +34,18 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">卸载并删除数据</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">删除数据会一并删掉它的密钥和 Bot 账号，和 Bot 的旧加密消息将无法再查看，不能恢复。</string>
+    <string name="plugin_uninstall_delete_data_warning">删除数据会一并删掉它的密钥和 Bot 账号，和 Bot 的旧加密消息将无法再查看；勾上一起卸的应用，数据也会一起删掉，不能恢复。</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">卸载“%1$s”？</string>
     <string name="plugin_screenshot">截图</string>
     <!-- Row in the install/upgrade confirmation and on the app's detail page: what the app's web page may do when opened inside a chat room, for the capabilities that never touch message content. No arguments. -->
     <string name="plugin_widget_normal">在房间里打开时，它的网页能读写通话状态这类不含聊天内容的信息，并向通话服务证明是你本人。</string>
     <string name="plugin_setup_title">第一次打开</string>
+    <string name="plugin_dependency_connect">接上</string>
+    <string name="plugin_dependency_find_in_store">去商店找能提供它的应用。</string>
+    <string name="plugin_uninstall_in_use">这些应用还在用「%1$s」</string>
+    <string name="plugin_uninstall_unused_providers">这些也没人用了：</string>
+    <string name="plugin_uninstall_checking">正在看还有谁在用它…</string>
+    <string name="plugin_dependenciesMissing">缺少的能力</string>
+    <string name="plugin_dependencyRequires">需要「%1$@」</string>
 </resources>

@@ -4,6 +4,7 @@
 pub(crate) mod api;
 mod audience;
 mod cache;
+pub(crate) mod capabilities;
 pub(crate) mod cards;
 mod core_upgrade;
 mod detail;
@@ -24,6 +25,7 @@ mod store_load;
 mod support;
 mod takeover;
 mod tasks;
+mod together;
 mod tool_policy;
 
 use std::collections::{HashMap, HashSet, VecDeque};

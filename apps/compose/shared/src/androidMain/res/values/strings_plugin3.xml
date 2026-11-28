@@ -9,12 +9,12 @@
     <!-- Meta row: where the app came from. -->
     <string name="plugin_source">Source</string>
     <string name="plugin_permission_added">New</string>
-    <!-- Small tag next to a permission the core doesn't support. -->
+    <!-- Small tag next to a permission the core doesn’t support. -->
     <string name="plugin_permission_unsupported">Unsupported</string>
     <string name="plugin_permission_optional">Optional</string>
     <string name="plugin_permission_risk_highest">Highest risk</string>
     <string name="plugin_permission_opened_bot">Bot %1$s turned this on %2$s</string>
-    <!-- Reason shown when the picked file can't be opened. -->
+    <!-- Reason shown when the picked file can’t be opened. -->
     <string name="plugin_sources_file_unreadable">Can\'t open this file</string>
     <!-- Button that opens the file picker to install from an archive. -->
     <string name="plugin_sources_install_from_file">Install from file</string>
@@ -32,4 +32,8 @@
     <string name="plugin_uninstall_keep_data">Uninstall and keep data</string>
     <string name="plugin_clear_failure">Clear failed installation</string>
     <string name="plugin_clear_failure_message">The app’s data will be kept.</string>
+    <string name="plugin_dependency_not_connected">%1$s isn’t connected yet, so %2$s doesn’t work.</string>
+    <string name="plugin_uninstall_together">Uninstall them too</string>
+    <string name="plugin_dependency_optional">Optional: %1$s</string>
+    <string name="plugin_dependency_no_provider">No provider in the store</string>
 </resources>

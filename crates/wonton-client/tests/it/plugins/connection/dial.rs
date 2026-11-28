@@ -49,6 +49,8 @@ async fn without_a_server_a_task_fails_at_once() {
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: "app.photos".to_owned(),
                 delete_data: false,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();

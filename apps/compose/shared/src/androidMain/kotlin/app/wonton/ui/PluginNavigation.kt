@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import android.icu.text.ListFormatter
 import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,6 +30,8 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AddedTools
 import app.wonton.protocol.AppsAction
 import app.wonton.protocol.BotRef
+import app.wonton.protocol.CapabilityProviderRef
+import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginFailure
@@ -36,18 +40,22 @@ import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskNextStep
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.Rgb
+import app.wonton.protocol.UninstallOutcome
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
-import app.wonton.ui.design.WontonIconButton
-import app.wonton.ui.design.WontonSmallButton
+import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.WontonSwitch
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Warning
+import app.wonton.ui.icons.WontonIcon
+import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.icons.CheckCircleFill
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Help
-import app.wonton.ui.icons.WontonIcon
 
 private val SPINNER_STROKE = 2.dp
 
@@ -137,33 +145,6 @@ fun PluginPages(
     navigation.uninstalling?.let { target ->
         UninstallDialog(target, plugins, onDismiss = { navigation.uninstalling = null })
     }
-}
-
-/** 卸载前确认：可以保留数据，也可以连数据一起删。 */
-@Composable
-internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onDismiss: () -> Unit) {
-    val uninstall = { deleteData: Boolean ->
-        onDismiss()
-        plugins.send(Action.Plugins(PluginAction.UninstallPlugin(target.id, deleteData)))
-    }
-    WontonDialog(
-        if (target.keepDataOnly) stringResource(R.string.plugin_clear_failure_title, target.title)
-        else stringResource(R.string.plugin_uninstall_title, target.title),
-        if (target.keepDataOnly) stringResource(R.string.plugin_clear_failure_message)
-        else stringResource(R.string.plugin_uninstall_delete_data_warning),
-        onDismiss,
-        listOf(
-            WontonDialogAction(stringResource(
-                if (target.keepDataOnly) R.string.plugin_clear_failure else R.string.plugin_uninstall_keep_data,
-            )) { uninstall(false) },
-            *if (target.keepDataOnly) emptyArray() else arrayOf(
-                WontonDialogAction(stringResource(R.string.plugin_uninstall_delete_data), WontonButtonKind.DANGER) {
-                    uninstall(true)
-                },
-            ),
-            WontonDialogAction(stringResource(R.string.common_cancel), onClick = onDismiss),
-        ),
-    )
 }
 
 /**

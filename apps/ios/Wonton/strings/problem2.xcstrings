@@ -2,16 +2,6 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "problem.pagesInvalid.nextStep": {
-      "comment": "Next step for unreadable local page settings; avoid replacing the user's data.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Check Details and contact support to avoid overwriting your settings." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请查看详情并联系支持人员，避免覆盖原有设置。" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "請查看詳細資訊並聯絡支援人員，避免覆蓋原本的設定。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "元の設定を上書きしないよう、詳細を確認してサポートにお問い合わせください。" } }
-      }
-    },
     "problem.invalidInput.title": {
       "comment": "Problem title when the core rejected the input; the core's own reason goes into Details.",
       "extractionState": "manual",
@@ -46,10 +36,60 @@
       "comment": "Problem title: this phone has no home server paired yet.",
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Not paired with your home server yet" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "还没配对家里的服务器" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "還沒配對家裡的伺服器" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "自宅サーバーとまだペアリングしていません" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not paired with your home server yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没配对家里的服务器"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒配對家裡的伺服器"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバーとまだペアリングしていません"
+          }
+        }
+      }
+    },
+    "problem.pagesInvalid.nextStep": {
+      "comment": "Next step for unreadable local page settings; avoid replacing the user's data.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check Details and contact support to avoid overwriting your settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请查看详情并联系支持人员，避免覆盖原有设置。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請查看詳細資訊並聯絡支援人員，避免覆蓋原本的設定。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元の設定を上書きしないよう、詳細を確認してサポートにお問い合わせください。"
+          }
+        }
       }
     },
     "problem.plugin.coreUpgrading.nextStep": {
@@ -82,14 +122,94 @@
         }
       }
     },
+    "problem.plugin.egressProxyWaiting.nextStep": {
+      "comment": "Next step: retry once it is up; open the proxy app's install page if it stays stuck.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry once it is up. If it stays stuck, look at the proxy app's logs on its install page."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等它起来后重试；一直不动，去代理插件的安装页看日志。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等它起來後重試；一直不動，去代理應用程式的安裝頁看記錄檔。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "起動を待ってから再試行します。進まない場合は、プロキシアプリのインストールページでログを確認してください。"
+          }
+        }
+      }
+    },
     "problem.plugin.healthTimeout.title": {
       "comment": "The app was still not ready at the install health deadline.",
       "extractionState": "manual",
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "The app is not ready yet" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "应用还没就绪" } },
-        "zh-Hant": { "stringUnit": { "state": "translated", "value": "應用程式還沒就緒" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "アプリはまだ準備できていません" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app is not ready yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用还没就绪"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "應用程式還沒就緒"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリはまだ準備できていません"
+          }
+        }
+      }
+    },
+    "problem.plugin.inUse.title": {
+      "comment": "Uninstall failed: other apps still require a capability this app provides.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other apps still need it"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还有应用在用它"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還有應用程式在用它"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ使っているアプリがあります"
+          }
+        }
       }
     },
     "problem.plugin.invalid.title": {
@@ -118,36 +238,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "このアプリのパッケージに問題があります"
-          }
-        }
-      }
-    },
-    "problem.plugin.egressProxyWaiting.nextStep": {
-      "comment": "Next step: retry once it is up; open the proxy app's install page if it stays stuck.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Retry once it is up. If it stays stuck, look at the proxy app's logs on its install page."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等它起来后重试；一直不动，去代理插件的安装页看日志。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等它起來後重試；一直不動，去代理應用程式的安裝頁看記錄檔。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "起動を待ってから再試行します。進まない場合は、プロキシアプリのインストールページでログを確認してください。"
           }
         }
       }
@@ -302,6 +392,36 @@
         }
       }
     },
+    "problem.serverNotPaired.title": {
+      "comment": "Problem title when a chat can't start because the other server isn't paired with this one.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The other server isn't paired"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方服务器还没配对"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "對方伺服器還沒配對"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手のサーバーはまだペアリングされていません"
+          }
+        }
+      }
+    },
     "problem.slowLoading": {
       "comment": "Shown after a few seconds under a spinner: the network is slow, loading still goes on.",
       "extractionState": "manual",
@@ -448,36 +568,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "自宅サーバでエラーが発生しました"
-          }
-        }
-      }
-    },
-    "problem.serverNotPaired.title": {
-      "comment": "Problem title when a chat can't start because the other server isn't paired with this one.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The other server isn't paired"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "对方服务器还没配对"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "對方伺服器還沒配對"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "相手のサーバーはまだペアリングされていません"
           }
         }
       }

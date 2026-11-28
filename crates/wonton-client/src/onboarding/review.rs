@@ -320,10 +320,13 @@ impl OnboardingLink {
     ) {
         let link = self.clone();
         self.runtime.spawn(async move {
-            let result = match link.plugins.api() {
-                Ok(api) => api::preview(&api, &source).await,
-                Err(problem) => Err(problem),
-            };
+            // 和商店的确认页一样把缺的必需能力配好提供方；否则安装守卫会把带 requires 的
+            // 引导应用当成旧核心的预览停下。
+            let result = link
+                .plugins
+                .preview_install(source.clone())
+                .await
+                .map_err(|error| core_problem(&error));
             let preview = {
                 let mut state = lock(&link.state);
                 if link.generation() != generation || state.review_generation != review {
