@@ -34,8 +34,6 @@ fun OnboardingAssistantStep(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // 输入法组字时文字要立刻回到输入框；核心拿到的是同一份。
-    var name by remember { mutableStateOf(view.assistant.name) }
     StepCardFrame(
         nav = nav,
         title = view.title(),
@@ -59,6 +57,13 @@ fun OnboardingAssistantStep(
                     }
                     return@Column
                 }
+                // 名字晚到：等核心取回来再摆输入框，免得记住空串。
+                if (view.loading) {
+                    OnboardingLoading()
+                    return@Column
+                }
+                // 输入法组字时文字要立刻回到输入框；核心拿到的是同一份。
+                var name by remember { mutableStateOf(view.assistant.name) }
                 WontonTextField(
                     name,
                     {

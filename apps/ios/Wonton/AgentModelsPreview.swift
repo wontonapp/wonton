@@ -157,7 +157,7 @@ private enum AgentModelsFixtures {
             page.row = row("openai-codex", "ChatGPT")
             page.key = nil
             page.deviceLogin = true
-            page.login = ModelLoginProgress(url: "https://example.com/device", code: "WXYZ-1234", browser: .other)
+            page.login = ModelLoginProgress(url: "https://example.com/device", code: "WXYZ-1234", browser: .page)
         case "login-expired":
             page.row = row("openai-codex", "ChatGPT")
             page.key = nil

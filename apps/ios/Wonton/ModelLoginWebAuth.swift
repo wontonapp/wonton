@@ -14,8 +14,10 @@ final class ModelLoginWebAuth: NSObject {
         case failed
     }
 
-    /// 回跳地址 `wonton://model-login` 的 scheme（协议里的 `MODEL_LOGIN_REDIRECT_URI`）。
+    /// 回跳地址 `wonton://model-login`（协议里的 `MODEL_LOGIN_REDIRECT_URI`）。只按 scheme 截的话，
+    /// 期间别的 `wonton://` 链接也会被当回跳交回核心。
     private static let callbackScheme = "wonton"
+    private static let callbackPrefix = "wonton://model-login"
 
     /// 系统没打开面板（比如找不到窗口）。
     private(set) var failedToOpen = false
@@ -57,7 +59,7 @@ final class ModelLoginWebAuth: NSObject {
         self.token = nil
         self.finished = nil
         if let callback {
-            finished?(.callback(callback))
+            finished?(callback.absoluteString.hasPrefix(Self.callbackPrefix) ? .callback(callback) : .cancelled)
         } else {
             finished?(cancelled ? .cancelled : .failed)
         }

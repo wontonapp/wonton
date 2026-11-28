@@ -34,15 +34,15 @@ struct ModelProviderSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 notices
+                // 接好以后也留着登录和 key：换一份不用先断开（和 Android 一样）。
                 if page.row.connected {
                     ModelProviderConnected(page: page) { confirmsDisconnect = true }
-                } else {
-                    if page.deviceLogin || page.browserLogin {
-                        ModelLoginSection(page: page, send: send)
-                    }
-                    if let form = page.key {
-                        ModelKeyFormView(page: page, form: form, problem: problem, send: send)
-                    }
+                }
+                if page.deviceLogin || page.browserLogin {
+                    ModelLoginSection(page: page, send: send)
+                }
+                if let form = page.key {
+                    ModelKeyFormView(page: page, form: form, problem: problem, send: send)
                 }
                 ModelListSection(
                     state: page.models, selection: selection, inUse: inUse, retry: reload,

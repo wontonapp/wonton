@@ -49,7 +49,8 @@ struct ModelLoginSection: View {
     }
 
     @ViewBuilder private func progress(_ login: ModelLoginProgress) -> some View {
-        if let code = login.code, !code.isEmpty {
+        // 码已经带在网址里：浏览器会替人填好，不再重复显示。
+        if let code = login.code, !code.isEmpty, !login.url.contains(code) {
             ModelLoginCode(code: code)
             Button {
                 UIPasteboard.general.string = code
@@ -73,7 +74,7 @@ struct ModelLoginSection: View {
         .buttonStyle(WontonButtonStyle(kind: .secondary))
     }
 
-    /// `login` 一变就跟上：有了就开浏览器，没了就关。带码的先让人看到码，点按钮才开。
+    /// `login` 一变就跟上：该自己开的就开，没了就关。码要人抄的先让人看到码，点按钮才开。
     private func follow(_ login: ModelLoginProgress?) {
         guard let login else {
             safari = nil
@@ -81,8 +82,21 @@ struct ModelLoginSection: View {
             return
         }
         cannotOpen = false
-        if login.code?.isEmpty == false { return }
+        guard opensByItself(login) else { return }
         open(login)
+    }
+
+    /// 浏览器授权，和码没带在网址里的设备码登录：后者浏览器会替人填好码，不用人抄。
+    private func opensByItself(_ login: ModelLoginProgress) -> Bool {
+        switch login.browser {
+        case .redirect:
+            return true
+        case .page:
+            guard let code = login.code, !code.isEmpty else { return true }
+            return login.url.contains(code)
+        case .other:
+            return false
+        }
     }
 
     private func open(_ login: ModelLoginProgress) {
@@ -107,9 +121,9 @@ struct ModelLoginSection: View {
         send(.cancelModelLogin)
     }
 
-    /// 人自己关了登录页：没有码可看的登录就此取消；带码的留着，可能只是回来再看一眼码。
+    /// 人自己关了登录页：自己开的登录就此取消；带码要抄的留着，可能只是回来再看一眼码。
     private func safariClosed() {
-        if let login = page.login, login.code?.isEmpty != false { send(.cancelModelLogin) }
+        if let login = page.login, opensByItself(login) { send(.cancelModelLogin) }
     }
 }
 

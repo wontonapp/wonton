@@ -51,7 +51,6 @@ extension MainView {
     func openCardRoom(_ roomId: String?) {
         showsSettings = false
         closeApps()
-        onboardingGateway = nil
         pages.select(.agent)
         chat.resetNavigation()
         if let roomId { chat.path = [.room(roomId)] } else { chat.openConfirmations() }

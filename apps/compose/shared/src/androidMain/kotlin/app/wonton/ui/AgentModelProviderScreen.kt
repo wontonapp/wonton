@@ -15,6 +15,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +45,16 @@ import app.wonton.ui.icons.WontonIcon
 internal fun AgentModelProviderScreen(page: ModelProviderPage, models: AgentModels) {
     val send = models.send
     val close = { send(AgentModelsAction.CloseModelProvider) }
+    // 在这一页选了模型：核心换上以后收回这一页，测试结果就在顶上（和 iOS 一样）。
+    val current = models.view.current
+    var shown by remember { mutableStateOf(current?.provider to current?.model) }
+    LaunchedEffect(current) {
+        val next = current?.provider to current?.model
+        if (next != shown) {
+            shown = next
+            if (current?.provider == page.row.id) close()
+        }
+    }
     BackHandler(onBack = close)
     WontonScreen(bar = {
         WontonPushedBar(page.row.name, close, actions = { if (page.busy) BusyMark() })

@@ -83,10 +83,12 @@ private fun LoginInProgress(login: ModelLoginProgress, send: (AgentModelsAction)
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         val code = login.code
-        if (code != null) {
+        // 码已经带在网址里：浏览器会替人填好，不再重复显示。
+        val showsCode = !code.isNullOrEmpty() && !login.url.contains(code.orEmpty())
+        if (showsCode) {
             SelectionContainer {
                 Text(
-                    code,
+                    code.orEmpty(),
                     style = WontonTheme.typography.screenTitle.copy(
                         fontFamily = FontFamily.Monospace, letterSpacing = CODE_SPACING.em,
                         textAlign = TextAlign.Center,
@@ -104,12 +106,12 @@ private fun LoginInProgress(login: ModelLoginProgress, send: (AgentModelsAction)
             LoginWaiting()
             WontonButton(
                 stringResource(
-                    if (code != null) R.string.agent_models_login_copy_open else R.string.agent_models_login_open,
+                    if (showsCode) R.string.agent_models_login_copy_open else R.string.agent_models_login_open,
                 ),
                 {
-                    if (code != null) {
+                    if (showsCode) {
                         scope.launch {
-                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, code)))
+                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, code.orEmpty())))
                         }
                     }
                     browser.openLogin(login)

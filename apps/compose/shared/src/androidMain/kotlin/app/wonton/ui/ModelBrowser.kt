@@ -53,12 +53,12 @@ fun isModelLoginCallback(url: String): Boolean {
 }
 
 /**
- * 登录一开始就自己打开浏览器的：码带在网址里的设备码登录，和浏览器授权。
+ * 登录一开始就自己打开浏览器的：浏览器授权，和码没带在网址里的设备码登录（码在网址里时浏览器会替人填好）。
  * 码要人自己抄的，先在页面上把码亮出来，人点了才开。
  */
 internal fun ModelLoginProgress.opensByItself(): Boolean = when (browser) {
     ModelLoginBrowser.REDIRECT -> true
-    ModelLoginBrowser.PAGE -> code == null
+    ModelLoginBrowser.PAGE -> code.isNullOrEmpty() || url.contains(code.orEmpty())
     ModelLoginBrowser.OTHER -> false
 }
 
