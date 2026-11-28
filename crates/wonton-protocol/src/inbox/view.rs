@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use super::INBOX_PATH;
 use super::item::{InboxItem, InboxRecipient, InboxSender};
 use super::kind::InboxType;
 use super::notice::InboxLevel;
@@ -65,7 +64,7 @@ pub struct InboxCounts {
     pub unread_notices: u32,
 }
 
-/// 一条条目的详情（[`INBOX_PATH`] 的 `GET {id}`）。
+/// 一条条目的详情（[`INBOX_PATH`](crate::INBOX_PATH) 的 `GET {id}`）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct InboxView {
