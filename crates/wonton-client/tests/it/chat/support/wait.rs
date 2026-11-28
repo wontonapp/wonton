@@ -6,7 +6,7 @@ use wonton_client::{ChatAccount, ChatViewModel};
 
 use super::Home;
 use super::Phone;
-use super::diagnostics::pending_requests;
+use super::pending_requests;
 
 /// 一次等待的上限。换服务器、隧道刚抖过时，旧会话的 `stop_sync` 可能先挂住几十秒，`wait_ready`/`signed_in` 要熬过
 /// 这段窗口；CI 的 Docker 作业挤在几核里，登录比本机慢得多，60s 会先到。nextest 的 docker 档案 10 分钟内杀掉测试。
