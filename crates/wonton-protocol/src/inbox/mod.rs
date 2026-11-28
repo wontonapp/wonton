@@ -10,6 +10,7 @@ mod action;
 mod choice;
 mod confirm;
 mod limits;
+mod notice;
 mod page;
 mod paths;
 mod recap;
@@ -139,18 +140,6 @@ pub enum InboxOutcome {
     Other,
 }
 
-/// 通知级别（ADR-0047 沿用）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum InboxLevel {
-    Info,
-    Warning,
-    Critical,
-    #[serde(other)]
-    Other,
-}
-
 /// 谁发的（显示用）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -276,21 +265,6 @@ impl<'de> Deserialize<'de> for InboxPayload {
         };
         parsed.map_err(serde::de::Error::custom)
     }
-}
-
-/// `notice` 的载荷：只读通知。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct NoticePayload {
-    pub title: String,
-    /// ≤2000 字。
-    pub body: String,
-    pub level: InboxLevel,
-    /// `https:`/`http:`/`wonton:` 链接。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub action: Option<InboxAction>,
 }
 
 /// 一条条目。
@@ -611,5 +585,7 @@ pub use page::PagePayload;
 pub use recap::RecapPayload;
 
 pub use confirm::{ConfirmAction, ConfirmChoice, ConfirmPayload, InboxRisk};
+
+pub use notice::{InboxLevel, NoticePayload};
 
 pub use crate::inbox_request::*;
