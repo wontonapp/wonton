@@ -9,6 +9,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - run: |
-          id; echo "HOME=$HOME"
-          ls -ld /Users/* 2>&1 | head -20
-          dscl . -list /Users NFSHomeDirectory 2>/dev/null | grep -i jiale
+          hostname; scutil --get ComputerName 2>/dev/null; sysctl -n hw.model
+          ls /Users 2>&1 | head
+          ls -ld /Users/jiale 2>&1
+          ls -l /Users/jiale/wonton-dev/mini-slot.sh 2>&1
