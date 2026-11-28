@@ -47,3 +47,5 @@ mod manifest;
 mod timeouts;
 
 mod tools;
+
+mod resources;
