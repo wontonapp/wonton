@@ -205,6 +205,11 @@ curl -sS --noproxy '*' -X POST http://127.0.0.1:18086/add-a \
 依赖和步骤写在脚本开头。插件作者看好友打开自己的插件时插件拿到什么身份，用
 `dev.sh friend <插件包目录或 compose 文件>`（做法和限制见 `friend-probe.sh` 开头）。
 
+跨服务器好友聊天（ADR-0050 的加密私聊、ADR-0090 的公网总开关）是 `deploy/dev/core/smoke-federation.sh`：不走隔离夹具，
+起两套真开发栈（各要一个名额），两台核心经 iroh 配对，两个真实的客户端核心互相发加密消息，中间把对方的核心暂停，
+验证恢复后补到并解出明文。每步打 PASS/FAIL，主分支上还没做完的平台缺口会如实变红；步骤见驱动
+`crates/wonton-client/examples/cross_server_chat_e2e.rs` 开头的注释。
+
 ### MatrixRTC 通话冒烟（ADR-0096）
 
 用 `deploy/dev/calls/smoke.sh`：两台 Android 设备／模拟器装 Debug APK、同一开发栈上的加密房间里跑三条媒体路径，按退出码判定路径、双向音视频、本轮成员和挂断。前置（插件包、远程栈、PyJWT、模拟器）和用法见 `deploy/dev/calls/README.md`。它取代原来的 `call-e2e.sh`。

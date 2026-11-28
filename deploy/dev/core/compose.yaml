@@ -326,6 +326,9 @@ services:
       TUWUNEL_JWT__AUDIENCE: '["tuwunel"]'
       TUWUNEL_JWT__KEY: ${WONTON_DEV_MATRIX_JWT_PUBLIC_KEY:?请用 deploy/dev/core/dev.sh up 启动}
       TUWUNEL_REGISTRATION_SHARED_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
+    # 容器里 `*.wonton.localhost` 解析成回环，联邦请求会发回自己；两栈冒烟用它把对方域名指到本栈核心。
+    extra_hosts:
+      - "${WONTON_DEV_TUWENEL_PEER:-localhost.localdomain:127.0.0.1}"
     volumes:
       - tuwunel:/var/lib/tuwunel
       - ${WONTON_DEV_DATA}/secrets/tuwunel/wonton-fed.toml:/etc/tuwunel/wonton-fed.toml:ro
