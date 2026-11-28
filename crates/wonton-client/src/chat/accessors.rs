@@ -46,7 +46,7 @@ impl ChatLink {
         };
         if changed {
             let rows = self.room_order.display(bot.as_deref());
-            self.view.send_modify(|view| view.rooms = rows);
+            self.bots.publish_rooms_and_contacts(rows);
             self.installs.refresh();
         }
     }

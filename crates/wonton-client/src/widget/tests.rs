@@ -149,6 +149,8 @@ fn signed_in(rooms: Vec<RoomRow>) -> ChatViewModel {
 
 fn agent(activity: Option<BotActivity>) -> BotView {
     BotView {
+        shared: false,
+        danger: None,
         chat: Default::default(),
         availability: Default::default(),
         user_id: AGENT.into(),
@@ -164,6 +166,9 @@ fn agent(activity: Option<BotActivity>) -> BotView {
         activity,
         saving: false,
         problem: None,
+        cloud: None,
+        custom_media: false,
+        face: None,
     }
 }
 
@@ -197,9 +202,13 @@ fn room(name: &str, peer: Option<&str>, unread: u64) -> RoomRow {
 
 fn plugin(id: &str, web: bool) -> InstalledPlugin {
     InstalledPlugin {
+        bot_danger_can_toggle: false,
+        bot_shared: false,
+        bot_danger: false,
         chat: Default::default(),
         id: id.to_owned(),
         title: id.to_uppercase(),
+        subtitle: None,
         summary: String::new(),
         version: "1".to_owned(),
         revision: "1".to_owned(),
@@ -226,6 +235,7 @@ fn plugin(id: &str, web: bool) -> InstalledPlugin {
         install_progress: None,
         install_failure: None,
         tunnel_ports: Vec::new(),
+        media_browse: None,
         matrix_widget: None,
     }
 }

@@ -39,6 +39,10 @@ impl EntryContainers {
         } else {
             self.lan_link(&project, true).await?
         };
+        // 先把局域网转发容器建好再写配置、重载：入口的 `frontend lan` 绑的是
+        // `entry-lanfwd.wonton.internal`，那个名字解析不出来时新 worker 会卡在 bind 上，重载一直
+        // “还没开始回应”（2026-11-28 开发栈实测）。
+        self.follow_lan_forward(&project, link.as_ref()).await?;
         let (_, networks) = self.networks(core).await?;
         // 证书还没换到新后缀时先按旧名字服务（和 `write_config` 同一条规则）。
         let names = crate::entry_certificate::published_names(
@@ -57,7 +61,7 @@ impl EntryContainers {
         model.connectors = vec![networks.connector];
         if applied_model.as_ref() == Some(&model) {
             self.reconcile_inner(Some(settings), public_access).await?;
-            return self.follow_lan_forward(&project, link.as_ref()).await;
+            return Ok(());
         }
         let snapshot = crate::entry_compose::ModelSnapshot::read(&self.install_dir)
             .map_err(|error| config_error("读取旧入口配置", error))?;
@@ -67,7 +71,6 @@ impl EntryContainers {
             crate::entry_compose::prepare_permissions(&self.install_dir)
                 .map_err(|error| config_error("入口文件权限", error))?;
             self.reconcile_inner(Some(settings), public_access).await?;
-            self.follow_lan_forward(&project, link.as_ref()).await?;
             self.reload(&self.reload_addr).await
         }
         .await;
@@ -277,22 +280,27 @@ impl EntryContainers {
             .await?
             .is_some();
         let (entry, connector) = Self::wanted(target, public);
-        let mut started = false;
+        let mut entry_started = false;
         for (wanted, component) in [(entry, ENTRY_COMPONENT), (connector, CONNECTOR_COMPONENT)] {
             if !wanted {
                 self.engine.remove_container(&self.name(component)).await?;
                 continue;
             }
             let side = self.side(component, &networks, target)?;
-            started |= self.ensure(&side, &project).await?;
+            let created = self.ensure(&side, &project).await?;
+            if component == ENTRY_COMPONENT && created {
+                entry_started = true;
+            }
         }
         // 刚起/重建的入口自己会读当前证书和配置，但这一轮要重载时得等重载成功才算数：
         // 失败后配置和证书都可能不再变化，靠 `reload_pending` 跨轮重试，直到成功或容器重建。
         let pending = self
             .reload_pending
             .load(std::sync::atomic::Ordering::SeqCst);
-        let reload = (changed || cert_changed || pending) && existed && entry;
-        if started && !reload {
+        // 刚起/重建的进程启动时就读了当前配置和证书，不用再发一遍 reload：主机满载时重建后立刻
+        // 重载的窗口里主进程还没开始回应，重试风暴会让每一轮都对不上（2026-11-28 开发栈实测）。
+        let reload = (changed || cert_changed || pending) && existed && entry && !entry_started;
+        if entry_started {
             self.remember_cert();
             self.reload_pending
                 .store(false, std::sync::atomic::Ordering::SeqCst);

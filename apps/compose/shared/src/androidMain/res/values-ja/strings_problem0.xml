@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>
+    <!-- Problem title: this phone has no home server paired yet. -->
+    <string name="problem_not_paired_title">自宅サーバーとまだペアリングしていません</string>
     <!-- Problem title: the app is busy with another task. -->
     <string name="problem_plugin_conflict_title">このアプリは処理中です</string>
     <!-- Problem title: the device the app should run on isn't available. -->

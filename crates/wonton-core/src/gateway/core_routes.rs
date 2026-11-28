@@ -47,6 +47,10 @@ fn confirmation_routes() -> Router<Arc<Gateway>> {
             put(tool_policy::read_only).delete(tool_policy::read_only),
         )
         .route(
+            "/_wonton/api/plugins/{id}/tool-policy/danger/{caller}",
+            put(tool_policy::danger).delete(tool_policy::danger),
+        )
+        .route(
             "/_wonton/api/plugins/{id}/takeover",
             put(tool_policy::takeover).delete(tool_policy::takeover),
         )
@@ -277,7 +281,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .merge(me_routes())
         .merge(link_preview_routes())
         .merge(member_routes())
-        .merge(panel_routes())
+        .merge(bot_page_routes())
         .route(
             wonton_protocol::ONBOARDING_PATH,
             get(onboarding::get).put(onboarding::put),
@@ -314,6 +318,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .merge(confirmation_routes().merge(super::inbox::routes()))
         .merge(chain_routes())
         .merge(files::routes(gateway.clone()))
+        .merge(super::media::routes(gateway.clone()))
         .fallback(|headers: HeaderMap| async move {
             let langs = api::languages(&headers);
             pages::error(
@@ -331,8 +336,8 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .with_state(gateway)
 }
 
-/// 聊天页面板（ADR-0052）和 MCP Apps：Bot 活动、钉页，以及界面的宿主页和转发。
-fn panel_routes() -> Router<Arc<Gateway>> {
+/// Bot 活动和 MCP Apps 界面的宿主页、转发。
+fn bot_page_routes() -> Router<Arc<Gateway>> {
     Router::new()
         .route(
             wonton_protocol::BOT_ACTIVITY_PATH,

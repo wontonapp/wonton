@@ -194,21 +194,34 @@ tabs-page-cannot-reload = 这个页面不能重新加载。
 
 tabs-bar-not-pinned = 这个页面没有固定到底栏。
 
-tabs-bar-already-pinned = 这个页面已经在我的应用里。
+tabs-bar-already-pinned = 这个页面已经在底栏里。
 
 tabs-bar-replace-required = 底栏已满，必须指定要替换的页面。
 
 tabs-bar-replacing-missing = 要替换的页面不在底栏。
 
-tabs-bar-fixed = 聊天和应用不能被替换。
+tabs-bar-fixed = Agent 和应用项可以直接换掉。
 
 tabs-bar-not-full = 底栏未满时不能指定替换页面。
 
-tabs-bar-remove-fixed = 聊天和应用不能拿掉。
+tabs-bar-remove-fixed = Agent 和应用项也可以拿掉。
 
 tabs-bar-page-missing = 这个页面不在我的应用。
 
-tabs-bar-index-out-of-range = 位置超出我的应用的范围。
+tabs-bar-index-out-of-range = 位置超出底栏的范围。
+
+# 底栏 Agent 那一项的名字（只画图标，这是读屏标签）。
+tabs-bar-agent = Agent
+tabs-bar-apps = 应用
+tabs-bar-full = 底栏满了。
+tabs-bar-empty = 底栏至少留一项。
+tabs-bar-not-in-bar = 这一项不在底栏。
+tabs-rooms-title = 所有会话
+tabs-inbox-title = 收件箱
+tabs-config-empty-bar = 存下的底栏是空的。
+tabs-config-bar-too-many = 存下的底栏太多了。
+tabs-config-bar-duplicate = 存下的底栏有重复项。
+tabs-config-bar-invalid = 存下的底栏有一段读不了。
 
 tabs-open-only-plugins = 只有插件页面可以设置打开方式。
 

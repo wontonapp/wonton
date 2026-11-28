@@ -14,6 +14,9 @@ use super::recovery;
 use super::session;
 use super::util::lock;
 
+/// 换会话时最多等旧同步收尾这么久，剩下的挪到后台。
+const STOP_SYNC_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
 impl ChatLink {
     pub(super) async fn forget_current(&self) {
         self.bots.set_session(None);
@@ -29,8 +32,12 @@ impl ChatLink {
             // 确认卡片跟家里的连接走，不和 Matrix 会话绑定：这里不清。
         });
         let session = lock(&self.session).take();
-        if let Some(session) = session {
-            session.stop_sync().await;
+        // 不一直等旧同步收尾：调用方多半正要重新登录，等待期间 `session` 是空的，要会话的动作全回 `NotReady`。
+        // 停不完的部分和存储租约一起挪到后台，旧同步真停了才放租约，见 `MatrixSession::stop_sync_within`。
+        if let Some(session) = session
+            && !session.stop_sync_within(STOP_SYNC_GRACE).await
+        {
+            tracing::info!(slot = %self.slot, "old sync did not stop in time, finishing it in the background");
         }
     }
 

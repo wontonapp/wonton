@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{AddedTools, InstallProgress, InstalledPlugin, PluginFailure, PluginIcon};
+use super::{
+    AddedTools, CapabilityProviderRef, InstallProgress, InstalledPlugin, PluginFailure, PluginIcon,
+};
 
 /// 一次安装、升级或卸载。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,6 +23,9 @@ pub struct PluginTask {
     pub waiting_for_connection: bool,
     /// 升级比旧版本多了哪些工具；不是升级、没做完或者等不到结果时为空。
     pub added_tools: Option<AddedTools>,
+    /// 卸载被在用的依赖挡住时的依赖方（ADR-0053）；别的任务和成功时为空。
+    #[serde(default)]
+    pub dependents: Vec<CapabilityProviderRef>,
 }
 
 /// `POST /_wonton/api/plugins/{id}/upgrade` 的响应。

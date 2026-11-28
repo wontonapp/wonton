@@ -14,7 +14,8 @@ use crate::l10n;
 /// 标准错误只留这么多，写进错误信息够用了。
 const STDERR_LIMIT: usize = 4 << 10;
 /// 标准输出只留这么多，防止 provider 命令把核心内存撑爆。
-const STDOUT_LIMIT: usize = 1 << 20;
+// 插件命令的标准输出按模型接入命令的上限收，多收 1 字节：调用方据此分得清“正好到上限”和“超了”。
+const STDOUT_LIMIT: usize = wonton_protocol::MAX_MODELS_OUTPUT_BYTES + 1;
 
 /// 命令的结果。凭据命令只看退出码；provider 命令还要读取标准输出。
 #[derive(Debug, Clone, PartialEq, Eq)]

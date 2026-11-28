@@ -39,7 +39,49 @@ pub fn detail_install_action(detail: PluginDetail) -> PluginInstallAction {
 
 #[uniffi::export]
 pub fn preview_install_action(preview: InstallPreview) -> PluginInstallAction {
-    install_action(preview.install_gate, true, preview.blocked.is_some())
+    // 缺的必需能力商店里没有提供方时装不上；“一起装”的提供方还在选（只在旧核心的预览里）也算。
+    let unprovided = preview
+        .missing_requires
+        .iter()
+        .any(|missing| missing.providers.is_empty());
+    let unresolved = !preview.install_providers.is_empty()
+        && preview
+            .install_providers
+            .iter()
+            .any(|section| section.selected.is_none());
+    install_action(
+        preview.install_gate,
+        true,
+        preview.blocked.is_some() || unprovided || unresolved,
+    )
+}
+
+/// 一起装的提供方都能装、必填密钥都填了：确认按钮据此点得动。
+#[uniffi::export]
+pub fn install_providers_ready(preview: InstallPreview) -> bool {
+    preview.install_providers.iter().all(|section| {
+        section.selected.as_ref().is_some_and(|selected| {
+            selected.preview.blocked.is_none()
+                && selected.preview.missing_profile.is_none()
+                && selected
+                    .preview
+                    .permissions
+                    .iter()
+                    .all(|line| line.supported)
+                && selected
+                    .preview
+                    .secret_inputs
+                    .iter()
+                    .filter(|input| input.required)
+                    .all(|input| selected.secrets.contains_key(&input.name))
+                // 必选的串口没选时也不能确认（ADR-0036）。
+                && crate::device_choices::device_choices(
+                    selected.preview.devices.clone().unwrap_or_default(),
+                    selected.preview.permissions.clone(),
+                )
+                .is_none_or(|choices| choices.ready)
+        })
+    })
 }
 
 #[uniffi::export]

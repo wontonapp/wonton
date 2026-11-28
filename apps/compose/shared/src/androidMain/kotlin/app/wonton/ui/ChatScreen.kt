@@ -74,7 +74,7 @@ import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.accentFill
+import app.wonton.ui.design.emphasisFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Close
@@ -315,8 +315,8 @@ internal fun ChatListScreen(
                         bottom = LocalWontonBottomInset.current + WontonTheme.spacing.pageInset,
                     )
                     .size(WontonTheme.size.floatingActionButton),
-                containerColor = WontonTheme.colors.accentFill.toColor(),
-                contentColor = WontonTheme.colors.accentInkOnFill.toColor(),
+                containerColor = WontonTheme.colors.primary.toColor(),
+                contentColor = WontonTheme.colors.onPrimary.toColor(),
             ) {
                 Icon(WontonIcon.Add, stringResource(R.string.shortcut_new_chat), Modifier.size(WontonTheme.size.icon))
             }
@@ -398,7 +398,7 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, isSelec
         Modifier.fillMaxWidth()
             .heightIn(min = WontonTheme.size.target)
             .semantics { selected = isSelected }
-            .then(if (isSelected) Modifier.background(colors.accentFill.toColor()) else Modifier)
+            .then(if (isSelected) Modifier.background(colors.primary.toColor()) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
@@ -419,7 +419,7 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, isSelec
                         row.name,
                         Modifier.weight(1f, fill = false),
                         style = WontonTheme.typography.itemTitle,
-                        color = (if (isSelected) colors.accentInkOnFill else colors.textPrimary).toColor(),
+                        color = (if (isSelected) colors.onPrimary else colors.textPrimary).toColor(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -437,7 +437,7 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, isSelec
                             WontonIcon.VoiceCallFill,
                             contentDescription = stringResource(R.string.room_call_active),
                             modifier = Modifier.size(WontonTheme.size.iconTiny).testTag("room-row-call-active"),
-                            tint = (if (isSelected) colors.accentInkOnFill else colors.success).toColor(),
+                            tint = (if (isSelected) colors.onPrimary else colors.success).toColor(),
                         )
                     }
                 }
@@ -478,10 +478,10 @@ private fun RoomPreviewLine(row: RoomRow) {
             Text(
                 row.unreadCount.toString(),
                 Modifier.semantics { contentDescription = spoken }
-                    .accentFill(CircleShape)
+                    .emphasisFill(CircleShape)
                     .padding(horizontal = WontonTheme.spacing.s8, vertical = WontonTheme.spacing.s4),
                 style = WontonTheme.typography.caption.copy(fontFeatureSettings = "tnum"),
-                color = colors.accentInkOnFill.toColor(),
+                color = colors.onPrimary.toColor(),
             )
         }
     }

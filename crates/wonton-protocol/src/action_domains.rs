@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork,
-    EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview,
-    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest,
+    Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, CredentialEntry,
+    DeviceNetwork, EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget,
+    InstallPreview, MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest,
     NotificationCategory, OnboardingTip, PluginAudience, PushEndpoint, PushMethod,
-    PutDomainRequest, PutIngressRequest, RelaySettingsAction, Rgb, SecretString, ShareGrantUpdate,
-    TabRef, TextSize, ThemeMode, UploadSource,
+    PutIngressRequest, RelaySettingsAction, SecretString, ShareGrantUpdate, TabRef, TextSize,
+    ThemeMode, UploadSource,
 };
 
 /// 会话列表的操作。
@@ -231,6 +231,17 @@ pub enum BotAction {
     },
     /// 清掉这个 Bot 的 `BotView::problem`。
     DismissBotProfileProblem { plugin_id: String },
+    /// 头像换成云朵（ADR-0126），整套一起设：核心过 [`BotCloud::check`](crate::BotCloud::check)、合成、以 Bot 的身份
+    /// 写进资料，并清掉主人传的那组图。不行时返回 `InvalidInput`。[`Self::SetBotAvatar`] 是另一个来源“自己的图”。
+    SetBotCloud {
+        plugin_id: String,
+        cloud: crate::BotCloud,
+    },
+    /// 只改云朵的一项，其余两项不变。
+    SetBotCloudPart {
+        plugin_id: String,
+        part: crate::CloudPart,
+    },
 }
 
 /// 系统推送操作。
@@ -290,7 +301,20 @@ pub enum PluginAction {
     /// 安装失败回滚后，使用核心保留的原始清单和主人已确认的输入重装，不重新弹确认页。
     RetryPluginInstall { id: String },
     /// 卸载。`delete_data` 为真时同时删除它的数据、密钥和 Bot 账号，不可恢复。
-    UninstallPlugin { id: String, delete_data: bool },
+    UninstallPlugin {
+        id: String,
+        delete_data: bool,
+        /// 一起卸的、再没有别的插件在用的提供方（ADR-0053）。
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default = []))]
+        providers: Vec<String>,
+        /// 一起卸的依赖方插件（ADR-0053 的卸载被拦）：按顺序先卸它们，保留数据，再卸这个。
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default = []))]
+        dependents: Vec<String>,
+    },
+    /// 停止一个正在运行的插件；依赖它的插件会随之变成异常，照常显示原因。
+    StopPlugin { plugin_id: String },
     /// 主人修改哪些角色能打开这个应用。
     SetPluginAudience {
         id: String,
@@ -357,8 +381,6 @@ pub enum PluginAction {
 pub enum SettingsAction {
     /// App 使用的语言在第一项，后接系统语言偏好（BCP 47）；壳在启动和语言改变时发送。客户端详情用第一项，服务器按列表挑插件文字。
     SetLanguages { languages: Vec<String> },
-    /// 把重点色换成这个颜色。任何颜色都可以，读字的颜色由核心推导。
-    SetAccentColor { color: Rgb },
     /// 选明暗。
     SetThemeMode { mode: ThemeMode },
     /// 选字号。
@@ -399,6 +421,8 @@ pub enum OnboardingAction {
     DismissOnboardingTip { tip: OnboardingTip },
     /// 退出从设置重看的引导并丢弃未保存的选择；未在重看时无效果。
     CloseOnboarding,
+    /// Agent 的出场点过或播完了：记下见过（[`Onboarding::agent_intro`](crate::Onboarding::agent_intro)）。幂等。
+    FinishAgentIntro,
 }
 
 /// 文件传输操作。
@@ -464,6 +488,9 @@ pub enum PageAction {
     SetAutoAddApps { enabled: bool },
     /// 重新和账号数据对一次账（侧边栏“我的应用”过期提示的重试）。没有会话时无事可做，等重连后自动对账。
     RetryMyAppSync,
+    /// 按网址把一页加进我的应用：插件网站下的地址作为插件页面，其他网址必须是 `https://`，
+    /// Bot 的网页不收。`title` 为空时核心按插件或域名补全。
+    AddMyAppUrl { url: String, title: Option<String> },
     /// 把插件页面或 `https://` 公网页面放进面板末尾；重复、已满或不允许放入时返回 `InvalidInput`。
     /// 写入账号数据成功才生效，连接失败时不改变面板。
     AddPanelPage {
@@ -511,8 +538,20 @@ pub enum PageAction {
     },
     /// 壳报告网页加载成功（如按返回回到成功的历史页），核心清掉这个页面的加载失败显示。
     TabLoadSucceeded { page: crate::PlacedTab },
+    /// 点底栏的一项（ADR-0126）：两个根页之间切换；应用项打开它的整页。
+    SelectBarItem { entry: crate::BarEntry },
     /// 主人看过了“已卸载，已从我的应用移除”的提示。
     DismissUninstalledTabs,
+    /// 往底栏末尾放一项：根页可以删出栏再加回来，应用项要在“我的应用”里。
+    ///
+    /// 已在栏上、`App` 的行不在我的应用里、或满了 [`MAX_BAR_ITEMS`](crate::MAX_BAR_ITEMS) 时返回 `InvalidInput`
+    /// 并说明原因（[`BarProblem`](crate::BarProblem)）；写成功后清掉 [`BarViewModel::full`](crate::BarViewModel::full)。
+    AddBarItem { entry: crate::BarEntry },
+    /// 从底栏拿掉一项，内置的两项也能拿掉；栏上只剩一项时返回 `InvalidInput`（[`BarProblem::Empty`](crate::BarProblem::Empty)）。
+    /// 不在栏上时也返回 `InvalidInput`。
+    RemoveBarItem { entry: crate::BarEntry },
+    /// 把底栏第 `from` 项移到 `to`（移动后的下标，从 0 开始）。越界时返回 `InvalidInput`。
+    MoveBarItem { from: u32, to: u32 },
 }
 
 /// 跨服务器配对操作。
@@ -685,7 +724,7 @@ pub enum SharingAction {
     },
 }
 
-/// 公网访问、入口和访客链接的操作（ADR-0021、ADR-0089、ADR-0090）。
+/// 第三方客户端和公网访问（ADR-0021、ADR-0089、ADR-0090）的操作；“HTTPS 和域名”页（ADR-0089）也在里面。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -693,6 +732,10 @@ pub enum ClientsAction {
     /// 取客户端入口列表（`GET` [`clients_path`](crate::clients_path)），结果在
     /// [`ClientsViewModel::plugins`](crate::ClientsViewModel::plugins)。
     Refresh,
+    /// 取后缀、服务商和证书状态；进页面时走一次。
+    RefreshDomain,
+    /// 离开页面：丢掉没保存的表单，回到服务器上现在存的值。保存中被离页时，这次保存照常提交。
+    CancelDomain,
     /// 开或关一个入口（`PUT` [`clients_entry_path`](crate::clients_entry_path)）；`kind` 是哪个入口。
     /// [`EntryKind::Other`](crate::EntryKind::Other) 拼不出路径段：照常显示这一行，但把开关置灰、不发请求。
     SetEntry {
@@ -701,7 +744,17 @@ pub enum ClientsAction {
         enabled: bool,
     },
     /// 保存后缀、服务商和凭据（`PUT` [`clients_domain_path`](crate::clients_domain_path)）。
-    SaveDomain { request: PutDomainRequest },
+    /// 保存。后缀在服务器名已经定了时只校验不改；凭据为空表示沿用已存的。
+    SaveDomain {
+        suffix: Option<String>,
+        /// lego 的服务商代码；`None` 是“其他”。
+        provider: Option<String>,
+        /// 预设表单的凭据，按变量名；“其他”时为空。
+        credentials: Vec<CredentialEntry>,
+        /// “其他”的凭据原文，一行一个 `键=值`；预设时为空串。
+        other_credentials: String,
+        accept_terms: bool,
+    },
     /// 取服务商预设（`GET` [`dns_providers_path`](crate::dns_providers_path)），结果在
     /// [`ClientsSettingsViewModel::providers`](crate::ClientsSettingsViewModel::providers)。
     DnsProviders,
@@ -738,4 +791,10 @@ pub enum ClientsAction {
     RevokePassword { id: String, password: String },
     /// 提前解除一个来源的封禁（`DELETE` [`clients_ban_path`]）；`source` 的写法同 [`Ban`]。
     Unban { source: String },
+    /// 选中服务商；`None` 是“其他”。只改动本机表单，不写服务器。
+    SelectDomainProvider { code: Option<String> },
+    /// 续期失败或过期后重试一次，沿用现在的后缀、服务商和凭据。
+    RetryCertificate,
+    /// 收起上一次的错误。
+    DismissDomainProblem,
 }

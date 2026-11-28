@@ -425,6 +425,19 @@ async fn list_and_unpin_work_and_404_for_unknown_pages() {
 }
 
 #[tokio::test]
+async fn a_bot_that_never_pinned_can_still_list() {
+    let (s, b, _fake) = bot("com.example.agent").await;
+    let listed = s
+        .call_as(&b.caller, "wonton__list_pinned_pages", json!({}))
+        .await;
+    assert!(!listed.is_error.unwrap_or(false));
+    let text = listed.content[0].as_text().map(|t| t.text.clone()).unwrap();
+    let value: Value = serde_json::from_str(&text).unwrap();
+    assert!(value["pins"].as_array().unwrap().is_empty());
+    assert_eq!(value["consents"][0]["main_consent"], false);
+}
+
+#[tokio::test]
 async fn only_bots_can_pin_and_urls_must_be_https() {
     let (s, b, _fake) = bot("com.example.agent").await;
     let plain = Caller::new(PluginId::parse("app.example.notes").unwrap(), None);

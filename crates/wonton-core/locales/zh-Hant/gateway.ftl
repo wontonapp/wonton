@@ -122,6 +122,7 @@ gateway-body-unreadable = 無法讀取請求內容：{ $error }
 gateway-body-invalid = 請求內容不合法：{ $error }
 gateway-bot-not-found = 沒有這個 Bot：{ $caller }
 gateway-bot-not-in-plugin = 應用程式 { $id } 沒有這個 Bot：{ $caller }
+gateway-danger-owner-bot = 危險模式只給主人的 Bot 用。
 gateway-tool-not-found = 應用程式 { $id } 沒有工具 { $tool }
 gateway-tool-deletes = 工具 { $tool } 會刪除或覆寫資料，每次都要確認，不能標成唯讀
 gateway-plugin-not-running = 這個應用程式沒有在執行，或者沒有宣告工具
@@ -180,6 +181,15 @@ clients-credentials-unavailable = 外掛沒在執行，現在發不了密碼
 clients-credentials-missing-command = 清單裡沒有 { $op } 命令
 clients-credentials-failed = 應用裡的命令失敗：{ $error }
 gateway-entry-credentials-not-issued = 應用還沒有密碼，入口先不開
+clients-guests-not-declared = 這個應用程式不能接待訪客
+clients-guests-entry-closed = 先開啟這個應用程式的區域網路或公網入口
+clients-guests-label = 給連結取 1–128 個字的名字，不要換行
+clients-guests-ttl = 一條連結最長有效 7 天
+clients-guests-path = 落地路徑要以 / 開頭，並且還在這個應用程式裡
+clients-guests-max = 這個應用程式已經有 20 條有效連結，先收回一條
+clients-guests-not-found = 這條連結已經收回或過期了
+clients-guests-unavailable = 訪客連結暫時讀不出來
+gateway-guest-invalid = 連結已失效或不對
 clients-domain-read-failed = 網域設定讀不了：{ $error }
 clients-public-access-save-failed = 公網訪問開關儲存不了：{ $error }
 # 公網訪問開關的各道閘門：哪道沒做成，就按道寫哪道（ADR-0090）。
@@ -192,6 +202,13 @@ clients-gate-public-list-not-cleared = 公網憑證清單沒清空
 clients-gate-entry-not-reloaded = 入口沒有重讀設定：{ $error }
 clients-gate-connector-mismatch = 連接器容器和開關不一致
 clients-gate-public-list-mismatch = 公網憑證清單和開關不一致
+clients-domain-terms-required = 先勾選 Let's Encrypt 的訂戶協議
+clients-domain-external-certificate = 這家裝的是自己的憑證（WONTON_ENTRY_CERTIFICATE=external），核心不簽發
+clients-domain-fixed-suffix = 伺服器名稱已經定了，只能換服務商和憑據
+clients-domain-suffix-required = 填一個網域
+clients-domain-suffix-invalid = 用小寫的 ASCII 網域，不帶萬用字元和連接埠
+clients-domain-suffix-ip = 填網域，不是 IP 位址
+clients-domain-credentials-required = 首次設定或更換服務商時要一起填這個服務商的憑據
 gateway-chains-disabled = 家裡的伺服器沒有啟用呼叫鏈帳本
 
 # agent_acp 的轉發（ADR-0061 第 5 塊）：建連時的拒絕和逐幀轉發裡的錯誤，按類別回給使用方。

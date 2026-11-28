@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.wonton.protocol.Action
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.TabRef
 import app.wonton.ui.send
@@ -22,7 +23,7 @@ import org.junit.rules.TestRule
 import org.junit.runner.RunWith
 
 /**
- * 覆盖面板启用/停用导致的页面组合切换；每次都确认目标页面实际渲染，再检查房间输入仍可用。
+ * 覆盖根页面来回切换导致的页面组合切换；每次都确认目标页面实际渲染，再检查房间输入仍可用。
  * 这是 onReuse/movableContent 路径的行为回归，帧级竞态不保证在旧实现上稳定失败。
  */
 @RunWith(AndroidJUnit4::class)
@@ -40,12 +41,12 @@ class PageFlipMovableContentTest {
     @Test
     fun chatPageSurvivesRepeatedPageFlips() {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
-        assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
+        assertNull(core.send(Action.Pages(PageAction.SelectBarItem(BarEntry.Agent))))
         assertPageFixture("Echo")
         repeat(FLIPS) {
-            assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Apps))))
+            assertNull(core.send(Action.Pages(PageAction.SelectBarItem(BarEntry.Apps))))
             assertPageFixture("Notes")
-            assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
+            assertNull(core.send(Action.Pages(PageAction.SelectBarItem(BarEntry.Agent))))
             assertPageFixture("Echo")
         }
         compose.onNodeWithText("Echo").performClick()

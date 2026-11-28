@@ -221,6 +221,8 @@ fn settings_view(
         if let Some((count, requests)) = members {
             groups[0].push(SettingsEntry::Members { count, requests });
         }
+        // 域名和服务器管理是一类；配对了就给，家里其他人的设备进去会看到“只有主人的设备能改”。
+        groups[1].push(SettingsEntry::ClientsDomain);
         if let Some(peers_count) = peers {
             // “其他服务器”和服务器管理是一类：放在服务器的同一组里。
             groups[1].push(SettingsEntry::Peers {
@@ -355,13 +357,16 @@ mod tests {
         );
         assert_eq!(
             view.sections[1].entries,
-            [SettingsEntry::Server {
-                name: Some(ServerName::Named {
-                    name: "办公室".into(),
-                }),
-                status: HomeStatus::Connected,
-                upgrade: true
-            }]
+            [
+                SettingsEntry::Server {
+                    name: Some(ServerName::Named {
+                        name: "办公室".into(),
+                    }),
+                    status: HomeStatus::Connected,
+                    upgrade: true
+                },
+                SettingsEntry::ClientsDomain,
+            ]
         );
         assert!(entries(&view).contains(&SettingsEntry::RestartOnboarding));
     }
@@ -479,11 +484,14 @@ mod tests {
         let server_group = |view: &SettingsViewModel| view.sections[1].entries.clone();
         assert_eq!(
             server_group(&view(None)),
-            [SettingsEntry::Server {
-                name: None,
-                status: HomeStatus::Connected,
-                upgrade: false
-            }]
+            [
+                SettingsEntry::Server {
+                    name: None,
+                    status: HomeStatus::Connected,
+                    upgrade: false
+                },
+                SettingsEntry::ClientsDomain,
+            ]
         );
         assert_eq!(
             server_group(&view(Some(2))),
@@ -493,6 +501,7 @@ mod tests {
                     status: HomeStatus::Connected,
                     upgrade: false
                 },
+                SettingsEntry::ClientsDomain,
                 SettingsEntry::Peers { count: 2 },
             ]
         );
@@ -560,6 +569,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)] // 一次把连接推送和升级标记的几种取值都走一遍，拆开只剩接线。
     async fn follows_the_connection_push_and_core_upgrades() {
         let home = |status| HomeViewModel {
             device_id: "device".into(),
@@ -664,6 +674,10 @@ mod tests {
         updates.changed().await.unwrap();
         assert_eq!(
             link.view().sections[1].entries[1],
+            SettingsEntry::ClientsDomain
+        );
+        assert_eq!(
+            link.view().sections[1].entries[2],
             SettingsEntry::Peers { count: 1 }
         );
     }

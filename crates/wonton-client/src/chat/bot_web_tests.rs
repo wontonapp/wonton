@@ -114,6 +114,8 @@ fn request() -> Request {
 fn profile(id: BotRef, user: &str) -> BotView {
     BotView {
         availability: Default::default(),
+        shared: false,
+        danger: None,
         bot: id,
         user_id: user.into(),
         web: None,
@@ -125,6 +127,9 @@ fn profile(id: BotRef, user: &str) -> BotView {
         saving: false,
         problem: None,
         chat: Default::default(),
+        cloud: None,
+        custom_media: false,
+        face: None,
     }
 }
 
@@ -404,6 +409,7 @@ fn known_denial_is_preserved_but_transport_or_unknown_errors_have_no_page() {
         kind: Some(kind.into()),
         message: String::new(),
         problem: None,
+        plugins: Vec::new(),
     };
     assert_eq!(
         failure(error("not_shared")),

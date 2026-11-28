@@ -192,6 +192,7 @@ pub(super) fn build_page(
         layout: metadata.layout,
         state: state_value,
         reload: state.reloads.get(placed).copied().unwrap_or_default(),
+        native: None,
         opens_in_browser: browser,
     }
 }
@@ -210,6 +211,15 @@ pub(super) fn classify_pin(state: &PagesState, parsed: &Url) -> Option<(TabRef, 
             },
             Some(view.name.clone()),
         ))
+    })
+}
+
+/// 这个网址和某个已核实的 Bot 网页同源。
+pub(super) fn owns_url(state: &PagesState, url: &Url) -> bool {
+    state.bots.iter().any(|view| {
+        ready_page(state, &view.bot)
+            .and_then(|page| Url::parse(&page.url).ok())
+            .is_some_and(|base| base.origin() == url.origin())
     })
 }
 

@@ -20,7 +20,7 @@ pub(super) fn payload(
     for (name, color) in COLOR_VARIABLES {
         variables.insert(
             (*name).to_owned(),
-            crate::appearance::accent_hex(color(colors)).into(),
+            crate::appearance::hex(color(colors)).into(),
         );
     }
     for (name, ios, android) in RADIUS_VARIABLES {

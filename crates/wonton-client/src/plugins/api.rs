@@ -17,9 +17,9 @@ use serde::de::DeserializeOwned;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus, PluginFailure,
-    PluginImage, PluginProblem, SettingsFieldError, SettingsSchemaProblem, minimum_server_version,
-    window_path,
+    CapabilityProviderRef, CoreError, CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus,
+    PluginFailure, PluginImage, PluginProblem, SettingsFieldError, SettingsSchemaProblem,
+    minimum_server_version, window_path,
 };
 
 use crate::chat::proxy_url;
@@ -54,6 +54,9 @@ struct ErrorDetail {
     fields: Vec<SettingsFieldError>,
     #[serde(default)]
     problems: Vec<SettingsSchemaProblem>,
+    /// `in_use` 时还在用这个插件的依赖方（ADR-0053）。
+    #[serde(default)]
+    plugins: Vec<CapabilityProviderRef>,
 }
 pub(crate) enum CoreApiError {
     Transport(PluginProblem),
@@ -62,6 +65,8 @@ pub(crate) enum CoreApiError {
         kind: Option<String>,
         message: String,
         problem: Option<String>,
+        /// `in_use` 的依赖方（ADR-0053）；别的类别为空。
+        plugins: Vec<CapabilityProviderRef>,
     },
     Protocol(String),
 }
@@ -521,6 +526,29 @@ impl CoreApi {
             .await
     }
 
+    /// 发 JSON 请求体，响应是空的。
+    pub(super) async fn put_unit_body(
+        &self,
+        segments: &[&str],
+        body: &impl serde::Serialize,
+        timeout: Duration,
+    ) -> Result<(), PluginProblem> {
+        let body = serde_json::to_vec(body).map_err(|e| PluginProblem {
+            reason: PluginFailure::Protocol,
+            min_version: None,
+            message: l10n!(
+                CATALOG,
+                language(),
+                "plugins-api-invalid-request",
+                reason = e.to_string()
+            ),
+            settings: None,
+        })?;
+        self.send(Method::PUT, self.url(segments, &[]), Some(body), timeout)
+            .await
+            .map(drop)
+    }
+
     /// 响应是空的。
     pub(super) async fn put_unit(
         &self,
@@ -541,6 +569,34 @@ impl CoreApi {
         self.send(Method::DELETE, self.url(segments, query), None, timeout)
             .await
             .map(drop)
+    }
+
+    /// 同 [`Self::delete`]，错误带类别、原话和 `in_use` 的依赖方。
+    pub(super) async fn delete_detailed(
+        &self,
+        segments: &[&str],
+        query: &[(&str, &str)],
+        body: Option<&impl serde::Serialize>,
+        timeout: Duration,
+    ) -> Result<(), CoreApiError> {
+        let body = body
+            .map(serde_json::to_vec)
+            .transpose()
+            .map_err(|error| CoreApiError::Protocol(error.to_string()))?;
+        let (status, bytes) = self
+            .exchange(
+                Method::DELETE,
+                self.url(segments, query),
+                body,
+                "application/json",
+                timeout,
+            )
+            .await
+            .map_err(CoreApiError::Transport)?;
+        if status >= 400 {
+            return Err(http_error(status, &bytes));
+        }
+        Ok(())
     }
 
     /// `PluginImage.path` 是核心给的地址，只取图片接口下面的。
@@ -592,13 +648,14 @@ fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
     let detail = serde_json::from_slice::<ErrorBody>(bytes)
         .ok()
         .map(|body| body.error);
-    let (kind, message, problem) = match detail {
+    let (kind, message, problem, plugins) = match detail {
         Some(ErrorDetail {
             kind,
             message,
             problem,
+            plugins,
             ..
-        }) => (Some(kind), message, problem),
+        }) => (Some(kind), message, problem, plugins),
         None => (
             None,
             l10n!(
@@ -608,6 +665,7 @@ fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
                 status = status
             ),
             None,
+            Vec::new(),
         ),
     };
     CoreApiError::Http {
@@ -615,6 +673,28 @@ fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
         kind,
         message,
         problem,
+        plugins,
+    }
+}
+
+impl CoreApiError {
+    /// 转成壳能显示的问题；`in_use` 的依赖方由调用方从 [`CoreApiError::Http`] 里另取。
+    pub(crate) fn into_problem(self) -> PluginProblem {
+        match self {
+            Self::Transport(problem) => problem,
+            Self::Http {
+                status,
+                kind,
+                message,
+                ..
+            } => error::problem_from_parts(status, kind.as_deref(), message),
+            Self::Protocol(message) => PluginProblem {
+                reason: PluginFailure::Protocol,
+                min_version: None,
+                message,
+                settings: None,
+            },
+        }
     }
 }
 
@@ -647,6 +727,16 @@ pub(super) fn not_connected() -> PluginProblem {
         reason: PluginFailure::TransportUnavailable,
         min_version: None,
         message: l10n!(CATALOG, language(), "plugins-api-not-connected"),
+        settings: None,
+    }
+}
+
+/// 这台手机还没有配对信息：不是连不上，是还没配对，壳据此引导去配对。
+pub(super) fn not_paired() -> PluginProblem {
+    PluginProblem {
+        reason: PluginFailure::NotPaired,
+        min_version: None,
+        message: l10n!(CATALOG, language(), "plugins-api-not-paired"),
         settings: None,
     }
 }
@@ -709,7 +799,11 @@ pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
         // 服务还在起，现在做不了，缓过来再试就能过（#682）。
         | PluginFailure::TimedOut
         // 记录不可用：现在做不了。壳按类别出「重新安装」的下一步（#198 的核心行为、#230 的 iOS 壳）。
-        | PluginFailure::RecordUnusable => CoreError::NotReady { reason },
+        | PluginFailure::RecordUnusable
+        // 卸载被在用的依赖挡住：卸掉依赖方或先停掉它们再试。
+        | PluginFailure::InUse => CoreError::NotReady { reason },
+        // 还没配对家里的服务器：前置条件不满足，配对后再试。
+        PluginFailure::NotPaired => CoreError::NotReady { reason },
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
             CoreError::Upstream { reason }
         }

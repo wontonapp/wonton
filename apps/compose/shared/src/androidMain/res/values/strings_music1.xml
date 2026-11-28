@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Entry and section title in the native music library: the artists. -->
+    <string name="music_artists">Artists</string>
+    <!-- Entry and section title in the native music library: all songs. -->
+    <string name="music_songs">Songs</string>
+    <!-- Entry and page title in the native music library: what the person marked as favorite. -->
+    <string name="music_starred">Favorites</string>
+    <!-- Entry and page title in the native music library: the genres. -->
+    <string name="music_genres">Genres</string>
+    <!-- Row title on the music library home: albums added most recently. -->
+    <string name="music_recently_added">Recently Added</string>
+    <!-- Row title on the music library home: albums played most recently. -->
+    <string name="music_recently_played">Recently Played</string>
+    <!-- Placeholder of the search field in the music library. -->
+    <string name="music_search_prompt">Artists, albums, songs</string>
+    <!-- Toolbar menu on the albums page: change the order. -->
+    <string name="music_sort">Sort</string>
+    <!-- Album order: most played first. -->
+    <string name="music_sort_frequent">Most Played</string>
+    <!-- Album order: by album title. -->
+    <string name="music_sort_name">Title</string>
+    <!-- Album order: by artist name. -->
+    <string name="music_sort_artist">Artist</string>
+    <!-- Album order: shuffled. -->
+    <string name="music_sort_random">Random</string>
+    <!-- Button and menu item: mark a song, album or artist as favorite. -->
+    <string name="music_star">Favorite</string>
+    <!-- Button on an album or artist page that is already a favorite; tapping it removes the favorite. -->
+    <string name="music_starred_label">Favorited</string>
+    <!-- How many albums an artist or genre has. Argument: the count. -->
+    <plurals name="music_album_count">
+        <item quantity="one">%1$d album</item>
+        <item quantity="other">%1$d albums</item>
+    </plurals>
+    <!-- How many songs an album or playlist has. Argument: the count. -->
+    <plurals name="music_song_count">
+        <item quantity="one">%1$d song</item>
+        <item quantity="other">%1$d songs</item>
+    </plurals>
+    <!-- Section title for one disc of a multi-disc album. Argument: the disc number. -->
+    <string name="music_disc">Disc %1$d</string>
+    <!-- Problem title: the music library did not accept who this person is. -->
+    <string name="music_problem_not_signed_in_title">The music library didn\'t recognize you</string>
+    <!-- Next step under the not-recognized problem. -->
+    <string name="music_problem_not_signed_in_next_step">Ask whoever manages the home server to check the music library\'s accounts.</string>
+    <!-- Problem title: the album, artist or playlist is no longer in the library. -->
+    <string name="music_problem_not_found_title">This is no longer in the music library</string>
+    <!-- Problem title: the music library itself returned an error. -->
+    <string name="music_problem_upstream_title">The music library ran into a problem</string>
+</resources>

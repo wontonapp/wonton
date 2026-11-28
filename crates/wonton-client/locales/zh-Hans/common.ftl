@@ -32,6 +32,8 @@ plugins-api-server-status = 家里的服务器回了 { $status }
 
 plugins-api-not-connected = 连上家里的服务器后再试。
 
+plugins-api-not-paired = 先配对家里的服务器，再试。
+
 plugins-api-server-too-old = 家里的服务器 { $version } 太旧：这个功能要 { $minimum } 起。
 
 # 安装、升级、卸载任务（crates/wonton-client/src/plugins/tasks.rs）。
@@ -40,12 +42,13 @@ plugins-tasks-uncertain = 连接断了，等不到家里服务器的结果，看
 plugins-tasks-server-changed = 换了家里的服务器，等不到原来那台的结果。
 
 plugins-tasks-preview-no-source = 这份预览没有来源，装不了。
-# $title 是提供方的名字，$capability 是它提供的、缺着的必需能力。
-plugins-tasks-install-together = 装它会一起装上「{ $title }」：缺的必需能力 { $capability } 由它提供。
+# $id 是被挡住的插件，$detail 是服务器写的原文。
+plugins-tasks-dependent-in-use = 没能卸载「{ $id }」：还有应用在用它。{ $detail }
 # $capability 是缺着的必需能力。
 plugins-tasks-preview-no-provider = 缺的必需能力 { $capability } 在商店里没有提供方，装不了。
-# $title 是提供方的名字。
-plugins-tasks-provider-needs-own-confirm = 「{ $title }」有需要单独确认的权限，先单独装上它，再回来装这个插件。
+plugins-tasks-preview-old-core = 这台核心太旧，不能跟着一起装提供方；先单独装提供它的插件（{ $capability }），再回来试。
+# $provider 和 $got 是插件 ID。
+plugins-capability-wrong-provider = 「{ $provider }」的来源现在指向别的插件（{ $got }），重新预览。
 
 # $id 是原样的任务 ID。
 plugins-tasks-no-such-task = 没有这个任务：{ $id }
@@ -157,5 +160,28 @@ pages-storage-problem = 我的应用存不下，下次启动可能恢复旧状�
 # 只给主人查看生成的插件密钥；用户填写和插件收集的密钥绝不返回。
 plugins-owner-secret-not-listed = 这项密钥不在已展开的列表里：{ $name }
 
+# 面板（ADR-0052）的报错。作为 CoreError 的原因，或 TabsProblem 的说明显示。
+panel-full = 面板满了，先拿掉一页再放。
+panel-pins-not-connected = 还没有连上家里的服务器。
+panel-pins-api-failed = { $status }：{ $body }
+panel-page-already-there = 这个页面已经在面板里。
+panel-page-not-there = 这个页面不在面板里。
+panel-page-unsupported = 面板里只能放插件页、插件里的某一页和 https:// 的网页。
+panel-index-out-of-range = 那个位置在面板外面。
+panel-not-signed-in = 还没登录，面板改动存不进账号；本机先记着，登录后再同步。
+panel-room-not-open = 先打开这个聊天，才能改它的面板。
+panel-room-unknown = 找不到这个聊天。
+panel-pin-invalid-url = 这个网址读不出来。
+panel-pin-not-https = 只能钉 https:// 的网页。
+panel-pin-path-outside = 这一页不在插件自己的网站里。
+panel-attention-panel-only = 只有面板里的页面能挂红点。
+panel-config-too-many = 面板最多放 { $count } 页。
+panel-config-duplicate = 同一个页面在面板里出现了两次。
+panel-sync-failed-read = 从服务器读面板设置没成功。
+panel-sync-unreadable = 服务器上的面板设置这台设备读不懂，先用本机的。
+panel-pins-refresh-failed = 面板里 Bot 钉的页面取不到:{ $error }
+
 # 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
 models-invalid-action = 不是能在这一页做的操作。
+# 模型页（ADR-0129）：浏览器授权的回跳不是这次发起的（地址不对或 state 不一致），没交给插件。
+models-login-callback-mismatch = 回来的授权和这里发起的这次对不上，已作废。请重新登录。

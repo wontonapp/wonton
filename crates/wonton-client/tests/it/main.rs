@@ -9,6 +9,7 @@ mod agent_models;
 mod app_lock;
 mod bot_contacts;
 pub(crate) mod chat;
+mod clients;
 mod family;
 mod family_support;
 mod files;

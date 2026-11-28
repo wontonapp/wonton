@@ -98,6 +98,8 @@
     <string name="widget_status_at">%1$s · %2$s</string>
     <string name="myapp_add">加进我的应用</string>
     <string name="myapp_add_more">添加应用</string>
+    <string name="myapp_url">填写网址</string>
+    <string name="myapp_url_add">添加</string>
     <string name="myapp_auto_add">新装的应用自动加入</string>
     <string name="myapp_problem">我的应用读写出错</string>
     <string name="myapp_remove">从我的应用移出</string>
@@ -138,4 +140,15 @@
     <string name="owner_profile_avatar_pick">选择照片</string>
     <!-- Button that removes the profile photo. -->
     <string name="owner_profile_avatar_remove">移除头像</string>
+    <string name="panel_add">添加</string>
+    <string name="panel_add_pages">添加页面</string>
+    <string name="panel_can_add">可以放进面板的页面</string>
+    <string name="panel_close">关掉面板</string>
+    <string name="panel_edit">编辑面板</string>
+    <string name="panel_in_panel">面板里的页面</string>
+    <string name="panel_open">打开面板</string>
+    <string name="panel_public_unsupported">这台设备的 WebView 分不开公网网页和插件页面的存储，打不开公网网页</string>
+    <string name="panel_remove">移除</string>
+    <string name="panel_url">填写网址</string>
+    <string name="panel_pin">钉到面板</string>
 </resources>

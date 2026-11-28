@@ -393,7 +393,7 @@ private extension ComposerView {
                 editBar(editing)
             } else if let reply = model.replies[draftKey] {
                 ReplyQuoteView(
-                    quote: reply, core: model.core, ink: Color(colors.textPrimary), accent: Color(colors.accentInk),
+                    quote: reply, core: model.core, ink: Color(colors.textPrimary), emphasis: Color(colors.textPrimary),
                     cancel: { model.cancelReply(in: composer.target) },
                     jump: { jumpToReply(reply.eventId) }
                 )
@@ -424,7 +424,7 @@ private extension ComposerView {
     }
 }
 
-/// Bot 有命令时输入栏最左边的“菜单”胶囊（ADR-0109 第 6 节）：重点色的玻璃，图标加字；输入框里有字时收成只剩图标，
+/// Bot 有命令时输入栏最左边的“菜单”胶囊（ADR-0109 第 6 节）：强调色的玻璃，图标加字；输入框里有字时收成只剩图标，
 /// 把宽度让给输入框。
 private struct ComposerMenuButton: View {
     let showsTitle: Bool
@@ -444,10 +444,10 @@ private struct ComposerMenuButton: View {
                         .transition(.opacity)
                 }
             }
-            .foregroundStyle(Color(colors.canvas))
+            .foregroundStyle(Color(colors.onPrimary))
             .padding(.horizontal, WontonTheme.spacing.s12)
             .frame(minWidth: WontonTheme.size.chatControl, minHeight: WontonTheme.size.chatControl)
-            .chatGlass(in: Capsule(), tint: Color(colors.accentInk), interactive: true)
+            .chatGlass(in: Capsule(), tint: Color(colors.primary), interactive: true)
             .frame(minHeight: WontonTheme.size.target)
             .contentShape(Rectangle())
         }

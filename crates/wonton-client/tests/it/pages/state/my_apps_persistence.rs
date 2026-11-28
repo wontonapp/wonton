@@ -141,7 +141,7 @@ async fn uninstall_notice_uses_plugin_title_once_and_ignores_open_pages() {
         })
         .unwrap();
     let opened_removed = wait_pages(&other_rig, |view| {
-        view.stack.is_empty() && view.root == TabRef::Chat
+        view.stack.is_empty() && view.tab == wonton_client::BarEntry::Agent
     })
     .await;
     // 打开着的页面不额外提示：还是卸载时的那一条，关掉就没了。

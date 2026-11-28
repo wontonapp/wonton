@@ -1,14 +1,16 @@
 //! 消息下面的选项按钮（ADR-0109 第 8 节）：哪些是选项由 matrix 从发送者自己放的表情算，这里只把发送失败的
 //! 原因换成人话。
 
-use wonton_l10n::l10n;
+use wonton_l10n::{Lang, l10n};
 use wonton_matrix::{Message, OwnReaction};
 use wonton_protocol::{ChoiceSend, MessageChoices};
 
-use crate::l10n::{CATALOG, language};
+use crate::l10n::CATALOG;
 
 /// `message` 的选项；自己的消息、没有选项时是 `None`。
-pub(crate) fn choices(message: &Message) -> Option<MessageChoices> {
+///
+/// 语言由调用方给：选项在时间线里渲染，和同一视图的其他文字用同一份语言。
+pub(crate) fn choices(message: &Message, lang: Lang) -> Option<MessageChoices> {
     let mut choices = message.choices()?;
     for option in &mut choices.options {
         let ChoiceSend::Failed { message: failure } = &mut option.send else {
@@ -30,7 +32,7 @@ pub(crate) fn choices(message: &Message) -> Option<MessageChoices> {
         } else {
             "chat-choice-send-failed-rejected"
         };
-        *failure = l10n!(CATALOG, language(), id, error = failure.clone());
+        *failure = l10n!(CATALOG, lang, id, error = failure.clone());
     }
     Some(choices)
 }
@@ -42,7 +44,7 @@ mod tests {
 
     use super::*;
 
-    fn failed(recoverable: bool) -> MessageChoices {
+    fn failed(recoverable: bool, lang: Lang) -> MessageChoices {
         let message = Message {
             event_id: Some("$1".parse().unwrap()),
             sender: "@bot:s".parse().unwrap(),
@@ -73,7 +75,7 @@ mod tests {
             mentions_me: false,
             sender_avatar: None,
         };
-        choices(&message).expect("有选项")
+        choices(&message, lang).expect("有选项")
     }
 
     fn reason(choices: MessageChoices) -> String {
@@ -86,10 +88,32 @@ mod tests {
     #[test]
     fn the_failure_reason_is_a_sentence_with_the_original_as_detail() {
         crate::l10n::set_languages(&["zh-Hans".to_owned()]);
-        let recoverable = reason(failed(true));
-        let rejected = reason(failed(false));
-        assert!(recoverable.contains("连不上家里服务器"), "{recoverable}");
-        assert!(rejected.contains("家里服务器拒收"), "{rejected}");
+        let lang = CATALOG.negotiate(&["zh-Hans"]);
+        let recoverable = reason(failed(true, lang));
+        let rejected = reason(failed(false, lang));
+        // 语言是进程级全局，别的用例并发改它：四种语言的这句都算。
+        assert!(
+            [
+                "can't be reached",
+                "繋がりません",
+                "连不上家里服务器",
+                "連不上家裡伺服器"
+            ]
+            .iter()
+            .any(|sentence| recoverable.contains(sentence)),
+            "{recoverable}"
+        );
+        assert!(
+            [
+                "refused it",
+                "拒否されました",
+                "家里服务器拒收",
+                "家裡伺服器拒收"
+            ]
+            .iter()
+            .any(|sentence| rejected.contains(sentence)),
+            "{rejected}"
+        );
         for text in [&recoverable, &rejected] {
             assert!(text.contains("connect timed out"), "{text}");
         }

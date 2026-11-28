@@ -114,6 +114,9 @@ pub struct Manifest {
     #[serde(default)]
     pub runtime: Runtime,
     pub title: LocalizedText,
+    /// 一句通俗的用途，显示在 `title` 下面，如 Radarr 的“电影下载”。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtitle: Option<LocalizedText>,
     pub description: LocalizedText,
     /// 插件包里的 PNG 或 SVG。
     #[serde(default)]

@@ -42,6 +42,7 @@ async fn start(subject: Arc<Mutex<String>>) -> (Arc<Mutex<Vec<Value>>>, Harness)
 fn member(h: &Harness, username: &str, role_id: &str) -> iroh::EndpointId {
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             role_id: role_id.to_owned(),
             status: MemberStatus::Joined,
             ..MemberRecord::for_test(username)

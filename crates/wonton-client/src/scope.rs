@@ -10,9 +10,9 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use wonton_protocol::{
     AgentChainsViewModel, AgentModelsViewModel, BotContactsViewModel, ChatViewModel,
-    ConfirmationsViewModel, CoreError, FamilyViewModel, FriendsViewModel, HomeViewModel,
-    MyAvatarProblem, OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel,
-    ServersViewModel, SettingsViewModel, TransfersViewModel,
+    ClientsDomainViewModel, ConfirmationsViewModel, CoreError, FamilyViewModel, FriendsViewModel,
+    HomeViewModel, MyAvatarProblem, OnboardingViewModel, PagesViewModel, PeersViewModel,
+    PluginsViewModel, ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
@@ -20,12 +20,15 @@ use crate::agent_models::AgentModelsLink;
 use crate::app_lock::AppLockLink;
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
+use crate::clients::ClientsDomainLink;
 use crate::composer::{ComposerLink, uplink::LiveUplink};
 use crate::family::FamilyLink;
 use crate::files::FilesLink;
 use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::lock_screen::LockScreenLink;
+use crate::media_link::{MediaLink, MediaViews};
+use crate::music_library::{LiveLibraries, MusicLink};
 use crate::onboarding::OnboardingLink;
 use crate::pages::PagesLink;
 use crate::peers::PeersLink;
@@ -49,17 +52,21 @@ pub(crate) struct Scope {
     pub(crate) agent_chains: Arc<AgentChainsLink>,
     pub(crate) pages: Arc<PagesLink>,
     pub(crate) files: Arc<FilesLink>,
+    pub(crate) media: Arc<MediaLink>,
     pub(crate) composer: Arc<ComposerLink>,
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) friends: Arc<FriendsLink>,
     pub(crate) family: Arc<FamilyLink>,
     pub(crate) bot_contacts: Arc<BotContactsLink>,
+    pub(crate) clients_domain: Arc<ClientsDomainLink>,
     pub(crate) agent_models: Arc<AgentModelsLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
     /// 要跨源隔离的插件网页交给系统浏览器时用的回环入口（ADR-0033）。
     pub(crate) browser: Arc<crate::browser::BrowserLink>,
+    /// 原生音乐页的曲库浏览（ADR-0113 第 2 节）。
+    pub(crate) music: Arc<MusicLink>,
     /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
     /// 换服务器换作用域，测试不换服务器就一直是同一个。
     #[cfg(feature = "test-hooks")]
@@ -80,11 +87,13 @@ pub(crate) struct Views {
     pub(crate) agent_stops: watch::Sender<crate::agent_chains::room_stop::Attempts>,
     pub(crate) pages: watch::Sender<PagesViewModel>,
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
+    pub(crate) media: MediaViews,
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
     pub(crate) friends: watch::Sender<FriendsViewModel>,
     pub(crate) family: watch::Sender<FamilyViewModel>,
     pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
+    pub(crate) clients_domain: watch::Sender<ClientsDomainViewModel>,
     pub(crate) agent_models: watch::Sender<AgentModelsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
@@ -100,11 +109,13 @@ impl Views {
             agent_stops: scope.agent_chains.stops_sender(),
             pages: scope.pages.sender(),
             transfers: scope.files.sender(),
+            media: scope.media.views(),
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
             friends: scope.friends.sender(),
             family: scope.family.sender(),
             bot_contacts: scope.bot_contacts.sender(),
+            clients_domain: scope.clients_domain.sender(),
             agent_models: scope.agent_models.sender(),
             settings: scope.settings.sender(),
         }
@@ -221,11 +232,12 @@ fn chat_links(
     })
 }
 
-/// 好友、成员和设置这几条链接一起建，名字只在这里拼一次。
+/// 好友、成员、域名和设置这几条链接一起建，名字只在这里拼一次。
 type PeopleLinks = (
     Arc<PeersLink>,
     Arc<FriendsLink>,
     Arc<FamilyLink>,
+    Arc<ClientsDomainLink>,
     SettingsLink,
 );
 
@@ -259,6 +271,11 @@ fn people_links(
         plugins.clone(),
         views.map(|v| v.family.clone()),
     );
+    let clients_domain = ClientsDomainLink::new(
+        handle.clone(),
+        home.clone(),
+        views.map(|v| v.clients_domain.clone()),
+    );
     let settings = SettingsLink::new(
         handle,
         home.subscribe(),
@@ -273,7 +290,7 @@ fn people_links(
         lock_screen.subscribe(),
         views.map(|v| v.settings.clone()),
     );
-    Ok((peers, friends, family, settings))
+    Ok((peers, friends, family, clients_domain, settings))
 }
 
 impl Scope {
@@ -378,6 +395,20 @@ impl Scope {
             plugins.subscribe(),
             links.chat.subscribe(),
         );
+        // 封面按服务器分开放：两台服务器上的插件可能同名。
+        let music = MusicLink::new(
+            handle.clone(),
+            LiveLibraries::new(home.clone(), plugins.clone()),
+            crate::cache_dir::cache_root(root)
+                .join("music-covers")
+                .join(slot),
+        );
+        let media = MediaLink::new(
+            handle.clone(),
+            home.clone(),
+            dir,
+            views.map(|v| v.media.clone()),
+        );
         let bot_contacts = BotContactsLink::new(
             handle.clone(),
             home.clone(),
@@ -394,16 +425,19 @@ impl Scope {
             agent_chains,
             pages: links.pages,
             files: links.files,
+            media,
             composer,
             onboarding: links.onboarding,
             peers: people.0,
             friends: people.1,
             family: people.2,
+            clients_domain: people.3,
             bot_contacts,
             agent_models: links.agent_models,
-            settings: people.3,
+            settings: people.4,
             shared_apps,
             browser,
+            music,
             #[cfg(feature = "test-hooks")]
             card_success_hook,
             runtime,
@@ -426,6 +460,7 @@ impl Scope {
         self.onboarding.set_languages(languages.to_vec());
         self.peers.set_languages(languages.to_vec());
         self.bot_contacts.set_languages(languages.to_vec());
+        self.clients_domain.set_languages(languages.to_vec());
         self.agent_models.set_languages(languages.to_vec());
     }
 

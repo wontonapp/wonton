@@ -124,7 +124,12 @@ pub(super) async fn revoke_device(
     id: &EndpointId,
     keep_shared: bool,
 ) -> Result<(bool, DeviceRevokeReport), DeviceError> {
+    // 吊销前认人：吊销后设备不在表里，认不出是谁的了。
+    let owner = gateway.device_person(Some(super::TunnelPeer(*id)));
     let removed = gateway.tunnel.devices.remove(id)?;
+    if let Some(owner) = owner {
+        forget_offline(gateway, &owner.username, id);
+    }
     let report = gateway
         .plugins
         .revoke_passwords_for_device(&id.to_string(), keep_shared)
@@ -137,6 +142,19 @@ pub(super) async fn revoke_device(
         }
     }
     Ok((removed, report))
+}
+
+/// 被移除的设备那份离线占用清零（ADR-0113“配额与清理”）。记不上只记日志：设备已经吊销了，不能因为
+/// 一笔账把吊销回成失败，多出来的那份只会让这个人的离线合计偏大。
+fn forget_offline(gateway: &Gateway, owner: &str, id: &EndpointId) {
+    let Some(media) = &gateway.media else {
+        return;
+    };
+    let person = super::matrix_user_id(gateway, owner);
+    let device = crate::files::device_label(id);
+    if let Err(e) = media.store.report_offline(&person, &device, 0) {
+        tracing::warn!(device = %id.fmt_short(), error = %e, "被移除设备的离线占用没清零");
+    }
 }
 
 pub async fn remove(

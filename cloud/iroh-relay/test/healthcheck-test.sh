@@ -9,7 +9,7 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 FAKEBIN=$TMP/bin
 RELEASE_ENV=$TMP/release.env
-printf 'IROH_RELAY_VERSION=1.4.1\n' >"$RELEASE_ENV"
+printf 'IROH_RELAY_VERSION=1.5.0\n' >"$RELEASE_ENV"
 
 passed=0
 failed=0
@@ -37,7 +37,7 @@ reset() {
     fake curl 'printf 200'
     fake ss 'printf "UNCONN 0 0 0.0.0.0:7842 0.0.0.0:*\n"'
     fake openssl 'exit 0'
-    fake iroh-relay 'echo "iroh-relay 1.4.1"'
+    fake iroh-relay 'echo "iroh-relay 1.5.0"'
     CHECK_PATH=
 }
 

@@ -111,7 +111,7 @@ pub(crate) fn open_plugin_manager(
     .with_upgrade_freeze(upgrades.frozen())
 }
 
-/// 把总线认人用的资料和 Matrix 接上：家人记录、服务器名，以及 Bot 钉页卡片的发送方。
+/// 把总线认人用的资料和 Matrix 接上：家人记录、服务器名，以及代 Bot 查房间成员用的 Matrix。
 pub(crate) fn attach_identity(
     bus: &Arc<mcp::Bus>,
     matrix: Option<&Arc<Matrix>>,

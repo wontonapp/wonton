@@ -162,99 +162,102 @@ val PluginProblem.problem: Problem
     get() = reason.problem(message)
 
 fun PluginFailure.problem(detail: String?): Problem = when (this) {
+    PluginFailure.TRANSPORT_UNAVAILABLE,
+    PluginFailure.NOT_PAIRED,
+    PluginFailure.UNAUTHORIZED,
+    -> connectionProblem(detail)
+    PluginFailure.SOURCE_UNAVAILABLE,
+    PluginFailure.NOT_FOUND,
+    PluginFailure.CHANGED,
+    PluginFailure.UNSUPPORTED,
+    PluginFailure.CONFLICT,
+    PluginFailure.IN_USE,
+    PluginFailure.INVALID,
+    -> sourceProblem(detail)
+    PluginFailure.DEVICE_UNAVAILABLE,
+    PluginFailure.LAN_UNAVAILABLE,
+    PluginFailure.LAN_PORT_TAKEN,
+    PluginFailure.CORE_UPGRADING,
+    PluginFailure.EGRESS_PROXY_UNAVAILABLE,
+    PluginFailure.EGRESS_PROXY_WAITING,
+    -> hostProblem(detail)
+    else -> serviceProblem(detail)
+}
+
+/// 连不上、没配对、不认设备。
+private fun PluginFailure.connectionProblem(detail: String?): Problem = when (this) {
     PluginFailure.TRANSPORT_UNAVAILABLE -> problem(
         R.string.problem_transport_unavailable_title,
         R.string.problem_transport_unavailable_next_step,
         detail,
     )
-    PluginFailure.UNAUTHORIZED -> problem(
+    PluginFailure.NOT_PAIRED -> problem(
+        R.string.problem_not_paired_title,
+        R.string.problem_not_paired_next_step,
+        detail,
+    )
+    else -> problem(
         R.string.problem_unauthorized_title,
         R.string.problem_unauthorized_next_step,
         detail,
     )
-    PluginFailure.SOURCE_UNAVAILABLE -> Problem(
-        titleRes = R.string.problem_plugin_source_unavailable_title,
-        nextStepRes = R.string.problem_plugin_source_unavailable_next_step,
-        detail = detail,
-    )
-    PluginFailure.NOT_FOUND -> Problem(
-        titleRes = R.string.problem_plugin_not_found_title,
-        nextStepRes = R.string.problem_plugin_not_found_next_step,
-        detail = detail,
-    )
-    PluginFailure.CHANGED -> Problem(
-        titleRes = R.string.problem_plugin_changed_title,
-        nextStepRes = R.string.problem_plugin_changed_next_step,
-        detail = detail,
-    )
-    PluginFailure.UNSUPPORTED -> Problem(
-        titleRes = R.string.problem_plugin_unsupported_title,
-        nextStepRes = R.string.problem_upgrade_server_next_step,
-        detail = detail,
-    )
-    PluginFailure.CONFLICT -> Problem(
-        titleRes = R.string.problem_plugin_conflict_title,
-        nextStepRes = R.string.problem_plugin_conflict_next_step,
-        detail = detail,
-    )
-    PluginFailure.INVALID -> Problem(
-        titleRes = R.string.problem_plugin_invalid_title,
-        nextStepRes = R.string.problem_plugin_invalid_next_step,
-        detail = detail,
-    )
-    PluginFailure.DEVICE_UNAVAILABLE -> Problem(
-        titleRes = R.string.problem_plugin_device_unavailable_title,
-        nextStepRes = R.string.problem_plugin_device_unavailable_next_step,
-        detail = detail,
-    )
-    PluginFailure.LAN_UNAVAILABLE -> Problem(
-        titleRes = R.string.problem_plugin_lan_unavailable_title,
-        nextStepRes = R.string.problem_plugin_lan_unavailable_next_step,
-        detail = detail,
-    )
-    PluginFailure.LAN_PORT_TAKEN -> Problem(
-        titleRes = R.string.problem_plugin_lan_port_taken_title,
-        nextStepRes = R.string.problem_plugin_lan_port_taken_next_step,
-        detail = detail,
-    )
-    PluginFailure.CORE_UPGRADING -> Problem(
-        titleRes = R.string.problem_plugin_core_upgrading_title,
-        nextStepRes = R.string.problem_plugin_core_upgrading_next_step,
-        detail = detail,
-    )
-    PluginFailure.EGRESS_PROXY_UNAVAILABLE -> Problem(
-        titleRes = R.string.problem_plugin_egress_proxy_unavailable_title,
-        nextStepRes = R.string.problem_plugin_egress_proxy_unavailable_next_step,
-        detail = detail,
-    )
-    PluginFailure.EGRESS_PROXY_WAITING -> Problem(
-        titleRes = R.string.problem_plugin_egress_proxy_waiting_title,
-        nextStepRes = R.string.problem_plugin_egress_proxy_waiting_next_step,
-        detail = detail,
-    )
-    PluginFailure.RECORD_UNUSABLE -> Problem(
-        titleRes = R.string.problem_plugin_record_unusable_title,
-        nextStepRes = R.string.problem_plugin_record_unusable_next_step,
-        detail = detail,
-    )
-    PluginFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
-    PluginFailure.TIMED_OUT -> problem(
-        R.string.problem_plugin_health_timeout_title,
-        R.string.problem_plugin_health_timeout_next_step,
-        detail,
-    )
-    PluginFailure.PROTOCOL -> Problem(
-        titleRes = R.string.problem_plugin_protocol_title,
-        nextStepRes = R.string.problem_plugin_protocol_next_step,
-        detail = detail,
-    )
-    PluginFailure.SERVER_TOO_OLD -> Problem(
-        titleRes = R.string.problem_plugin_server_too_old_title,
-        nextStepRes = R.string.problem_upgrade_server_next_step,
-        detail = detail,
-    )
-    // 比这个壳新的类别：先按服务器出错说。
-    else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
+}
+
+/// 插件包和来源这一侧：来不了、没有、变了、不支持、冲突、还在被用、不合法。
+private fun PluginFailure.sourceProblem(detail: String?): Problem {
+    val (title, next) = when (this) {
+        PluginFailure.SOURCE_UNAVAILABLE ->
+            R.string.problem_plugin_source_unavailable_title to R.string.problem_plugin_source_unavailable_next_step
+        PluginFailure.NOT_FOUND ->
+            R.string.problem_plugin_not_found_title to R.string.problem_plugin_not_found_next_step
+        PluginFailure.CHANGED ->
+            R.string.problem_plugin_changed_title to R.string.problem_plugin_changed_next_step
+        PluginFailure.UNSUPPORTED ->
+            R.string.problem_plugin_unsupported_title to R.string.problem_upgrade_server_next_step
+        PluginFailure.CONFLICT ->
+            R.string.problem_plugin_conflict_title to R.string.problem_plugin_conflict_next_step
+        PluginFailure.IN_USE ->
+            R.string.problem_plugin_in_use_title to R.string.problem_plugin_in_use_next_step
+        else -> R.string.problem_plugin_invalid_title to R.string.problem_plugin_invalid_next_step
+    }
+    return Problem(titleRes = title, nextStepRes = next, detail = detail)
+}
+
+/// 这台主机这一侧：设备、局域网、核心升级、代理。
+private fun PluginFailure.hostProblem(detail: String?): Problem {
+    val (title, next) = when (this) {
+        PluginFailure.DEVICE_UNAVAILABLE ->
+            R.string.problem_plugin_device_unavailable_title to R.string.problem_plugin_device_unavailable_next_step
+        PluginFailure.LAN_UNAVAILABLE ->
+            R.string.problem_plugin_lan_unavailable_title to R.string.problem_plugin_lan_unavailable_next_step
+        PluginFailure.LAN_PORT_TAKEN ->
+            R.string.problem_plugin_lan_port_taken_title to R.string.problem_plugin_lan_port_taken_next_step
+        PluginFailure.CORE_UPGRADING ->
+            R.string.problem_plugin_core_upgrading_title to R.string.problem_plugin_core_upgrading_next_step
+        PluginFailure.EGRESS_PROXY_UNAVAILABLE ->
+            R.string.problem_plugin_egress_proxy_unavailable_title to
+                R.string.problem_plugin_egress_proxy_unavailable_next_step
+        else ->
+            R.string.problem_plugin_egress_proxy_waiting_title to
+                R.string.problem_plugin_egress_proxy_waiting_next_step
+    }
+    return Problem(titleRes = title, nextStepRes = next, detail = detail)
+}
+
+/// 家里的服务器和上游这一侧；比这个壳新的类别也按服务器出错说。
+private fun PluginFailure.serviceProblem(detail: String?): Problem {
+    val (title, next) = when (this) {
+        PluginFailure.RECORD_UNUSABLE ->
+            R.string.problem_plugin_record_unusable_title to R.string.problem_plugin_record_unusable_next_step
+        PluginFailure.TIMED_OUT ->
+            R.string.problem_plugin_health_timeout_title to R.string.problem_plugin_health_timeout_next_step
+        PluginFailure.PROTOCOL ->
+            R.string.problem_plugin_protocol_title to R.string.problem_plugin_protocol_next_step
+        PluginFailure.SERVER_TOO_OLD ->
+            R.string.problem_plugin_server_too_old_title to R.string.problem_upgrade_server_next_step
+        else -> R.string.problem_upstream_title to R.string.problem_upstream_next_step
+    }
+    return Problem(titleRes = title, nextStepRes = next, detail = detail)
 }
 
 val StoreProblem.problem: Problem

@@ -35,6 +35,7 @@ impl Bus {
             audit,
             takeovers: Takeovers::new(),
             adopt_refusals: Mutex::new(HashMap::new()),
+            pin_cards: Mutex::new(HashSet::new()),
             files: OnceLock::new(),
             help: OnceLock::new(),
             people: OnceLock::new(),
@@ -42,7 +43,6 @@ impl Bus {
             contacts: OnceLock::new(),
             agent_chains: OnceLock::new(),
             friends: OnceLock::new(),
-            pin_cards: Mutex::new(HashSet::new()),
             inbox: OnceLock::new(),
             peers: Mutex::new(Vec::new()),
         });
@@ -88,7 +88,7 @@ impl Bus {
         }
     }
 
-    /// 接上 Matrix 和主人：Bot 往主面板钉页的同意卡片发在 Bot 自己的房间里。
+    /// 接上 Matrix 和主人：代 Bot 查房间成员用。
     pub fn attach_matrix(&self, matrix: Option<Arc<crate::matrix::Matrix>>, owner: String) {
         let _ = self.matrix.set(Cards { matrix, owner });
     }

@@ -106,6 +106,29 @@ impl PluginManager {
         plugin
     }
 
+    /// 清单声明的页签和图标；没有清单、没有页签或图标坏了就是空的。
+    fn listed_tabs(entry: &Entry, langs: &Languages) -> Vec<PluginTab> {
+        let Some(listed) = entry.listed.as_ref() else {
+            return Vec::new();
+        };
+        let Some(tabs) = listed.manifest.tabs.as_ref() else {
+            return Vec::new();
+        };
+        tabs.iter()
+            .zip(&listed.tab_icons)
+            .filter_map(|(tab, (icon, selected))| {
+                Some(PluginTab {
+                    id: tab.id.clone(),
+                    title: langs.pick_owned(&tab.title),
+                    icon: icon.as_ref()?.tab_image(),
+                    icon_selected: selected.as_ref().map(IconSource::tab_image),
+                    path: tab.path.clone(),
+                    layout: manifest_tabs::layout(&tab.layout)?,
+                })
+            })
+            .collect()
+    }
+
     /// 列表里的一项，还没填 Bot。
     pub(in crate::plugin) fn listing(
         &self,
@@ -121,30 +144,14 @@ impl PluginManager {
         let (upgrade, mut notices) =
             self.upgrades
                 .listing(id, &entry.version, &entry.status, langs);
-        let tabs = entry
-            .listed
-            .as_ref()
-            .and_then(|listed| listed.manifest.tabs.as_ref().map(|tabs| (listed, tabs)))
-            .map(|(listed, tabs)| {
-                tabs.iter()
-                    .zip(&listed.tab_icons)
-                    .filter_map(|(tab, (icon, selected))| {
-                        Some(PluginTab {
-                            id: tab.id.clone(),
-                            title: langs.pick_owned(&tab.title),
-                            icon: icon.as_ref()?.tab_image(),
-                            icon_selected: selected.as_ref().map(IconSource::tab_image),
-                            path: tab.path.clone(),
-                            layout: manifest_tabs::layout(&tab.layout)?,
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let tabs = Self::listed_tabs(entry, langs);
         if entry.status == PluginStatus::Running {
             notices.extend(self.oom_notices(id, langs));
         }
         InstalledPlugin {
+            bot_danger_can_toggle: false,
+            bot_shared: false,
+            bot_danger: false,
             chat: manifest
                 .filter(|m| super::super::bots::is_bot(m))
                 .map(|m| PluginChat {
@@ -152,6 +159,9 @@ impl PluginManager {
                 }),
             id: id.to_string(),
             title: langs.pick_owned(&entry.title),
+            subtitle: manifest
+                .and_then(|m| m.subtitle.as_ref())
+                .map(|t| langs.pick_owned(t)),
             summary: manifest.map_or_else(String::new, |m| langs.pick_owned(&m.description)),
             version: entry.version.clone(),
             revision: entry
@@ -213,6 +223,7 @@ impl PluginManager {
                         .collect()
                 },
             ),
+            media_browse: manifest.and_then(super::super::manifest_browse::plugin_browse),
             matrix_widget: manifest.and_then(super::super::manifest_widget::plugin_widget),
         }
     }

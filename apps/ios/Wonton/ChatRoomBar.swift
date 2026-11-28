@@ -3,7 +3,7 @@ import WontonClient
 
 /// 主对话的顶栏（ADR-0109 第 9 节）：左边返回，中间一枚胶囊写名字和状态行（“正在输入…”也在这里），右边圆头像；
 /// 几样都是浮在消息上的玻璃（ADR-0107），栏本身不垫底，消息从下面滚过去。
-/// 点头像进对方的资料页；名字胶囊只显示名字和状态，不再另做一个入口。通话、旁聊这两个房间入口排在头像左边。面板的入口在资料页里（ADR-0052）。
+/// 点头像进对方的资料页；名字胶囊只显示名字和状态，不再另做一个入口。通话、旁聊这两个房间入口排在头像左边。
 struct ChatRoomBar<Trailing: View>: View {
     let title: String
     let avatar: AnyView?
@@ -54,7 +54,7 @@ struct ChatRoomBar<Trailing: View>: View {
             if let typing {
                 Text(typing)
                     .wontonText(WontonTheme.typography.barStatus)
-                    .foregroundStyle(Color(colors.accentInk))
+                    .foregroundStyle(Color(colors.textPrimary))
                     .lineLimit(1)
                     .accessibilityIdentifier("barActivity")
             } else if status.line == nil, let subtitle = status.subtitle {
@@ -138,7 +138,6 @@ struct ChatEdgeFade: View {
         ZStack {
             Rectangle().fill(.regularMaterial)
             palette.wallBase.opacity(WontonTheme.ratio.secondaryContent)
-            palette.wallTint
         }
         .mask {
             VStack(spacing: 0) {

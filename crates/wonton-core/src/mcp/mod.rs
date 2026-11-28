@@ -96,8 +96,7 @@ pub struct Endpoint {
     pub service: McpService,
 }
 
-/// `wonton__user_locale` 认人用的本服务器身份资料：Matrix 服务器名和家人记录。
-/// Bot 钉页的卡片需要的 Matrix 入口。
+/// 代 Bot 查房间成员要的 Matrix 入口和主人（收件人没给时按主人查）。
 pub struct Cards {
     matrix: Option<Arc<crate::matrix::Matrix>>,
     owner: String,
@@ -117,13 +116,15 @@ pub struct Bus {
     takeovers: Takeovers,
     /// 接手申请的冷却（#817）：主人回绝或没理之后，同一个 Bot 对同一个插件在这段时间内不再发接手卡片。
     adopt_refusals: Mutex<HashMap<(PluginId, PluginId), Instant>>,
+    /// 正在等主人同意钉页的 Bot（按插件），同一插件同一时间只有一张钉页卡片。
+    pin_cards: Mutex<HashSet<PluginId>>,
     /// 文件服务。它读插件的资源要用这里的 [`Upstreams`]，所以总线先建好，文件服务后接上（[`Bus::attach_files`]）。
     files: OnceLock<Arc<Files>>,
     /// 帮助文档。它要升级服务给的版本号，所以和文件服务一样后接上（[`Bus::attach_help`]）。
     help: OnceLock<Arc<Help>>,
     /// 家人记录、角色记录和本服务器的 Matrix 服务器名：`wonton__user_locale` 认人、开卡挑人用（[`Bus::attach_people`]）。
     people: OnceLock<People>,
-    /// Matrix 和主人：Bot 钉进主面板的同意卡片要发进 Bot 的房间里（[`Bus::attach_matrix`]）。
+    /// Matrix 和主人：代 Bot 查房间成员用（[`Bus::attach_matrix`]）。
     matrix: OnceLock<Cards>,
     /// Bot 的联系人：有远端联系人的 Bot 只聊天（[`Bus::attach_contacts`]，ADR-0050）。
     contacts: OnceLock<Arc<crate::contacts::Contacts>>,
@@ -131,8 +132,6 @@ pub struct Bus {
     agent_chains: OnceLock<Arc<crate::gateway::agent_chains::AgentChains>>,
     /// 好友名单（ADR-0051）：`wonton__send_message` 认收件人用（[`Bus::attach_friends`]）。
     friends: OnceLock<Arc<crate::friends::Friends>>,
-    /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
-    pin_cards: Mutex<HashSet<PluginId>>,
     /// 收件箱（ADR-0119）。没接时收件箱工具和接口如实报不可用。
     inbox: OnceLock<Arc<crate::inbox::Inbox>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -197,6 +196,8 @@ mod risky_tests;
 mod save_tests;
 #[cfg(test)]
 mod send_message_tests;
+#[cfg(test)]
+mod session_chain_tests;
 #[cfg(test)]
 mod takeover_tests;
 #[cfg(test)]

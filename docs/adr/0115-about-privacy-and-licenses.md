@@ -14,7 +14,7 @@
 
 ### 2. 许可清单构建时生成，不手写
 
-Rust 用 cargo-about 按 `licenses/about.toml` 的 accepted 收，Android 依赖用 AboutLibraries 导出，`scripts/generate-licenses.py` 合成一份 `licenses.json`；许可正文取仓库内 SPDX v3.27.0 快照，生成后校验结构、哨兵组件和表外许可。工具版本、资产和 sha256 钉死，按平台选下载资产；新工具是构建期依赖（MIT/Apache-2.0），不进二进制。
+Rust 用 cargo-about 按 `licenses/about.toml` 的 accepted 收，Android 依赖用 AboutLibraries 导出，图标集（iOS 是 Kubai，Android 是 Phosphor）不是依赖，按 `design/icons.toml` 钉的上游版本和许可加进去，每套单开一组、正文原样取 `design/<套>/LICENSE`（带上游的版权行），`scripts/generate-licenses.py` 合成一份 `licenses.json`；许可正文取仓库内 SPDX v3.27.0 快照，生成后校验结构、哨兵组件和表外许可。工具版本、资产和 sha256 钉死，按平台选下载资产；新工具是构建期依赖（MIT/Apache-2.0），不进二进制。
 
 `licenses/APPROVED` 是唯一的许可结论：同一张表做 cargo-about 的 accepted 和 AboutLibraries 的 `strictMode = FAIL` 白名单，新增依赖带来表外许可（含 GPL/AGPL）构建失败，由人看过再补。
 

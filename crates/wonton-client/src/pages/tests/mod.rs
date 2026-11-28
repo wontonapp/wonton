@@ -11,6 +11,7 @@ mod content;
 mod media_permission;
 mod my_apps;
 mod my_apps_list;
+mod native;
 mod page_rules;
 mod panel_attention;
 mod panel_pages;
@@ -130,10 +131,11 @@ impl Rig {
                 read_problem: None,
                 action_problem: None,
                 stack: Vec::new(),
+                failures: HashMap::new(),
                 content: HashMap::new(),
                 paired: true,
-                shows_apps: false,
-                failures: HashMap::new(),
+                tab: BarEntry::Agent,
+                bar_full: false,
                 reloads: HashMap::new(),
                 uninstalled: Vec::new(),
                 previous_plugins: None,
@@ -224,6 +226,12 @@ impl Rig {
         self.tabs.dispatch(PageAction::OpenPage { tab }).unwrap();
     }
 
+    fn select(&self, entry: BarEntry) {
+        self.tabs
+            .dispatch(PageAction::SelectBarItem { entry })
+            .unwrap();
+    }
+
     fn view(&self) -> PagesViewModel {
         self.tabs.view()
     }
@@ -272,9 +280,13 @@ fn home(server: &str) -> HomeViewModel {
 
 fn plugin(id: &str, title: &str, revision: &str) -> InstalledPlugin {
     InstalledPlugin {
+        bot_danger_can_toggle: false,
+        bot_shared: false,
+        bot_danger: false,
         chat: Default::default(),
         id: id.to_owned(),
         title: title.to_owned(),
+        subtitle: None,
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: revision.to_owned(),
@@ -303,6 +315,7 @@ fn plugin(id: &str, title: &str, revision: &str) -> InstalledPlugin {
         install_progress: None,
         install_failure: None,
         tunnel_ports: Vec::new(),
+        media_browse: None,
         matrix_widget: None,
     }
 }

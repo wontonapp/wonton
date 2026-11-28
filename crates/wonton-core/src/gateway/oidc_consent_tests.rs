@@ -124,6 +124,7 @@ fn person(h: &Harness, username: &str, language: &str) -> iroh::EndpointId {
     if username != "owner" {
         h.members
             .invite(crate::members::MemberRecord {
+                invited_by: None,
                 username: username.into(),
                 user_id: format!("@{username}:{}", "test"),
                 display_name: username.into(),

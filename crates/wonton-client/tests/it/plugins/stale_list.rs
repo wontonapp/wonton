@@ -113,6 +113,8 @@ async fn a_late_stale_list_does_not_bring_the_uninstalled_plugin_back() {
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: "app.miniflux.miniflux".to_owned(),
                 delete_data: false,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();

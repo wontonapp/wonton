@@ -462,3 +462,21 @@ async fn the_outbox_requires_the_bots_matrix_token() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 }
+
+/// 会话上一轮还开着又报一轮新的（前面那一轮的 `end` 丢了）：链开不成，拒绝里要写清原因，
+/// 光看 `invalid_input` 分不出是会话还挂着还是别的问题。
+#[tokio::test]
+async fn a_live_session_refusal_says_why() {
+    let home = start().await;
+    home.grant(Bot::Alice, "s-1", "@alice:test", "$e1").await;
+    let response = home
+        .start_turn(Bot::Alice, "s-1", "@alice:test", "$e2")
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response.headers()[ERROR_HEADER],
+        HeaderValue::from_static("invalid_input")
+    );
+    let detail = String::from_utf8_lossy(response.headers()["X-Wonton-Detail"].as_bytes());
+    assert_eq!(detail, "会话 s-1 已登记在别的链上");
+}

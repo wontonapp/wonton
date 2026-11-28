@@ -37,8 +37,8 @@ use crate::{CardLine, LanPort, PluginChat, PluginTab};
 pub use capability_deps::{
     BlockedCategory, CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef,
     CapabilityProviderSettings, CapabilitySetting, ConsumerCapabilityChoice,
-    ConsumerCapabilitySetting, InUseError, InstallTogether, MissingCapability, UninstallPreview,
-    UninstallRequest,
+    ConsumerCapabilitySetting, DependencyNextStep, InUseError, InstallProvider, InstallTogether,
+    MissingCapability, SelectedProvider, UninstallOutcome, UninstallPreview, UninstallRequest,
 };
 pub use detail::{PluginDetail, PluginDetailOutcome, PluginDetailRoute};
 pub use forms::{PluginKind, PluginRuntime, PluginScope, SecurityTier, plugin_scope_path};
@@ -138,6 +138,10 @@ pub struct InstalledPlugins {
 pub struct InstalledPlugin {
     pub id: String,
     pub title: String,
+    /// 清单的 `subtitle`：标题下面的一句用途；清单没写或旧核心不给时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub subtitle: Option<String>,
     /// 一句话说明（清单的 `description`）。
     pub summary: String,
     pub version: String,
@@ -179,6 +183,15 @@ pub struct InstalledPlugin {
     pub chat: Option<PluginChat>,
     /// 这台设备的人在这个插件里的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
+    /// 这个默认 Bot 是共享 Bot（全家共用），不是某个人的私人 Bot。
+    #[serde(default)]
+    pub bot_shared: bool,
+    /// 这个默认 Bot 开着危险模式（ADR-0091）。
+    #[serde(default)]
+    pub bot_danger: bool,
+    /// 主人现在能改这个 Bot 的危险模式：只有归属人的私人 Bot 能开。
+    #[serde(default)]
+    pub bot_danger_can_toggle: bool,
     /// 默认 Bot 身份的当前投影；未提供时也表示未知，不代表房间发送资格。
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
@@ -202,6 +215,11 @@ pub struct InstalledPlugin {
     /// `deny_unknown_fields`：新核心给端口项加字段时旧 App 照样读得懂列表。
     #[serde(default)]
     pub tunnel_ports: Vec<crate::MappedPort>,
+    /// 清单 `provides.media_source.browse`：客户端核心能直接按这个标准浏览它的库，点开进原生界面，网页放进
+    /// “更多”（ADR-0113）；没声明时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub media_browse: Option<crate::media::MediaBrowse>,
     /// 清单声明了 `matrix_widget`：网页能在房间里作为 Matrix widget 打开（ADR-0096）。
     #[serde(default)]
     pub matrix_widget: Option<PluginWidget>,
@@ -415,6 +433,10 @@ pub struct StoreItem {
     pub source: String,
     pub id: String,
     pub title: String,
+    /// 清单的 `subtitle`：标题下面的一句用途；清单没写或旧核心不给时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub subtitle: Option<String>,
     pub summary: String,
     pub icon: Option<PluginIcon>,
     pub tags: Vec<String>,
@@ -577,6 +599,8 @@ pub struct PluginProblem {
 pub enum PluginFailure {
     /// 连不上家里的服务器。
     TransportUnavailable,
+    /// 还没配对家里的服务器：先配对再试，不是连接失败。
+    NotPaired,
     /// 家里的服务器不认这台设备，或者不让它做这件事。
     Unauthorized,
     /// 家里的服务器连不上插件的来源（如 GitHub）。
@@ -589,6 +613,9 @@ pub enum PluginFailure {
     Unsupported,
     /// 已经装了，或者正在装、正在升级、正在卸载。
     Conflict,
+    /// 还有在用的插件 `requires` 这个插件提供的能力，又没有别的提供方能接上（ADR-0053）：
+    /// 依赖方在 [`PluginTask::dependents`]，可以一起卸载或先停掉它们。
+    InUse,
     /// 插件包不合法。
     Invalid,
     /// 选择的设备在这台主机上不可用。

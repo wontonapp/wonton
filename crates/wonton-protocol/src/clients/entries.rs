@@ -83,6 +83,9 @@ pub struct ClientsPlugin {
     /// 先是局域网，再是公网，最后按名字排 `clients.tcp`。
     pub entries: Vec<EntrySwitch>,
     pub auth: ClientAuthKind,
+    /// `webui.guests`：能给这个应用建访客链接（ADR-0090 第 5 节）。
+    #[serde(default)]
+    pub guests: bool,
     /// 给应用的登录用户名；`app` 模式下为空，`credentials` 的默认值是主人的 Matrix 用户名。
     pub username: Option<String>,
     /// 专用密码，按新建时间排；`app` 模式下为空。

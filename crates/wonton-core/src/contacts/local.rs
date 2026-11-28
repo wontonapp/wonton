@@ -172,7 +172,7 @@ impl Contacts {
                     stored.put(&other.bot, &local.user_id, active(theirs, now));
                 }
             })?;
-            self.ports.effects.allowed_users_changed(&other.bot);
+            self.apply(&other.bot).await;
         } else {
             let server = server_of(user).unwrap_or_default();
             let event = ContactEvent::Result {
@@ -185,7 +185,7 @@ impl Contacts {
             self.send_in_order(server, event).await?;
             self.commit(|stored| stored.put(&local.bot, user, active(row, now)))?;
         }
-        self.ports.effects.allowed_users_changed(&local.bot);
+        self.apply(&local.bot).await;
         Ok(())
     }
 
@@ -269,7 +269,7 @@ impl Contacts {
                 if let Some(other) = other
                     && was_active
                 {
-                    self.ports.effects.allowed_users_changed(&other.bot);
+                    self.apply(&other.bot).await;
                 }
             }
             _ => {
@@ -291,7 +291,7 @@ impl Contacts {
             }
         }
         if was_active {
-            self.ports.effects.allowed_users_changed(&local.bot);
+            self.apply(&local.bot).await;
         }
         Ok(self.view(bot))
     }

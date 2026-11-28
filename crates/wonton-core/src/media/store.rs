@@ -20,24 +20,24 @@ use wonton_protocol::media::TaskId;
 use wonton_protocol::media::view::{QuotaEntry, QuotaView};
 use wonton_protocol::media::{PlaybackSessionId, Queue};
 
+mod commands;
+mod routes;
 mod schema;
 mod sessions;
 mod tasks;
 
+pub use commands::AckState;
+pub use routes::UploadBinding;
 use schema::{QueueRow, classify, migrate, queue_row};
 pub use sessions::StoredSession;
 
 #[cfg(test)]
-pub(crate) use schema::SCHEMA_V1;
+pub(crate) use schema::CURRENT_VERSION;
 
 const DB_FILE: &str = "media.sqlite3";
 
-/// 每人向提供方上传的总量上限。ADR-0113 第 3 节没定值，先按 100 GiB 收；M16 接策略时用它兜底。
+/// 每人在每个提供方上的上传上限。ADR-0113 第 3 节没定值，按 100 GiB 收。
 pub const DEFAULT_PROVIDER_UPLOAD_LIMIT: u64 = 100 * 1024 * 1024 * 1024;
-
-/// 迁移前没有提供方的上传账行落在这个空串提供方上（`schema.rs` 的 `MIGRATE_V2`）；
-/// 这个人的第一笔上传落到具体提供方时接手它（`record_usage`）。
-const LEGACY_PROVIDER: &str = "";
 
 #[derive(Debug, thiserror::Error)]
 pub enum MediaStoreError {
@@ -94,8 +94,10 @@ pub enum MediaStoreError {
     MissingDevice,
     #[error("上传的配额按提供方记，要指定提供方")]
     MissingProvider,
-    #[error("媒体库 {path} 的版本 {found} 比核心支持的 {supported} 新")]
-    TooNew {
+    #[error(
+        "媒体库 {path} 的结构版本是 {found}，核心认的是 {supported}；有外部用户之前不迁移，删掉这个库重建"
+    )]
+    UnsupportedVersion {
         path: PathBuf,
         found: i64,
         supported: i64,
@@ -133,6 +135,22 @@ impl Ledger {
         match self {
             Self::ProviderUpload => Some(DEFAULT_PROVIDER_UPLOAD_LIMIT),
             Self::DeviceOffline => None,
+        }
+    }
+
+    /// 已用 `used` 再记 `bytes` 之后的用量；超上限回 [`MediaStoreError::QuotaExceeded`]。
+    fn after(self, used: u64, limit: Option<u64>, bytes: u64) -> Result<u64, MediaStoreError> {
+        let total = used
+            .checked_add(bytes)
+            .ok_or(MediaStoreError::QuotaOverflow { used, want: bytes })?;
+        match limit {
+            Some(limit) if total > limit => Err(MediaStoreError::QuotaExceeded {
+                ledger: self.as_str(),
+                used,
+                limit,
+                want: bytes,
+            }),
+            _ => Ok(total),
         }
     }
 }
@@ -268,6 +286,47 @@ impl Store {
         Ok(())
     }
 
+    /// 只在库里的版本还是 `expected` 时写（没有行算第 0 版）；写上了回真，别处先改了回假。
+    pub fn save_queue_cas(
+        &self,
+        person: &str,
+        queue: &Queue,
+        expected: u64,
+    ) -> Result<bool, MediaStoreError> {
+        let conn = self.conn()?;
+        self.queue_cas(&conn, person, queue, expected)
+    }
+
+    pub(super) fn queue_cas(
+        &self,
+        conn: &Connection,
+        person: &str,
+        queue: &Queue,
+        expected: u64,
+    ) -> Result<bool, MediaStoreError> {
+        let changed = conn
+            .execute(
+                "INSERT INTO queue (person, revision, entries, cursor, mode, sleep_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?)
+                 ON CONFLICT(person) DO UPDATE SET
+                     revision = excluded.revision, entries = excluded.entries,
+                     cursor = excluded.cursor, mode = excluded.mode,
+                     sleep_at_ms = excluded.sleep_at_ms
+                 WHERE queue.revision = ?",
+                params![
+                    person,
+                    queue.revision,
+                    self.json("entries", &queue.entries)?,
+                    queue.cursor.map(|value| value as i64),
+                    self.json("mode", &queue.mode)?,
+                    queue.sleep_at_ms,
+                    expected,
+                ],
+            )
+            .map_err(|source| self.db_error(source))?;
+        Ok(changed == 1)
+    }
+
     /// 两本账的用量与上限，上传跨提供方、离线跨设备各自合计；没记过账的人是两项零，不建行。
     pub fn quota(&self, person: &str) -> Result<QuotaView, MediaStoreError> {
         let conn = self.conn()?;
@@ -289,20 +348,48 @@ impl Store {
         let (used, limit) = self
             .ledger_usage(&tx, person, ledger, provider, device)?
             .unwrap_or((0, ledger.default_limit()));
-        let want_total = used
-            .checked_add(bytes)
-            .ok_or(MediaStoreError::QuotaOverflow { used, want: bytes })?;
-        if let Some(limit) = limit
-            && want_total > limit
-        {
-            return Err(MediaStoreError::QuotaExceeded {
-                ledger: ledger.as_str(),
-                used,
-                limit,
-                want: bytes,
-            });
-        }
+        let want_total = ledger.after(used, limit, bytes)?;
         self.record_usage(&tx, person, ledger, provider, device, want_total, limit)?;
+        let view = self.read_quota(&tx, person)?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(view)
+    }
+
+    /// 这一格还放不放得下 `bytes`，只看不记；放不下回 [`MediaStoreError::QuotaExceeded`]。
+    pub fn check_quota(
+        &self,
+        person: &str,
+        ledger: Ledger,
+        provider: Option<&str>,
+        device: Option<&str>,
+        bytes: u64,
+    ) -> Result<(), MediaStoreError> {
+        let (provider, device) = ledger.keys(provider, device)?;
+        let conn = self.conn()?;
+        let (used, limit) = self
+            .ledger_usage(&conn, person, ledger, provider, device)?
+            .unwrap_or((0, ledger.default_limit()));
+        ledger.after(used, limit, bytes).map(|_| ())
+    }
+
+    /// 记一笔已经落地的用量（上传入库了、下载写完了），不看上限：放不放得下在任务进 `Preparing` 时查过，
+    /// 字节已经在那边了，账要如实记，超了就让下一个任务被拒。
+    pub fn charge_quota(
+        &self,
+        person: &str,
+        ledger: Ledger,
+        provider: Option<&str>,
+        device: Option<&str>,
+        bytes: u64,
+    ) -> Result<QuotaView, MediaStoreError> {
+        let (provider, device) = ledger.keys(provider, device)?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        let (used, limit) = self
+            .ledger_usage(&tx, person, ledger, provider, device)?
+            .unwrap_or((0, ledger.default_limit()));
+        let total = used.saturating_add(bytes);
+        self.record_usage(&tx, person, ledger, provider, device, total, limit)?;
         let view = self.read_quota(&tx, person)?;
         tx.commit().map_err(|source| self.db_error(source))?;
         Ok(view)
@@ -329,8 +416,28 @@ impl Store {
         Ok(view)
     }
 
-    /// 写一格账。上传账先删掉迁移留下的空提供方旧账行：它的用量由这一格接手，
-    /// 留着会被 `read_quota` 与这一格一起合计两遍。
+    /// 设备报的离线占用：这台设备那份记成 `bytes`，上限照旧，别的设备那份不动；回记完的合计。设备被移除、
+    /// 这个人退出家庭时记成 0。
+    pub fn report_offline(
+        &self,
+        person: &str,
+        device: &str,
+        bytes: u64,
+    ) -> Result<QuotaView, MediaStoreError> {
+        let ledger = Ledger::DeviceOffline;
+        let (provider, device) = ledger.keys(None, Some(device))?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        let limit = self
+            .ledger_usage(&tx, person, ledger, provider, device)?
+            .map_or(ledger.default_limit(), |(_, limit)| limit);
+        self.record_usage(&tx, person, ledger, provider, device, bytes, limit)?;
+        let view = self.read_quota(&tx, person)?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(view)
+    }
+
+    /// 写一格账。
     #[allow(clippy::too_many_arguments)] // 一格账就是这几个字段，再包结构体只是把参数搬个家。
     fn record_usage(
         &self,
@@ -342,13 +449,6 @@ impl Store {
         used: u64,
         limit: Option<u64>,
     ) -> Result<(), MediaStoreError> {
-        if ledger == Ledger::ProviderUpload && provider != LEGACY_PROVIDER {
-            tx.execute(
-                "DELETE FROM quota WHERE person = ? AND ledger = ? AND provider = ? AND device = ?",
-                params![person, ledger.as_str(), LEGACY_PROVIDER, device],
-            )
-            .map_err(|source| self.db_error(source))?;
-        }
         tx.execute(
             "INSERT INTO quota (person, ledger, provider, device, used, cap)
              VALUES (?, ?, ?, ?, ?, ?)
@@ -366,7 +466,7 @@ impl Store {
         Ok(())
     }
 
-    /// 这一格的用量与上限；没记过账返回 `None`。上传账没有这一格时回落到迁移留下的旧账行。
+    /// 这一格的用量与上限；没记过账返回 `None`。
     fn ledger_usage(
         &self,
         conn: &Connection,
@@ -375,13 +475,7 @@ impl Store {
         provider: &str,
         device: &str,
     ) -> Result<Option<(u64, Option<u64>)>, MediaStoreError> {
-        if let Some(row) = self.quota_row(conn, person, ledger, provider, device)? {
-            return Ok(Some(row));
-        }
-        if ledger == Ledger::ProviderUpload && provider != LEGACY_PROVIDER {
-            return self.quota_row(conn, person, ledger, LEGACY_PROVIDER, device);
-        }
-        Ok(None)
+        self.quota_row(conn, person, ledger, provider, device)
     }
 
     fn quota_row(

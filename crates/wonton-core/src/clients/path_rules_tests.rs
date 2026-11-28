@@ -226,3 +226,14 @@ fn reserved_namespace_keeps_ordinary_paths_usable() {
         assert!(!is_reserved_path(raw), "{raw}");
     }
 }
+
+#[test]
+fn guest_scope_is_a_segment_prefix_and_whole_site_without_path() {
+    assert!(within(None, "/anything"));
+    assert!(within(Some("/room"), "/room"));
+    assert!(within(Some("/room"), "/room/abc"));
+    assert!(within(Some("/room"), "/Room/ABC"));
+    assert!(within(Some("/room"), "/%72oom"));
+    assert!(!within(Some("/room"), "/roommate"));
+    assert!(!within(Some("/room"), "/"));
+}

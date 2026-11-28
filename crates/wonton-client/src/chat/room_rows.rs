@@ -103,10 +103,12 @@ impl ChatLink {
                 sort_rooms(&mut rows);
                 let bot = lock(&default_bot).clone();
                 let rows = room_order.replace(rows, bot.as_deref());
-                view.send_modify(|view| view.rooms = rows);
-                if let Some(chat) = chat {
-                    chat.installs.refresh();
-                    chat.bots.publish_contacts();
+                match &chat {
+                    Some(chat) => {
+                        chat.installs.refresh();
+                        chat.bots.publish_rooms_and_contacts(rows);
+                    }
+                    None => view.send_modify(|view| view.rooms = rows),
                 }
             }
         })

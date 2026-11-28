@@ -21,8 +21,7 @@ Android expanded 宽度（至少 840dp）用 `WindowSizeClass` 与 `NavigableLis
 右侧房间或插件页；compact/medium 保留单列和抽屉。尺寸变化沿用 `ChatNavigation` 和核心页面栈，不新建 Activity 或核心实例。
 窗口尺寸和折叠姿态来自 AndroidX Window 与 Material 3 Adaptive（均为 Apache-2.0）。
 
-Android 主页面保持在同一组合位置：面板是否可用只改变页面平移与叠层，不在尺寸子组合之间搬移页面。
-面板页在内容下方，边缘手势与返回处理在内容上方；切换到应用网格或设置再返回时沿用页面状态。
+切换到应用网格或设置再返回时沿用页面状态。
 
 ## 构建
 
@@ -96,7 +95,7 @@ adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<�
   `adb shell run-as app.wonton.android cat files/core.log`。
 - WebView 的代理由 androidx.webkit 的 `ProxyController` 设置，对整个 App 生效。
 
-设置首页订阅客户端核心的 `SettingsViewModel`，按 `sections` 的分组和顺序画列表；明暗、重点色、字号和字体收在“外观”二级页，“通知”页列出系统通知、推送状态和类别，点击进入对应的系统通知设置；“关于”只显示 App 版本和构建号（ADR-0028）。
+设置首页订阅客户端核心的 `SettingsViewModel`，按 `sections` 的分组和顺序画列表；明暗、字号和字体收在“外观”二级页，“通知”页列出系统通知、推送状态和类别，点击进入对应的系统通知设置；“关于”只显示 App 版本和构建号（ADR-0028）。
 
 “应用”页的商店入口独立放在已装插件网格上方，有更新时显示数量，未安装插件时保留“去应用商店”空状态按钮。根页不显示大标题，连接状态仍在顶栏显示，状态栏后是不透明的 `canvas`。
 
@@ -155,28 +154,28 @@ adb shell am start -n app.wonton.android/.ModelsPreviewActivity -e screen login-
 栈上的页面都留着 WebView；最近关掉的 4 页也留在组合里隐藏，重开不重载。
 网页从状态栏下沿铺到屏幕底（ADR-0095“铺满”）：状态栏区域的点击被系统吃掉，所以网页框从它下面开始；导航条底下还是网页。
 状态栏那一条涂页面最顶上实际显示的颜色（`PageThemeColor`：注入核心的取色脚本 `pageColorScript`，报上来，换色、滚动时
-跟着变；只给整页装，面板和引导页没有那一条），页面没有可用的颜色、还在加载或出错时是 App 底色。整页的 WebView 关掉外层回弹（`OVER_SCROLL_NEVER`），面板里的不关。状态栏透明可见，图标按 App 主题选深浅；顶条涂了页面的颜色时按那个颜色选。
+跟着变；只给整页装，引导页没有那一条），页面没有可用的颜色、还在加载或出错时是 App 底色。整页的 WebView 关掉外层回弹（`OVER_SCROLL_NEVER`）。状态栏透明可见，图标按 App 主题选深浅；顶条涂了页面的颜色时按那个颜色选。
 安全区经 `TabEnvironment`（`safeArea`、`insetTop`、`insetBottom`）交给页面：顶部报 0，底部和两侧照实给。
 加载和出错的状态页是原生的，底色铺满、文字让开系统栏。
 应用页上没有壳的按钮：页面固定在顶上的按钮紧贴状态栏，都点得到。出口是系统返回，依次退出视频全屏、退网页历史、
 关掉这一页（`ClosePage`）；第一次打开整页时出一次引导（`PageExitHint`），点“知道了”后本机记住。
-重新加载、接管、钉到面板、加进或移出我的应用和插件详情在侧边栏“我的应用”那一行的长按菜单里（`MyAppMenu`）。
+重新加载、接管、加进或移出我的应用和插件详情在侧边栏“我的应用”那一行的长按菜单里（`MyAppMenu`）。
 短状态、连接提示、确认卡片横幅和接管提示有的时候浮在状态栏下沿下面，没有时顶上什么都不浮。
-两处还有右上角的胶囊（“···”菜单和关闭，命中区各 48×32dp，固定 dp）：公网网页的整页（来源提示不能省），网页框再让出
-胶囊那一行；聊天上拉的面板页（ADR-0052），按面板自己的排版。
+公网网页的整页还有右上角的胶囊（“···”菜单和关闭，命中区各 48×32dp，固定 dp；来源提示不能省），网页框再让出
+胶囊那一行。
 
 停止页的“启动”只发送核心操作，失败显示核心原因。明暗、字号与 WebView 生命周期的实测边界见
 [ADR-0033 的 Android 验证](../../docs/adr/0033-plugin-tabs.md#android-标签页容器)。
 
 声明跨源隔离的插件遵循 [ADR-0033 的跨源隔离规则](../../docs/adr/0033-plugin-tabs.md#跨源隔离)：核心标出
 `TabPage.opensInBrowser`，App 里不加载，交给系统浏览器（Custom Tabs）打开，页内说明并给回聊天和重新打开。交接时提示
-可尝试系统返回或关闭浏览器页面；面板页只在点击打开时交接。实际返回方式取决于浏览器和系统。
+可尝试系统返回或关闭浏览器页面。实际返回方式取决于浏览器和系统。
 
 ## App 链接和桌面快捷方式
 
 链接格式遵循 [ADR-0041](../../docs/adr/0041-app-links-and-shortcuts.md)，只由核心 `appLinkUrl` / `parseAppLink`
 编解码。`androidApp/.../MainActivity.kt` 接收 VIEW Intent，`shared/.../ui/AppNavigation.kt` 消费一次并打开页面。
-`wonton://tab/apps` 和侧边栏“全部”都发 `OpenPage(Apps)`，网格是否打开由核心 `PagesViewModel.showsApps` 决定；
+`wonton://tab/apps` 和侧边栏“全部”都发 `SelectBarItem(BarEntry.Apps)`，网格是否打开由 `PagesState.appsOpen` 决定；
 壳只保留网格内的商店、详情导航路径，不另存显示开关。返回、成功打开聊天或插件页由核心收起网格。
 未配对或仍在引导时忽略导航；已配对的冷启动等首次状态恢复后再决定。扫码、粘贴与 Debug 配对仍交给 `PairHome`。
 

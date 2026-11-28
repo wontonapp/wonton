@@ -192,6 +192,7 @@ async fn client_view(
         public_url,
         entries: entry_switches(&client),
         auth: client.auth,
+        guests: client.guests,
         username: match client.auth {
             ClientAuthKind::Gateway => Some(gateway.owner.username().to_owned()),
             _ => client.username.as_deref().map(|username| {
@@ -251,7 +252,8 @@ fn password_summaries(
 
 /// TCP 入口的转发（ADR-0021“普通 TCP 转发”）还没接，先只列 HTTP 的两项。
 fn entry_switches(client: &ClientPlugin) -> Vec<EntrySwitch> {
-    if !client.http {
+    // 只声明 `webui.guests` 的插件同样有这两个开关（ADR-0090 第 5 节）。
+    if !client.http && !client.guests {
         return Vec::new();
     }
     vec![

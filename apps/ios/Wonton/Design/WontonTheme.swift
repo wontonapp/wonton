@@ -35,7 +35,7 @@ extension EnvironmentValues {
     }
 }
 
-/// 把外观交给下面的所有界面。主按钮和链接用 `primary`：重点色只留给选中、自己的气泡、占位图和角标。
+/// 把外观交给下面的所有界面。没有重点色（ADR-0130）：填充用 `primary`，页面上的强调字和图标、系统控件的 tint 用 `textPrimary`。
 struct WontonThemeRoot<Content: View>: View {
     let appearance: AppearanceViewModel
     @ViewBuilder let content: Content
@@ -46,7 +46,7 @@ struct WontonThemeRoot<Content: View>: View {
         let colors = colorScheme == .dark ? appearance.dark : appearance.light
         content
             .environment(\.wontonColors, colors)
-            .tint(Color(colors.primary))
+            .tint(Color(colors.textPrimary))
             // 放在根上，系统的字号和字体环境值整个 App 都读：包括 `wontonText`、没写令牌的文字和输入框。
             .dynamicTypeSize(appearance.textSize.dynamicTypeSize ?? systemTextSize)
             .fontDesign(appearance.font.design)
@@ -126,16 +126,5 @@ private struct WontonTextModifier: ViewModifier {
         content
             .font(.system(size: size, weight: weight))
             .lineSpacing(max(0, line - UIFont.systemFont(ofSize: size).lineHeight))
-    }
-}
-
-extension WontonIcon {
-    /// 模板渲染，颜色跟 `foregroundStyle`，默认 24。读屏的名字由外层的控件给。
-    func view(size: CGFloat = WontonTheme.size.icon) -> some View {
-        Image(rawValue)
-            .resizable()
-            .renderingMode(.template)
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
     }
 }

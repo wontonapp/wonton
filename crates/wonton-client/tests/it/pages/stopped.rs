@@ -90,7 +90,18 @@ async fn stopped_page_can_be_pinned_selected_and_started_without_optimistic_stat
             },
         })
         .unwrap();
+    // 语言生效后的重渲染是异步的：等到栏标签真的换了再拍快照。
+    rig.wait_for(|_| {
+        rig.app
+            .pages()
+            .bar
+            .items
+            .iter()
+            .any(|item| item.entry == BarEntry::Apps && item.label == "应用")
+    })
+    .await;
     rig.wait_for(|view| !view.refreshing).await;
+    let stopped_after_language = rig.app.pages();
     rig.core.answer(
         Method::POST,
         START,
@@ -100,7 +111,7 @@ async fn stopped_page_can_be_pinned_selected_and_started_without_optimistic_stat
     start(&rig).unwrap();
     request_count(&rig.core, Method::POST, START, 1).await;
     assert!(matches!(start(&rig), Err(CoreError::NotReady { .. })));
-    assert_eq!(rig.app.pages(), stopped);
+    assert_eq!(rig.app.pages(), stopped_after_language);
     assert!(rig.app.plugins().tasks.is_empty());
     let sent = rig.core.seen(&Method::POST, START);
     assert_eq!(sent.len(), 1);
@@ -201,18 +212,39 @@ async fn start_rejections_remain_visible_after_unrelated_list_refreshes() {
 }
 
 #[tokio::test]
-async fn start_without_connection_reports_a_problem_without_http_or_fake_tasks() {
+async fn start_without_a_server_reports_not_paired_without_http_or_fake_tasks() {
     let rig = Rig::new().await;
     let before = rig.app.pages();
+    start(&rig).unwrap();
+    let failed = rig.wait_for(|view| view.problem.is_some()).await;
+    assert_eq!(failed.problem.unwrap().reason, PluginFailure::NotPaired);
+    assert!(failed.installed.is_none());
+    assert!(failed.tasks.is_empty());
+    assert_eq!(rig.app.pages(), before);
+    assert!(rig.core.seen(&Method::POST, START).is_empty());
+}
+
+/// 配对过、隧道断了：报告“连不上”，而且同样不伪造 HTTP 请求。
+#[tokio::test]
+async fn start_after_the_connection_drops_reports_transport_failure() {
+    let (rig, page_tab) = stopped_rig().await;
+    rig.drop_home().await;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !matches!(rig.app.home().status, HomeStatus::Disconnected { .. }) {
+        assert!(
+            Instant::now() < deadline,
+            "连接没有断开：{:?}",
+            rig.app.home()
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     start(&rig).unwrap();
     let failed = rig.wait_for(|view| view.problem.is_some()).await;
     assert_eq!(
         failed.problem.unwrap().reason,
         PluginFailure::TransportUnavailable
     );
-    assert!(failed.installed.is_none());
-    assert!(failed.tasks.is_empty());
-    assert_eq!(rig.app.pages(), before);
+    assert_eq!(item(&rig.app.pages(), &page_tab).state, TabState::Stopped);
     assert!(rig.core.seen(&Method::POST, START).is_empty());
 }
 

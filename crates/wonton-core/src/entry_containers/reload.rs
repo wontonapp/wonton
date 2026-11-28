@@ -13,10 +13,17 @@ const IN_PROGRESS: &[u8] = IN_PROGRESS_TEXT.as_bytes();
 
 /// 主进程还没开始回应：隔一小段重连再发。
 const RETRY_DELAY: Duration = Duration::from_millis(250);
+/// 主进程说上一次重载还没做完：每次再发都会排一个新 worker，250ms 一发会把队列挤成一串、
+/// 主进程永远在重载（2026-11-28 开发栈实测 30 秒里排了 130 多次）。忙时等久一点再发。
+const IN_PROGRESS_DELAY: Duration = Duration::from_secs(15);
 /// 读回应的切片：一条接了不回的连接最多占这么久，收过数据就继续读。
 const READ_SLICE: Duration = Duration::from_secs(1);
-/// 从第一次尝试算起的截止；主进程处理完初始装载就会接。
-const PENDING: Duration = Duration::from_secs(10);
+/// 从第一次尝试算起的截止；主进程处理完初始装载就会接。宿主满载时连管理端口也可能慢过 10 秒
+/// （2026-11-28 开发栈实测：Docker 停容器要 10 秒以上，入口刚回来时连接超时），留 120 秒。
+const PENDING: Duration = Duration::from_secs(120);
+/// 单次连接的等待：入口重建时旧 IP 会短暂黑洞住 SYN，一直等到截止就再没有重试的机会；
+/// 每 2 秒放弃一次、重新解析再连，换到新容器的地址。
+const CONNECT_SLICE: Duration = Duration::from_secs(2);
 
 impl EntryContainers {
     /// 让入口的 HAProxy 主进程软重载，见 [`reload`]。
@@ -44,23 +51,26 @@ impl EntryContainers {
 /// 容器刚起来时管理端口先 accept、主进程还在做初始装载：第一次 `reload` 会立刻连上并回
 /// `Success=0 / Another reload is still in progress`（3.4-alpine 实测），这时要隔一小段重发，
 /// 否则刚建的入口会被当成“配置被拒”回滚。连上后一直不回应才隔一小段重连；已经收到字节就一直
-/// 读到关连接或 10 秒截止，启动日志不会因为连接不关而丢掉。带着启动日志的 `Success=0` 是新配置
+/// 读到关连接或 120 秒截止，启动日志不会因为连接不关而丢掉。带着启动日志的 `Success=0` 是新配置
 /// 真被拒，原样带回错误里，主人看到的不是一句“热加载失败”。
 pub async fn reload_haproxy(addr: &str) -> Result<(), EntryError> {
     let deadline = tokio::time::Instant::now() + PENDING;
     loop {
-        let reason = match attempt(addr, deadline).await {
+        let (reason, delay) = match attempt(addr, deadline).await {
             Attempt::Done => return Ok(()),
             Attempt::Rejected(logs) => return Err(EntryError::Reload(logs)),
-            Attempt::Retry(reason) => reason,
+            Attempt::Retry(reason) if reason.contains(IN_PROGRESS_TEXT) => {
+                (reason, IN_PROGRESS_DELAY)
+            }
+            Attempt::Retry(reason) => (reason, RETRY_DELAY),
         };
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
             return Err(EntryError::Reload(format!(
-                "{addr}：10 秒内没有完成重载（{reason}）"
+                "{addr}：120 秒内没有完成重载（{reason}）"
             )));
         }
-        tokio::time::sleep(remaining.min(RETRY_DELAY)).await;
+        tokio::time::sleep(remaining.min(delay)).await;
     }
 }
 
@@ -73,12 +83,14 @@ enum Attempt {
 async fn attempt(addr: &str, deadline: tokio::time::Instant) -> Attempt {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let mut stream =
-        match tokio::time::timeout_at(deadline, tokio::net::TcpStream::connect(addr)).await {
-            Err(_) => return Attempt::Retry("连管理端口超时".to_owned()),
-            Ok(Err(error)) => return Attempt::Retry(format!("连不上：{error}")),
-            Ok(Ok(stream)) => stream,
-        };
+    let slice = deadline
+        .saturating_duration_since(tokio::time::Instant::now())
+        .min(CONNECT_SLICE);
+    let mut stream = match tokio::time::timeout(slice, tokio::net::TcpStream::connect(addr)).await {
+        Err(_) => return Attempt::Retry("连管理端口超时".to_owned()),
+        Ok(Err(error)) => return Attempt::Retry(format!("连不上：{error}")),
+        Ok(Ok(stream)) => stream,
+    };
     if let Err(error) = stream.write_all(b"reload\n").await {
         return Attempt::Retry(format!("发不出 reload：{error}"));
     }

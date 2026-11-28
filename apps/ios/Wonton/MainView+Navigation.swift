@@ -15,7 +15,7 @@ extension MainView {
     func applyAppNavigation() {
         guard navigation.presentationRevision > 0, navigation.allowsNavigation else { return }
         showsSettings = false
-        if navigation.opensSettings || !pages.viewModel.showsApps {
+        if navigation.opensSettings || !pages.appsOpen {
             closeApps()
         } else {
             appsPath = NavigationPath([AppsRoute.launcher])
@@ -38,26 +38,27 @@ extension MainView {
 
     /// 打开“全部应用”这一层：核心记录网格是否显示，路径承载网格上面的商店和详情页。
     func openApps(above routes: [AppsRoute] = []) {
-        pages.open(.apps)
+        pages.select(.apps)
         // 没配对时网格自己就是根页面，路径里只放它上面的。
         appsPath = NavigationPath(isPaired ? [AppsRoute.launcher] + routes : routes)
     }
 
     func closeApps() {
-        if pages.viewModel.showsApps { pages.closeCurrent() }
+        if pages.appsOpen { pages.closeCurrent() }
         appsPath = NavigationPath()
     }
 
     func openCardRoom(_ roomId: String?) {
         showsSettings = false
         closeApps()
-        pages.open(.chat)
+        onboardingGateway = nil
+        pages.select(.agent)
         chat.resetNavigation()
         if let roomId { chat.path = [.room(roomId)] } else { chat.openConfirmations() }
     }
 
     func finishOnboarding(_ bot: String?) {
-        pages.open(.chat)
+        pages.select(.agent)
         chat.path = []
         chat.visiting = nil
         if let bot { chat.openDirectChat(with: bot) }
@@ -65,7 +66,7 @@ extension MainView {
 
     func receiveDraft(_ text: String) {
         chat.receiveDraft(text)
-        pages.open(.chat)
+        pages.select(.agent)
     }
 
     /// 从网格打开应用先收起“全部应用”这一层：关掉页面、退出私聊回到的是聊天，不是网格（Android 同）。
@@ -74,7 +75,7 @@ extension MainView {
         case let .chat(botUserId):
             if chat.openDirectChat(with: botUserId, from: .chat) {
                 closeApps()
-                pages.open(.chat)
+                pages.select(.agent)
             }
         case let .web(tab):
             closeApps()

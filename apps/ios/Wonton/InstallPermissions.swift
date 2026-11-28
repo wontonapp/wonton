@@ -40,7 +40,7 @@ struct WidgetCapabilityRows: View {
                 }
                 .foregroundStyle(Color(high ? colors.warning : colors.textPrimary))
                 if lines.contains(where: \.added) {
-                    Tag(text: String(localized: .Plugin3.pluginPermissionAdded), tint: colors.primary)
+                    Tag(text: String(localized: .Plugin3.pluginPermissionAdded), tint: colors.textPrimary)
                 }
                 ProblemDetail(text: lines.map(\.capability).joined(separator: "\n"))
             }

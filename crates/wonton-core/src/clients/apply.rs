@@ -6,7 +6,7 @@ use crate::clients::state::Kind;
 use crate::entry_settings::EntrySettings;
 use crate::gateway::Gateway;
 use crate::plugin::clients_entry::SetupCheck;
-use crate::plugin::manager::ClientPlugin;
+use crate::plugin::manager::{ClientPlugin, Route};
 use crate::plugin::manifest::PluginId;
 use crate::plugin::store::InstalledRecord;
 use wonton_protocol::{CertificateState, ClientAuthKind, ClientsFailure, EntryBlock};
@@ -217,10 +217,9 @@ pub(crate) async fn block_reason(
     {
         return Ok(Some(EntryBlock::LanUnavailable));
     }
-    let http = gateway
+    let route = gateway
         .plugins
         .route(&client.id.slug(), "/")
-        .and_then(|route| route.clients)
         .ok_or_else(|| {
             keyed(
                 ClientsFailure::PluginUnavailable,
@@ -228,30 +227,43 @@ pub(crate) async fn block_reason(
                 vec![("plugin", client.id.to_string())],
             )
         })?;
-    if http.http.auth.app.is_some() {
-        match gateway
-            .plugins
-            .clients_setup_done(&client.id, &http, gateway.notices.as_ref())
-            .await
-        {
-            SetupCheck::Pending => return Ok(Some(EntryBlock::SetupPending)),
-            SetupCheck::Done => {}
-            SetupCheck::Unavailable => {
-                return Err(error(
-                    ClientsFailure::PluginUnavailable,
-                    "clients-switch-app-unavailable",
-                ));
-            }
-            SetupCheck::Undetermined(cause) => {
-                return Err(keyed(
-                    ClientsFailure::PluginUnavailable,
-                    "clients-switch-setup-check",
-                    vec![("error", cause.to_string())],
-                ));
+    match &route.clients {
+        Some(http) => {
+            if http.http.auth.app.is_some() {
+                match gateway
+                    .plugins
+                    .clients_setup_done(&client.id, http, gateway.notices.as_ref())
+                    .await
+                {
+                    SetupCheck::Pending => return Ok(Some(EntryBlock::SetupPending)),
+                    SetupCheck::Done => {}
+                    SetupCheck::Unavailable => {
+                        return Err(error(
+                            ClientsFailure::PluginUnavailable,
+                            "clients-switch-app-unavailable",
+                        ));
+                    }
+                    SetupCheck::Undetermined(cause) => {
+                        return Err(keyed(
+                            ClientsFailure::PluginUnavailable,
+                            "clients-switch-setup-check",
+                            vec![("error", cause.to_string())],
+                        ));
+                    }
+                }
+            } else if credentials_pending {
+                return Ok(Some(EntryBlock::CredentialsNotIssued));
             }
         }
-    } else if credentials_pending {
-        return Ok(Some(EntryBlock::CredentialsNotIssued));
+        // 只声明 `webui.guests`：没有验证方式，等入口的域名和地址都齐了就能开。
+        None if route.guests => {}
+        None => {
+            return Err(keyed(
+                ClientsFailure::PluginUnavailable,
+                "clients-switch-no-route",
+                vec![("plugin", client.id.to_string())],
+            ));
+        }
     }
     if entries.public && !gateway.public_ingress_configured {
         return Ok(Some(EntryBlock::IngressNotConfigured));
@@ -274,13 +286,11 @@ pub(crate) async fn close_for_uninstall(
         .into_iter()
         .find(|client| client.id == *id)
     else {
-        // 记录读不出的客户端不会出现在列表里；它的路由可能还在 crt-list 上，照样重算一遍。
-        if gateway
+        let open = gateway
             .plugins
             .route(&id.slug(), "/")
-            .and_then(|route| route.clients)
-            .is_some()
-        {
+            .is_some_and(|route| route.clients.is_some() || route.guests);
+        if open {
             apply_model(gateway, None).await?;
         }
         return Ok(());
@@ -334,7 +344,7 @@ fn find_client(gateway: &Gateway, id: &PluginId) -> Result<ClientPlugin, ApplyEr
         .client_plugins()
         .map_err(|message| error(ClientsFailure::PluginUnavailable, message))?
         .into_iter()
-        .find(|client| client.id == *id && client.http)
+        .find(|client| client.id == *id && (client.http || client.guests))
         .ok_or_else(|| {
             keyed(
                 ClientsFailure::PluginUnavailable,
@@ -385,7 +395,6 @@ async fn check_can_open(
     let route = gateway
         .plugins
         .route(&client.id.slug(), "/")
-        .and_then(|route| route.clients)
         .ok_or_else(|| {
             keyed(
                 ClientsFailure::PluginUnavailable,
@@ -393,51 +402,85 @@ async fn check_can_open(
                 vec![("plugin", client.id.to_string())],
             )
         })?;
-    if route.upstream.is_none() {
-        return Err(keyed(
-            ClientsFailure::PluginUnavailable,
-            "clients-switch-service-down",
-            vec![("plugin", client.id.to_string())],
-        ));
+    if route.guests && !route.web_serving {
+        return Err(service_down(client));
     }
-    if route.http.auth.app.is_some() {
-        match gateway
-            .plugins
-            .clients_setup_done(&client.id, &route, gateway.notices.as_ref())
-            .await
-        {
-            SetupCheck::Done => {}
-            SetupCheck::Pending => {
-                return Err(error(ClientsFailure::SetupPending, "clients-switch-setup"));
-            }
-            SetupCheck::Unavailable => {
-                return Err(error(
-                    ClientsFailure::PluginUnavailable,
-                    "clients-switch-app-unavailable",
-                ));
-            }
-            SetupCheck::Undetermined(cause) => {
-                tracing::error!(plugin = %client.id, %cause, "检查客户端应用首次注册状态失败");
-                return Err(keyed(
-                    ClientsFailure::PluginUnavailable,
-                    "clients-switch-setup-check",
-                    vec![("error", cause.to_string())],
-                ));
-            }
-        }
-    } else if route.http.auth.credentials.is_some()
-        && !gateway.plugins.credentials_ready(&client.id)
-    {
-        return Err(error(
-            ClientsFailure::Conflict,
-            "clients-switch-credentials",
-        ));
-    }
+    check_auth(gateway, client, &route).await?;
 
     if kind == Kind::Public && !gateway.public_ingress_configured {
         return Err(error(ClientsFailure::Conflict, "clients-switch-ingress"));
     }
     Ok(())
+}
+
+/// 入口的验证方式现在能不能用：`app` 看应用注册完没有，`credentials` 看有没有发过密码。
+async fn check_auth(
+    gateway: &Gateway,
+    client: &ClientPlugin,
+    route: &Route,
+) -> Result<(), ApplyError> {
+    match (&route.clients, route.guests) {
+        (Some(http), _) => {
+            if http.upstream.is_none() {
+                return Err(service_down(client));
+            }
+            if http.http.auth.app.is_some() {
+                match gateway
+                    .plugins
+                    .clients_setup_done(&client.id, http, gateway.notices.as_ref())
+                    .await
+                {
+                    SetupCheck::Done => {}
+                    SetupCheck::Pending => {
+                        return Err(error(ClientsFailure::SetupPending, "clients-switch-setup"));
+                    }
+                    SetupCheck::Unavailable => {
+                        return Err(error(
+                            ClientsFailure::PluginUnavailable,
+                            "clients-switch-app-unavailable",
+                        ));
+                    }
+                    SetupCheck::Undetermined(cause) => {
+                        tracing::error!(plugin = %client.id, %cause, "检查客户端应用首次注册状态失败");
+                        return Err(keyed(
+                            ClientsFailure::PluginUnavailable,
+                            "clients-switch-setup-check",
+                            vec![("error", cause.to_string())],
+                        ));
+                    }
+                }
+            } else if http.http.auth.credentials.is_some()
+                && !gateway.plugins.credentials_ready(&client.id)
+            {
+                return Err(error(
+                    ClientsFailure::Conflict,
+                    "clients-switch-credentials",
+                ));
+            }
+        }
+        // 只声明 `webui.guests`：只要求应用的网页服务在跑，没有验证方式可查。
+        (None, true) => {
+            if route.upstream.is_none() {
+                return Err(service_down(client));
+            }
+        }
+        (None, false) => {
+            return Err(keyed(
+                ClientsFailure::PluginUnavailable,
+                "clients-switch-no-route",
+                vec![("plugin", client.id.to_string())],
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn service_down(client: &ClientPlugin) -> ApplyError {
+    keyed(
+        ClientsFailure::PluginUnavailable,
+        "clients-switch-service-down",
+        vec![("plugin", client.id.to_string())],
+    )
 }
 
 fn certificate_ready(certificate: &CertificateState) -> bool {

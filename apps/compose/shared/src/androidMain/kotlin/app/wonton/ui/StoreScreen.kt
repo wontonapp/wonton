@@ -106,6 +106,7 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
             query,
             tag,
             onTag = { tag = it },
+            onPair = onBack,
         )
     }
     val viewModel = plugins.viewModel
@@ -124,6 +125,7 @@ private fun StoreContent(
     query: String,
     tag: String?,
     onTag: (String?) -> Unit,
+    onPair: () -> Unit,
 ) {
     val viewModel = plugins.viewModel
     val store = viewModel.store
@@ -147,7 +149,7 @@ private fun StoreContent(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 ) {
                     if (store == null) {
-                        StorePlaceholder(plugins)
+                        StorePlaceholder(plugins, onPair)
                     } else {
                         StoreList(
                             plugins,
@@ -338,6 +340,15 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                item.subtitle?.let {
+                    Text(
+                        it,
+                        style = WontonTheme.typography.supporting,
+                        color = colors.textPrimary.toColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     item.summary,
                     style = WontonTheme.typography.supporting,

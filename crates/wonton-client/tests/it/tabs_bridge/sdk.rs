@@ -1,5 +1,7 @@
 use serde_json::{Value, json};
-use wonton_client::{Action, Rgb, TabBridgeAction, TabPlatform, TabRef, accent_hex};
+use wonton_client::{TabBridgeAction, TabPlatform, TabRef};
+
+use super::hex;
 
 use super::driver::Driver;
 use super::support::{environment, open_page};
@@ -36,17 +38,6 @@ async fn official_sdk_roundtrip() {
         );
         let fullscreen = driver.command("requestDisplayMode", json!({"mode":"fullscreen"}));
         assert_eq!(fullscreen["result"]["mode"], "fullscreen");
-        rig.app
-            .dispatch(Action::Settings {
-                action: wonton_protocol::SettingsAction::SetAccentColor {
-                    color: Rgb {
-                        red: 30,
-                        green: 120,
-                        blue: 210,
-                    },
-                },
-            })
-            .unwrap();
         driver.environment.dark = true;
         driver.environment.inset_bottom = 34.0;
         driver.environment.safe_area.left = 59.0;
@@ -58,7 +49,7 @@ async fn official_sdk_roundtrip() {
         assert!(dark["css"]["background-color"].is_null());
         assert_eq!(
             dark["css"]["--wonton-accent-fill"],
-            accent_hex(rig.app.appearance().dark.accent_fill)
+            hex(rig.app.appearance().dark.primary)
         );
         assert_eq!(dark["css"]["--wonton-inset-bottom"], "34px");
         assert_eq!(dark["css"]["--wonton-inset-left"], "59px");

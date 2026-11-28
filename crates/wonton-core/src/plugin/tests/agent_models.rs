@@ -2,8 +2,9 @@
 
 use serde_json::json;
 use wonton_protocol::{
-    AgentModelsFailure, BotKeeper, KeyCheck, KeyCheckResult, ModelCatalog, ModelLogin, ModelsOp,
-    SecretString,
+    AgentModelsFailure, BotKeeper, KeyCheck, KeyCheckResult, LoginState, MAX_MODELS_OUTPUT_BYTES,
+    ModelCatalog, ModelLogin, ModelLoginState, ModelSelection, ModelTest, ModelTestResult,
+    ModelsOp, SecretString,
 };
 
 use super::super::PluginStatus;
@@ -101,7 +102,7 @@ async fn the_declared_command_runs_in_the_bots_own_container_with_one_json_line(
 #[tokio::test]
 async fn the_key_goes_in_on_stdin_and_never_comes_back_out() {
     let bed = bed(MODELS).await;
-    let secret = "sk-or-v1-0123456789";
+    let secret = "fake-test-key-not-a-secret"; // gitleaks:allow：测试用的假 key，不是凭据
     let save = || ModelsOp::SaveKey {
         provider: "openrouter".into(),
         key: SecretString::new(secret),
@@ -301,4 +302,111 @@ fn the_manifest_only_takes_a_per_bot_models_command_on_agent_plugins() {
             "{kind} {models}: {error}"
         );
     }
+}
+
+/// 正好到上限的输出照常解析，多 1 字节就整份不要（引擎比上限多收 1 字节，分得清这两种）。
+#[tokio::test]
+async fn output_up_to_the_limit_parses_and_one_byte_more_is_refused() {
+    let bed = bed(MODELS).await;
+    let body = catalog("https://example.com/keys");
+    // 不认识的字段插件可以带，拿它把输出垫到想要的长度；空白会被引擎去掉，不能用来垫。
+    let padded = |len: usize| {
+        let head = &body[..body.len() - 1];
+        let pad = len - head.len() - r#","pad":""}"#.len();
+        format!(r#"{head},"pad":"{}"}}"#, "x".repeat(pad))
+    };
+    assert_eq!(
+        padded(MAX_MODELS_OUTPUT_BYTES).len(),
+        MAX_MODELS_OUTPUT_BYTES
+    );
+    bed.agent.reply(0, &padded(MAX_MODELS_OUTPUT_BYTES), "");
+    let whole: ModelCatalog = bed.run("alice", ModelsOp::Catalog).await.unwrap();
+    assert_eq!(whole.providers.len(), 1);
+    bed.agent.reply(0, &padded(MAX_MODELS_OUTPUT_BYTES + 1), "");
+    assert_eq!(
+        bed.fail(ModelsOp::Catalog).await.kind,
+        AgentModelsFailure::Upstream
+    );
+}
+
+/// 登录、交回回跳、确认过的选模型、测试：插件的回答原样交出，确认标记和回跳网址照样传给插件。
+#[tokio::test]
+async fn login_select_and_test_pass_the_plugins_answers_through() {
+    let bed = bed(MODELS).await;
+    bed.agent.reply(
+        0,
+        &json!({"session": "s1", "url": "https://example.com/device?code=AB", "code": "AB",
+                "expires_in": 900, "interval": 5})
+        .to_string(),
+        "",
+    );
+    let start = ModelsOp::LoginStart {
+        provider: "nous".into(),
+        redirect_uri: None,
+    };
+    let login: ModelLogin = bed.run("alice", start).await.unwrap();
+    assert_eq!((login.session.as_str(), login.interval), ("s1", 5));
+
+    bed.agent.reply(0, r#"{"state": "approved"}"#, "");
+    let callback = "wonton://model-login?code=c1&state=s";
+    let finish = ModelsOp::LoginFinish {
+        session: "s1".into(),
+        callback_url: callback.into(),
+    };
+    let finished: ModelLoginState = bed.run("alice", finish).await.unwrap();
+    assert_eq!(finished.state, LoginState::Approved);
+    assert_eq!(
+        bed.agent.seen().last().unwrap().input["callback_url"],
+        callback
+    );
+
+    bed.agent.reply(
+        0,
+        r#"{"current": {"provider": "openrouter", "model": "big"}}"#,
+        "",
+    );
+    let select = ModelsOp::Select {
+        provider: "openrouter".into(),
+        model: "big".into(),
+        confirmed: true,
+    };
+    let selected: ModelSelection = bed.run("alice", select).await.unwrap();
+    assert_eq!(selected.current.unwrap().model, "big");
+    assert_eq!(bed.agent.seen().last().unwrap().input["confirmed"], true);
+
+    bed.agent
+        .reply(0, r#"{"result": "ok", "latency_ms": 800}"#, "");
+    let tested: ModelTest = bed.run("alice", ModelsOp::Test).await.unwrap();
+    assert_eq!(
+        (tested.result, tested.latency_ms),
+        (ModelTestResult::Ok, Some(800))
+    );
+}
+
+fn package(agent_extra: &str, bots: bool) -> Result<(), String> {
+    let bots = if bots {
+        "  bots: {services: [agent]}\n"
+    } else {
+        ""
+    };
+    let yaml = format!(
+        "services:\n  agent:\n    image: agent\nx-wonton:\n  spec: '0.17'\n  id: {PLUGIN}\n  \
+         version: 1.0.0\n  kind: agent\n  title: {{zh: 助手, en: Agent}}\n  description: {{zh: 助手, \
+         en: Agent}}\n  agent: {{protocol: matrix{agent_extra}}}\n  permissions: [matrix.bot]\n{bots}"
+    );
+    PluginPackage::parse(&yaml, &langs())
+        .map(drop)
+        .map_err(|e| e.to_string())
+}
+
+/// 模型命令的服务名要原样对得上 compose 里的服务；有没有 `bots` 都查。
+#[test]
+fn the_models_service_must_be_a_real_service() {
+    package(MODELS, true).unwrap();
+    package(MODELS, false).unwrap();
+    let padded = ", models: {service: ' agent', command: [wonton-models]}";
+    assert!(package(padded, true).is_err());
+    let ghost = ", models: {service: ghost, command: [wonton-models]}";
+    assert!(package(ghost, false).unwrap_err().contains("ghost"));
+    assert!(package(ghost, true).is_err());
 }

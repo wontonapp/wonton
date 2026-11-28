@@ -3,7 +3,7 @@ import XCTest
 /// 整页插件页的出口（ADR-0095，盲测 P0）：从侧边栏“我的应用”打开应用，顶上没有胶囊，网页框从状态栏下沿开始；
 /// 往下滚、切后台回来页面还在；左边缘右滑回聊天，两次都行；页面中间的横滑归网页，不返回。
 ///
-/// 要连装好了这些应用的开发栈：外部传 `PAIRING_CODE`（见 ChatPanelUITests），没有就跳过。没装的应用那一条直接失败。
+/// 要连装好了这些应用的开发栈：外部传 `PAIRING_CODE`，没有就跳过。没装的应用那一条直接失败。
 final class PluginPageUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -159,7 +159,7 @@ final class PluginPageUITests: XCTestCase {
         app.buttons.matching(identifier: "pageClose").firstMatch
     }
 
-    /// 照 ChatPanelUITests 的启动：等配对完成，走完引导，到聊天列表。等待都短于单条测试的 90 秒上限，
+    /// 启动：等配对完成，走完引导，到聊天列表。等待都短于单条测试的 90 秒上限，
     /// 卡住时能把当时的界面树打出来。
     private func launch(arguments: [String]) throws {
         app = XCUIApplication()

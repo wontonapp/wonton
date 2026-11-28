@@ -333,11 +333,15 @@ mod tests {
 
     fn plugin(id: &str, state: PluginState, bot: Option<&str>) -> InstalledPlugin {
         InstalledPlugin {
+            bot_danger_can_toggle: false,
+            bot_shared: false,
+            bot_danger: false,
             chat: Some(PluginChat {
                 form: Default::default(),
             }),
             id: id.into(),
             title: format!("标题 {id}"),
+            subtitle: None,
             summary: String::new(),
             version: "1.0.0".into(),
             revision: "1.0.0".into(),
@@ -364,6 +368,7 @@ mod tests {
             install_progress: None,
             install_failure: None,
             tunnel_ports: Vec::new(),
+            media_browse: None,
             matrix_widget: None,
         }
     }
@@ -378,6 +383,7 @@ mod tests {
             install_progress: None,
             waiting_for_connection: false,
             added_tools: None,
+            dependents: Vec::new(),
         }
     }
 
@@ -389,6 +395,7 @@ mod tests {
             plan: "opaque-install-plan".into(),
             id: id.into(),
             title: format!("标题 {id}"),
+            subtitle: None,
             summary: String::new(),
             license: None,
             license_url: None,
@@ -413,6 +420,7 @@ mod tests {
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
             wanting_plugins: Vec::new(),
+            connected_plugins: Vec::new(),
             upgrade_from: None,
             release_notes: None,
             blocked: None,
@@ -423,6 +431,7 @@ mod tests {
             always_allowed: Vec::new(),
             audience: None,
             install_gate: wonton_protocol::Gate::Allow,
+            install_providers: Vec::new(),
         }
     }
 

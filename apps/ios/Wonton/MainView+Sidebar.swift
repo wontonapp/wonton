@@ -3,9 +3,8 @@ import WontonClient
 
 extension MainView {
     /// 只在聊天的根页面响应左边缘右滑：进了页面或盖了别的层，左边缘是返回手势。
-    /// 聊天页内的下拉面板（ADR-0052）展开时也不响应：手势归面板翻页，等面板那边把“展开了”交到根视图。
     var allowsEdgeSwipe: Bool {
-        !pages.showsPluginPage && pagePath.isEmpty && chat.path.isEmpty && appsPath.isEmpty && !showsPanel
+        !pages.showsPluginPage && pagePath.isEmpty && chat.path.isEmpty && appsPath.isEmpty
     }
 
     /// 侧边栏的入口：先收起侧边栏（SidebarContainer 做），再按目的地跳。
@@ -13,7 +12,7 @@ extension MainView {
         showsSidebar = false
         switch destination {
         case .chat:
-            pages.open(.chat)
+            pages.select(.agent)
             chat.path = []
         case .store:
             openApps(above: [.store])
@@ -23,7 +22,7 @@ extension MainView {
             settings.path = []
             showsSettings = true
         case .newChat:
-            pages.open(.chat)
+            pages.select(.agent)
             chat.path = [.startChat]
         case let .reload(tab):
             // 核心只重新加载栈里的页面：先打开，打开被拒了就只报那一条。

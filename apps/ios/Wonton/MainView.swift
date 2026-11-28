@@ -18,7 +18,7 @@ struct MainView: View {
     /// 最近关掉的插件页：最多留 4 个实例（内存考虑），重开不重载。
     @State private var recentPages: [TabRef] = []
     @State var showsSettings = false
-    var showsApps: Bool { pages.viewModel.showsApps }
+    var showsApps: Bool { pages.appsOpen }
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var showsSidebar = false
     @State var showsMyApps = false
@@ -26,11 +26,11 @@ struct MainView: View {
     var usesTwoColumns: Bool {
         horizontalSizeClass == .regular && isPaired && !home.servers.adding && onboarding.viewModel.step == .finished
     }
-    @State var showsPanel = false
     /// 没配对时是根页面（网格或配对页）的路径；配对后是“全部应用”那一层的路径，空就是没开（见 `HomeView.layered`）。
     @State var appsPath = NavigationPath()
-    /// 插件页层的路径，和核心的页面栈一一对应；左边缘右滑是系统的交互式返回。
-    @State var pagePath: [TabRef] = []
+    /// 插件页层的路径：核心页面栈里的页一一对应，原生音乐页推进去的子页跟在它后面（只在壳里）；
+    /// 左边缘右滑是系统的交互式返回。
+    @State var pagePath: [PageRoute] = []
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
@@ -48,7 +48,6 @@ struct MainView: View {
     var body: some View {
         @Bindable var navigation = navigation
         return adaptiveContent
-        .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
         .onChange(of: horizontalSizeClass) { _, _ in showsSidebar = false }
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .overlay(alignment: .bottom) {
@@ -62,14 +61,14 @@ struct MainView: View {
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
         .modifier(TabMediaDialogs(model: pages))
         .modifier(KeyHandoffCover(model: chat) {
-            pages.open(.chat)
+            pages.select(.agent)
             chat.path = [.chatBackup]
         })
 
         .fullScreenCover(isPresented: $showsSettings) {
             // 参数多，闭包先写成带类型的局部量，不写时整条表达式类型检查会超时。
             let openPlugin: (PluginEntry) -> Void = { showsSettings = false; open($0) }
-            let checkInstalled: () -> Void = { showsSettings = false; pages.open(.apps) }
+            let checkInstalled: () -> Void = { showsSettings = false; pages.select(.apps) }
             // 设置里的应用行进了详情后，“打开”和“查看已安装”都要先收起设置，再走主界面这一层。
             SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
                         home: home, plugins: plugins, open: openPlugin,
@@ -89,18 +88,18 @@ struct MainView: View {
             visited.formUnion(recentPages)
             pages.setKeepAlive(recentPages)
             // 核心弹了栈（胶囊关页、页面被卸载）：路径跟着对齐。系统返回的弹栈由 pagePath 的 onChange 发。
-            pagePath = stackTabs
+            pagePath = pagePath.aligned(to: stackTabs)
         }
         .onChange(of: pagePath) { _, path in
             // 主人在页面层做了系统返回：把弹栈交给核心，核心的订阅再把两边对齐。
-            if path.count < pages.viewModel.stack.count { pages.closeCurrent() }
+            if path.tabs.count < pages.viewModel.stack.count { pages.closeCurrent() }
         }
         .onChange(of: pages.showsPluginPage, initial: true) { _, shown in
             // 页面默认全屏：横屏只在插件页上放开，回根页面收回来。
             orientation.update(fullscreen: shown) { pages.rejection = $0.problem }
         }
         .onChange(of: chat.openingFailed) { _, failed in
-            if failed { chat.openingFailed = false; pages.open(.chat) }
+            if failed { chat.openingFailed = false; pages.select(.agent) }
         }
         .task { await pages.observe() }
         .task { await home.observe() }
@@ -117,11 +116,6 @@ struct MainView: View {
             try? await navigation.askAgent("")
         }
         .environment(onboarding)
-        .environment(\.panelDeps, PanelDependencies(
-            pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
-            draft: receiveDraft, open: open, pendingCards: chat.viewModel.pendingConfirmations,
-            openCardRoom: openCardRoom
-        ))
         .onChange(of: onboarding.viewModel.step) { _, step in
             if step == .profile { showsSettings = false }
         }
@@ -138,7 +132,7 @@ struct MainView: View {
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
         // 根页面和“全部应用”那一层共用一条路径，配对状态一变含义就换了。
         .onChange(of: isPaired) { _, _ in closeApps() }
-        .onChange(of: pages.viewModel.showsApps, initial: true) { _, shown in
+        .onChange(of: pages.appsOpen, initial: true) { _, shown in
             if shown && isPaired && appsPath.isEmpty {
                 appsPath = NavigationPath([AppsRoute.launcher])
             } else if !shown && !appsPath.isEmpty {
@@ -146,7 +140,7 @@ struct MainView: View {
             }
         }
         .onChange(of: appsPath.count) { _, count in
-            if isPaired && count == 0 && pages.viewModel.showsApps {
+            if isPaired && count == 0 && pages.appsOpen {
                 pages.closeCurrent()
             }
         }
@@ -231,26 +225,13 @@ struct MainView: View {
         }
     }
 
-    /// 配对后的根页面：聊天列表加下拉面板。
+    /// 配对后的根页面：聊天列表。
     @ViewBuilder private var chatRoot: some View {
         if usesTwoColumns {
             ChatDetailView(model: chat, plugins: plugins)
         } else {
-            chatListPanel(listOnly: false)
+            ChatListView(model: chat, plugins: plugins, listOnly: false)
         }
-    }
-
-    func chatListPanel(listOnly: Bool) -> some View {
-        ChatPanelHost(
-            pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
-            scope: .main, edge: .top, items: pages.viewModel.panel, selected: pages.viewModel.panelSelected,
-            draft: receiveDraft, open: open,
-            pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
-            select: { pages.send(.pages(action: .selectPanelPage(scope: .main, tab: $0))) },
-            remove: { pages.send(.pages(action: .removePanelPage(scope: .main, tab: $0))) },
-            move: { pages.send(.pages(action: .movePanelPage(scope: .main, tab: $0, index: UInt32($1)))) },
-            content: { ChatListView(model: chat, plugins: plugins, listOnly: listOnly) }
-        )
     }
 
     private var pendingElsewhere: [PendingConfirmation] {

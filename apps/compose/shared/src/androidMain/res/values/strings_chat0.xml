@@ -16,7 +16,6 @@
     <string name="chat_install_stage_starting">Starting</string>
     <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
     <string name="chat_install_stage_waiting_for_bot">Waiting for the bot</string>
-    <string name="chat_backup_copy">Copy</string>
     <!-- Explanation under the heading when backup is on. -->
     <string name="chat_backup_detail_enabled">When you switch to a new phone, enter your recovery key to see your past messages.</string>
     <!-- Explanation when the recovery key is missing on this device. -->

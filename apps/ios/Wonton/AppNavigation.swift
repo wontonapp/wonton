@@ -62,6 +62,8 @@ final class AppNavigation {
         }
         if case let .tab(tab) = link {
             openTab(tab)
+        } else if case let .bar(entry) = link {
+            pages.select(entry)
         } else {
             request { try await $0.open(link) }
         }
@@ -83,7 +85,7 @@ final class AppNavigation {
     func openSharedRoom(_ roomId: String) {
         request { navigation in
             guard try await navigation.navigationReady() else { return }
-            try navigation.select(.chat)
+            try navigation.pages.select(.agent)
             navigation.chat.resetNavigation()
             navigation.chat.openRoom(id: roomId)
         }
@@ -111,14 +113,14 @@ final class AppNavigation {
             case let .user(userId):
                 request { navigation in
                     guard try await navigation.navigationReady() else { return }
-                    try navigation.select(.chat)
+                    try navigation.pages.select(.agent)
                     navigation.chat.resetNavigation()
                     navigation.chat.openDirectChat(with: userId)
                 }
             case let .room(roomId, _):
                 request { navigation in
                     guard try await navigation.navigationReady() else { return }
-                    try navigation.select(.chat)
+                    try navigation.pages.select(.agent)
                     let roomId = try await navigation.chat.core.resolveChatRoom(input: roomId)
                     navigation.chat.openRoom(id: roomId)
                 }
@@ -164,15 +166,18 @@ final class AppNavigation {
             }
             try select(tab)
             chat.resetNavigation()
+        case let .bar(entry):
+            try select(bar: entry)
+            chat.resetNavigation()
         case .newChat:
-            try select(.chat)
+            try select(bar: .agent)
             chat.startNewChat()
         case .agentChat:
-            try select(.chat)
+            try select(bar: .agent)
             // 空一句话只解析并打开默认 Agent 的私聊；写不写由用户决定。
             try chat.startAsk(text: "", roomId: nil)
         case let .room(roomId):
-            try select(.chat)
+            try select(bar: .agent)
             chat.openRoom(id: roomId)
         case .peers:
             opensPeers = true
@@ -194,7 +199,7 @@ final class AppNavigation {
         request { navigation in
             guard try await navigation.navigationReady() else { return }
             if let server, !(await navigation.switchPushServer(server)) { return }
-            try navigation.select(.chat)
+            try navigation.pages.select(.agent)
             // 没有来源会话的卡片（核心自己发起的，ADR-0016）room_id 为空：落在会话列表，待确认的卡片就在那里。
             if !roomId.isEmpty { navigation.chat.openRoom(id: roomId) }
         }
@@ -245,7 +250,7 @@ final class AppNavigation {
         }
         // 当前房间只原样带上 Bot 私聊（含只读的通知房）；回执说发到哪就开哪，不再按 peer 扫房间。
         try chat.startAsk(text: text, roomId: chat.currentBotRoomId)
-        try select(.chat)
+        try select(bar: .agent)
     }
 
     /// 已配对设备冷启动时引导状态先为空；只等恢复，不等用户走完真实的引导步骤。`deadline` 给在后台运行、
@@ -283,6 +288,12 @@ final class AppNavigation {
 
     private func select(_ tab: TabRef) throws {
         try pages.openForNavigation(tab)
+        opensSettings = false
+        presentationRevision += 1
+    }
+
+    private func select(bar entry: BarEntry) throws {
+        pages.select(entry)
         opensSettings = false
         presentationRevision += 1
     }

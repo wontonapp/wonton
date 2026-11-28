@@ -50,6 +50,7 @@ fn capability_dependencies_keep_their_wire_format() {
 #[test]
 fn wanting_plugins_keep_their_wire_format() {
     let preview = InstallPreview {
+        connected_plugins: Vec::new(),
         wanting_plugins: vec![CapabilityProviderRef {
             id: "app.seerr".into(),
             title: "Seerr".into(),

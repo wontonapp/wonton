@@ -2,7 +2,7 @@
 
 - 状态：已接受（2026-11-19）
 - 取代：[ADR-0029](0029-platform-material.md) 里消息时间和送达状态的一段，以及“气泡、卡片和颜色是 Wonton 自己的样子”里的气泡；[ADR-0073](0073-message-actions-and-replies.md) 第 3 节（右滑回复）和第 2 节最后一条（跳到原消息不做）
-- 修订：[ADR-0054](0054-bot-command-menu.md) 由谁写命令表；2026-11-20 补充（ADR-0109 自身）：编辑消息、正在输入的发送侧、状态行选项的发送状态、旁聊贴图带说明；2026-11-25 由 [ADR-0121](0121-chat-time-groups-and-unread-jump.md) 修订：组间隔、时间改成微信式
+- 修订：[ADR-0054](0054-bot-command-menu.md) 由谁写命令表；2026-11-20 补充（ADR-0109 自身）：编辑消息、正在输入的发送侧、状态行选项的发送状态、旁聊贴图带说明；2026-11-25 由 [ADR-0121](0121-chat-time-groups-and-unread-jump.md) 修订：组间隔、时间改成微信式；2026-11-27 由 [ADR-0130](0130-black-and-white.md) 修订：第 9 节用重点色的几项改成黑白的 `primary`
 
 ## 背景
 
@@ -23,7 +23,7 @@ Telegram 客户端是 GPL，不能拷代码。我们只照它的可观察行为�
 
 ### 1. 照 Telegram，两端一致
 
-聊天页的气泡形状、尾巴、间距、勾的位置、手势、列表行为、输入框布局，都照 Telegram 的移动端；时间改成微信的组首一行（ADR-0121）。颜色仍由 ADR-0026 的令牌和重点色推导：
+聊天页的气泡形状、尾巴、间距、勾的位置、手势、列表行为、输入框布局，都照 Telegram 的移动端；时间改成微信的组首一行（ADR-0121）。颜色仍由 ADR-0026 的令牌给，ADR-0130 起没有重点色，强调填充用 `primary`、强调字用 `textPrimary`：
 Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram”的部分。
 
 两端只保留 Telegram 自己就有的差异：iOS 长按消息出菜单，Android 单击消息出菜单；顶栏标题 iOS 居中、Android 靠左。其余行为两端一样。
@@ -59,7 +59,7 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
 - 跨天处是居中的日期胶囊，当天第一条把时间并进日期行；之后各组的组首上方写时间（第 3 节）。滚动时顶部浮一个日期胶囊，显示可见区最上面那条的日期，停止滚动 1 秒后淡出（估计值）。
 - **跳到被回复的那条**：点气泡里的引用，壳发 `TimelineAction::JumpToMessage`，带上被点的那条。核心定位原消息：已经加载就直接给；
   没加载就往前翻页，翻到了再给；翻到房间开头还没有，给“找不到了”，壳显示一条轻提示。定位结果是 `TimelineUpdate::focus`：
-  壳把那条滚到可视区中部，整条背景闪一次重点色，1 秒内淡出（估计值）。
+  壳把那条滚到可视区中部，整条背景闪一次 `textPrimary` 的淡色，1 秒内淡出（估计值）。
 - **同一条连着点**：壳每发起一次跳转先发 `TimelineAction::RegisterFocusRevision`（只增的序号），核心把它原样放进
   `TimelineUpdate::focus_revision`；壳按序号重滚，落点和上次一样也滚。核心还在翻页时先报序号，会停下上一次翻页从头找。
 - 找的时候被点的引用尾部转小圈，这一下再点不算；落地或报找不到才收。找的过程不盖提示，找不到的轻提示自动消失，不挡点击。
@@ -183,37 +183,36 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
 | 群聊头像 `size.messageAvatar` | 34，离气泡 4 | 同上，`avatarInset` 34 + 4 |
 | 正文 `typography.message` | 16 / 行高 21 | Telegram 默认 17（`ChatPresentationData.swift` 的 `baseDisplaySize`）、行高约 22。Wonton 的界面字体比 SF 宽，16 时每个字的宽度和它的 17 相当 |
 | 时间 `typography.caption` / 勾 `typography.messageMeta` | 时间 12/16 居中在组首上方；勾 11 在气泡右下角 | Telegram 的时间在气泡里；ADR-0121 把时间移出气泡 |
-| 名字 `typography.senderName` | 14 半粗，重点色 | 估计值 |
+| 名字 `typography.senderName` | 14 半粗，`textPrimary` | 估计值 |
 | 入气泡 | 浅色 `surface`（白），深色 `surfaceSubtle` | `DefaultDayPresentationTheme.swift` 入气泡 `#FFFFFF`；`DefaultDarkPresentationTheme.swift` 入气泡 `#1D1D1D`、背景近黑 |
-| 出气泡 | `accentFill` 纯色，字 `textOnAccentFill`，勾 `accentInkOnFill`；时间在组首用 `textSecondary` | Telegram 的出气泡跟主题的重点色走；不描边、不叠颗粒 |
+| 出气泡 | `primary` 纯色，字和勾 `onPrimary`；时间在组首用 `textSecondary`；带一层投影（ADR-0130） | Telegram 的出气泡跟主题的重点色走，这里是黑白（ADR-0130）；不描边、不叠颗粒（Android 叠颗粒） |
 | 选项按钮 `size.choiceButton` / `typography.choice` | 高 42，间距 4，字 15 中粗、居中；上角 8，最下一行靠外的角 16；和气泡等宽 | `ChatMessageActionButtonsNode.swift`：高 42、字 16 中粗、角用气泡的两档圆角。字取 15：半格宽里要放得下“approve once” |
 | 日期胶囊、说明行的底 `ratio.serviceFill` / `serviceFillDark` | 浅色盖黑 32%，深色盖白 16%，白字 | 浅色主题无壁纸时是 `#596E89` 35%，白字；深色是 `#1F1F1F` 实底 |
-| 选项按钮的底和字 | 入气泡色透 30% 背景，字用 `accentInk`；选中的是 `accentFill` 实底 | Telegram 是和日期胶囊一样的半透明深色底、白字。这里没照：灰底白字在浅色背景上对比度不够，也显得脏 |
+| 选项按钮的底和字 | 入气泡色透 30% 背景，字用 `textPrimary`；选中的是 `primary` 实底、`onPrimary` 的字 | Telegram 是和日期胶囊一样的半透明深色底、白字。这里没照：灰底白字在浅色背景上对比度不够，也显得脏 |
 | 日期胶囊 `size.datePill` / `typography.datePill` | 高 22，字 13 中粗 | `ChatMessageDateHeader.swift`：高 22、字是正文的 13/17 |
-| 跳转高亮 `ratio.jumpHighlight` | 重点色 20% | 估计值 |
-| 背景 `ratio.wallTint` / `wallPattern` | 底色上盖 16% 重点色（深色只盖三成），再铺 14% 重点色的细线图案 | Telegram 默认是带图案的壁纸。图案是自己画的几何小件（圆、十字、波浪、三角、方、馄饨、括弧、三点），不用它的素材 |
+| 跳转高亮 `ratio.jumpHighlight` | `textPrimary` 12% | 估计值 |
+| 背景 `ratio.wallPattern` | 灰阶的底色上铺 8% `textPrimary` 的细线图案，不再盖重点色（ADR-0130） | Telegram 默认是带图案的壁纸。图案是自己画的几何小件（圆、十字、波浪、三角、方、馄饨、括弧、三点），不用它的素材 |
 
 #### 顶栏
 
 - 左：返回的玻璃圆钮。Telegram 在这里带未读数；核心没有“别的房间未读总数”这一项，不画数字。
-- 中：一枚玻璃胶囊，名字 17 半粗（`typography.barTitle`），下面一行 13 的状态（`typography.barStatus`）：有人输入时写“正在输入…”（重点色），
+- 中：一枚玻璃胶囊，名字 17 半粗（`typography.barTitle`），下面一行 13 的状态（`typography.barStatus`）：有人输入时写“正在输入…”（`textPrimary`），
   否则写连接状态，都没有就只剩名字（`ChatTitleView.swift`：标题 17 半粗、副标题 13，垫玻璃）。居中；两边的东西宽了胶囊就收窄、字截断，窄到 88 还放不下才退到两边之间居中。
 - 右：圆头像，直径 `size.chatControl`（44）。点头像进对方的资料页：原来的“i”按钮去掉，入口只剩头像这一个；名字胶囊只显示名字和状态，不再可点（[ADR-0044](0044-bot-profile-and-status-avatars.md) 的资料页不变）。
 - 通话入口（[ADR-0096](0096-calls-matrixrtc-widget.md)）、开旁聊（[ADR-0093](0093-side-chats.md)）排在头像左边，和别的玻璃圆钮一样高。
-  “打开面板”不在顶栏：入口在 Bot 资料页里（[ADR-0052](0052-chat-pull-panel.md)）。
 - 栏本身不垫实底，后面只有一段朝消息方向淡出的材质，消息从玻璃下面滚过去时慢慢糊掉；输入栏后面也一样。顶栏下面那几条提示（群里的 AI、Agent 状态、旁聊说明）收在一张玻璃卡片里。
 
 #### 输入栏
 
 - 从左到右：“菜单”胶囊（Bot 有命令时才有）、回形针圆钮、输入框、发送圆钮（有字或有附件才出现）。各是一块玻璃，高 `size.chatControl`（44），
   离屏幕边 `spacing.chatFloatInset`（8）；`ChatTextInputPanelNode.swift` 里菜单按钮也是垫玻璃的胶囊。
-- “菜单”和发送是重点色的玻璃（`accentInk` 上色，字和图标用 `canvas`）。输入框里有字时“菜单”收成只剩图标，把宽度让给输入框。
-- 回复条和附件区收在输入框那一块玻璃里：回复图标、重点色竖条、名字（重点色）、一行摘要、关闭。
+- “菜单”和发送是强调色的玻璃（`primary` 上色，字和图标用 `onPrimary`）。输入框里有字时“菜单”收成只剩图标，把宽度让给输入框。
+- 回复条和附件区收在输入框那一块玻璃里：回复图标、`textPrimary` 竖条、名字（`textPrimary`）、一行摘要、关闭。
 - 命令列表是输入栏上方的一张玻璃卡片，每行：Bot 圆头像（`size.commandAvatar`，28）、“/命令”、说明；按内容高，最多 `size.commandMenu`。
 - 没有语音消息和表情面板，所以不画麦克风和表情按钮。
 - 回形针在输入栏打开附件面板（系统的底部面板，半屏、能拉到整屏）：上面是相册里最近的照片，三列，点一下选中并标上第几张，能选几张主对话看附件区还剩几格、旁聊看一次十张的上限；
   底下浮着一块玻璃胶囊的切换，每项图标加短字，只列做得到的：相册、文件，点“文件”开系统的文件选择器。
-  选了照片，那一排换成附言框加重点色的圆形发送键（键角标选了几张），左边一个关闭钮取消选择、回到切换；附言就是输入框的草稿。
+  选了照片，那一排换成附言框加 `primary` 的圆形发送键（键角标选了几张），左边一个关闭钮取消选择、回到切换；附言就是输入框的草稿。
   点发送，照片和附言作为一次发出：主对话里照片进附件区，再和发送键走同一条 `SendComposer`（[ADR-0094](0094-chat-attachments.md)），
   被拒时照片和附言都留在原处、回复对象也不动，原因写在输入栏上方就地关掉（系统的弹窗从标签页那一层盖不上房间的盖层）。
   取照片的字节要等（比如 iCloud 原图）时发送键那一格转圈，等的功夫又打了字就一起留在输入框里，发完只清掉跟着走了的那句。
@@ -226,7 +225,7 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
 
 #### 转发面板
 
-系统的底部面板，顶上一个搜索框，下面是带圆头像的会话，每行右边一个圈，能选几个。iOS 的面板底下还贴着附言框和重点色的圆形发送键
+系统的底部面板，顶上一个搜索框，下面是带圆头像的会话，每行右边一个圈，能选几个。iOS 的面板底下还贴着附言框和 `primary` 的圆形发送键
 （键角标选了几个），键盘弹起时跟着上来；两端都有附言框。只列已加入、能写的房间；按名字找是壳在这张名单里筛。
 核心一次转发只到一个房间，选了几个就
 各发一次（[ADR-0073](0073-message-actions-and-replies.md) 第 4 节）：写了附言的，每个会话各带一份，放进转发动作的 `comment`，壳只

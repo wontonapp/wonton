@@ -38,6 +38,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import app.wonton.protocol.Action
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
 import app.wonton.protocol.PageAction
@@ -115,7 +116,7 @@ class RoomQuoteFixTest {
                 }
             }
         }
-        assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
+        assertNull(core.send(Action.Pages(PageAction.SelectBarItem(BarEntry.Agent))))
         compose.onNodeWithText("Echo").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
     }

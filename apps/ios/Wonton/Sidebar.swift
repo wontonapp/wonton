@@ -166,8 +166,11 @@ struct SidebarPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                     if !appsOnly {
-                        SidebarRow(title: TabText.chat, selected: current == .chat) {
-                            (current == .chat ? WontonIcon.chatFill : WontonIcon.chat).view()
+                        SidebarRow(
+                            title: TabText.chat,
+                            selected: pages.viewModel.tab == .agent && current == .rooms
+                        ) {
+                            (pages.viewModel.tab == .agent ? WontonIcon.chatFill : WontonIcon.chat).view()
                         } action: { openDestination(.chat) }
                         SidebarRow(
                             title: String(localized: .Store.storeTitle),
@@ -226,7 +229,7 @@ struct SidebarPanel: View {
             Spacer(minLength: 0)
             Button(String(localized: .Sidebar.sidebarAll)) { openDestination(.allApps) }
                 .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.accentInk))
+                .foregroundStyle(Color(colors.textPrimary))
                 .buttonStyle(.plain)
         }
         .padding(.horizontal, WontonTheme.spacing.s12)
@@ -236,6 +239,7 @@ struct SidebarPanel: View {
             if !failed.contains(where: { $0.id == app.pluginId }) {
                 SidebarRow(
                     title: app.title,
+                    subtitle: app.subtitle,
                     selected: selected(app),
                     badgeMark: SidebarBadgeMark(
                         update: app.badge.update, problem: app.badge.problem, stopped: app.badge.stopped
@@ -253,7 +257,7 @@ struct SidebarPanel: View {
         ForEach(failed, id: \.id) { plugin in
             SidebarRow(
                 title: plugin.title,
-                subtitle: String(localized: .Launcher.launcherInstallFailed),
+                problem: String(localized: .Launcher.launcherInstallFailed),
                 selected: false
             ) {
                 PluginIconView(icon: plugin.icon, size: 28, model: plugins)
@@ -272,7 +276,7 @@ struct SidebarPanel: View {
             .padding(.horizontal, WontonTheme.spacing.s12)
         }
         if sidebar.moreApps {
-            SidebarRow(title: String(localized: .Sidebar.sidebarAllApps), selected: current == .apps) {
+            SidebarRow(title: String(localized: .Sidebar.sidebarAllApps), selected: pages.viewModel.tab == .apps) {
                 WontonIcon.apps.view()
             } action: { openDestination(.allApps) }
         }
@@ -358,6 +362,8 @@ struct SidebarBadgeMark {
 private struct SidebarRow<Icon: View>: View {
     let title: String
     var subtitle: String?
+    /// 行出了问题的一句话，红字，排在 `subtitle` 的位置上。
+    var problem: String?
     var badge = 0
     var dotOnly = false
     let selected: Bool
@@ -375,10 +381,15 @@ private struct SidebarRow<Icon: View>: View {
                         .wontonText(WontonTheme.typography.body)
                         .fontWeight(selected ? .semibold : .regular)
                         .lineLimit(1)
-                    if let subtitle {
-                        Text(subtitle)
+                    if let problem {
+                        Text(problem)
                             .wontonText(WontonTheme.typography.caption)
                             .foregroundStyle(Color(colors.danger))
+                    } else if let subtitle {
+                        Text(subtitle)
+                            .wontonText(WontonTheme.typography.caption)
+                            .foregroundStyle(Color(colors.textSecondary))
+                            .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -425,5 +436,12 @@ private struct SidebarRow<Icon: View>: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+extension WontonGesture {
+    static func commits(distance: CGFloat, velocity: CGFloat, threshold: CGFloat) -> Bool {
+        distance >= threshold || (distance >= WontonTheme.gesture.flickDistance
+            && velocity >= WontonTheme.gesture.flickVelocity)
     }
 }

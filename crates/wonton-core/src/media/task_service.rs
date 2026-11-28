@@ -29,6 +29,13 @@ pub enum TaskServiceError {
     Transition(#[from] IllegalTransition),
     #[error("任务 {task} 连续两次被别处改掉，没能落库")]
     ConcurrentChange { task: TaskId },
+    #[error("任务 {task} 不是上传，没有逐项条目")]
+    NotUpload { task: TaskId },
+    #[error("任务 {task} 里没有 {item} 这一项")]
+    ItemNotFound { task: TaskId, item: String },
+    /// 任务在 `Preparing` 被拒（配额放不下），已经落了 `Failed`，带着记到任务上的那个失败。
+    #[error("{}", .0.message)]
+    Refused(MediaFailure),
 }
 
 /// 任务的状态机，落库到 [`Store`]。
@@ -94,7 +101,8 @@ impl TaskService {
         Ok(self.store.due_tasks(at)?)
     }
 
-    /// 终态任务再跑一次：新任务号，`retry_of` 指回去，计数与进度清零。
+    /// 终态任务再跑一次：新任务号，`retry_of` 指回去，计数与进度清零。一个任务只重试出一条：已经重试过
+    /// 的回早先那条，连点不多开；那条也失败了，要重试的是它。
     pub fn retry(&self, task: TaskId) -> Result<MediaTask, TaskServiceError> {
         let old = self.store.task_any(task)?;
         if !old.state.is_terminal() {
@@ -129,7 +137,15 @@ impl TaskService {
             created_at: (self.clock)().saturating_mul(1_000),
             partial_failures: Vec::new(),
         };
-        self.store.create_task(&new)?;
+        let created = self.store.create_retry(&new)?;
+        if created.id != new.id {
+            return Ok(created);
+        }
+        // 点名或首次选定的那家跟着走：重试不重新挑，免得换了一家。
+        if let Some(provider) = self.store.task_provider(&new.person, old.id)? {
+            self.store
+                .bind_task_provider(&new.person, new.id, &provider)?;
+        }
         Ok(new)
     }
 
@@ -142,10 +158,12 @@ impl TaskService {
         Ok(())
     }
 
-    /// 暂停或等条件的任务回队；到点重试也用它。
+    /// 暂停或等条件的任务回队；到点重试也用它。已在排队的不动。
     pub fn resume(&self, task: TaskId) -> Result<(), TaskServiceError> {
         self.change(task, |task| {
-            self.move_to(task, TaskState::Queued)?;
+            if task.state != TaskState::Queued {
+                self.move_to(task, TaskState::Queued)?;
+            }
             task.next_attempt_at = None;
             Ok(())
         })?;
@@ -161,8 +179,12 @@ impl TaskService {
         Ok(())
     }
 
+    pub(super) fn store(&self) -> &Store {
+        &self.store
+    }
+
     /// 读、改、带状态与计数比较再写；写不动说明被别处改了，重读重来一次。
-    fn change(
+    pub(super) fn change(
         &self,
         id: TaskId,
         mut change: impl FnMut(&mut MediaTask) -> Result<(), TaskServiceError>,
@@ -182,7 +204,11 @@ impl TaskService {
         Err(TaskServiceError::ConcurrentChange { task: id })
     }
 
-    fn move_to(&self, task: &mut MediaTask, to: TaskState) -> Result<(), TaskServiceError> {
+    pub(super) fn move_to(
+        &self,
+        task: &mut MediaTask,
+        to: TaskState,
+    ) -> Result<(), TaskServiceError> {
         task.state = task.state.clone().transition(to)?;
         Ok(())
     }
@@ -653,10 +679,13 @@ mod tests {
         let mut queued = task(2);
         queued.state = TaskState::Queued;
         store.create_task(&queued).unwrap();
-        assert_illegal(
-            service.resume(queued.id),
-            TaskState::Queued,
-            TaskState::Queued,
+        // 排队中的“继续”什么也不用做；排队中也能暂停（设备还没开始取字节的下载）。
+        service.resume(queued.id).unwrap();
+        assert_eq!(stored(&store, 2).state, TaskState::Queued);
+        service.pause(queued.id, PauseReason::User).unwrap();
+        assert_eq!(
+            stored(&store, 2).state,
+            TaskState::Paused(PauseReason::User)
         );
         service.cancel(queued.id).unwrap();
         assert_eq!(stored(&store, 2).state, TaskState::Cancelled);

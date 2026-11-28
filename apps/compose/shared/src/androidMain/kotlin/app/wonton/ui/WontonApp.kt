@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.client.defaultAppearance
 import app.wonton.protocol.HomeAction
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.SettingsAction
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
@@ -134,28 +135,28 @@ private fun AppContent(
     val shown = pages.current
     // 栈顶是插件网页时整页归网页；其余都是原生的（聊天根、应用网格）。设置盖在什么上面都算原生。
     val opened = view.stack.lastOrNull()
-    val pluginShown = !view.showsApps && opened != null && !opened.tab.isNativeRoot()
+    val pluginShown = !pages.appsOpen && opened != null && !opened.tab.isNativeRoot()
     val native = !pluginShown || nav.settingsOverlay
     val expanded = LocalExpandedChat.current
     var showsSidebar by remember { mutableStateOf(false) }
     val nativeState = rememberSaveableStateHolder()
     val status = connectionBarStatus(home, { pages.send(Action.Home(HomeAction.RetryConnection)) }, nav::settings)
     val cards = chat.pendingConfirmations.filter {
-        val listShown = shown == TabRef.Chat && !nav.settingsOverlay && !view.showsApps &&
+        val listShown = shown == TabRef.Rooms && !nav.settingsOverlay && !pages.appsOpen &&
             nav.chat.showingConfirmations
-        val roomShown = shown == TabRef.Chat && !nav.settingsOverlay && !view.showsApps &&
+        val roomShown = shown == TabRef.Rooms && !nav.settingsOverlay && !pages.appsOpen &&
             !nav.chat.showingBackup && !nav.chat.startingChat && it.roomId != null &&
             it.roomId == nav.chat.openRoom
         !listShown && !roomShown
     }
     val onDraft: (String) -> Unit = { text ->
         draft.text = text
-        pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
+        pages.select(BarEntry.Agent)
     }
     // 面板只在聊天页和房间里；拉开时左边缘归面板（A 块的手势用来关它）。
     val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
-    val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay &&
-        !view.showsApps && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
+    val panelActive = shown == TabRef.Rooms && !pluginShown && !nav.settingsOverlay &&
+        !pages.appsOpen && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
     val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
         rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope,
             nav.pages)
@@ -238,7 +239,7 @@ private fun BackRootExit(nav: AppNavigation, view: PagesViewModel) {
     var armed by remember { mutableStateOf(false) }
     val showed = pages.current
     // 页面栈、盖子或网格一变，上一次的“再按一次”作废：刚落到根页面的那一下先不算退出。
-    LaunchedEffect(showed, view.showsApps, nav.settingsOverlay) { armed = false }
+    LaunchedEffect(showed, pages.appsOpen, nav.settingsOverlay) { armed = false }
     LaunchedEffect(armed) {
         if (armed) {
             delay(BACK_EXIT_MS)
@@ -247,7 +248,7 @@ private fun BackRootExit(nav: AppNavigation, view: PagesViewModel) {
     }
     BackHandler {
         when {
-            view.showsApps -> nav.closeApps()
+            pages.appsOpen -> nav.closeApps()
             view.stack.isNotEmpty() && !nav.settingsOverlay ->
                 pages.send(Action.Pages(PageAction.ClosePage))
             armed -> activity?.finish()
@@ -299,8 +300,7 @@ private fun NativeTab(
             },
             checkInstalled = { nav.checkInstalled() },
         ) { nav.settingsPage = it }
-        pages.viewModel.showsApps || pages.current == TabRef.Apps ||
-            home.status is HomeStatus.NotConfigured -> HomeRoute(
+        pages.appsOpen || home.status is HomeStatus.NotConfigured -> HomeRoute(
             pages.core, home, pages.plugins, nav.plugins, nav.appsPage,
             { nav.appsPage = it },
             chat.pendingConfirmations, nav::openCardTarget,

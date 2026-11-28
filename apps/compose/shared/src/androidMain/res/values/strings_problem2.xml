@@ -31,6 +31,8 @@
     <string name="problem_store_other_title">The app list may be incomplete</string>
     <!-- Problem title: the source is answering too many requests. -->
     <string name="problem_store_rate_limited_title">Too many requests</string>
+    <!-- Next step under the not-paired problem: scan the home server's QR code, then retry. -->
+    <string name="problem_not_paired_next_step">Scan the QR code on your home server to pair this phone, then come back.</string>
     <!-- Next step under the can't-reach-the-server problem. -->
     <string name="problem_transport_unavailable_next_step">Check your network and try again once you\'re connected.</string>
     <!-- Next step: update the home server first. Used when the server is too old. -->
@@ -41,4 +43,6 @@
     <string name="problem_peer_public_access_off_next_step">Wait for them to turn it back on, then send again. Messages arrive after that.</string>
     <!-- Next step when the other server isn't paired: pair it first. -->
     <string name="problem_server_not_paired_next_step">Pair it under Other servers, then open the chat again.</string>
+    <string name="problem_plugin_in_use_title">Other apps still need it</string>
+    <string name="problem_plugin_in_use_next_step">Uninstall those apps first, or install another provider.</string>
 </resources>

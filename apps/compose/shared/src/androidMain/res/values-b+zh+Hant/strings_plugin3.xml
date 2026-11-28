@@ -30,4 +30,8 @@
     <string name="plugin_uninstall_keep_data">解除安裝，保留資料</string>
     <string name="plugin_clear_failure">清除失敗的安裝</string>
     <string name="plugin_clear_failure_message">應用程式的資料會保留。</string>
+    <string name="plugin_dependency_not_connected">還沒接上「%1$s」，「%2$s」用不了。</string>
+    <string name="plugin_uninstall_together">一起解除安裝</string>
+    <string name="plugin_dependency_optional">可選：「%1$s」</string>
+    <string name="plugin_dependency_no_provider">商店裡沒有提供方</string>
 </resources>

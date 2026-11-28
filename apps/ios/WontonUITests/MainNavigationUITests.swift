@@ -6,7 +6,7 @@ import XCTest
 ///
 ///     apps/ios/scripts/ui-test.sh <模拟器 UDID> test -only-testing:WontonUITests/MainNavigationUITests
 ///
-/// 整页插件页（网页）的出口要连开发栈，在 `PluginPageUITests`；聊天页里面的手势在 `ChatPanelUITests`。
+/// 整页插件页（网页）的出口要连开发栈，在 `PluginPageUITests`。
 final class MainNavigationUITests: XCTestCase {
     private var app: XCUIApplication!
 

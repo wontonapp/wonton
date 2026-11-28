@@ -32,8 +32,10 @@ mod app_lock;
 mod appearance;
 mod bot_contacts;
 mod browser;
+mod cache_dir;
 mod chat;
 mod client;
+mod clients;
 mod composer;
 mod device_choices;
 mod family;
@@ -45,6 +47,8 @@ mod link;
 mod lock_screen;
 mod logging;
 mod matrix_login;
+mod media_link;
+mod music_library;
 mod onboarding;
 mod pages;
 mod peers;
@@ -64,10 +68,10 @@ mod subscription;
 pub(crate) mod test_hooks;
 mod widget;
 
-pub use appearance::{accent_hex, default_appearance, parse_accent};
+pub use appearance::default_appearance;
 pub use chat::TimelineSubscription;
 pub use chat::bot_current_avatar;
-pub use client::{ClientCore, ShareInSubscription};
+pub use client::{ClientCore, MusicPageSubscription, ShareInSubscription};
 pub use device_choices::{
     DeviceChoices, SerialChoice, chosen_device_ids, device_choices, toggle_device,
     upgrade_highest_risk,
@@ -76,6 +80,10 @@ pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
+pub use media_link::{
+    MediaSubscription, PlaybackSubscription, PlayerCommand, PlayerEvent, PlayerPhase, PlayerState,
+    PlayerSupport,
+};
 pub use pages::ContentPageSubscription;
 pub use pages::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
@@ -84,17 +92,18 @@ pub use pages::bridge::{
 pub use pages::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use pages::media_permission::TabMediaPermission;
 pub use plugin_choices::{
-    PluginInstallAction, detail_install_action, plugin_audience_notice, preview_install_action,
-    selected_plugin_audience, store_install_action,
+    PluginInstallAction, detail_install_action, install_providers_ready, plugin_audience_notice,
+    preview_install_action, selected_plugin_audience, store_install_action,
 };
+pub use plugins::capabilities::dependency_next_step;
 pub use sharing::discover_share_source;
 pub use subscription::{
     AgentChainsSubscription, AgentModelsSubscription, AgentStopSubscription, AppLockSubscription,
-    AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
-    ConfirmationsSubscription, FamilySubscription, FriendsSubscription, HomeSubscription,
-    OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
-    ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
-    UnreadSubscription, WidgetSnapshotSubscription,
+    AppearanceSubscription, BotContactsSubscription, ChatSubscription, ClientsDomainSubscription,
+    ComposerSubscription, ConfirmationsSubscription, FamilySubscription, FriendsSubscription,
+    HomeSubscription, OnboardingSubscription, PagesSubscription, PeersSubscription,
+    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
+    TransfersSubscription, UnreadSubscription, WidgetSnapshotSubscription,
 };
 pub use widget::read_widget_snapshot;
 // 本人私人 Bot 的三件套在公共面上显式钉名；FFI 的 Swift/Kotlin 枚举由 derive 生成，

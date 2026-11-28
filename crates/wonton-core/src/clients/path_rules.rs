@@ -169,6 +169,15 @@ fn hits(prefixes: &[String], candidate: &str) -> bool {
         .any(|prefix| matches_prefix(prefix, candidate))
 }
 
+/// 访客链接声明的范围：不带落地路径时是整个网页，否则按整段前缀算，任何一份解码候选命中都算在范围内。
+pub fn within(prefix: Option<&str>, raw_path: &str) -> bool {
+    prefix.is_none_or(|prefix| {
+        candidates(raw_path)
+            .iter()
+            .any(|candidate| matches_prefix(prefix, candidate))
+    })
+}
+
 /// 这个公网请求能不能到插件。`deny` 任何一份候选命中就拒；`allow` 三份候选，连不去 `;` 的字面形式都要命中。
 pub fn public_allows(rules: &PathRules, raw_path: &str) -> bool {
     let candidates = candidates_with_params(raw_path);

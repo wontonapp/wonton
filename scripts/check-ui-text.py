@@ -64,6 +64,27 @@ def collect_problems(root: str, files: List[str]) -> Dict[str, List[source.Probl
         _merge(problems, catalogs.layout_problems(items, platform))
     _merge(problems, _android_pairs(root, files, found["android"]))
     _merge(problems, _fluent_pairs(root, found["fluent"]))
+    _merge(problems, _swift_namespaces(root, files, found["ios"]))
+    return problems
+
+
+def _swift_namespaces(root: str, files: List[str], catalog_files: List[Tuple[str, List[Tuple[str, int]]]]) -> Dict[str, List[source.Problem]]:
+    """Swift 的 `.PluginN.member` 引用要落在那份目录里；表名就是 Xcode 按文件名生成的枚举。"""
+    members: Dict[str, Set[str]] = {}
+    for path, keys in catalog_files:
+        stem = os.path.basename(path)[: -len(".xcstrings")]
+        if not stem:
+            continue
+        members.setdefault(stem[:1].upper() + stem[1:], set()).update(
+            catalogs.swift_member(key) for key, _ in keys
+        )
+    problems: Dict[str, List[source.Problem]] = {}
+    for path in files:
+        if source.source_lang(path) != "swift":
+            continue
+        found = catalogs.swift_reference_problems(read(root, path), members)
+        if found:
+            problems[path] = found
     return problems
 
 

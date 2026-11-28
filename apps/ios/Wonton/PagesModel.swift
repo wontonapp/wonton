@@ -45,12 +45,22 @@ final class PagesModel {
         update(core.pages())
         rejection = nil
     }
+    /// 应用根页露着（栈空且选中的应用项）。
+    var appsOpen: Bool { viewModel.tab == .apps && viewModel.stack.isEmpty }
 
-    /// 栈顶是不是插件网页（聊天、应用是原生的；设置是壳的浮层）。
+    /// 当前显示的页面：栈顶；栈空时是 Agent 根页。
+    var current: TabRef { viewModel.stack.last?.tab ?? .rooms }
+
+    /// 选一个底栏项：两个根页切过去，应用项打开整页。
+    func select(_ entry: BarEntry) {
+        send(.pages(action: .selectBarItem(entry: entry)))
+    }
+
+    /// 栈顶是不是插件网页（聊天、收件箱是原生的；设置是壳的浮层）。
     var showsPluginPage: Bool {
         guard let top = viewModel.stack.last else { return false }
         switch top.tab {
-        case .chat, .apps: return false
+        case .rooms, .inbox: return false
         default: return true
         }
     }
@@ -76,8 +86,8 @@ final class PagesModel {
 extension OpenPage {
     var title: String {
         switch tab {
-        case .chat: TabText.chat
-        case .apps: TabText.apps
+        case .rooms: TabText.rooms
+        case .inbox: TabText.inbox
         case .plugin, .pluginPath, .bot, .url, .sharedApp, .uiResource, .widget: page.title
         }
     }

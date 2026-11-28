@@ -19,6 +19,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
 import app.wonton.protocol.AppLink
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.WidgetAccount
 import app.wonton.protocol.WidgetSnapshotRead
@@ -90,11 +91,11 @@ internal fun UnreadBadge(state: WidgetState, count: ULong) {
     Text(
         // unread 是 ULong，显示和读屏都按十进制原样。
         count.toString(),
-        GlanceModifier.background(state.colors.accentFill)
+        GlanceModifier.background(state.colors.primary)
             .cornerRadius(WontonRadii.pill)
             .padding(horizontal = WontonSpacing.s8, vertical = 2.dp),
         style = TextStyle(
-            color = state.colors.accentInkOnFill,
+            color = state.colors.onPrimary,
             fontSize = widgetType.caption.fontSize,
             fontWeight = FontWeight.Medium,
         ),
@@ -117,4 +118,4 @@ internal fun updatedAt(context: Context, state: WidgetState, updatedAtMs: Long):
 }
 
 /** 默认打开的地方：聊天列表。 */
-internal val chatList: AppLink = AppLink.Tab(TabRef.Chat)
+internal val chatList: AppLink = AppLink.Bar(BarEntry.Agent)

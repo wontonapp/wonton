@@ -175,6 +175,7 @@ private fun DetailContent(
         PluginDetailStatus(detail, plugins, working)
         // 装着的应用现在的问题（选中的设备不在了，ADR-0036）：按类别说明，重试是重新取详情。
         detail.problems.forEach { ProblemRow(it.problem, onRetry = onReload) }
+        DependencySections(detail, plugins, task, installed != null, owner == true, onToggled)
         FailedInstallActions(detail, plugins, working, task, navigation)
         installed?.InstalledRows(plugins, detail, owner, secretsInView, onToggled)
         if (detail.screenshots.isNotEmpty()) {
@@ -379,6 +380,9 @@ private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: De
             PluginIconImage(detail.icon, WontonTheme.size.detailIcon, plugins)
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 Text(detail.title, style = WontonTheme.typography.sectionTitle, color = colors.textPrimary.toColor())
+                detail.subtitle?.let {
+                    Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+                }
                 Text(detail.summary, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),

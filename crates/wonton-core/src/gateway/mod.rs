@@ -46,6 +46,7 @@ mod chain_mentions;
 mod clients_api;
 mod clients_domain;
 mod clients_entry;
+mod clients_guests;
 mod clients_passwords;
 mod clients_status;
 mod clients_switches;
@@ -63,6 +64,7 @@ mod friend_gate;
 mod friend_requests;
 mod friends;
 mod friends_wiring;
+mod guest_entry;
 mod health;
 mod hosted;
 mod identity;
@@ -81,6 +83,7 @@ pub mod matrix_rtc_alias;
 mod mcp;
 mod mcp_apps;
 mod me;
+mod media;
 mod model_settings;
 mod models;
 pub(crate) mod notify;
@@ -243,6 +246,8 @@ pub struct Gateway {
     pub(crate) notify_limiter: notify_limit::Limiter,
     /// 文件服务；没启用时文件接口如实报不可用。
     pub files: Option<Arc<crate::files::Files>>,
+    /// 媒体服务（ADR-0113）；没接时媒体接口如实报不可用。
+    pub media: Option<Arc<crate::media::Media>>,
     /// 审计日志（`core/audit.jsonl`，见 [`crate::mcp::audit`]）：总线和文件服务共用一份，
     /// 主人查看插件密钥的取值审计也从这里写。
     pub(crate) audit: Option<Arc<crate::mcp::audit::Audit>>,
@@ -369,6 +374,8 @@ mod capabilities_tests;
 mod capability_uninstall_tests;
 #[cfg(test)]
 mod chain_mentions_tests;
+#[cfg(test)]
+mod panel_pins_tests;
 // 原有联邦用例照旧跑（main 上这个文件一度没人挂载，用例没在跑）：421、点段和发现文件的行为由它们锁住。
 #[cfg(test)]
 #[path = "clients_entry_tests.rs"]
@@ -453,6 +460,18 @@ mod mcp_takeover_tests;
 #[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]
+mod media_browse_tests;
+#[cfg(test)]
+mod media_command_tests;
+#[cfg(test)]
+mod media_flow_tests;
+#[cfg(test)]
+mod media_quota_tests;
+#[cfg(test)]
+mod media_stream_tests;
+#[cfg(test)]
+mod media_tests;
+#[cfg(test)]
 mod models_tests;
 #[cfg(test)]
 mod notify_tests;
@@ -466,8 +485,6 @@ mod onboarding_tests;
 mod owner_secrets_tests;
 #[cfg(test)]
 mod pairing_tests;
-#[cfg(test)]
-mod panel_pins_tests;
 #[cfg(test)]
 mod peers_api_tests;
 #[cfg(test)]

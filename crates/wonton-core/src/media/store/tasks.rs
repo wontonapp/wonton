@@ -15,6 +15,39 @@ impl Store {
     pub fn create_task(&self, task: &MediaTask) -> Result<(), MediaStoreError> {
         let mut conn = self.conn()?;
         let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        self.insert_task(&tx, task)?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(())
+    }
+
+    /// 存一条重试出来的任务（`retry_of` 有值）；那个任务已经重试过就不再存，回早先那条。查和存在同一个
+    /// 事务里，连点两次重试也只有一条。
+    pub fn create_retry(&self, task: &MediaTask) -> Result<MediaTask, MediaStoreError> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
+        let earlier: Option<String> = tx
+            .query_row(
+                "SELECT id FROM tasks WHERE retry_of = ? LIMIT 1",
+                params![task.retry_of.map(|id| id.to_string())],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| self.db_error(source))?;
+        if let Some(earlier) = earlier {
+            drop(tx);
+            drop(conn);
+            return self.task_any(self.parse_id(&earlier)?);
+        }
+        self.insert_task(&tx, task)?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(task.clone())
+    }
+
+    fn insert_task(
+        &self,
+        tx: &rusqlite::Transaction<'_>,
+        task: &MediaTask,
+    ) -> Result<(), MediaStoreError> {
         let target = match &task.target {
             TaskTarget::Upload(_) => TaskTarget::Upload(Vec::new()),
             other => other.clone(),
@@ -41,9 +74,8 @@ impl Store {
         )
         .map_err(|source| self.db_error(source))?;
         if let TaskTarget::Upload(items) = &task.target {
-            self.insert_items(&tx, &task.person, task.id, items, 0)?;
+            self.insert_items(tx, &task.person, task.id, items, 0)?;
         }
-        tx.commit().map_err(|source| self.db_error(source))?;
         Ok(())
     }
 

@@ -3,12 +3,10 @@ package app.wonton.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,11 +41,11 @@ internal fun pendingCardsText(cards: List<PendingConfirmation>): String =
 @Composable
 fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String?) -> Unit) {
     val colors = WontonTheme.colors
-    val text = colors.textOnAccentFill.toColor()
+    val text = colors.onPrimary.toColor()
     Column(
         Modifier
             .fillMaxWidth()
-            .background(colors.accentFill.toColor())
+            .background(colors.primary.toColor())
             .clickable(role = Role.Button) { onOpen(cards[0].roomId) }
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
@@ -70,9 +68,6 @@ fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String?) -> Uni
             )
             // 装饰：整条可点，箭头只表示能过去。
             Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = text)
-        }
-        colors.accentFillBorder?.let { border ->
-            Box(Modifier.fillMaxWidth().height(WontonTheme.size.hairline).background(border.toColor()))
         }
     }
 }

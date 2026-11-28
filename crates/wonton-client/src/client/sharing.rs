@@ -186,7 +186,7 @@ mod tests {
             page: None,
         };
         let plugins = PluginsViewModel::default();
-        for tab in [tab, TabRef::Apps] {
+        for tab in [tab, TabRef::Rooms] {
             assert!(tab_connected(&tab, &HomeStatus::Connected, &plugins));
             assert!(!tab_connected(&tab, &HomeStatus::Connecting, &plugins));
             assert!(!tab_connected(&tab, &HomeStatus::NotConfigured, &plugins));

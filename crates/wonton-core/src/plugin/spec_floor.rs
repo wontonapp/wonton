@@ -124,6 +124,8 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_16, Added::Field(&["provides", "*", "operations"])),
     (V0_16, Added::Field(&["provides", "*", "kinds"])),
     (V0_16, Added::RetiredPermission("models")),
+    (V0_17, Added::Field(&["provides", "*", "browse"])),
+    (V0_17, Added::Field(&["subtitle"])),
     (V0_17, Added::Field(&["agent", "models"])),
 ];
 

@@ -12,6 +12,7 @@ struct StoreView: View {
     @State private var isAddingSource = false
     /// “添加来源”那一页选好的文件：那一页关上以后才能再盖确认页。
     @State private var chosen: PluginConfirmation?
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
     @Environment(\.goToInstalledApps) private var goToInstalledApps
 
@@ -84,7 +85,8 @@ extension StoreView {
                     .padding(.vertical, WontonTheme.spacing.s8)
                 }
                 if let store = model.viewModel.store {
-                    if case let .failed(problem) = model.viewModel.storeLoad {
+                    if case let .failed(problem) = model.viewModel.storeLoad,
+                       problem.reason != .notPaired {
                         ProblemRow(problem: problem.problem) {
                             model.refreshStore(force: true)
                         }
@@ -112,6 +114,8 @@ extension StoreView {
             statusMessage(.Store.storeNotRequested, canLoad: true)
         case .waitingForConnection:
             statusMessage(.Store.storeWaitingForConnection)
+        case .notPaired:
+            notPairedPlaceholder
         case .loading:
             VStack(spacing: WontonTheme.spacing.s16) {
                 ListSkeleton(iconSize: WontonTheme.size.storeIcon, slowHint: .Store.storePending)
@@ -121,9 +125,29 @@ extension StoreView {
             }
         case .ready:
             EmptyView()
+        case let .failed(problem) where problem.reason == .notPaired:
+            notPairedPlaceholder
         case let .failed(problem):
             ProblemView(problem: problem.problem) { model.refreshStore(force: true) }
         }
+    }
+
+    /// 还没配对家里的服务器：商店要经家里的服务器取，先去配对。
+    private var notPairedPlaceholder: some View {
+        VStack(spacing: WontonTheme.spacing.s16) {
+            Text(.Problem2.problemNotPairedTitle)
+                .wontonText(WontonTheme.typography.itemTitle)
+                .foregroundStyle(Color(colors.textPrimary))
+            Text(.Problem0.problemNotPairedNextStep)
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
+            Button(String(localized: .Store.storeGoPair)) { dismiss() }
+                .buttonStyle(WontonButtonStyle(kind: .secondary))
+                .accessibilityIdentifier("store-go-pair")
+        }
+        .multilineTextAlignment(.center)
+        .padding(WontonTheme.spacing.s32)
+        .accessibilityIdentifier("store-not-paired")
     }
 
     private func statusMessage(_ message: LocalizedStringResource, canLoad: Bool = false) -> some View {
@@ -357,6 +381,12 @@ private struct StoreItemRow: View {
                             .wontonText(WontonTheme.typography.itemTitle)
                             .foregroundStyle(Color(colors.textPrimary))
                             .lineLimit(1)
+                        if let subtitle = item.subtitle {
+                            Text(subtitle)
+                                .wontonText(WontonTheme.typography.supporting)
+                                .foregroundStyle(Color(colors.textPrimary))
+                                .lineLimit(1)
+                        }
                         Text(item.summary)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))

@@ -32,36 +32,6 @@
         }
       }
     },
-    "chatBackup.copy": {
-      "comment": "Button that copies the recovery key to the local clipboard only.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copy"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "复制"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "拷貝"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "コピー"
-          }
-        }
-      }
-    },
     "chatBackup.detail.unknown": {
       "comment": "Explanation when the backup status can't be confirmed because the server isn't reachable.",
       "extractionState": "manual",

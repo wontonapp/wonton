@@ -30,6 +30,9 @@ struct Settings {
     /// 单独关掉：插件 → 对它关了的 Bot（[`bot_key`]）。没记的 Bot 按插件的范围。
     #[serde(default)]
     bot_off: BTreeMap<String, BTreeSet<String>>,
+    /// 危险模式：开着它的 Bot，键是 `插件/Bot`（ADR-0091）。
+    #[serde(default)]
+    danger: BTreeSet<String>,
 }
 
 /// 一个插件可以有几个 Bot（ADR-0045），单独关掉按 Bot 记。插件 ID 和 Bot 名里都没有 `/`。
@@ -115,6 +118,23 @@ impl ToolPolicy {
 
     pub fn is_read_only(&self, plugin: &str, tool: &str) -> bool {
         self.read(|settings| listed(&settings.read_only, plugin, tool))
+    }
+
+    /// `plugin` 的 Bot `bot` 开着危险模式。
+    pub fn is_danger(&self, plugin: &str, bot: &str) -> bool {
+        self.read(|settings| settings.danger.contains(&bot_key(plugin, bot)))
+    }
+
+    /// 打开或关掉一个 Bot 的危险模式。
+    pub fn set_danger(&self, plugin: &str, bot: &str, on: bool) -> Result<(), PolicyUnavailable> {
+        let key = bot_key(plugin, bot);
+        self.change(|settings| {
+            if on {
+                settings.danger.insert(key.clone());
+            } else {
+                settings.danger.remove(&key);
+            }
+        })
     }
 
     /// `plugin` 的 Bot `bot` 被主人单独关掉了 `target` 的工具。文件读不出来时不知道，报错，由调用方拒绝。
@@ -333,6 +353,18 @@ mod tests {
             Some(Clearance::OwnerReadOnly)
         );
         assert_eq!(reopened.clearance("other", "notes", "delete"), None);
+    }
+
+    #[test]
+    fn danger_survives_a_restart_and_is_per_bot() {
+        let (policy, dir) = policy();
+        policy.set_danger("notes", "default", true).unwrap();
+        assert!(policy.is_danger("notes", "default"));
+        assert!(!policy.is_danger("notes", "other"));
+        let reopened = ToolPolicy::load(dir.path().join("policy.json"));
+        assert!(reopened.is_danger("notes", "default"));
+        reopened.set_danger("notes", "default", false).unwrap();
+        assert!(!reopened.is_danger("notes", "default"));
     }
 
     #[test]

@@ -114,7 +114,7 @@ impl PagesLink {
         });
         let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         tracing::info!(
@@ -157,7 +157,7 @@ impl PagesLink {
             })?;
         let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         tracing::info!(
@@ -255,8 +255,8 @@ fn page_id(page: &PlacedTab) -> String {
         TabRef::SharedApp { .. } => "shared-app",
         // widget 页的房间 ID 不进日志，插件 ID 走单独的 plugin_id 字段。
         TabRef::Widget { .. } => "widget",
-        TabRef::Chat => "chat",
-        TabRef::Apps => "apps",
+        TabRef::Rooms => "rooms",
+        TabRef::Inbox => "inbox",
     };
     format!("{placement}/{name}")
 }

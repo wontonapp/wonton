@@ -609,6 +609,7 @@ async fn bus_home_with_bot_records() -> Home {
     let other_id = PluginId::parse("com.example.other").unwrap();
     home.members
         .invite(crate::members::MemberRecord {
+            invited_by: None,
             role_id: "admin".into(),
             ..crate::members::MemberRecord::for_test("alice")
         })

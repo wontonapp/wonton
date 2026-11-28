@@ -65,7 +65,7 @@ HAProxy 发 `SIGUSR2` 让 master 软重载。`systemctl restart docker` 之后�
   `EntrySettings::select` 拒掉；补了单测 `saved_settings_survive_a_repeated_none_mode_install`（覆盖这条）。
 - `reload_config` 改成直接 `Ok(())`：`admin_reload_tests` 两条都红（发出 0 条命令；应当 Reload 失败却成功）。
 - 早一轮取证：生产代码里加 `kill_container(` 时 `no_production_code_signals_containers` 报
-  `clients/domain.rs:558`、`federation_config/mod.rs:116`，`a_signalled_container_comes_back_after_a_docker_restart` 报 compose
+  `crates/wonton-core/src/clients/domain/issue.rs:169`、`federation_config/mod.rs:116`，`a_signalled_container_comes_back_after_a_docker_restart` 报 compose
   里 `unless-stopped`。
 
 虚拟机（amd64 qemu + Docker 29.7.2，自己域名 + 外部自签证书）：

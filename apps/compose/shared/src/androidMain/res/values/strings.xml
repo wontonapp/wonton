@@ -109,6 +109,8 @@
     <string name="widget_status_at">%1$s · %2$s</string>
     <string name="myapp_add">Add to My apps</string>
     <string name="myapp_add_more">Add apps</string>
+    <string name="myapp_url">Enter a URL</string>
+    <string name="myapp_url_add">Add</string>
     <string name="myapp_auto_add">Add new apps automatically</string>
     <string name="myapp_problem">Couldn\'t load or save My apps</string>
     <string name="myapp_remove">Remove from My apps</string>
@@ -151,4 +153,15 @@
     <string name="owner_profile_avatar_pick">Choose Photo</string>
     <!-- Button that removes the profile photo. -->
     <string name="owner_profile_avatar_remove">Remove Avatar</string>
+    <string name="panel_add">Add</string>
+    <string name="panel_add_pages">Add pages</string>
+    <string name="panel_can_add">Can be added to the panel</string>
+    <string name="panel_close">Close panel</string>
+    <string name="panel_edit">Edit panel</string>
+    <string name="panel_in_panel">In the panel</string>
+    <string name="panel_open">Open panel</string>
+    <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
+    <string name="panel_remove">Remove</string>
+    <string name="panel_url">Enter a URL</string>
+    <string name="panel_pin">Pin to panel</string>
 </resources>

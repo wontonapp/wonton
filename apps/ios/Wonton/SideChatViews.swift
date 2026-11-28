@@ -19,10 +19,12 @@ extension SideChatState {
     var isFailure: Bool { self == .failed }
 }
 
-/// 主对话上的旁聊盖层（ADR-0093）：下面的主对话继续订阅，被盖住时隐藏、读不到、摸不着、右滑不退出整个房间；
+/// 主对话上的旁聊盖层（ADR-0093）：下面的主对话继续订阅，被盖住时隐藏、读不到、摸不着；
 /// 上面用 `fullScreenCover` 单开一张全屏页：不能塞进房间自己的布局，房间被压进的栈里再套一层栈、
 /// 内层在 ZStack 里量不出高度，整页会变空（iOS 26 模拟器实测）。
-/// 盖着时同时按住外面的边缘返回手势（`keepsRoomOnSideChat`）：旁聊页那一层的根没有可退的页面。
+/// 盖子看起来和二级页一样（`EdgeDismiss`）：从右边推进来，左边缘右滑跟手滑走、露出下面的主对话，关掉也是往右滑走；
+/// 所以盖上、收起都不带 SwiftUI 的动画。盖着时外面房间的边缘返回按住不动（`keepsRoomOnSideChat`），
+/// 免得关旁聊的同一下把整个房间也退掉。
 struct SideChatCover<Main: View>: View {
     let model: ChatModel
     let plugins: PluginsModel
@@ -32,6 +34,9 @@ struct SideChatCover<Main: View>: View {
     /// 呈现中的旁聊根。模型里的旁聊一没（返回、旁聊自己结束、离开房间）盖层就从这里收，收完自己再清；
     /// 直接读模型的话收起动画还在跑、内容已经变空，滑下去的半秒是一张空白页。
     @State private var shown: Shown?
+    /// 旁聊页滑着（拖着、滑走）、下面的主对话露出来的这一会儿。
+    @State private var peeking = false
+    @State private var slide = EdgeDismiss()
 
     private struct Shown: Identifiable {
         let id: String
@@ -40,16 +45,21 @@ struct SideChatCover<Main: View>: View {
     var body: some View {
         let covered = model.sideChats[roomId] != nil
         main()
-            .opacity(covered || shown != nil ? 0 : 1)
+            .opacity((covered || shown != nil) && !peeking ? 0 : 1)
             .allowsHitTesting(covered || shown == nil)
             .accessibilityHidden(covered || shown != nil)
             .navigationBarBackButtonHidden(covered || shown != nil)
-            // 侧栏被别处关掉时在这里清 `shown`；自己点返回清的是 `item`，内容留到 `onDismiss` 再收，转场里不抽走。
+            // 模型里的旁聊一变就在这里开、收盖子；收的时候先滑走，滑完再清 `shown`，转场里不抽走内容。
             .onChange(of: model.sideChats[roomId], initial: true) { _, root in
                 if let root {
-                    if shown?.id != root { shown = Shown(id: root) }
-                } else {
-                    shown = nil
+                    if shown?.id != root { open(root) }
+                } else if shown != nil {
+                    slide.slideOut {
+                        withoutAnimation {
+                            peeking = false
+                            shown = nil
+                        }
+                    }
                 }
                 blockOuterPop()
             }
@@ -59,6 +69,7 @@ struct SideChatCover<Main: View>: View {
                 item: $shown,
                 onDismiss: {
                     shown = nil
+                    peeking = false
                     blockOuterPop()
                 },
                 content: { shown in
@@ -66,9 +77,32 @@ struct SideChatCover<Main: View>: View {
                         ChatRoomView(
                             model: model, plugins: plugins, roomId: roomId, threadRoot: shown.id, title: title
                         )
+                        .edgeDismisses(slide)
                     }
                 }
             )
+    }
+
+    /// 盖之前拍下整屏垫在下面，盖子一出现就从右边推进来（`EdgeDismiss.slideIn`）。
+    private func open(_ root: String) {
+        slide.peek = { peeking = $0 }
+        slide.close = {
+            withoutAnimation {
+                // 先关模型里的旁聊再收盖子：旁聊页 `onDisappear` 看到旁聊还开着会补记一次 `gone`。
+                model.closeSideChat(in: roomId, why: "edge")
+                peeking = false
+                shown = nil
+            }
+        }
+        let window = UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        slide.pendingUnder = window?.snapshotView(afterScreenUpdates: false)
+        withoutAnimation { shown = Shown(id: root) }
+    }
+
+    private func withoutAnimation(_ change: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction, change)
     }
 
     private func blockOuterPop() {
@@ -148,10 +182,10 @@ struct SideChatCardView: View {
                     Text(unreadLabel)
                         .wontonText(WontonTheme.typography.caption)
                         .monospacedDigit()
-                        .foregroundStyle(Color(colors.accentInkOnFill))
+                        .foregroundStyle(Color(colors.onPrimary))
                         .padding(.horizontal, WontonTheme.spacing.s8)
                         .padding(.vertical, WontonTheme.spacing.s4)
-                        .accentFill(Capsule())
+                        .emphasisFill(Capsule())
                         .accessibilityLabel(Text(.Chat.sideChatUnread(count: Int(card.unreadCount))))
                 }
             }

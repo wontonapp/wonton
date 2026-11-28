@@ -20,6 +20,7 @@ mod agent_run;
 mod agent_stop;
 mod app_lock;
 mod appearance;
+mod bar;
 mod bot_commands;
 mod bot_contacts;
 mod bot_profile;
@@ -28,6 +29,7 @@ mod bot_web_registration;
 mod chat;
 mod chat_layout;
 mod clients;
+mod cloud;
 mod composer;
 mod confirmation;
 mod confirmation_origin;
@@ -49,6 +51,7 @@ mod matrix_login;
 pub mod media;
 mod message_choice;
 mod message_layout;
+pub mod music;
 mod onboarding;
 mod owner;
 mod pages;
@@ -129,25 +132,30 @@ pub use app_lock::{AppLockTimeout, AppLockViewModel};
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
 };
+pub use bar::{
+    BarEntry, BarIcon, BarItem, BarProblem, BarViewModel, InboxBadge, MAX_BAR_ITEMS, check_bar,
+    default_bar,
+};
 pub use bot_commands::{
     BOT_COMMANDS_EVENT, BotCommand, BotCommands, MAX_BOT_COMMANDS, MAX_BOT_COMMANDS_BYTES,
     MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS, RoomCommand,
 };
 pub use bot_contacts::{
     BOT_CONTACT_CREATE_KEY, BotContact, BotContactFailure, BotContacts, BotContactsState,
-    BotContactsViewModel, CONTACT_ERROR_HEADER, CONTACT_EVENT, CONTACT_ROOM_TYPE, ContactError,
-    ContactErrorBody, ContactEvent, ContactKind, ContactOutcome, ContactProblem, ContactRequest,
-    ContactRequestPush, ContactState, PendingContactRequest, RemoteContact,
-    bot_contact_approve_path, bot_contact_path, bot_contact_reject_path, bot_contacts_path,
+    BotContactsViewModel, CONTACT_ERROR_HEADER, CONTACT_EVENT, CONTACT_ROOM_TYPE, ContactApply,
+    ContactApplyFailure, ContactError, ContactErrorBody, ContactEvent, ContactKind, ContactOutcome,
+    ContactProblem, ContactRequest, ContactRequestPush, ContactState, PendingContactRequest,
+    RemoteContact, bot_contact_approve_path, bot_contact_path, bot_contact_reject_path,
+    bot_contacts_path,
 };
 pub use bot_profile::{
     AVATARS_FIELD, AccessSource, AvatarChange, AvatarImage, AvatarKind, AvatarMedia,
     AvatarMediaProblem, AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity,
     BotActivityFacts, BotActivityReport, BotChatAvailability, BotChatUnavailable, BotNameProblem,
     BotPluginAccess, BotPluginAccessUpdate, BotProfileFailure, BotProfileProblem, BotProfileUpdate,
-    BotProfileUpdated, BotView, DefaultBotVisibility, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS,
-    MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars, bot_plugin_access_path,
-    bot_profile_path, check_bot_name,
+    BotProfileUpdated, BotView, DangerModeView, DefaultBotVisibility, MAX_AVATAR_BYTES,
+    MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars,
+    bot_plugin_access_path, bot_profile_path, check_bot_name,
 };
 pub use bot_web::{
     BOT_WEB_LABEL_PREFIX, BotWebFailure, BotWebPage, BotWebView, bot_web_label, bot_web_path,
@@ -166,7 +174,8 @@ pub use chat_layout::{
 };
 pub use clients::{
     Ban, CLIENTS_ERROR_HEADER, CLIENTS_HEADER, CaaState, CertificateState, ClientAuthKind,
-    ClientsBlocked, ClientsErrorBody, ClientsFailure, ClientsGuests, ClientsPassword,
+    ClientsBlocked, ClientsDomainCertificate, ClientsDomainProvider, ClientsDomainState,
+    ClientsDomainViewModel, ClientsErrorBody, ClientsFailure, ClientsGuests, ClientsPassword,
     ClientsPlugin, ClientsProblem, ClientsSettingsViewModel, ClientsState, ClientsStatus,
     ClientsViewModel, CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryEffect,
     EntryKind, EntrySwitch, GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState,
@@ -174,10 +183,18 @@ pub use clients::{
     NewPasswordRequest, PASSWORD_ID_HEADER, PASSWORD_PENDING_HEADER, PasswordSummary,
     PasswordValue, PendingChange, PendingChangeKind, PendingOp, ProbeResult, PublicAccess,
     PublicItem, PublicReach, PublicRuleMode, PublicRules, PublicSwitchState, PutDomainRequest,
-    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, clients_ban_path, clients_domain_path,
-    clients_entry_path, clients_guest_path, clients_guests_path, clients_ingress_path,
-    clients_password_path, clients_passwords_path, clients_path, clients_public_access_path,
-    clients_status_path, dns_providers_path,
+    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, SuffixProblem, clients_ban_path,
+    clients_domain_path, clients_entry_path, clients_guest_path, clients_guests_path,
+    clients_ingress_path, clients_password_path, clients_passwords_path, clients_path,
+    clients_public_access_path, clients_status_path, dns_providers_path, suffix_problem,
+};
+pub use cloud::{
+    ADD_AVATAR_ASSET_TOOL, BotCloud, CLOUD_ASSET_EDGE, CLOUD_ASSET_EDGE_TOLERANCE,
+    CLOUD_ASSETS_PATH, CLOUD_AVATAR_EDGE, CLOUD_FIELD, CloudAsset, CloudAssetAuthor,
+    CloudAssetInfo, CloudAssetKind, CloudAssetNameProblem, CloudAssetRef, CloudAssets, CloudLayer,
+    CloudPart, CloudProblem, MAX_CLOUD_ASSET_BYTES, MAX_CLOUD_ASSET_FILES_PER_IMPORT,
+    MAX_CLOUD_ASSET_IMPORTS_PER_HOUR, MAX_CLOUD_ASSET_NAME_CHARS, MAX_USER_CLOUD_ASSETS,
+    check_cloud_asset_name, cloud_asset_path, cloud_color, parse_cloud_asset_id, parse_cloud_color,
 };
 pub use composer::{
     AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerMention,
@@ -186,8 +203,8 @@ pub use composer::{
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
     ConfirmationCard, ConfirmationCategory, ConfirmationList, ConfirmationReply, ConfirmationState,
-    ConfirmationTool, ConfirmationToolImpact, ConfirmationView, ConfirmationWindow, WindowEnd,
-    WindowView, answer_path, window_path,
+    ConfirmationTool, ConfirmationToolImpact, ConfirmationView, ConfirmationWindow, OnBehalfView,
+    WindowEnd, WindowView, answer_path, window_path,
 };
 pub use confirmation_origin::{
     CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,
@@ -235,8 +252,8 @@ pub use friends::{
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
-    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, JoinRoleView, PairingFailure,
-    PairingStage, PairingStatus, ProxySettings,
+    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, JoinAbility, JoinAbilityState,
+    JoinRoleView, PairingFailure, PairingStage, PairingStatus, ProxySettings,
 };
 pub use inbox::*;
 pub use inbox_validate::{
@@ -259,21 +276,21 @@ pub use matrix_login::{
 pub use message_choice::{ChoiceSend, ChoicesState, MessageChoice, MessageChoices};
 pub use message_layout::{MessageRun, MessageStatus};
 pub use onboarding::{
-    DEFAULT_BOT, DefaultBotPlugin, MODEL_SETTINGS_PATH, ModelSettings, ONBOARDING_PATH, Onboarding,
-    OnboardingAssistantStep, OnboardingCommit, OnboardingItemProblem, OnboardingItemState,
-    OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
-    OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
-    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingTooOld, OnboardingUpdate,
-    OnboardingViewModel, StepNav,
+    AgentIntroView, DEFAULT_BOT, DefaultBotPlugin, MODEL_SETTINGS_PATH, ModelSettings,
+    ONBOARDING_PATH, Onboarding, OnboardingAssistantStep, OnboardingCommit, OnboardingItemProblem,
+    OnboardingItemState, OnboardingModelStep, OnboardingNeed, OnboardingNeedRow,
+    OnboardingProfileStep, OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem,
+    OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips, OnboardingTooOld,
+    OnboardingUpdate, OnboardingViewModel, StepNav,
 };
 pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
     check_email, check_email_change, normalized_email,
 };
 pub use pages::{
-    CandidatePlugin, KEEP_ALIVE_PAGES, MyAppEntry, MyAppRef, OpenPage, PagesFailure, PagesProblem,
-    PagesViewModel, PluginTab, TabCandidate, TabIcon, TabLayout, TabLoadFailure, TabMediaPrompt,
-    TabPage, TabRef, TabState,
+    CandidatePlugin, KEEP_ALIVE_PAGES, MyAppEntry, MyAppRef, NativePage, OpenPage, PagesFailure,
+    PagesProblem, PagesViewModel, PluginTab, TabCandidate, TabIcon, TabLayout, TabLoadFailure,
+    TabMediaPrompt, TabPage, TabRef, TabState,
 };
 pub use panel::{
     BOT_PANEL_PINS_PATH, BotPanelPin, BotPanelPins, BotPinConsent, BotPinOwner, LAYOUT_EVENT,
@@ -311,25 +328,26 @@ pub use plugin::store::{
 pub use plugin::{
     AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BlockedCategory, BotSwitch,
     CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef, CapabilityProviderSettings,
-    CapabilitySetting, ConsumerCapabilityChoice, ConsumerCapabilitySetting, InUseError,
-    InstallFailure, InstallPreview, InstallProgress, InstallRequest, InstallSource, InstallStage,
-    InstallTogether, InstalledPlugin, InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES,
-    MissingCapability, OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets,
-    OwnerSecretFailure, OwnerSecretProblem, OwnerSecretView, OwnerSecretsView, PermissionLine,
-    PermissionOpened, PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail,
-    PluginDetailOutcome, PluginDetailRoute, PluginDevice, PluginDeviceKind, PluginFailure,
-    PluginGrantedDevice, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits,
-    PluginMediaGrant, PluginOperation, PluginProblem, PluginRuntime, PluginScope,
-    PluginSettingField, PluginSettingKind, PluginSettingOption, PluginSettingsUpdate,
-    PluginSettingsView, PluginState, PluginTakeover, PluginTask, PluginTaskNextStep,
-    PluginTaskState, PluginTrust, PluginWidget, PluginWriter, PluginsViewModel, RemoteAuth,
-    RemoteAuthorization, RemoteMcpDetail, RemoteMcpPreview, RemoteOauthGrant, RemoteOauthStart,
-    RequirementLine, RequirementStatus, RoomWidget, SecretInput, SecretInputState, SecretUpdate,
-    SecretValues, SecurityTier, SettingValue, SettingValues, SettingsFieldError,
-    SettingsFieldProblem, SettingsFieldProblemKind, SettingsForm, SettingsInvalidError,
-    SettingsProblem, SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind,
-    SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
-    TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest,
+    CapabilitySetting, ConsumerCapabilityChoice, ConsumerCapabilitySetting, DependencyNextStep,
+    InUseError, InstallFailure, InstallPreview, InstallProgress, InstallProvider, InstallRequest,
+    InstallSource, InstallStage, InstallTogether, InstalledPlugin, InstalledPlugins, LanWebuiOffer,
+    MAX_PLUGIN_ARCHIVE_BYTES, MissingCapability, OpenWindow, OwnerPluginSecret,
+    OwnerPluginSecretValue, OwnerPluginSecrets, OwnerSecretFailure, OwnerSecretProblem,
+    OwnerSecretView, OwnerSecretsView, PermissionLine, PermissionOpened, PermissionRisk,
+    PermissionUpdate, PluginAuthor, PluginDetail, PluginDetailOutcome, PluginDetailRoute,
+    PluginDevice, PluginDeviceKind, PluginFailure, PluginGrantedDevice, PluginHealth, PluginIcon,
+    PluginImage, PluginKind, PluginLimits, PluginMediaGrant, PluginOperation, PluginProblem,
+    PluginRuntime, PluginScope, PluginSettingField, PluginSettingKind, PluginSettingOption,
+    PluginSettingsUpdate, PluginSettingsView, PluginState, PluginTakeover, PluginTask,
+    PluginTaskNextStep, PluginTaskState, PluginTrust, PluginWidget, PluginWriter, PluginsViewModel,
+    RemoteAuth, RemoteAuthorization, RemoteMcpDetail, RemoteMcpPreview, RemoteOauthGrant,
+    RemoteOauthStart, RequirementLine, RequirementStatus, RoomWidget, SecretInput,
+    SecretInputState, SecretUpdate, SecretValues, SecurityTier, SelectedProvider, SettingValue,
+    SettingValues, SettingsFieldError, SettingsFieldProblem, SettingsFieldProblemKind,
+    SettingsForm, SettingsInvalidError, SettingsProblem, SettingsSchemaError,
+    SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind, StorageUsage, StoreFailure,
+    StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState, ToolAccess,
+    ToolPolicyEntry, ToolPolicyView, UninstallOutcome, UninstallPreview, UninstallRequest,
     UpgradeOffer, UpgradeRequest, UpgradeResult, WidgetCapability, WidgetCapabilityLevel,
     WidgetEntry, plugin_remote_oauth_finish_path, plugin_remote_oauth_start_path,
     plugin_scope_path, plugin_settings_path, plugin_settings_preview_path, remote_oauth_start_path,

@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.window.core.layout.WindowSizeClass
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.PageAction
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.ChatViewModel
@@ -106,7 +107,7 @@ internal fun ExpandedChatPane(
     SideEffect { panel.feed(nav.pages.viewModel.panel, nav.pages.viewModel.panelSelected) }
     CompositionLocalProvider(LocalChatPanel provides panel) {
         ChatPanelHost(panel, nav.pages, home, appearance,
-            onDraft = { text -> draft.text = text; nav.pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))) },
+            onDraft = { text -> draft.text = text; nav.pages.select(BarEntry.Agent) },
             onDetails = nav::detail)
         Box(Modifier.fillMaxSize().graphicsLayer { translationY = panel.shiftPx * panel.sign }) {
             ExpandedChatList(nav, chat)
@@ -148,7 +149,7 @@ internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
                     } else {
                         nav.settingsOverlay = false
                         nav.closeApps()
-                        nav.pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
+                        nav.pages.select(BarEntry.Agent)
                         nav.chat.openRoom = null
                         nav.chat.showingBackup = true
                     }
@@ -161,7 +162,7 @@ internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
                 onOpenApps = { nav.openApps(HomePage.LAUNCHER) },
                 showNewChat = false,
                 selectedRoom = nav.chat.openRoom.takeIf {
-                    nav.pages.current == TabRef.Chat && !nav.settingsOverlay && !nav.pages.viewModel.showsApps
+                    nav.pages.current == TabRef.Rooms && !nav.settingsOverlay && !nav.pages.appsOpen
                 },
             )
         }

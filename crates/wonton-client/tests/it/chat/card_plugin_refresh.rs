@@ -49,9 +49,13 @@ fn succeeded(message: &str) -> Value {
 
 fn plugin() -> InstalledPlugin {
     InstalledPlugin {
+        bot_danger_can_toggle: false,
+        bot_shared: false,
+        bot_danger: false,
         chat: Default::default(),
         id: PLUGIN.to_owned(),
         title: "看板".to_owned(),
+        subtitle: None,
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: "1.0.0".to_owned(),
@@ -80,6 +84,7 @@ fn plugin() -> InstalledPlugin {
         install_progress: None,
         install_failure: None,
         tunnel_ports: Vec::new(),
+        media_browse: None,
         matrix_widget: None,
     }
 }

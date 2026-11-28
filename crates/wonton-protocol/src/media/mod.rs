@@ -5,11 +5,14 @@
 //! 失败回 [`MediaFailure`] 信封，码就是类别，文案由壳按类别出。
 //!
 //! 条目、设备档和两个取值枚举在这里；[`task`] 是长任务的骨架，上传与下载共用；[`session`] 是播放会话、
-//! 队列与播放计划；[`view`] 是壳渲染的视图和核发给设备的命令。
+//! 队列与播放计划；[`view`] 是壳渲染的视图和核发给设备的命令；[`uploads`] 是核心与提供方之间上传的
+//! 线上形状；[`tools`] 是给 Agent 的 MCP 工具名和工具的失败体；[`library`] 是相册浏览（`library` 操作），
+//! [`catalog`] 是影视浏览（`catalog` 操作）；[`provider`] 是核心与提供方之间其余的请求体和响应体，[`api`] 是
+//! 客户端核调核心的 `/_wonton/api/media/…`。
 //!
 //! 取值认不出时落到各自的 `Other`，原值留着，能原样再序列化回去，别让一个新值把整条信封判成协议错
-//! （AGENTS.md）：核心和 App 分开升级，新核发的新命令旧 App 跳过那一条，同批其他命令照常读。唯一的例外是
-//! [`QueueOp`]：它是壳要执行的动作，认不得就没法执行，报错。
+//! （AGENTS.md）：核心和 App 分开升级，新核发的新命令旧 App 跳过那一条，同批其他命令照常读。例外是
+//! 要执行的动作：[`QueueOp`]（壳执行）和 [`library::LibraryAction`]（提供方执行），认不得就没法执行，报错。
 
 use serde::{Deserialize, Serialize};
 
@@ -17,8 +20,14 @@ pub use crate::personal_data::WONTON_USER_HEADER;
 #[cfg(feature = "uniffi")]
 use uuid::Uuid;
 
+pub mod api;
+pub mod catalog;
+pub mod library;
+pub mod provider;
 pub mod session;
 pub mod task;
+pub mod tools;
+pub mod uploads;
 pub mod view;
 
 pub use session::*;
@@ -36,14 +45,19 @@ macro_rules! known_or_other {
                     _ => None,
                 }
             }
+
+            /// 线上的取值；拼路径、查询串时用它，取值表只写在这一处。
+            pub(crate) fn wire(&self) -> &str {
+                match self {
+                    $(Self::$variant => $raw,)*
+                    Self::Other(raw) => raw.as_str(),
+                }
+            }
         }
 
         impl serde::Serialize for $ty {
             fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-                serializer.serialize_str(match self {
-                    $(Self::$variant => $raw,)*
-                    Self::Other(raw) => raw.as_str(),
-                })
+                serializer.serialize_str(self.wire())
             }
         }
 
@@ -99,8 +113,24 @@ uniffi::custom_type!(usize, u64, {
     try_lift: |value| usize::try_from(value).map_err(Into::into),
 });
 
+/// 客户端核心能直接对提供方说的浏览标准（清单 `provides.media_source.browse`，ADR-0113 音乐浏览的例外）：
+/// 客户端经插件网页的代理（网关注入当前这个人的身份头）请求它，点开插件进原生界面，网页留在“更多”里。
+/// 认不得的标准落到 `Other`，客户端当作没声明，照旧打开网页。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum MediaBrowse {
+    /// OpenSubsonic：网页同源的 `/rest/` 接口，靠代理身份头认人，不带账号密码。
+    OpenSubsonic,
+    /// 新版本新加的标准，原值在里。
+    Other(String),
+}
+
+known_or_other!(MediaBrowse {
+    OpenSubsonic => "opensubsonic",
+});
+
 /// 一条媒体条目的不变量；原生页要的展示字段全在这里，提供方内部 id 只回传给提供方。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct MediaItemRef {
     pub id: String,
@@ -114,6 +144,10 @@ pub struct MediaItemRef {
     pub index: Option<u32>,
     pub played: bool,
     pub starred: bool,
+    /// 给出这一条的媒体源插件 id。核心转出去的条目都由核心填上（提供方自己填的不算数）；客户端拿条目
+    /// 回来起播、下载、取封面时原样带着，核心就找同一家（选提供方的规则见 `notes/0113-interfaces.md`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// 设备能力档：少数说死要比整套更好维护（编解码、HDR、最大码率）。
@@ -152,6 +186,10 @@ pub enum MediaOperation {
     Download,
     Playback,
     List,
+    /// 相册浏览：时间线、相册、搜索、取字节和本人的写操作（[`library`]）
+    Library,
+    /// 影视浏览：片库、首页几排、海报墙、详情、季集和本人的写操作（[`catalog`]）
+    Catalog,
     /// 新版本新加的操作，原值在里。
     Other(String),
 }
@@ -161,6 +199,8 @@ known_or_other!(MediaOperation {
     Download => "download",
     Playback => "playback",
     List => "list",
+    Library => "library",
+    Catalog => "catalog",
 });
 
 #[cfg(test)]
@@ -200,6 +240,7 @@ mod tests {
             index: Some(3),
             played: true,
             starred: false,
+            source: Some("app.example.video".into()),
         }
     }
 
@@ -237,6 +278,14 @@ mod tests {
         assert_eq!(
             serde_json::to_value(MediaOperation::List).unwrap(),
             serde_json::json!("list")
+        );
+        assert_eq!(
+            serde_json::to_value(MediaOperation::Library).unwrap(),
+            serde_json::json!("library")
+        );
+        assert_eq!(
+            serde_json::to_value(MediaOperation::Catalog).unwrap(),
+            serde_json::json!("catalog")
         );
     }
 

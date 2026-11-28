@@ -197,6 +197,8 @@ fn chat_view(bots: &[&str]) -> ChatViewModel {
         bots: bots
             .iter()
             .map(|user_id| BotView {
+                shared: false,
+                danger: None,
                 chat: Default::default(),
                 availability: Default::default(),
                 user_id: (*user_id).to_owned(),
@@ -212,6 +214,9 @@ fn chat_view(bots: &[&str]) -> ChatViewModel {
                 activity: None,
                 saving: false,
                 problem: None,
+                cloud: None,
+                custom_media: false,
+                face: None,
             })
             .collect(),
         own_private_bot: None,

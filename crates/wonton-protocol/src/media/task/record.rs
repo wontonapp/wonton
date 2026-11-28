@@ -61,6 +61,9 @@ pub struct TaskOptions {
     pub concurrency: u8,
     /// 立即备份：忽略 wifi/充电条件一次
     pub force_now: bool,
+    /// 上传传到哪个媒体源插件；空着按选提供方的规则选。下载跟着条目的 `source` 走，不看这里。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 impl Default for TaskOptions {
@@ -72,6 +75,7 @@ impl Default for TaskOptions {
             albums: Vec::new(),
             concurrency: one(),
             force_now: false,
+            source: None,
         }
     }
 }

@@ -39,7 +39,7 @@ enum SnapshotFixtures {
             .environment(\.timeZone, TimeZone(identifier: "UTC")!)
             .environment(\.dynamicTypeSize, .large)
             .fontDesign(.default)
-            .tint(Color(colors.primary))
+            .tint(Color(colors.textPrimary))
     }
 
     static func pairing(core: ClientCore) -> some View {
@@ -276,15 +276,14 @@ extension SnapshotFixtures {
 
     /// 小组件的假快照，数据同 Android 的 WidgetSnapshotsTest。更新时刻钉在“1 分钟前”：
     /// 底部相对时间（`Text(date, style: .relative)`）渲染成“1 minute ago”，参考图不随日期漂移。
-    /// 颜色按 ADR-0026 默认浅色的令牌值写死（扩展侧的 Palette 不链接核心，测试替身照抄协议的 JSON）。
+    /// 颜色按 ADR-0130 浅色的令牌值写死（扩展侧的 Palette 不链接核心，测试替身照抄协议的 JSON）。
     static func entrySnapshot(account: EntrySnapshot.Account = .signedIn) -> EntrySnapshot {
         let palette = EntrySnapshot.Palette(
             surface: EntrySnapshot.RGB(red: 255, green: 255, blue: 255),
             textPrimary: EntrySnapshot.RGB(red: 17, green: 17, blue: 17),
             textSecondary: EntrySnapshot.RGB(red: 94, green: 94, blue: 94),
-            accentFill: EntrySnapshot.RGB(red: 254, green: 235, blue: 234),
-            accentInk: EntrySnapshot.RGB(red: 155, green: 73, blue: 74),
-            accentInkOnFill: EntrySnapshot.RGB(red: 155, green: 73, blue: 74)
+            primary: EntrySnapshot.RGB(red: 17, green: 17, blue: 17),
+            onPrimary: EntrySnapshot.RGB(red: 255, green: 255, blue: 255)
         )
         return EntrySnapshot(
             version: 1,

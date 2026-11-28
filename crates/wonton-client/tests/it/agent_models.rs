@@ -266,9 +266,8 @@ async fn a_device_login_polls_until_approved() {
     assert_eq!(rig.core.seen(&Method::GET, &poll).len(), 2);
 }
 
-/// 浏览器授权：开始时带上 App 的回跳地址，壳交回回跳网址后由插件换凭据；对方拒绝时如实显示。
-#[tokio::test]
-async fn a_browser_login_finishes_with_the_callback_url() {
+/// OpenRouter 只给浏览器授权，开始了一次登录：授权网址带着 `state=s1`。
+async fn browser_login_started() -> Rig {
     let rig = Rig::new().await;
     rig.connected().await;
     let mut browser = catalog(false);
@@ -288,7 +287,7 @@ async fn a_browser_login_finishes_with_the_callback_url() {
         Method::POST,
         &start,
         ok(json!({
-            "session": SESSION, "url": "https://openrouter.example/auth",
+            "session": SESSION, "url": "https://openrouter.example/auth?client=w&state=s1",
             "expires_in": 600, "interval": 5,
         })),
     );
@@ -306,6 +305,13 @@ async fn a_browser_login_finishes_with_the_callback_url() {
     let start_body: Value =
         serde_json::from_str(&rig.core.seen(&Method::POST, &start)[0].body).unwrap();
     assert_eq!(start_body["redirect_uri"], MODEL_LOGIN_REDIRECT_URI);
+    rig
+}
+
+/// 浏览器授权：开始时带上 App 的回跳地址，壳交回回跳网址后由插件换凭据；对方拒绝时如实显示。
+#[tokio::test]
+async fn a_browser_login_finishes_with_the_callback_url() {
+    let rig = browser_login_started().await;
 
     let finish = agent_model_login_finish_path(PLUGIN, BOT, SESSION);
     rig.core.answer(
@@ -313,7 +319,7 @@ async fn a_browser_login_finishes_with_the_callback_url() {
         &finish,
         ok(json!({"state": "denied", "message": "你拒绝了授权"})),
     );
-    let callback = format!("{MODEL_LOGIN_REDIRECT_URI}?code=abc");
+    let callback = format!("{MODEL_LOGIN_REDIRECT_URI}?code=abc&state=s1");
     act(
         &rig,
         AgentModelsAction::FinishModelLogin {
@@ -520,4 +526,47 @@ async fn a_login_url_that_is_not_https_is_refused() {
         AgentModelsReason::Protocol
     );
     assert!(view.provider.unwrap().login.is_none());
+}
+
+/// 回跳带回来的 `state` 不是这次授权网址里的（别处发起的授权），或者根本不是 App 的回跳地址：不交给插件换凭据，
+/// 这次登录作废、在插件那边取消，页面如实说失败。
+#[tokio::test]
+async fn a_callback_from_another_sign_in_is_not_handed_to_the_plugin() {
+    for callback in [
+        format!("{MODEL_LOGIN_REDIRECT_URI}?code=abc&state=other"),
+        format!("{MODEL_LOGIN_REDIRECT_URI}?code=abc"),
+        "wonton://model-loginx?code=abc&state=s1".to_owned(),
+    ] {
+        let rig = browser_login_started().await;
+        act(
+            &rig,
+            AgentModelsAction::FinishModelLogin {
+                callback_url: callback.clone(),
+            },
+        );
+        let view = wait(&rig, |view| {
+            view.provider
+                .as_ref()
+                .is_some_and(|page| page.login_outcome.is_some())
+        })
+        .await;
+        let page = view.provider.unwrap();
+        assert!(page.login.is_none(), "{callback}");
+        assert_eq!(page.login_outcome.unwrap().state, LoginState::Failed);
+        let finish = agent_model_login_finish_path(PLUGIN, BOT, SESSION);
+        assert!(
+            rig.core.seen(&Method::POST, &finish).is_empty(),
+            "{callback}"
+        );
+        let cancel = agent_model_login_path(PLUGIN, BOT, SESSION);
+        // 取消在后台发，页面不会再变：直接看假核心收没收到。
+        let cancelled = async {
+            while rig.core.seen(&Method::DELETE, &cancel).is_empty() {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        };
+        tokio::time::timeout(WAIT, cancelled)
+            .await
+            .expect("没有在插件那边取消这次登录");
+    }
 }

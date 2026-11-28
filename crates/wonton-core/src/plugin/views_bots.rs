@@ -48,10 +48,24 @@ impl PluginManager {
             Ok(record) => {
                 plugin.bot_user_id = record
                     .user_id(super::bot_services::DEFAULT_BOT)
-                    .map(str::to_owned)
+                    .map(str::to_owned);
+                let keeper = record
+                    .bots
+                    .get(super::bot_services::DEFAULT_BOT)
+                    .map(|bot| &bot.keeper);
+                plugin.bot_shared = keeper == Some(&wonton_protocol::BotKeeper::Household);
+                plugin.bot_danger_can_toggle = match keeper {
+                    Some(wonton_protocol::BotKeeper::User { username }) => {
+                        username == self.owner_name()
+                    }
+                    _ => false,
+                };
             }
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读 Bot 记录失败"),
         }
+        plugin.bot_danger = self
+            .tool_policy()
+            .is_danger(id.as_str(), super::bot_services::DEFAULT_BOT);
         match self.store.load(&id) {
             Ok(record) => {
                 plugin.written_by = record.as_ref().and_then(|record| record.written_by.clone());

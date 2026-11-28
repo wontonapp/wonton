@@ -13,6 +13,8 @@ fn bot(name: &str, url: &str) -> BotView {
     };
     BotView {
         availability: Default::default(),
+        shared: false,
+        danger: None,
         user_id: format!("@{name}:home"),
         bot,
         name: name.into(),
@@ -24,6 +26,9 @@ fn bot(name: &str, url: &str) -> BotView {
         saving: false,
         problem: None,
         chat: Default::default(),
+        cloud: None,
+        custom_media: false,
+        face: None,
     }
 }
 

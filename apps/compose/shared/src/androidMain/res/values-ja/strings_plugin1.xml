@@ -18,4 +18,10 @@
     <!-- Status of a finished update task. -->
     <string name="plugin_task_upgrade_done">アップデートしました</string>
     <string name="plugin_clear_failure_title">「%1$s」の失敗したインストールを消去しますか？</string>
+    <string name="plugin_dependency_stopped">「%1$s」が動いていないため、このアプリは今それを使えません。</string>
+    <string name="plugin_capabilities_title">機能</string>
+    <string name="plugin_uninstall_stop_dependents">先に停止</string>
+    <string name="plugin_dependencyNoProvider">ストアに提供元がありません</string>
+    <string name="plugin_dependency_requires">「%1$s」が必要</string>
+    <string name="plugin_dependency_provided_by">%1$s が提供</string>
 </resources>

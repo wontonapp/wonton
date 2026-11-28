@@ -98,6 +98,8 @@
     <string name="widget_status_at">%1$s · %2$s</string>
     <string name="myapp_add">マイアプリに追加</string>
     <string name="myapp_add_more">アプリを追加</string>
+    <string name="myapp_url">URL を入力</string>
+    <string name="myapp_url_add">追加</string>
     <string name="myapp_auto_add">新しく入れたアプリを自動で追加</string>
     <string name="myapp_problem">マイアプリを読み書きできませんでした</string>
     <string name="myapp_remove">マイアプリから外す</string>
@@ -138,4 +140,15 @@
     <string name="owner_profile_avatar_pick">写真を選ぶ</string>
     <!-- Button that removes the profile photo. -->
     <string name="owner_profile_avatar_remove">アバターを削除</string>
+    <string name="panel_add">追加</string>
+    <string name="panel_add_pages">ページを追加</string>
+    <string name="panel_can_add">パネルに入れられるページ</string>
+    <string name="panel_close">パネルを閉じる</string>
+    <string name="panel_edit">パネルを編集</string>
+    <string name="panel_in_panel">パネル内のページ</string>
+    <string name="panel_open">パネルを開く</string>
+    <string name="panel_public_unsupported">この端末の WebView は公開ウェブページとプラグインのページの保存領域を分けられないため、ここでは開けません</string>
+    <string name="panel_remove">削除</string>
+    <string name="panel_url">URL を入力</string>
+    <string name="panel_pin">パネルに固定</string>
 </resources>

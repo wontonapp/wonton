@@ -33,7 +33,7 @@ import app.wonton.ui.icons.Send
 import app.wonton.ui.icons.WontonIcon
 
 /**
- * 面板底部的发送条（照 Telegram）：右边主题色圆形发送键，键上是选中的个数，键盘弹起时跟着上来。
+ * 面板底部的发送条（照 Telegram）：右边强调填充的圆形发送键，键上是选中的个数，键盘弹起时跟着上来。
  * `note` 不为 null 时左边还有附言框（附件、转发面板）。没有选中东西时键是灰的，`busy` 时也灰着。
  */
 @Composable

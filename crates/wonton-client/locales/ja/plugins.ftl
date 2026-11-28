@@ -194,21 +194,34 @@ tabs-page-cannot-reload = このページは再読み込みできません。
 
 tabs-bar-not-pinned = このページはナビゲーションバーに固定されていません。
 
-tabs-bar-already-pinned = このページはすでにマイアプリにあります。
+tabs-bar-already-pinned = このページはすでにナビゲーションバーにあります。
 
 tabs-bar-replace-required = ナビゲーションバーがいっぱいです。置き換えるページを指定してください。
 
 tabs-bar-replacing-missing = 置き換えるページがナビゲーションバーにありません。
 
-tabs-bar-fixed = チャットとアプリは置き換えられません。
+tabs-bar-fixed = エージェントとアプリの項目は置き換えられます。
 
 tabs-bar-not-full = ナビゲーションバーがいっぱいではないので、置き換えるページは指定できません。
 
-tabs-bar-remove-fixed = チャットとアプリは外せません。
+tabs-bar-remove-fixed = エージェントとアプリの項目は外せます。
 
 tabs-bar-page-missing = このページはマイアプリにありません。
 
-tabs-bar-index-out-of-range = その位置はマイアプリの範囲外です。
+tabs-bar-index-out-of-range = その位置はナビゲーションバーの範囲外です。
+
+# ナビゲーションバーのエージェント項目の名前（アイコンのみ、読み上げ用）。
+tabs-bar-agent = エージェント
+tabs-bar-apps = アプリ
+tabs-bar-full = ナビゲーションバーがいっぱいです。
+tabs-bar-empty = ナビゲーションバーには少なくとも 1 項目必要です。
+tabs-bar-not-in-bar = この項目はナビゲーションバーにありません。
+tabs-rooms-title = すべての会話
+tabs-inbox-title = 受信トレイ
+tabs-config-empty-bar = 保存されたナビゲーションバーが空です。
+tabs-config-bar-too-many = 保存されたナビゲーションバーの項目が多すぎます。
+tabs-config-bar-duplicate = 保存されたナビゲーションバーに重複があります。
+tabs-config-bar-invalid = 保存されたナビゲーションバーの一部が読めません。
 
 tabs-open-only-plugins = 開き方を設定できるのはアプリのページだけです。
 

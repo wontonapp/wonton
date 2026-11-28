@@ -30,7 +30,7 @@ const REGISTER_BUDGET: Duration = Duration::from_secs(30);
 const CORE_META_PREFIX: &str = "app.wonton/";
 const INTERNAL_URL_META: &str = "app.wonton/internal_url";
 /// 单个二进制块（image、audio、嵌入资源的 blob）解码后最多这么多：超过的整块换成说明（插件规范的“工具结果里的文件”）。
-/// 整个响应的上限是另一回事，在 upstream.rs。
+/// 整个响应的上限是另一回事，在 upstream/limits.rs。
 const MAX_BLOCK_BYTES: usize = 1 << 20;
 
 /// 排好顺序的输出：普通的内容块，或者登记好的文件。

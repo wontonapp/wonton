@@ -216,12 +216,50 @@ impl Permissions {
         }
     }
 
-    /// 放行的权限项，按 [`PermissionItem::ALL`] 的顺序。给“这个角色能做什么”一页用。
-    pub fn granted_items(&self) -> Vec<PermissionItem> {
+    /// 每一项权限和它是放行、要管理员批还是不行，按 [`PermissionItem::ALL`] 的顺序。
+    /// 给被别人邀请时看的加入页用：`allowed` 的布尔表达看不出“要管理员批”；被邀请人都不是主人，不列主人这一项。
+    pub fn abilities(&self) -> Vec<crate::JoinAbility> {
         PermissionItem::ALL
             .into_iter()
-            .filter(|item| self.allows(*item))
+            .filter(|item| *item != PermissionItem::Owner)
+            .map(|item| crate::JoinAbility {
+                item,
+                state: self.ability_state(item),
+            })
             .collect()
+    }
+
+    /// 一项权限的取值：放行、要管理员批或不行。
+    fn ability_state(&self, item: PermissionItem) -> crate::JoinAbilityState {
+        use crate::JoinAbilityState::{Allowed, NeedsAdmin, NotAllowed};
+        match item {
+            PermissionItem::OpenApps => match &self.open_apps {
+                AppScope::All => Allowed,
+                AppScope::Selected { plugin_ids } if !plugin_ids.is_empty() => Allowed,
+                AppScope::Selected { .. } | AppScope::Other => NotAllowed,
+            },
+            PermissionItem::PluginAdmin => match &self.plugin_admin {
+                AdminScope::AllOpenable => Allowed,
+                AdminScope::Selected { plugin_ids } if !plugin_ids.is_empty() => Allowed,
+                _ => NotAllowed,
+            },
+            PermissionItem::InstallApps => gate_state(self.install_apps),
+            PermissionItem::AddFriends => gate_state(self.add_friends),
+            PermissionItem::ModelSettings => allow(self.model_settings),
+            PermissionItem::ServerSettings => allow(self.server_settings),
+            PermissionItem::ManageMembers => allow(self.manage_members),
+            PermissionItem::ShareApps => allow(self.share_apps),
+            PermissionItem::PrivilegedTools => allow(self.privileged_tools),
+            PermissionItem::PrivateBot => allow(self.private_bot),
+            PermissionItem::SharedBots => allow(self.shared_bots),
+            PermissionItem::LendOwnBot => allow(self.lend_own_bot),
+            PermissionItem::Ai => match self.ai {
+                AiLevel::ReadOnly | AiLevel::SelfConfirms => Allowed,
+                AiLevel::AdminApprovesDeletes => NeedsAdmin,
+                AiLevel::Other => NotAllowed,
+            },
+            PermissionItem::Owner | PermissionItem::Other => NotAllowed,
+        }
     }
 
     /// 主人的全部权限：主人有角色之外的一切（ADR-0088）。
@@ -262,6 +300,23 @@ impl Permissions {
             shared_bots: false,
             lend_own_bot: false,
         }
+    }
+}
+
+fn gate_state(gate: Gate) -> crate::JoinAbilityState {
+    use crate::JoinAbilityState::{Allowed, NeedsAdmin, NotAllowed};
+    match gate {
+        Gate::Allow => Allowed,
+        Gate::AskAdmin => NeedsAdmin,
+        Gate::Deny | Gate::Other => NotAllowed,
+    }
+}
+
+fn allow(value: bool) -> crate::JoinAbilityState {
+    if value {
+        crate::JoinAbilityState::Allowed
+    } else {
+        crate::JoinAbilityState::NotAllowed
     }
 }
 

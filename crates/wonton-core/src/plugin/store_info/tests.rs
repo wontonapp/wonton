@@ -46,9 +46,10 @@ fn store_info_parses() {
         "  author: {name: Example, url: https://example.com}\n  \
          homepage: https://immich.app\n  license: AGPL-3.0-only\n  tags: {zh: [相册, AI], en: [Photos, AI]}\n  \
          about: {zh: 第一段, en: First}\n  release_notes: {zh: 修了问题, en: Fixes}\n  \
-         screenshots: [shots/1.png, shots/2.jpg]",
+         screenshots: [shots/1.png, shots/2.jpg]\n  subtitle: {zh: 手机相册备份, en: Phone photo backup}",
     );
     let m = PluginPackage::parse(&yaml, &langs()).unwrap().manifest;
+    assert_eq!(m.subtitle.unwrap()["zh"], "手机相册备份");
     assert_eq!(m.author.unwrap().name, "Example");
     assert_eq!(m.tags["en"], ["Photos", "AI"]);
     assert_eq!(m.screenshots.unwrap().len(), 2);
@@ -242,6 +243,19 @@ fn store_fields_are_checked() {
         let err = parse_err(&extra);
         assert!(err.contains(&expected), "{extra}：{err}");
     }
+}
+
+#[test]
+fn subtitle_is_short_and_not_empty() {
+    let long = format!("  subtitle: {{zh: {}, en: x}}", "字".repeat(31));
+    let err = parse_err(&long);
+    let expected = message(
+        "plugin-settings-store-info-field-length",
+        &[("field", "subtitle"), ("lang", "zh"), ("max", "30")],
+    );
+    assert!(err.contains(&expected), "{err}");
+    let err = parse_err("  subtitle: {zh: \"\"}");
+    assert!(err.contains("至少要写一种语言"), "{err}");
 }
 
 #[test]

@@ -36,7 +36,7 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::timeout;
 use tower::ServiceExt;
 use wonton_tunnel::pair::PairProtocol;
-use wonton_tunnel::relays::{FALLBACK_AFTER, Relay, RelayTable};
+use wonton_tunnel::relays::{FALLBACK_AFTER, Relay, RelayTable, RelayView};
 
 use crate::relay_settings::RelaySettings;
 use wonton_tunnel::{PeerStream, TunnelListener, TunnelServer};
@@ -105,9 +105,12 @@ impl Tunnel {
     /// 报给 App 的中继表，`/_wonton/api/tunnel` 和配对码共用：整张表连同令牌和档位（ADR-0048）。
     /// 家中继排在它那一档的第一个（#530 的规则）：iroh 没选定路径时把包发给所有已知路径，App 拿着
     /// 全部中继，服务器换到哪个中继第一个包都能到（ADR-0032「连接方式」）。
-    pub fn relays(&self) -> Vec<Relay> {
+    pub fn relays(&self) -> Vec<RelayView> {
         let home = self.endpoint.addr().relay_urls().next().cloned();
         order_relays(home, &self.relays.table())
+            .into_iter()
+            .map(|relay| relay.view())
+            .collect()
     }
 
     /// 设置页用的中继表句柄。
@@ -194,7 +197,7 @@ pub async fn bind(
     let mut builder = Endpoint::builder(presets::N0)
         .secret_key(key)
         .relay_mode(RelayMode::Custom(wonton_tunnel::relays::relay_map(
-            table.relays(),
+            &table.views(),
             1,
         )));
     if let Some(roots) = relay_roots() {

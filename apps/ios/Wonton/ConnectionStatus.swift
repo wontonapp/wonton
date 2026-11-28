@@ -20,6 +20,7 @@ extension ConnectionNotice {
         case .connecting: String(localized: .Connection2.connectionNoticeConnecting)
         case .updating: String(localized: .Connection1.connectionNoticeUpdating)
         case .serverOffline: String(localized: .Connection0.connectionNoticeServerOffline)
+        case .relayRejected: String(localized: .Connection1.connectionNoticeRelayRejected)
         case .unreachable: String(localized: .Connection1.connectionNoticeUnreachable)
         case .deviceRejected: String(localized: .Connection2.connectionNoticeDeviceRejected)
         case .versionMismatch: String(localized: .Connection0.connectionNoticeVersionMismatch)
@@ -29,14 +30,22 @@ extension ConnectionNotice {
     fileprivate var isShort: Bool {
         switch self {
         case .waitingForNetwork, .updating: true
-        case .connecting, .serverOffline, .unreachable, .deviceRejected, .versionMismatch: false
+        case .connecting, .serverOffline, .relayRejected, .unreachable, .deviceRejected, .versionMismatch: false
+        }
+    }
+
+    /// 要警告色的两种：配对失效和中继拒绝，都要人动手。
+    fileprivate var warns: Bool {
+        switch self {
+        case .deviceRejected, .relayRejected: true
+        default: false
         }
     }
 
     /// 以核心通知为准，避免 HomeStatus.Connecting 掩盖超时后恢复的重试入口。
     var retrying: Bool? {
         switch self {
-        case let .serverOffline(retrying), let .unreachable(retrying): retrying
+        case let .serverOffline(retrying), let .relayRejected(retrying), let .unreachable(retrying): retrying
         case .connecting: true
         case .waitingForNetwork, .updating, .deviceRejected, .versionMismatch: nil
         }
@@ -106,7 +115,7 @@ struct ConnectionLine: View {
             } else {
                 Text(notice.sentence)
                     .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(notice == .deviceRejected ? colors.warning : colors.textPrimary))
+                    .foregroundStyle(Color(notice.warns ? colors.warning : colors.textPrimary))
             }
             HStack(spacing: WontonTheme.spacing.s8) {
                 if notice == .deviceRejected {
@@ -384,6 +393,7 @@ private extension ConnectionCheck {
         switch self {
         case .ok: String(localized: .Connection1.connectionCheckOk)
         case .failing: String(localized: .Connection0.connectionCheckFailing)
+        case .rejected: String(localized: .Connection0.connectionCheckRejected)
         case .unknown: String(localized: .Common.commonUnknown)
         }
     }

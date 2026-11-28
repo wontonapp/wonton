@@ -55,7 +55,7 @@ fun PermissionRow(line: PermissionLine, trailing: @Composable () -> Unit = {}) {
         ) {
             line.risk?.let { Tag(permissionRiskText(it), colors.warning) }
             if (line.optional) Tag(stringResource(R.string.plugin_permission_optional), colors.textSecondary)
-            if (line.added) Tag(stringResource(R.string.plugin_permission_added), colors.primary)
+            if (line.added) Tag(stringResource(R.string.plugin_permission_added), colors.textPrimary)
             if (!line.supported) Tag(stringResource(R.string.plugin_permission_unsupported), colors.danger)
         }
         line.notice?.let { PermissionSupportingText(it) }
@@ -95,7 +95,7 @@ private fun WidgetCapabilityRow(lines: List<WidgetCapability>, high: Boolean) {
                 color = (if (high) colors.warning else colors.textPrimary).toColor(),
             )
         }
-        if (lines.any { it.added }) Tag(stringResource(R.string.plugin_permission_added), colors.primary)
+        if (lines.any { it.added }) Tag(stringResource(R.string.plugin_permission_added), colors.textPrimary)
         ProblemDetail(lines.joinToString("\n") { it.capability })
     }
 }

@@ -62,7 +62,6 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 自己的域名 | Your Own Domain | 自己的網域 | 独自ドメイン | |
 | 直连 / 中继 | Direct / Relayed | 直接連線 / 經由中繼 | 直接接続 / リレー経由 | 连接方式 |
 | 共享文件夹 | shared folder | 共用資料夾 | 共有フォルダ | |
-| 重点色 | Accent Color | 強調色 | アクセントカラー | |
 | 外观 | Appearance | 外觀 | 外観 | |
 | 字号 | Text Size | iOS：文字大小；Android：字型大小 | 文字サイズ | |
 | 详情 | Details | 詳細資訊 | 詳細 | 默认收起的技术细节 |

@@ -220,7 +220,7 @@ private struct StatusCard: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 20, height: 20)
-                    .foregroundStyle(palette.accentInk.color)
+                    .foregroundStyle(palette.textPrimary.color)
                 Text(verbatim: snapshot.defaultAgent?.name ?? "")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(palette.textPrimary.color)
@@ -318,7 +318,7 @@ private struct AskCard: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 28, height: 28)
-                .foregroundStyle(palette.accentInk.color)
+                .foregroundStyle(palette.textPrimary.color)
             Text(String(localized: .SystemEntry.systemEntryAskBot))
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textPrimary.color)
@@ -344,7 +344,7 @@ private struct AskRound: View {
     }
 }
 
-/// 未读数的小圆标：重点色填充（ADR-0026），数字按十进制原样。
+/// 未读数的小圆标：强调色填充（ADR-0130），数字按十进制原样。
 private struct UnreadBadge: View {
     let count: UInt64
     let palette: EntrySnapshot.Palette
@@ -352,10 +352,10 @@ private struct UnreadBadge: View {
     var body: some View {
         Text(verbatim: String(count))
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(palette.accentInkOnFill.color)
+            .foregroundStyle(palette.onPrimary.color)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(palette.accentFill.color, in: Capsule())
+            .background(palette.primary.color, in: Capsule())
             .lineLimit(1)
     }
 }

@@ -75,6 +75,7 @@ impl Rig {
         );
         home.members
             .invite(MemberRecord {
+                invited_by: None,
                 role_id: "admin".into(),
                 ..MemberRecord::for_test("mia")
             })
@@ -147,6 +148,7 @@ async fn app(
         keeper_username,
         keeper_display_name: None,
     });
+    let receipts = Arc::new(crate::contacts::ApplyReceipts::default());
     let contacts = Contacts::open(
         home.data_dir.join("contact-facts.json"),
         matrix.server_name(),
@@ -154,7 +156,8 @@ async fn app(
             directory: Arc::new(directory),
             link: Arc::new(Offline),
             invites: Arc::new(Offline),
-            effects: Arc::new(Recorded::default()),
+            effects: Arc::new(Recorded::new(receipts.clone())),
+            receipts,
             open_federation: false,
         },
     )

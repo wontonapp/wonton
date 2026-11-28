@@ -1,13 +1,15 @@
 //! 每次刷新的状态推导：换服务器、新装自动加入、卸载清理、重载计数和栈的有效性。
 //! 只经由 [`super`] 的输入和 [`PagesState`] 改状态，不碰发布和持久化。
 
+use wonton_protocol::{BarEntry, BarIcon, BarItem, BarViewModel, MAX_BAR_ITEMS, default_bar};
+
 use super::*;
 use wonton_l10n::l10n;
 
 pub(super) fn empty_view() -> PagesViewModel {
     PagesViewModel {
-        root: TabRef::Apps,
-        shows_apps: false,
+        tab: BarEntry::Agent,
+        bar: default_bar_view(),
         stack: Vec::new(),
         uninstalled: Vec::new(),
         problem: None,
@@ -22,6 +24,30 @@ pub(super) fn empty_view() -> PagesViewModel {
     }
 }
 
+/// 还没拿到任何数据时的底栏：默认两项，没有角标。
+fn default_bar_view() -> BarViewModel {
+    let items = default_bar()
+        .into_iter()
+        .map(|entry| {
+            let (label, icon) = match entry {
+                BarEntry::Agent => (l10n!(CATALOG, language(), "tabs-bar-agent"), BarIcon::Agent),
+                BarEntry::Apps => (l10n!(CATALOG, language(), "tabs-bar-apps"), BarIcon::Apps),
+                BarEntry::App { .. } => unreachable!("the default bar has no app items"),
+            };
+            BarItem {
+                entry,
+                label,
+                icon,
+                badge: 0,
+            }
+        })
+        .collect();
+    BarViewModel {
+        items,
+        max_items: MAX_BAR_ITEMS,
+        full: false,
+    }
+}
 /// 每次刷新：换服务器、卸载、元数据、栈里失效的页面和面板的选择。
 pub(super) fn refresh_state(
     state: &mut PagesState,
@@ -31,7 +57,10 @@ pub(super) fn refresh_state(
     let mut config_changed = false;
     let server_changed = home.server_id.is_some() && state.config.server_id != home.server_id;
     if server_changed || state.paired != home.server_id.is_some() {
-        state.shows_apps = false;
+        sanitize_bar(&mut state.config.bar);
+        state.settle_tab();
+        // 换服务器和配对状态变了都先回 Agent 根页，别把上一台的选择带过去。
+        state.tab = BarEntry::Agent;
     }
     if server_changed {
         if state.config.server_id.is_some() && state.config.server_id != home.server_id {
@@ -160,6 +189,7 @@ pub(super) fn update_reload_counters(
     state.connected = connected;
 }
 
+#[allow(clippy::too_many_lines)] // 一次把我的应用、栏、打开页和提示都清干净，拆开要来回传同一份状态。
 pub(super) fn remove_uninstalled(
     state: &mut PagesState,
     installed: &wonton_protocol::InstalledPlugins,
@@ -182,6 +212,16 @@ pub(super) fn remove_uninstalled(
         }
         keep
     });
+    let bar_before = state.config.bar.len();
+    state
+        .config
+        .bar
+        .retain(|entry| !bar_plugin_id(entry).is_some_and(gone));
+    if state.config.bar.len() < bar_before {
+        state.bar_full = false;
+    }
+    // 插件卸了只拿掉那一项；用户删掉的根页不复活，栏可以暂时是空的。
+    state.settle_tab();
     state.stack.retain(|item| {
         let missing = tab_plugin_id(&item.tab).is_some_and(gone);
         if missing && !removed.iter().any(|(tab, _)| *tab == item.tab) {
@@ -327,6 +367,16 @@ pub(super) fn update_metadata(
 
 pub(super) fn clear_plugin_config(state: &mut PagesState) {
     state.config.my_apps.retain(|entry| !is_plugin_page(entry));
+    let bar_before = state.config.bar.len();
+    state
+        .config
+        .bar
+        .retain(|entry| bar_plugin_id(entry).is_none());
+    if state.config.bar.len() < bar_before {
+        state.bar_full = false;
+    }
+    // 换服务器只拿掉绑在插件上的项；用户删掉的根页不复活。
+    state.settle_tab();
     state.config.panel.clear();
     state.stack.clear();
     state.attention.clear();

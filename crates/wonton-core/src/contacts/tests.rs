@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex, Weak};
 
 use futures_util::future::BoxFuture;
 use wonton_protocol::{
-    BotKeeper, BotRef, ContactError, ContactEvent, ContactKind, ContactRequest, ContactRequestPush,
-    ContactState, PeerStatus,
+    BotKeeper, BotRef, ContactApply, ContactError, ContactEvent, ContactKind, ContactRequest,
+    ContactRequestPush, ContactState, PeerStatus,
 };
 
 use super::*;
@@ -176,16 +176,86 @@ impl PersonInvites for FakeInvites {
         })
     }
 }
-
-#[derive(Default)]
 pub(crate) struct FakeEffects {
+    receipts: Arc<ApplyReceipts>,
     pub(crate) rebuilt: Mutex<Vec<BotRef>>,
+    /// 按 Bot 名给的下一次结果，取一次就没了；没给的按成功。
+    pub(crate) next: Mutex<BTreeMap<String, ContactApply>>,
+    /// 按 Bot 名让任务停住，直到测试放行：模拟一次慢慢的重建。
+    holds: Mutex<BTreeMap<String, Hold>>,
     pub(crate) pushed: Mutex<Vec<(String, ContactRequestPush)>>,
 }
 
+pub(crate) struct Hold {
+    reached: Arc<tokio::sync::Notify>,
+    gate: Arc<tokio::sync::Notify>,
+}
+
+impl Hold {
+    /// 等到任务停在这道门上。
+    pub(crate) async fn reached(&self) {
+        self.reached.notified().await;
+    }
+
+    pub(crate) fn release(&self) {
+        self.gate.notify_one();
+    }
+}
+
+impl FakeEffects {
+    pub(crate) fn new(receipts: Arc<ApplyReceipts>) -> Self {
+        Self {
+            receipts,
+            rebuilt: Mutex::default(),
+            next: Mutex::default(),
+            holds: Mutex::default(),
+            pushed: Mutex::default(),
+        }
+    }
+
+    pub(crate) fn fail(&self, bot: &str, apply: ContactApply) {
+        self.next.lock().unwrap().insert(bot.to_owned(), apply);
+    }
+
+    /// 让这个 Bot 的下一次重建停在门上，返回门把手。
+    pub(crate) fn hold(&self, bot: &str) -> Hold {
+        let hold = Hold {
+            reached: Arc::new(tokio::sync::Notify::new()),
+            gate: Arc::new(tokio::sync::Notify::new()),
+        };
+        self.holds.lock().unwrap().insert(
+            bot.to_owned(),
+            Hold {
+                reached: hold.reached.clone(),
+                gate: hold.gate.clone(),
+            },
+        );
+        hold
+    }
+}
+
 impl Effects for FakeEffects {
-    fn allowed_users_changed(&self, bot: &BotRef) {
+    fn allowed_users_changed(&self, bot: &BotRef) -> tokio::sync::oneshot::Receiver<ContactApply> {
         self.rebuilt.lock().unwrap().push(bot.clone());
+        let apply = self
+            .next
+            .lock()
+            .unwrap()
+            .remove(&bot.bot)
+            .unwrap_or(ContactApply::Applied);
+        let hold = self.holds.lock().unwrap().remove(&bot.bot);
+        let receipts = self.receipts.clone();
+        let bot = bot.clone();
+        let (done, wait) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            if let Some(hold) = hold {
+                hold.reached.notify_one();
+                hold.gate.notified().await;
+            }
+            receipts.record(&bot, apply.clone());
+            let _ = done.send(apply);
+        });
+        wait
     }
 
     fn notify_request(&self, keeper: &str, push: ContactRequestPush) {
@@ -239,7 +309,8 @@ impl Server {
             fail: Mutex::new(None),
         });
         let invites = Arc::new(FakeInvites::default());
-        let effects = Arc::new(FakeEffects::default());
+        let receipts = Arc::new(ApplyReceipts::default());
+        let effects = Arc::new(FakeEffects::new(receipts.clone()));
         let contacts = Contacts::open(
             dir.path().join("contacts.json"),
             name,
@@ -248,6 +319,7 @@ impl Server {
                 link: link.clone(),
                 invites: invites.clone(),
                 effects: effects.clone(),
+                receipts,
                 open_federation,
             },
         )

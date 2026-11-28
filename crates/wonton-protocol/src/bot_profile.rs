@@ -144,23 +144,37 @@ impl From<BotChatAvailability> for crate::BotAccess {
 #[serde(rename_all = "snake_case")]
 pub enum BotActivity {
     Idle,
-    /// 有模型请求或工具调用在进行，或在聊天里“正在输入”。
+    /// 有模型请求在途。
+    Thinking,
+    /// 有工具调用在进行，或在聊天里“正在输入”。
     Working,
     /// 在等主人回答确认卡片。
     Waiting,
-    /// 插件没在运行：在安装、升级、启动，停了或者出错。
+    /// 插件启动失败、健康检查不过，或这一轮运行异常结束。
+    Error,
+    /// 插件没在运行：在安装、升级、启动，或者被停了。
     Offline,
 }
 
 impl BotActivity {
-    pub const ALL: [Self; 4] = [Self::Idle, Self::Working, Self::Waiting, Self::Offline];
+    /// 按 ADR-0126 状态表的顺序。
+    pub const ALL: [Self; 6] = [
+        Self::Idle,
+        Self::Thinking,
+        Self::Working,
+        Self::Waiting,
+        Self::Error,
+        Self::Offline,
+    ];
 
     /// 在 [`StateAvatars::states`] 里的键。
     pub fn key(self) -> &'static str {
         match self {
             Self::Idle => "idle",
+            Self::Thinking => "thinking",
             Self::Working => "working",
             Self::Waiting => "waiting",
+            Self::Error => "error",
             Self::Offline => "offline",
         }
     }
@@ -168,6 +182,17 @@ impl BotActivity {
     pub fn from_key(key: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|state| state.key() == key)
     }
+}
+
+/// 危险模式的状态：只有主人能给自己的私人 Bot 开（ADR-0091）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct DangerModeView {
+    pub enabled: bool,
+    /// 主人现在能不能改这个开关；不能时 `reason` 说为什么。
+    pub can_toggle: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
 }
 
 /// 资料字段 [`AVATARS_FIELD`] 的值。键是 [`BotActivity::key`]；不认识的键原样保留，旧 App 忽略它们。主人或 Agent 清掉
@@ -278,6 +303,9 @@ pub struct BotProfileUpdate {
     /// 改哪几个状态头像。
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub states: BTreeMap<BotActivity, AvatarChange>,
+    /// 换成云朵：核心合成静态头像和状态头像写进资料，清掉主人传的那组。和 `avatar`、`states` 不同时给。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cloud: Option<crate::BotCloud>,
 }
 
 /// 换成一个已经传到媒体库的文件，或者清掉。核心按文件头检查它（[`MAX_AVATAR_EDGE`] 等）。
@@ -340,6 +368,12 @@ pub struct BotView {
     /// 当前人能不能和它聊天；不能时 `activity` 为空，壳显示原因并禁用输入；未知时壳照常能发。
     #[serde(default)]
     pub availability: BotChatAvailability,
+    /// 这是全家共用的共享 Bot（不是某一个人的私人 Bot）。
+    #[serde(default)]
+    pub shared: bool,
+    /// 危险模式：开着时在 Bot 资料页和聊天页标题处标出来（ADR-0091）。核心还不知道时为空。
+    #[serde(default)]
+    pub danger: Option<DangerModeView>,
     /// 由当前请求者的身份决定；未核实、断线或切换账号时为空，不能借用插件的默认网页地址。
     #[serde(default)]
     pub web: Option<BotWebView>,
@@ -361,6 +395,19 @@ pub struct BotView {
     pub problem: Option<BotProfileProblem>,
     /// Bot 资料页“显示”一节（ADR-0060）。
     pub chat: BotChatSettings,
+    /// 资料里的云朵（[`crate::CLOUD_FIELD`]）；为空时头像来源是主人自己的图，或者还没设头像。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub cloud: Option<crate::BotCloud>,
+    /// 头像来源是主人自己的图（不是插件清单的默认图，也不是云朵）。资料页据此标二选一的“自己的图”；
+    /// 和 `cloud` 不会同时为真。插件默认图也写在 `avatar` 上，所以单看 `avatar` 分不出来。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub custom_media: bool,
+    /// 现在的状态该用的表情素材 ID（ADR-0126 的“状态头像”）；没有云朵或状态不确定时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub face: Option<String>,
 }
 
 impl BotView {
@@ -549,6 +596,7 @@ mod tests {
                 ),
                 (BotActivity::Offline, AvatarChange::Clear),
             ]),
+            cloud: None,
         };
         let value = serde_json::to_value(&update).unwrap();
         assert_eq!(
@@ -586,6 +634,8 @@ mod tests {
             poster: None,
         };
         let mut bot = BotView {
+            shared: false,
+            danger: None,
             chat: Default::default(),
             availability: Default::default(),
             user_id: "@b:h".into(),
@@ -604,6 +654,9 @@ mod tests {
             activity: None,
             saving: false,
             problem: None,
+            cloud: None,
+            custom_media: false,
+            face: None,
         };
         assert!(bot.current_state_avatar().is_none());
         bot.activity = Some(BotActivity::Working);
@@ -636,5 +689,68 @@ mod tests {
                 reason: BotChatUnavailable::Other
             }
         );
+    }
+
+    /// 老 App 读不到云朵时，两个新字段缺着也要能收。
+    #[test]
+    fn an_old_bot_view_without_the_cloud_fields_still_reads() {
+        let bot = BotView {
+            shared: false,
+            danger: None,
+            chat: Default::default(),
+            availability: Default::default(),
+            user_id: "@b:h".into(),
+            bot: BotRef {
+                plugin_id: "a.b".into(),
+                bot: "default".into(),
+            },
+            web: None,
+            web_page: None,
+            name: "B".into(),
+            avatar: None,
+            state_avatars: Vec::new(),
+            activity: None,
+            saving: false,
+            problem: None,
+            cloud: Some(crate::BotCloud {
+                body: "#C8DBE9".into(),
+                face: "builtin:face/smile".into(),
+                headdress: None,
+            }),
+            custom_media: false,
+            face: Some("builtin:face/smile".into()),
+        };
+        let mut value = serde_json::to_value(&bot).unwrap();
+        let fields = value.as_object_mut().unwrap();
+        for field in ["cloud", "custom_media", "face"] {
+            fields.remove(field);
+        }
+        let old: BotView = serde_json::from_value(value).unwrap();
+        assert_eq!(old.cloud, None);
+        assert!(!old.custom_media);
+        assert_eq!(old.face, None);
+    }
+
+    /// 两个新状态的键和顺序都钉在 ADR-0126 的状态表上；旧 App 忽略多出来的两个键。
+    #[test]
+    fn thinking_and_error_have_stable_state_keys() {
+        assert_eq!(
+            BotActivity::ALL,
+            [
+                BotActivity::Idle,
+                BotActivity::Thinking,
+                BotActivity::Working,
+                BotActivity::Waiting,
+                BotActivity::Error,
+                BotActivity::Offline,
+            ]
+        );
+        assert_eq!(BotActivity::Thinking.key(), "thinking");
+        assert_eq!(BotActivity::Error.key(), "error");
+        assert_eq!(
+            BotActivity::from_key("thinking"),
+            Some(BotActivity::Thinking)
+        );
+        assert_eq!(BotActivity::from_key("error"), Some(BotActivity::Error));
     }
 }

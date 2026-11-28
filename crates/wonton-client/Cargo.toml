@@ -47,8 +47,6 @@ iroh = { workspace = true }
 linkify = "0.11.0"
 # MIT OR Apache-2.0。matrix.to 链接的片段里有百分号转义的房间和用户 ID。
 percent-encoding = { workspace = true }
-# MIT OR Apache-2.0。重点色推导用的 OKLCH 和 WCAG 对比度（ADR-0026）。
-palette = { version = "0.7.7", default-features = false, features = ["std"] }
 # MIT。把 Bot 发的 Markdown 排成气泡里的块和片段。
 pulldown-cmark = { version = "0.13.6", default-features = false }
 # MIT OR Apache-2.0。经本地代理调核心的接口；matrix-sdk 已经用它。文件上传下载要流式读写，中继表设置按 JSON 发请求体。
@@ -88,6 +86,8 @@ jni = "0.22.4"
 rustls-platform-verifier = "0.7.1"
 
 [dev-dependencies]
+# MIT OR Apache-2.0。测试中继的准入回调（`iroh::test_utils` 只转发，不导出类型）。
+iroh-relay = "1.4.1"
 # MIT。测试挑本机空闲端口（`wonton_tunnel::test_support`）要 `test-hooks`。
 wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
 # MIT OR Apache-2.0. Local TLS discovery fixtures; no external homeserver calls.

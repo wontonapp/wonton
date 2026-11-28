@@ -14,7 +14,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from collections import Counter
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from . import groups, paths  # noqa: E402
 from .source import Problem, is_cjk
@@ -104,6 +104,29 @@ def xcstring_keys(text: str) -> List[Tuple[str, int]]:
         (key, _line_of(text, json.dumps(key, ensure_ascii=False)))
         for key in (data.get("strings") or {})
     ]
+
+SWIFT_REF_RE = re.compile(r"\.([A-Z][A-Za-z0-9_]*)\.([a-z][A-Za-z0-9_]*)")
+
+
+def swift_member(key: str) -> str:
+    """键在 Xcode 生成的 Swift 符号里的成员名：点后面的段首字母大写，其余照抄。"""
+    head, *rest = re.split(r"[._-]", key)
+    return head + "".join(part[:1].upper() + part[1:] for part in rest)
+
+
+def swift_reference_problems(text: str, members: Dict[str, Set[str]]) -> List[Problem]:
+    """Swift 里 `.<表名>.<成员>` 的命名空间要和键所在的字符串目录一致（Xcode 按文件名生成枚举）。"""
+    problems: List[Problem] = []
+    for match in SWIFT_REF_RE.finditer(text):
+        table, member = match.groups()
+        if table not in members or member in members[table]:
+            continue
+        line = text.count("\n", 0, match.start()) + 1
+        owners = sorted(name for name, keys in members.items() if member in keys)
+        hint = f"，它在 {owners[0][:1].lower()}{owners[0][1:]}.xcstrings" if owners else "，目录里没有这个键"
+        page = f"{table[:1].lower()}{table[1:]}.xcstrings"
+        problems.append((line, f"「.{table}.{member}」不在 {page} 里{hint}"))
+    return problems
 
 
 FTL_KEY_RE = re.compile(r"^([A-Za-z0-9-]+)\s*=", re.MULTILINE)

@@ -5,6 +5,18 @@ use super::test_support::*;
 #[tokio::test]
 async fn open_lan_writes_lan_crt_list_and_reloads() {
     let rig = Rig::new().await;
+    // 入口只在实际选出了局域网地址时才建转发容器。
+    let address = crate::plugin::lan::entry_address::EntryAddress {
+        address: "192.0.2.10".parse().unwrap(),
+        subnet: "192.0.2.0/24".parse().unwrap(),
+        publish: "192.0.2.10".parse().unwrap(),
+    };
+    rig.containers
+        .set_lan(crate::clients::lan_forward::LanState::Selected {
+            address,
+            record: crate::clients::lan_forward::Record::Ok,
+        });
+    let before = rig.docker.writes().len();
     rig.containers
         .apply_clients_model(
             &settings(),
@@ -23,6 +35,20 @@ async fn open_lan_writes_lan_crt_list_and_reloads() {
         "{public}"
     );
     assert!(rig.writes_for("/kill").is_empty());
+    // 转发容器要先于入口重载/接线建好：入口的 `frontend lan` 绑它的名字，先写配置会让新 worker 卡 bind。
+    let writes = &rig.docker.writes()[before..];
+    let created = writes
+        .iter()
+        .position(|write| {
+            write.contains("/containers/create") && write.contains("name=wonton-lan-forward")
+        })
+        .unwrap_or_else(|| panic!("第一个建的容器不是局域网转发：{writes:?}"));
+    if let Some(connected) = writes
+        .iter()
+        .position(|write| write.contains("/networks/") && write.contains("/connect"))
+    {
+        assert!(created < connected, "{writes:?}");
+    }
 }
 
 #[tokio::test]

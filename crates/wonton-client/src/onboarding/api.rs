@@ -1,8 +1,8 @@
-//! 引导状态、资料、助手的名字和安装预览的接口调用。模型页的操作不经这里。
+//! 引导状态、资料和助手名字的接口调用。安装预览走 `plugins`，模型页的操作不经这里。
 
 use wonton_protocol::{
-    BotProfileUpdate, BotProfileUpdated, InstallPreview, InstallSource, Me, Onboarding,
-    OnboardingUpdate, OwnerProfileUpdate, PluginProblem,
+    BotProfileUpdate, BotProfileUpdated, Me, Onboarding, OnboardingUpdate, OwnerProfileUpdate,
+    PluginProblem,
 };
 
 use crate::plugins::api::{CoreApi, READ_TIMEOUT, SOURCE_TIMEOUT};
@@ -40,13 +40,5 @@ pub(crate) async fn rename_bot(
         ..BotProfileUpdate::default()
     };
     api.put(&["bots", plugin_id, "profile"], &update, READ_TIMEOUT)
-        .await
-}
-
-pub(crate) async fn preview(api: &CoreApi, source: &str) -> Result<InstallPreview, PluginProblem> {
-    let source = InstallSource {
-        source: source.to_owned(),
-    };
-    api.post(&["plugins", "preview"], &source, SOURCE_TIMEOUT)
         .await
 }

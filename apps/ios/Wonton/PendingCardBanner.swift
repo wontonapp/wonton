@@ -21,7 +21,7 @@ struct PendingCardBanner: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
             }
-            .foregroundStyle(Color(colors.textOnAccentFill))
+            .foregroundStyle(Color(colors.onPrimary))
             .padding(.horizontal, WontonTheme.spacing.s16)
             .padding(.vertical, WontonTheme.spacing.s12)
             .frame(minHeight: WontonTheme.size.target)
@@ -29,12 +29,7 @@ struct PendingCardBanner: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("pending-confirmations-banner")
-        .background(alignment: .bottom) {
-            if let border = colors.accentFillBorder {
-                Color(border).frame(height: WontonTheme.size.hairline)
-            }
-        }
-        .background(Color(colors.accentFill), ignoresSafeAreaEdges: .top)
+        .background(Color(colors.primary), ignoresSafeAreaEdges: .top)
         if onboarding.viewModel.tips.confirmationCard {
             OnboardingTipView(text: String(localized: .Onboarding1.onboardingTipConfirmationCard)) {
                 onboarding.send(.onboarding(action: .dismissOnboardingTip(tip: .confirmationCard)))

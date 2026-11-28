@@ -94,6 +94,7 @@ fun SettingsPage(
         }
         SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
         SettingsSubpage.FRIENDS -> FriendsPage(core, back)
+        SettingsSubpage.CLIENTS_DOMAIN -> ClientsDomainPage(core, back)
         SettingsSubpage.MAIN -> WontonScreen(bar = {
             val title = stringResource(R.string.tab_settings)
             if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
@@ -148,6 +149,11 @@ private fun SettingsEntryRow(
             onSubpage(SettingsSubpage.APPEARANCE)
         }
         SettingsEntry.Language -> LanguageSettingsRow()
+        // HTTPS 和域名（ADR-0089）；和服务器管理一类，只有主人能改。
+        SettingsEntry.ClientsDomain -> WontonRow(
+            stringResource(R.string.clients_domain_title), showsForward = true,
+            onClick = { onSubpage(SettingsSubpage.CLIENTS_DOMAIN) },
+        )
         // 服务器配对（ADR-0050）；核心只对主人设备取到过列表才给这一项。
         is SettingsEntry.Peers -> WontonRow(
             stringResource(R.string.peers_title), entry.count.toString(),

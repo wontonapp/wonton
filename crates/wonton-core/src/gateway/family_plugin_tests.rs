@@ -33,6 +33,7 @@ pub(super) async fn app_with_contact_facts(h: &Harness) -> (axum::Router, tempfi
             .unwrap(),
     );
     let owner = crate::owner::OwnerStore::for_test(&h.data_dir, &super::tests::owner());
+    let receipts = Arc::new(crate::contacts::ApplyReceipts::default());
     let contacts = Contacts::open(
         h.data_dir.join("contact-facts.json"),
         matrix.server_name(),
@@ -44,7 +45,8 @@ pub(super) async fn app_with_contact_facts(h: &Harness) -> (axum::Router, tempfi
             )),
             link: Arc::new(Offline),
             invites: Arc::new(Offline),
-            effects: Arc::new(Recorded::default()),
+            effects: Arc::new(Recorded::new(receipts.clone())),
+            receipts,
             open_federation: false,
         },
     )
@@ -169,6 +171,7 @@ async fn family_plugin_responses_mark_others_private_bot_absent() {
         .bot_for_test(&PluginId::parse("app.whoami").unwrap(), OWNER_BOT);
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             role_id: "admin".to_owned(),
             wants_private_bot: false,
             ..MemberRecord::for_test("mia")
@@ -620,6 +623,7 @@ async fn installing_plugins_needs_the_owners_grant() {
 async fn invite_record(h: &Harness, can_install: bool) {
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             username: "mia".to_owned(),
             user_id: "@mia:test".to_owned(),
             display_name: "Mia".to_owned(),

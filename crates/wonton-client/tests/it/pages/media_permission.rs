@@ -280,7 +280,7 @@ async fn pages_without_a_plugin_decision_are_denied() {
     let decision = rig
         .app
         .tab_media_permission_request(
-            PlacedTab::Page { tab: TabRef::Chat },
+            PlacedTab::Page { tab: TabRef::Rooms },
             origin_of("app.media"),
             true,
             true,

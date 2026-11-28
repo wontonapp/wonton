@@ -7,6 +7,8 @@ chat-sign-in-external-missing = 这台手机上已经没有这个 Matrix 账号�
 
 chat-sign-in-login-failed = 登录 Matrix 失败：{ $reason }
 
+chat-sign-in-timeout = 登录超时，稍后重试。
+
 # $reason 是 HTTP 客户端的原始错误。
 chat-login-http-client = 建 HTTP 客户端失败：{ $reason }
 

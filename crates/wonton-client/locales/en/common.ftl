@@ -34,6 +34,8 @@ plugins-api-server-status = Your home server returned HTTP { $status }
 
 plugins-api-not-connected = Try again once you're connected to your home server.
 
+plugins-api-not-paired = Pair this phone with your home server first, then try again.
+
 plugins-api-server-too-old = Home server { $version } is too old: this needs { $minimum } or newer.
 
 # Install, upgrade and uninstall tasks (crates/wonton-client/src/plugins/tasks.rs):
@@ -43,12 +45,13 @@ plugins-tasks-uncertain = The connection dropped, so the result from your home s
 plugins-tasks-server-changed = Your home server changed, so the result from the previous one is unknown.
 
 plugins-tasks-preview-no-source = This preview has no source, so it can't be installed.
-# $title is the provider's name, $capability the missing required capability it provides.
-plugins-tasks-install-together = { $title } will be installed with it, because it provides the missing required capability { $capability }.
+# $id is the blocked plugin, $detail the server's explanation.
+plugins-tasks-dependent-in-use = Couldn't uninstall { $id }: other apps still need it. { $detail }
 # $capability is the missing required capability.
 plugins-tasks-preview-no-provider = Nothing in the store provides the missing required capability { $capability}, so it can't be installed.
-# $title 是提供方的名字。
-plugins-tasks-provider-needs-own-confirm = { $title } needs permissions that must be confirmed on their own: install it by itself first, then install this plugin again.
+plugins-tasks-preview-old-core = This core is too old to install the provider together; install the plugin that provides { $capability } first, then try again.
+# $provider and $got are plugin IDs.
+plugins-capability-wrong-provider = The source for { $provider } now gives a different plugin ({ $got }); preview again.
 
 # $id is the unchanged task ID.
 plugins-tasks-no-such-task = There's no such task: { $id }
@@ -167,5 +170,28 @@ pages-storage-problem = Could not save My Apps; they may fall back to an older s
 # Owner-only generated plugin keys; input and collected secrets are never returned.
 plugins-owner-secret-not-listed = This key is not in the open list: { $name }
 
+# Panel (ADR-0052) errors. Shown as the reason of a CoreError, or as a TabsProblem message.
+panel-full = The panel is full; remove a page first.
+panel-pins-not-connected = Not connected to the home server yet.
+panel-pins-api-failed = { $status }: { $body }
+panel-page-already-there = This page is already in the panel.
+panel-page-not-there = This page isn't in the panel.
+panel-page-unsupported = Only app pages, pages inside an app, and https websites can go into the panel.
+panel-index-out-of-range = That position is outside the panel.
+panel-not-signed-in = Sign in first to change the panel; the change wasn't saved.
+panel-room-not-open = Open this chat first to change its panel.
+panel-room-unknown = Can't find this chat.
+panel-pin-invalid-url = Can't read that address.
+panel-pin-not-https = Only https:// websites can be pinned.
+panel-pin-path-outside = That page is outside the app's own site.
+panel-attention-panel-only = Only pages in the panel can show the attention dot.
+panel-config-too-many = The panel holds at most { $count } pages.
+panel-config-duplicate = The same page appears twice in the panel.
+panel-sync-failed-read = Couldn't read the panel settings from the server.
+panel-sync-unreadable = The panel settings from the server can't be read here; keeping the ones on this device.
+panel-pins-refresh-failed = Couldn't load the pages bots pinned: { $error }
+
 # 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
 models-invalid-action = That action isn't available on this page.
+# 模型页（ADR-0129）：浏览器授权的回跳不是这次发起的（地址不对或 state 不一致），没交给插件。
+models-login-callback-mismatch = The sign-in page came back with a different sign-in than the one started here, so it was discarded. Sign in again.

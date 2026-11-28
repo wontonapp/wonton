@@ -2,15 +2,15 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::MediaItemRef;
 use super::known_or_other;
 use super::session::{
     PlaybackPlan, PlaybackSession, PlaybackSessionId, Queue, QueueMode, Revision,
 };
 use super::task::{ItemState, MediaFailure, Person, Progress, TaskId, TaskKind, TaskState};
+use super::{MediaItemRef, MediaKind};
 
 /// 播放控制动作。新版本新加的动作落在 `Other`，只留原值，载荷丢弃。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum ControlOp {
     Play,
@@ -27,7 +27,7 @@ pub enum ControlOp {
 }
 
 /// 停播的原因。新版本新加的原因落在 `Other`。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum StopReason {
     User,
@@ -35,6 +35,8 @@ pub enum StopReason {
     TakenOver,
     Finished,
     Error,
+    /// 这个人退出了家庭，核心替他停的。
+    Removed,
     /// 新版本新加的原因，原值在里。
     Other(String),
 }
@@ -45,6 +47,7 @@ known_or_other!(StopReason {
     TakenOver => "taken_over",
     Finished => "finished",
     Error => "error",
+    Removed => "removed",
 });
 
 impl Serialize for ControlOp {
@@ -108,7 +111,7 @@ fn lift<T: serde::de::DeserializeOwned, E: serde::de::Error>(
 }
 
 /// 队列改动。内部标记放不下序列和模式，载荷另起 `value` 键。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case", tag = "op", content = "value")]
 // 形状照接口清单；装箱会改公开类型和绑定，不值当。
@@ -127,6 +130,13 @@ pub enum QueueOp {
     },
     Clear,
     SetMode(QueueMode),
+    /// 整条换掉（“从这首起放这张专辑”）：一次请求换成 `entries`，`cursor` 指向要放的那一项，空着指第一项；
+    /// 越界和 `Jump` 一样回错、队列不动。`entries` 为空等于 `Clear`（`cursor` 也得空）。条目的 `source` 照
+    /// `Enqueue` 的规矩；模式不变。版本比对和别的改动一样：撞上别处先改回 409 和当前队列。
+    Replace {
+        entries: Vec<MediaItemRef>,
+        cursor: Option<usize>,
+    },
 }
 
 /// 下载完的一项，带本机路径。
@@ -139,7 +149,7 @@ pub struct DoneItem {
 
 /// 壳→核的动作与核→设备的命令是同一个类型。新版本新加的动作落在 `Other`，旧壳跳过那一条、同批其他
 /// 命令照常执行。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[allow(clippy::large_enum_variant)]
 pub enum MediaAction {
@@ -164,6 +174,15 @@ pub enum MediaAction {
         person: Person,
         revision: Revision,
         op: QueueOp,
+    },
+    /// 立即跑一次备份（`wonton__backup_now`）：设备照自己的备份设置挑出还没传的，建一个上传任务，回执的
+    /// `task` 带它。`kinds` 空着是这台设备上开了备份的全部种类。
+    Backup {
+        kinds: Vec<MediaKind>,
+    },
+    /// 删掉这台设备上这几项的离线副本（`wonton__media_delete`）。删完设备照常 `PUT /offline` 报一次占用。
+    DeleteOffline {
+        items: Vec<MediaItemRef>,
     },
     /// 新版本新加的动作，原值在里，载荷丢弃。
     Other(String),
@@ -196,6 +215,12 @@ enum KnownMediaAction {
         revision: Revision,
         op: QueueOp,
     },
+    Backup {
+        kinds: Vec<MediaKind>,
+    },
+    DeleteOffline {
+        items: Vec<MediaItemRef>,
+    },
 }
 
 impl From<KnownMediaAction> for MediaAction {
@@ -215,6 +240,8 @@ impl From<KnownMediaAction> for MediaAction {
                 revision,
                 op,
             },
+            KnownMediaAction::Backup { kinds } => Self::Backup { kinds },
+            KnownMediaAction::DeleteOffline { items } => Self::DeleteOffline { items },
         }
     }
 }
@@ -255,6 +282,14 @@ impl Serialize for MediaAction {
                 map.serialize_entry("revision", revision)?;
                 map.serialize_entry("op", op)?;
             }
+            Self::Backup { kinds } => {
+                map.serialize_entry("kind", "backup")?;
+                map.serialize_entry("kinds", kinds)?;
+            }
+            Self::DeleteOffline { items } => {
+                map.serialize_entry("kind", "delete_offline")?;
+                map.serialize_entry("items", items)?;
+            }
             Self::Other(raw) => map.serialize_entry("kind", raw)?,
         }
         map.end()
@@ -271,7 +306,14 @@ impl<'de> Deserialize<'de> for MediaAction {
             .ok_or_else(|| serde::de::Error::missing_field("kind"))?;
         let known = matches!(
             kind.as_str(),
-            "start_upload" | "start_download" | "playback" | "control" | "stop" | "queue"
+            "start_upload"
+                | "start_download"
+                | "playback"
+                | "control"
+                | "stop"
+                | "queue"
+                | "backup"
+                | "delete_offline"
         );
         if known {
             KnownMediaAction::deserialize(value)
@@ -282,6 +324,17 @@ impl<'de> Deserialize<'de> for MediaAction {
         }
     }
 }
+
+/// 叫醒睡着的设备去取命令的推送（ADR-0113 第 5 节）。明文是 `{"server": …, "media_command": {"seq": N}}`，
+/// 只带 `seq`、不带命令内容：设备醒来照常 `GET /commands` 拉，命令只从那里来。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct MediaCommandPush {
+    pub seq: u64,
+}
+
+/// 推送明文里 [`MediaCommandPush`] 那一段的字段名。
+pub const MEDIA_COMMAND_PUSH_FIELD: &str = "media_command";
 
 /// 核发给设备的命令，`command_id` 幂等，`seq` 单调。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -297,7 +350,10 @@ pub struct DeviceCommand {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct MediaViewModel {
     pub tasks: Vec<TaskView>,
-    pub quota: QuotaView,
+    /// 还没从服务器取到时为空，不拿零冒充。
+    pub quota: Option<QuotaView>,
+    /// 最近一次和服务器对齐没成的原因；成了就清掉。
+    pub failure: Option<MediaFailure>,
 }
 
 /// 任务列表的一项。
@@ -346,8 +402,25 @@ pub struct QuotaEntry {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PlaybackViewModel {
     pub session: PlaybackSession,
-    pub queue: Queue,
+    /// 还没从服务器取到时为空。
+    pub queue: Option<Queue>,
     pub plan: Option<PlaybackPlan>,
+    /// 这台设备最近一次播放动作没成的原因；换会话或下一次成了就清掉。
+    pub failure: Option<MediaFailure>,
+}
+
+/// 导出的媒体操作没做成：原因的类别照核心给的，壳按类别出字。
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Error), uniffi::export(Display))]
+pub enum MediaError {
+    #[error("{}", .failure.message)]
+    Failed { failure: MediaFailure },
+}
+
+impl From<MediaFailure> for MediaError {
+    fn from(failure: MediaFailure) -> Self {
+        Self::Failed { failure }
+    }
 }
 
 #[cfg(test)]
@@ -388,6 +461,26 @@ mod tests {
                 person: "Alice".into(),
                 revision: 4,
                 op: QueueOp::Clear,
+            },
+            MediaAction::Backup {
+                kinds: vec![MediaKind::Photo],
+            },
+            MediaAction::Backup { kinds: Vec::new() },
+            MediaAction::DeleteOffline {
+                items: vec![crate::media::MediaItemRef {
+                    id: "v1".into(),
+                    kind: MediaKind::Video,
+                    title: "第一集".into(),
+                    artist: None,
+                    album: None,
+                    artwork_url: None,
+                    duration_ms: None,
+                    series: None,
+                    index: None,
+                    played: false,
+                    starred: false,
+                    source: None,
+                }],
             },
         ];
         for action in actions {
@@ -504,7 +597,7 @@ mod tests {
                 ],
                 items_cursor: Some("next".into()),
             }],
-            quota: QuotaView {
+            quota: Some(QuotaView {
                 provider_upload: QuotaEntry {
                     used: 1_000,
                     limit: Some(10_000),
@@ -513,7 +606,8 @@ mod tests {
                     used: 0,
                     limit: None,
                 },
-            },
+            }),
+            failure: None,
         };
         assert_eq!(roundtrip(&view), view);
         assert_eq!(
@@ -539,14 +633,15 @@ mod tests {
                 plan: None,
                 stop_reason: None,
             },
-            queue: Queue {
+            queue: Some(Queue {
                 revision: 0,
                 entries: vec![item()],
                 cursor: None,
                 mode: QueueMode::Sequential,
                 sleep_at_ms: None,
-            },
+            }),
             plan: None,
+            failure: None,
         };
         assert_eq!(roundtrip(&view), view);
     }

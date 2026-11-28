@@ -231,6 +231,7 @@ async fn projection(gateway: &Gateway, langs: &Languages) -> Onboarding {
         needs,
         prompts,
         catalog_problem,
+        agent_intro: None,
     }
 }
 
@@ -280,6 +281,7 @@ mod tests {
 
         let update = OnboardingUpdate {
             step: Some(OnboardingStep::Finished),
+            agent_intro: None,
         };
         let saved = state.update(&update, &Languages::default()).await.unwrap();
         assert_eq!(saved.step, OnboardingStep::Finished);

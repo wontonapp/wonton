@@ -15,6 +15,15 @@ use crate::l10n::{CATALOG, language};
 
 impl PluginsLink {
     pub(crate) fn start(self: &Arc<Self>, id: String) -> Result<(), CoreError> {
+        self.lifecycle(id, "start")
+    }
+
+    /// 停止：和启动共用同一个“这台设备正在动它”的占位和失败提示。
+    pub(crate) fn stop(self: &Arc<Self>, id: String) -> Result<(), CoreError> {
+        self.lifecycle(id, "stop")
+    }
+
+    fn lifecycle(self: &Arc<Self>, id: String, verb: &'static str) -> Result<(), CoreError> {
         let generation = self.generation.load(Ordering::SeqCst);
         let server = self.home.view().server_id;
         {
@@ -46,7 +55,7 @@ impl PluginsLink {
                 let api = api?;
                 let _: InstalledPlugin = api
                     .post(
-                        &["plugins", &id, "start"],
+                        &["plugins", &id, verb],
                         &serde_json::json!({}),
                         INSTALL_TIMEOUT,
                     )

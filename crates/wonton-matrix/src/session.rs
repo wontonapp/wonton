@@ -155,7 +155,8 @@ pub struct MatrixSession {
     device_id: OwnedDeviceId,
     /// 发送出错以后接着发（[`send_queue`](crate::send_queue)），会话释放时停止。
     sending: JoinHandle<()>,
-    pub(crate) subscriptions: tokio::sync::Mutex<RoomSubscriptions>,
+    /// `Arc`：停同步要拿着它，挪到后台时也一样（[`MatrixSession::stop_sync_within`]）。
+    pub(crate) subscriptions: Arc<tokio::sync::Mutex<RoomSubscriptions>>,
     pub(crate) verifications: Arc<crate::verification::concurrency::Registry>,
     /// 叫醒等着重开发送队列的任务，见 [`MatrixSession::resume`]。
     pub(crate) resume_sending: Arc<Notify>,
@@ -167,7 +168,8 @@ pub struct MatrixSession {
     /// 叫醒房间列表重算一遍：话题回执只改话题的未读，SDK 不当成房间的变化（ADR-0093 §4）。
     pub(crate) rooms_changed: Arc<Notify>,
     /// 这个 Client 在存储锁上的租约（[`StoreLease`]）：活着期间同存储的新 Client 换名字，落了以后下一个接着用这个名字。
-    _store_lease: Option<StoreLease>,
+    /// 一般和会话同寿；停同步挪到后台时交给后台任务，停完才放（[`MatrixSession::stop_sync_within`]）。
+    pub(crate) store_lease: std::sync::Mutex<Option<StoreLease>>,
 }
 
 impl Drop for MatrixSession {
@@ -281,10 +283,10 @@ impl MatrixSession {
             resume_sending,
             resume_sync: Notify::new(),
             rooms_changed: Arc::new(Notify::new()),
-            subscriptions: tokio::sync::Mutex::default(),
+            subscriptions: Arc::default(),
             verifications: Arc::default(),
             invited_seen: std::sync::Mutex::default(),
-            _store_lease: lease,
+            store_lease: std::sync::Mutex::new(lease),
         })
     }
 

@@ -89,6 +89,7 @@ impl ManifestExt for Manifest {
         validate_tunnel(self)?;
         super::provides::validate(self, langs)?;
         super::capabilities::validate(self, langs)?;
+        super::manifest_browse::validate(self)?;
         super::manifest_static::validate(self)?;
         super::manifest_widget::validate(self)?;
         super::manifest_remote::validate(self, langs)?;

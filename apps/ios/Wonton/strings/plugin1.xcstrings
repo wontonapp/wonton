@@ -2,6 +2,126 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "plugin.capabilitiesTitle": {
+      "comment": "Section heading listing the capabilities the app uses and which provider it uses for each.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capabilities"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能力"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能力"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "機能"
+          }
+        }
+      }
+    },
+    "plugin.capabilityFollowDefault": {
+      "comment": "Provider choice: use whichever provider is set as the global default.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use the default"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟默认"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟預設"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定を使う"
+          }
+        }
+      }
+    },
+    "plugin.clearFailureMessage": {
+      "comment": "Clear-failure dialog message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app’s data will be kept."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用的数据会保留。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "應用程式的資料會保留。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリのデータは保持されます。"
+          }
+        }
+      }
+    },
+    "plugin.dependencyStopped": {
+      "comment": "$provider is the app title. It is required but not running, so the app can't use it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ isn't running, so this app can't use it right now."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」没在运行，这个应用现在用不了它。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」沒在執行，這個應用程式現在用不了它。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」が動いていないため、このアプリは今それを使えません。"
+          }
+        }
+      }
+    },
     "plugin.deviceDisk": {
       "comment": "Fallback name for an authorized host disk when no device name is supplied. Keep short.",
       "extractionState": "manual",
@@ -28,6 +148,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "ディスク"
+          }
+        }
+      }
+    },
+    "plugin.info.stars": {
+      "comment": "Information row: the repository's star count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stars"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "星标"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "星號"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スター"
           }
         }
       }
@@ -118,6 +268,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "このプラグインはホスト全体を操作できます"
+          }
+        }
+      }
+    },
+    "plugin.saveGrant.title": {
+      "comment": "Section title above the folders the bot may save files into.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folders It Can Save To"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能存文件的文件夹"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "能存檔案的資料夾"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存できるフォルダ"
+          }
+        }
+      }
+    },
+    "plugin.screenshot": {
+      "comment": "Accessibility label of a screenshot on the app detail page, including its placeholder while it loads.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Screenshot"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截图"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "截圖"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクリーンショット"
           }
         }
       }
@@ -272,96 +482,6 @@
         }
       }
     },
-    "plugin.saveGrant.title": {
-      "comment": "Section title above the folders the bot may save files into.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Folders It Can Save To"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "能存文件的文件夹"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "能存檔案的資料夾"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保存できるフォルダ"
-          }
-        }
-      }
-    },
-    "plugin.info.stars": {
-      "comment": "Information row: the repository's star count.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stars"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "星标"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "星號"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "スター"
-          }
-        }
-      }
-    },
-    "plugin.uninstall.keepData": {
-      "comment": "Uninstall dialog action: remove the app but keep its data.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Uninstall and Keep Data"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "卸载，保留数据"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "解除安裝，保留資料"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アンインストール（データを残す）"
-          }
-        }
-      }
-    },
     "plugin.uninstall.deleteData": {
       "comment": "Uninstall dialog action: remove the app and its data. This cannot be undone.",
       "extractionState": "manual",
@@ -399,55 +519,85 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deleting data also removes its keys and bot accounts, and old encrypted messages with its bots become unreadable. This can't be undone."
+            "value": "Deleting data also removes its keys and bot accounts, and old encrypted messages with its bots become unreadable. This can't be undone. Checked apps' data is deleted too."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除数据会一并删掉它的密钥和 Bot 账号，和 Bot 的旧加密消息将无法再查看，不能恢复。"
+            "value": "删除数据会一并删掉它的密钥和 Bot 账号，和 Bot 的旧加密消息将无法再查看，不能恢复。勾上一起卸的应用，数据也会一起删掉。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "刪除資料會一併刪掉它的金鑰和 Bot 帳號，與 Bot 的舊加密訊息將無法再查看，無法復原。"
+            "value": "刪除資料會一併刪掉它的金鑰和 Bot 帳號，與 Bot 的舊加密訊息將無法再查看，無法復原。勾上一起卸的應用程式，資料也會一起刪掉。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "データを削除すると、鍵とボットのアカウントも一緒に削除され、ボットとの過去の暗号化メッセージも読めなくなります。元に戻せません。"
+            "value": "データを削除すると、鍵とボットのアカウントも一緒に削除され、ボットとの過去の暗号化メッセージも読めなくなります。元に戻せません。一緒に外すアプリのデータも削除されます。"
           }
         }
       }
     },
-    "plugin.screenshot": {
-      "comment": "Accessibility label of a screenshot on the app detail page, including its placeholder while it loads.",
+    "plugin.uninstall.keepData": {
+      "comment": "Uninstall dialog action: remove the app but keep its data.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Screenshot"
+            "value": "Uninstall and Keep Data"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "截图"
+            "value": "卸载，保留数据"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "截圖"
+            "value": "解除安裝，保留資料"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "スクリーンショット"
+            "value": "アンインストール（データを残す）"
+          }
+        }
+      }
+    },
+    "plugin.uninstallStopDependents": {
+      "comment": "Button: stop the apps that still need this one, keep everything installed for now.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop them first"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先停它们"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先停掉它們"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に停止"
           }
         }
       }
@@ -478,36 +628,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "このアプリのページは、開いたルームのメッセージを読み、あなたの名前でメッセージを送信・削除できます。"
-          }
-        }
-      }
-    },
-    "plugin.clearFailureMessage": {
-      "comment": "Clear-failure dialog message.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The app’s data will be kept."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "应用的数据会保留。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "應用程式的資料會保留。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アプリのデータは保持されます。"
           }
         }
       }

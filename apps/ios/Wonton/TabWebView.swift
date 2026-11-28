@@ -217,15 +217,10 @@ final class TabWebSession: NSObject {
         backObservation = view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor in self?.canGoBack = self?.webView?.canGoBack ?? false }
         }
-        switch placed {
-        case .page, .content:
-            observeTopColor(of: view)
-            // 整页不要外层的回弹：WKWebView 内容再短也能整页拉出橡皮筋，网页连同它固定的顶栏一起晃。
-            // 页面里自己的滚动容器照旧。
-            view.scrollView.bounces = false
-        // 面板里的页面不让出顶条，不用跟；回弹也不动，滚到头接着拉的手势挂在它的滚动视图上（`PanelPagePull`）。
-        case .panel: break
-        }
+        observeTopColor(of: view)
+        // 整页不要外层的回弹：WKWebView 内容再短也能整页拉出橡皮筋，网页连同它固定的顶栏一起晃。
+        // 页面里自己的滚动容器照旧。
+        view.scrollView.bounces = false
     }
 
     private func configure(_ view: WKWebView) throws {
@@ -309,14 +304,8 @@ final class TabWebSession: NSObject {
         return true
     }
 
-    /// 面板拉开、翻到这一页：经桥告诉页面它被看到了。
-    func seen() {
-        guard let webView else { return }
-        evaluate(core.tabReselectedScript(), in: webView)
-    }
-
     /// 网页开始或停止放媒体：上报核心，App 退到后台也照常探测、自动重连（ADR-0033）。
-    /// 整页和面板里的同一页各一份会话，都停了才解除，换曲的一瞬由核心的宽限兜住。
+    /// 整页和内容窗口里的同一页各一份会话，都停了才解除，换曲的一瞬由核心的宽限兜住。
     func setMediaPlaying(_ playing: Bool) {
         guard mediaPlaying != playing else { return }
         mediaPlaying = playing
@@ -406,19 +395,10 @@ extension TabWebSession {
 
 struct TabWebView: UIViewRepresentable {
     let webView: WKWebView
-    /// 浮在网页上面、挡住它的上下两条：面板里的页面照面板的布局给（ADR-0052），整页的没有。
-    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，面板里的页面不让。
-    let obscured: UIEdgeInsets
 
-    func makeUIView(context: Context) -> WKWebView {
-        updateUIView(webView, context: context)
-        return webView
-    }
+    func makeUIView(context: Context) -> WKWebView { webView }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {
-        guard #available(iOS 26, *), uiView.obscuredContentInsets != obscured else { return }
-        uiView.obscuredContentInsets = obscured
-    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
 @MainActor

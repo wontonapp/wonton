@@ -42,6 +42,7 @@ fn open(engine: Engine, dir: &Path, members: Arc<Members>) -> Arc<Component> {
 fn invite(members: &Members, name: &str) {
     members
         .invite(MemberRecord {
+            invited_by: None,
             username: name.into(),
             user_id: format!("@{name}:home"),
             display_name: name.into(),

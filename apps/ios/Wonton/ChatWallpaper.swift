@@ -9,11 +9,7 @@ struct ChatPalette {
 
     /// 背景的底：浅色用 `surfaceSubtle`，白气泡才浮得起来；深色用 `canvas`。
     var wallBase: Color { Color(isDark ? colors.canvas : colors.surfaceSubtle) }
-    /// 盖在底上的重点色。深色主题里重点色很亮，只盖薄薄一层。
-    var wallTint: Color {
-        Color(colors.accentInk).opacity(WontonTheme.ratio.wallTint * (isDark ? Self.darkTintShare : 1))
-    }
-    var wallPattern: Color { Color(colors.accentInk).opacity(WontonTheme.ratio.wallPattern) }
+    var wallPattern: Color { Color(colors.textPrimary).opacity(WontonTheme.ratio.wallPattern) }
     /// 别人的气泡：浅色是白的，深色比背景亮一档。
     var incoming: Color { Color(isDark ? colors.surfaceSubtle : colors.surface) }
     /// 日期胶囊、说明行、选项按钮的半透明底，上面的字一律白色。
@@ -23,10 +19,17 @@ struct ChatPalette {
             : Color.black.opacity(WontonTheme.ratio.serviceFill)
     }
     var serviceInk: Color { .white }
-    /// 消息下选项按钮的底：入气泡的颜色透一点背景，字用重点色。
+    /// 消息下选项按钮的底：入气泡的颜色透一点背景，字用 `textPrimary`。
     var choiceFill: Color { incoming.opacity(WontonTheme.ratio.secondaryContent) }
+    /// 浮在背景上的一层（别人的气泡、选项按钮）的投影：没有重点色以后，白气泡和浅灰背景只靠它分层（ADR-0130）。
+    var lift: Color { .black.opacity(isDark ? WontonTheme.ratio.shadowDark : WontonTheme.ratio.shadow) }
+}
 
-    private static let darkTintShare: CGFloat = 0.3
+extension View {
+    /// 聊天背景上浮起来的一层。
+    func chatLift(_ palette: ChatPalette) -> some View {
+        shadow(color: palette.lift, radius: WontonTheme.size.shadowBlur / 2, y: WontonTheme.size.shadowY)
+    }
 }
 
 extension EnvironmentValues {
@@ -34,7 +37,7 @@ extension EnvironmentValues {
     var chatPalette: ChatPalette { ChatPalette(colors: wontonColors, isDark: colorScheme == .dark) }
 }
 
-/// 聊天背景（ADR-0109 第 9 节）：底色盖一层淡淡的重点色，上面铺一层细线图案。图案是这里自己画的几何小件，
+/// 聊天背景（ADR-0109 第 9 节）：灰阶的底色上铺一层细线图案。图案是这里自己画的几何小件，
 /// 不用任何现成的壁纸素材。
 struct ChatWallpaper: View {
     @Environment(\.chatPalette) private var palette
@@ -42,7 +45,6 @@ struct ChatWallpaper: View {
     var body: some View {
         ZStack {
             palette.wallBase
-            palette.wallTint
             Canvas { context, size in
                 let ink = GraphicsContext.Shading.color(palette.wallPattern)
                 let stroke = StrokeStyle(lineWidth: Self.line, lineCap: .round, lineJoin: .round)
@@ -168,7 +170,7 @@ private struct OptionalIdentifier: ViewModifier {
 struct ChatGlassButton: View {
     let icon: WontonIcon
     let label: String
-    /// 主要动作（发送）给重点色，图标用页面底色。
+    /// 主要动作（发送）用强调填充。
     var prominent = false
     /// 可达性树的稳定标识；只给界面测试要按它找的按钮。
     var identifier: String?
@@ -178,9 +180,9 @@ struct ChatGlassButton: View {
     var body: some View {
         Button(action: action) {
             icon.view(size: WontonTheme.size.iconSmall)
-                .foregroundStyle(Color(prominent ? colors.canvas : colors.textPrimary))
+                .foregroundStyle(Color(prominent ? colors.onPrimary : colors.textPrimary))
                 .frame(width: WontonTheme.size.chatControl, height: WontonTheme.size.chatControl)
-                .chatGlass(in: Circle(), tint: prominent ? Color(colors.accentInk) : nil, interactive: true)
+                .chatGlass(in: Circle(), tint: prominent ? Color(colors.primary) : nil, interactive: true)
                 .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
                 .contentShape(Rectangle())
         }

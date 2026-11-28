@@ -53,6 +53,8 @@ fn plugin_actions_round_trip_through_json() {
             action: PluginAction::UninstallPlugin {
                 id: "app.samba".into(),
                 delete_data: true,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         },
         Action::Plugins {

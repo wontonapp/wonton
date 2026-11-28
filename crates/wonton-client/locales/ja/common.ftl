@@ -32,6 +32,8 @@ plugins-api-server-status = 自宅サーバーからHTTP { $status }が返され
 
 plugins-api-not-connected = 自宅サーバーに接続してからもう一度お試しください。
 
+plugins-api-not-paired = 先に自宅サーバーとペアリングしてから、もう一度お試しください。
+
 plugins-api-server-too-old = 自宅サーバー { $version } は古すぎます。この機能には { $minimum } 以降が必要です。
 
 # インストール・アップデート・アンインストールのタスク（crates/wonton-client/src/plugins/tasks.rs）。
@@ -40,12 +42,13 @@ plugins-tasks-uncertain = 接続が切断されたため、自宅サーバーで
 plugins-tasks-server-changed = 自宅サーバーが変わったため、以前のサーバーでの結果は不明です。
 
 plugins-tasks-preview-no-source = このプレビューには提供元がないため、インストールできません。
-# $title は提供元の名前、$capability はそれが提供する不足中の必須機能です。
-plugins-tasks-install-together = { $title }も一緒にインストールします：不足している必須機能{ $capability }はこれが提供します。
+# $id はブロックされたプラグイン、$detail はサーバーの説明です。
+plugins-tasks-dependent-in-use = 「{ $id }」をアンインストールできませんでした：まだ使っているアプリがあります。{ $detail }
 # $capability は不足している必須機能です。
 plugins-tasks-preview-no-provider = 不足している必須機能{ $capability }を提供するプラグインがストアにないため、インストールできません。
-# $title は提供側プラグインの名前。
-plugins-tasks-provider-needs-own-confirm = { $title }には個別の確認が必要な権限があります。先に「{ $title }」だけをインストールしてから、このプラグインをインストールしてください。
+plugins-tasks-preview-old-core = このコアは提供元を同時にインストールできないため、先に{ $capability }を提供するプラグインを単独でインストールしてから、もう一度お試しください。
+# $provider と $got はプラグイン ID です。
+plugins-capability-wrong-provider = { $provider } の取得元が別のプラグイン（{ $got }）に変わっています。プレビューをやり直してください。
 
 # $id はそのままのタスクIDです。
 plugins-tasks-no-such-task = そのようなタスクはありません：{ $id }
@@ -158,5 +161,28 @@ pages-storage-problem = マイアプリを保存できませんでした。次�
 # Owner-only generated plugin keys; input and collected secrets are never returned.
 plugins-owner-secret-not-listed = 開いている一覧にこのキーはありません：{ $name }
 
+# パネル（ADR-0052）のエラー。CoreError の理由、または TabsProblem の説明として表示する。
+panel-full = パネルがいっぱいです。先にページを外してください。
+panel-pins-not-connected = まだ自宅サーバーに接続していません。
+panel-pins-api-failed = { $status }：{ $body }
+panel-page-already-there = このページはすでにパネルにあります。
+panel-page-not-there = このページはパネルにありません。
+panel-page-unsupported = パネルに入れられるのはアプリのページ、アプリ内のページ、https:// のウェブページだけです。
+panel-index-out-of-range = その位置はパネルの外です。
+panel-not-signed-in = まだログインしていないため、パネルの変更をアカウントに保存できませんでした。端末には記録してあります。
+panel-room-not-open = このチャットのパネルを変えるには、先に開いてください。
+panel-room-unknown = このチャットが見つかりません。
+panel-pin-invalid-url = そのアドレスは読み取れません。
+panel-pin-not-https = ピンできるのは https:// のウェブページだけです。
+panel-pin-path-outside = そのページはアプリ自身のサイトの外です。
+panel-attention-panel-only = パネル内のページだけに注意の印を付けられます。
+panel-config-too-many = パネルには最大 { $count } ページまで入ります。
+panel-config-duplicate = 同じページがパネルに二つあります。
+panel-sync-failed-read = サーバーからパネルの設定を読み取れませんでした。
+panel-sync-unreadable = サーバーのパネル設定をこの端末では読めないため、端末のものを使います。
+panel-pins-refresh-failed = Bot がピン留めしたページを読み込めません:{ $error }
+
 # 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
 models-invalid-action = このページではできない操作です。
+# 模型页（ADR-0129）：浏览器授权的回跳不是这次发起的（地址不对或 state 不一致），没交给插件。
+models-login-callback-mismatch = このアプリで始めたログインと戻ってきた内容が一致しないため、破棄しました。もう一度ログインしてください。

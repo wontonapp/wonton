@@ -39,7 +39,7 @@ struct FriendRequestRowView: View {
                     WontonIcon.person.view(size: WontonTheme.size.iconSmall)
                 }
                 .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.primary))
+                .foregroundStyle(Color(colors.textPrimary))
             }
             Text(.Friends3.friendsReceived(relativeFriendTime(request.invitedAtMs)))
                 .wontonText(WontonTheme.typography.supporting)

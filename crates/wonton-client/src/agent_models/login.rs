@@ -3,13 +3,16 @@
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
+use url::Url;
+use wonton_l10n::l10n;
 use wonton_protocol::{
-    AgentModelsProblem, AgentModelsReason, BotRef, LoginState, ModelListState, ModelLogin,
-    ModelLoginBrowser, ModelLoginProgress, ModelLoginState,
+    AgentModelsProblem, AgentModelsReason, BotRef, CoreError, LoginState, MODEL_LOGIN_REDIRECT_URI,
+    ModelListState, ModelLogin, ModelLoginBrowser, ModelLoginProgress, ModelLoginState,
 };
 
 use super::jobs::Op;
-use super::{AgentModelsLink, Login, lock};
+use super::{AgentModelsLink, Login, invalid, lock};
+use crate::l10n::{CATALOG, language};
 
 /// 浏览器授权的回跳交回后插件还说“在等”时，改成轮询，最多等这么久。
 const FINISH_GRACE: Duration = Duration::from_secs(120);
@@ -58,6 +61,7 @@ impl AgentModelsLink {
             provider: provider.to_owned(),
             session: login.session.clone(),
             redirect,
+            state: redirect.then(|| query(&login.url, "state")).flatten(),
         });
         self.view.send_modify(|view| {
             if let Some(page) = view.provider.as_mut() {
@@ -77,6 +81,51 @@ impl AgentModelsLink {
             let deadline = Instant::now() + Duration::from_secs(login.expires_in.into());
             self.poll(bot, login.session, login.interval, deadline);
         }
+    }
+
+    /// 壳交回回跳网址。只认 App 的回跳地址，授权网址带了 `state` 的，回来的必须是同一个：别处发起的授权
+    /// （登录劫持）不交给插件换凭据，这次登录按失败作废。插件换凭据时还要自己再校验一遍（规范要求）。
+    pub(super) fn finish_login(
+        self: &Arc<Self>,
+        bot: BotRef,
+        callback_url: String,
+    ) -> Result<(), CoreError> {
+        let login = lock(&self.local).login.clone();
+        let login = login
+            .filter(|login| login.redirect && login.bot == bot)
+            .ok_or_else(invalid)?;
+        self.busy()?;
+        let ours = callback_url
+            .strip_prefix(MODEL_LOGIN_REDIRECT_URI)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(['?', '/', '#']));
+        let state_ok = login
+            .state
+            .as_deref()
+            .is_none_or(|state| query(&callback_url, "state").as_deref() == Some(state));
+        if !(ours && state_ok) {
+            tracing::info!("model login callback does not match this login; discarded");
+            let failed = ModelLoginState {
+                state: LoginState::Failed,
+                message: Some(l10n!(CATALOG, language(), "models-login-callback-mismatch")),
+            };
+            self.login_ended(&bot, &login.session, Ok(failed));
+            self.job(
+                bot,
+                Op::LoginCancel {
+                    session: login.session,
+                },
+                false,
+            );
+            return Ok(());
+        }
+        self.enqueue(
+            bot,
+            Op::LoginFinish {
+                session: login.session,
+                callback_url,
+            },
+        );
+        Ok(())
     }
 
     fn poll(self: &Arc<Self>, bot: &BotRef, session: String, interval: u32, deadline: Instant) {
@@ -200,4 +249,13 @@ async fn poll(
             }
         }
     }
+}
+
+/// 网址查询串里某一项的值；网址读不懂或没有这一项时为空。
+fn query(url: &str, name: &str) -> Option<String> {
+    Url::parse(url)
+        .ok()?
+        .query_pairs()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.into_owned())
 }

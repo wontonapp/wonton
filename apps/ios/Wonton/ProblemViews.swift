@@ -34,99 +34,91 @@ extension PluginProblem {
 extension PluginFailure {
     func problem(detail: String?) -> Problem {
         switch self {
-        case .transportUnavailable:
-            categorizedProblem(
-                .Problem2.problemTransportUnavailableTitle,
-                .Problem3.problemTransportUnavailableNextStep,
-                detail)
-        case .unauthorized:
-            categorizedProblem(
-                .Problem3.problemUnauthorizedTitle,
-                .Problem2.problemUnauthorizedNextStep,
-                detail)
-        case .upstream: categorizedProblem(.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep, detail)
-        case .sourceUnavailable:
-            categorizedProblem(
-                .Problem1.problemPluginSourceUnavailableTitle,
-                .Problem0.problemPluginSourceUnavailableNextStep,
-                detail)
-        case .notFound:
-            categorizedProblem(
-                .Problem2.problemPluginNotFoundTitle,
-                .Problem0.problemPluginNotFoundNextStep,
-                detail)
-        case .changed:
-            categorizedProblem(
-                .Problem3.problemPluginChangedTitle,
-                .Problem1.problemPluginChangedNextStep,
-                detail)
-        case .unsupported:
-            categorizedProblem(
-                .Problem2.problemPluginUnsupportedTitle,
-                .Problem0.problemUpgradeServerNextStep,
-                detail)
-        case .conflict:
-            categorizedProblem(
-                .Problem1.problemPluginConflictTitle,
-                .Problem3.problemPluginConflictNextStep,
-                detail)
-        case .invalid:
-            categorizedProblem(
-                .Problem2.problemPluginInvalidTitle,
-                .Problem3.problemPluginInvalidNextStep,
-                detail)
-        case .deviceUnavailable:
-            categorizedProblem(
-                .Problem1.problemPluginDeviceUnavailableTitle,
-                .Problem3.problemPluginDeviceUnavailableNextStep,
-                detail)
-        case .lanUnavailable:
-            categorizedProblem(
-                .Problem0.problemPluginLanUnavailableTitle,
-                .Problem1.problemPluginLanUnavailableNextStep,
-                detail)
-        case .lanPortTaken:
-            categorizedProblem(
-                .Problem2.problemPluginLanPortTakenTitle,
-                .Problem2.problemPluginLanPortTakenNextStep,
-                detail)
-        case .coreUpgrading:
-            categorizedProblem(
-                .Problem3.problemPluginCoreUpgradingTitle,
-                .Problem2.problemPluginCoreUpgradingNextStep,
-                detail)
-        case .egressProxyUnavailable:
-            categorizedProblem(
-                .Problem3.problemPluginEgressProxyUnavailableTitle,
-                .Problem1.problemPluginEgressProxyUnavailableNextStep,
-                detail
-            )
-        case .egressProxyWaiting:
-            categorizedProblem(
-                .Problem1.problemPluginEgressProxyWaitingTitle,
-                .Problem2.problemPluginEgressProxyWaitingNextStep,
-                detail
-            )
-        case .protocol:
-            categorizedProblem(
-                .Problem0.problemPluginProtocolTitle,
-                .Problem0.problemPluginProtocolNextStep,
-                detail)
-        case .recordUnusable:
-            categorizedProblem(
-                .Problem0.problemPluginRecordUnusableTitle,
-                .Problem0.problemPluginRecordUnusableNextStep,
-                detail)
-        case .serverTooOld:
-            categorizedProblem(.Problem3.problemPluginServerTooOldTitle, .Problem0.problemUpgradeServerNextStep, detail)
-        case .timedOut:
-            categorizedProblem(
-                .Problem2.problemPluginHealthTimeoutTitle,
-                .Problem0.problemPluginHealthTimeoutNextStep,
-                detail)
-        // 比这个壳新的类别：先按服务器出错说。
-        default: categorizedProblem(.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep, detail)
+        case .transportUnavailable, .notPaired, .unauthorized:
+            return connectionProblem(detail)
+        case .sourceUnavailable, .notFound, .changed, .unsupported, .conflict, .inUse, .invalid:
+            return sourceProblem(detail)
+        case .deviceUnavailable, .lanUnavailable, .lanPortTaken, .coreUpgrading,
+             .egressProxyUnavailable, .egressProxyWaiting:
+            return hostProblem(detail)
+        default:
+            return serviceProblem(detail)
         }
+    }
+
+    /// 连不上、没配对、不认设备。
+    private func connectionProblem(_ detail: String?) -> Problem {
+        switch self {
+        case .notPaired:
+            return categorizedProblem(
+                .Problem2.problemNotPairedTitle, .Problem0.problemNotPairedNextStep, detail)
+        case .unauthorized:
+            return categorizedProblem(
+                .Problem3.problemUnauthorizedTitle, .Problem2.problemUnauthorizedNextStep, detail)
+        default:
+            return categorizedProblem(
+                .Problem2.problemTransportUnavailableTitle,
+                .Problem3.problemTransportUnavailableNextStep, detail)
+        }
+    }
+
+    /// 插件包和来源这一侧：来不了、没有、变了、不支持、冲突、还在被用、不合法。
+    private func sourceProblem(_ detail: String?) -> Problem {
+        let (title, next): (LocalizedStringResource, LocalizedStringResource) = switch self {
+        case .sourceUnavailable:
+            (.Problem1.problemPluginSourceUnavailableTitle, .Problem0.problemPluginSourceUnavailableNextStep)
+        case .notFound:
+            (.Problem2.problemPluginNotFoundTitle, .Problem0.problemPluginNotFoundNextStep)
+        case .changed:
+            (.Problem3.problemPluginChangedTitle, .Problem1.problemPluginChangedNextStep)
+        case .unsupported:
+            (.Problem2.problemPluginUnsupportedTitle, .Problem0.problemUpgradeServerNextStep)
+        case .conflict:
+            (.Problem1.problemPluginConflictTitle, .Problem3.problemPluginConflictNextStep)
+        case .inUse:
+            (.Problem2.problemPluginInUseTitle, .Problem0.problemPluginInUseNextStep)
+        default:
+            (.Problem2.problemPluginInvalidTitle, .Problem3.problemPluginInvalidNextStep)
+        }
+        return categorizedProblem(title, next, detail)
+    }
+
+    /// 这台主机这一侧：设备、局域网、核心升级、代理。
+    private func hostProblem(_ detail: String?) -> Problem {
+        let (title, next): (LocalizedStringResource, LocalizedStringResource) = switch self {
+        case .deviceUnavailable:
+            (.Problem1.problemPluginDeviceUnavailableTitle, .Problem3.problemPluginDeviceUnavailableNextStep)
+        case .lanUnavailable:
+            (.Problem0.problemPluginLanUnavailableTitle, .Problem1.problemPluginLanUnavailableNextStep)
+        case .lanPortTaken:
+            (.Problem2.problemPluginLanPortTakenTitle, .Problem2.problemPluginLanPortTakenNextStep)
+        case .coreUpgrading:
+            (.Problem3.problemPluginCoreUpgradingTitle, .Problem2.problemPluginCoreUpgradingNextStep)
+        case .egressProxyUnavailable:
+            (.Problem3.problemPluginEgressProxyUnavailableTitle,
+             .Problem1.problemPluginEgressProxyUnavailableNextStep)
+        default:
+            (.Problem1.problemPluginEgressProxyWaitingTitle,
+             .Problem2.problemPluginEgressProxyWaitingNextStep)
+        }
+        return categorizedProblem(title, next, detail)
+    }
+
+    /// 家里的服务器和上游这一侧；比这个壳新的类别也按服务器出错说。
+    private func serviceProblem(_ detail: String?) -> Problem {
+        let (title, next): (LocalizedStringResource, LocalizedStringResource) = switch self {
+        case .recordUnusable:
+            (.Problem0.problemPluginRecordUnusableTitle, .Problem0.problemPluginRecordUnusableNextStep)
+        case .timedOut:
+            (.Problem2.problemPluginHealthTimeoutTitle, .Problem0.problemPluginHealthTimeoutNextStep)
+        case .protocol:
+            (.Problem0.problemPluginProtocolTitle, .Problem0.problemPluginProtocolNextStep)
+        case .serverTooOld:
+            (.Problem3.problemPluginServerTooOldTitle, .Problem0.problemUpgradeServerNextStep)
+        default:
+            (.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep)
+        }
+        return categorizedProblem(title, next, detail)
     }
 }
 
@@ -235,57 +227,31 @@ extension PagesFailure {
                 nextStep: String(localized: .Problem2.problemPagesInvalidNextStep),
                 detail: detail
             )
-        case .transportUnavailable:
+        case .other:
             return Problem(
-                title: String(localized: .Problem2.problemTransportUnavailableTitle),
-                nextStep: String(localized: .Problem3.problemTransportUnavailableNextStep),
-                detail: detail
-            )
-        case .unauthorized:
-            return Problem(
-                title: String(localized: .Problem3.problemUnauthorizedTitle),
-                nextStep: String(localized: .Problem2.problemUnauthorizedNextStep),
-                detail: detail
-            )
-        case .forbidden:
-            return Problem(
-                title: String(localized: .Problem3.problemForbiddenTitle),
-                nextStep: String(localized: .Problem1.problemPagesForbiddenNextStep),
-                detail: detail
-            )
-        case .notReady:
-            return Problem(title: String(localized: .Problem0.problemNotReadyTitle), nextStep: detail)
-        case .invalidInput:
-            return Problem(
-                title: String(localized: .Problem2.problemInvalidInputTitle),
-                nextStep: String(localized: .Problem3.problemPagesActionNextStep),
-                detail: detail
-            )
-        case .notFound:
-            return Problem(
-                title: String(localized: .Problem1.problemPagesNotFoundTitle),
-                nextStep: String(localized: .Problem3.problemPagesActionNextStep),
-                detail: detail
-            )
-        case .invalidResponse:
-            return Problem(
-                title: String(localized: .Problem3.problemPagesResponseTitle),
-                nextStep: String(localized: .Problem3.problemPagesResponseNextStep),
-                detail: detail
-            )
-        case .protocol:
-            return Problem(
-                title: String(localized: .Problem3.problemPagesProtocolTitle),
-                nextStep: String(localized: .Problem3.problemPagesProtocolNextStep),
-                detail: detail
-            )
-        case .upstream:
-            return Problem(
-                title: String(localized: .Problem2.problemUpstreamTitle),
+                title: String(localized: .Problem1.problemGenericTitle),
                 nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: detail
             )
-        case .other:
+        case .transportUnavailable:
+            return Problem(
+                title: String(localized: .Problem1.problemTransportTitle),
+                nextStep: String(localized: .Problem0.problemTransportNext),
+                detail: detail
+            )
+        case .notReady:
+            return Problem(
+                title: String(localized: .Problem0.problemNotReadyTitle),
+                nextStep: String(localized: .Problem2.problemPagesInvalidNextStep),
+                detail: detail
+            )
+        case .invalidInput:
+            return Problem(
+                title: String(localized: .Problem2.problemInvalidInputTitle),
+                nextStep: String(localized: .Problem3.problemInvalidInputNextStep),
+                detail: detail
+            )
+        case .unauthorized, .forbidden, .invalidResponse, .protocol, .upstream, .notFound:
             return Problem(
                 title: String(localized: .Problem1.problemGenericTitle),
                 nextStep: String(localized: .Problem2.problemUpstreamNextStep),
@@ -583,6 +549,7 @@ struct ProblemView: View {
         }
         .multilineTextAlignment(.center)
         .padding(WontonTheme.spacing.s32)
+        .accessibilityIdentifier("problem-view")
     }
 }
 

@@ -28,7 +28,7 @@ impl PluginsLink {
             )
             .await
             .map_err(to_core_error)?;
-        super::tasks::provider_notices(&mut preview);
+        self.install_providers(&mut preview).await?;
         Ok(preview)
     }
 
@@ -53,8 +53,8 @@ impl PluginsLink {
             .post_archive(&["plugins", "preview"], archive, SOURCE_TIMEOUT)
             .await
             .map_err(to_core_error)?;
-        // 上传的包缺必需能力时同样会一起装提供方（tasks 的安装不分开口）：确认页照常写明。
-        super::tasks::provider_notices(&mut preview);
+        // 上传的包缺必需能力时同样会一起装提供方：确认页照常列出它们的权限和密钥。
+        self.install_providers(&mut preview).await?;
         Ok(preview)
     }
 

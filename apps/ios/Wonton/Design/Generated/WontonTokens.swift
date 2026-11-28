@@ -65,6 +65,8 @@ enum WontonSize {
     static let grabberHeight: CGFloat = 4
     static let hairline: CGFloat = 1
     static let quoteBar: CGFloat = 2
+    static let shadowBlur: CGFloat = 10
+    static let shadowY: CGFloat = 2
     static let bubbleTail: CGFloat = 6
     static let bubbleTailRise: CGFloat = 9
     static let chatControl: CGFloat = 44
@@ -83,12 +85,13 @@ enum WontonRatio {
     static let codeFill: CGFloat = 0.1
     static let bubbleWidth: CGFloat = 0.8
     static let composerLines: CGFloat = 6
-    static let wallTint: CGFloat = 0.16
-    static let wallPattern: CGFloat = 0.14
+    static let wallPattern: CGFloat = 0.08
     static let serviceFill: CGFloat = 0.32
     static let serviceFillDark: CGFloat = 0.16
-    static let jumpHighlight: CGFloat = 0.2
-    static let tabHighlight: CGFloat = 0.14
+    static let jumpHighlight: CGFloat = 0.12
+    static let tabHighlight: CGFloat = 0.1
+    static let shadow: CGFloat = 0.08
+    static let shadowDark: CGFloat = 0.4
 }
 
 enum WontonGesture {

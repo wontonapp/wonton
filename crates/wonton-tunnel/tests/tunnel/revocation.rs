@@ -221,9 +221,9 @@ async fn a_revoked_token_bounds_main_and_probe_reconnects() -> anyhow::Result<()
     let main_table = RelayTable::parse(&format!("https://tok@{}", front.addr)).unwrap();
     let fallback_table =
         RelayTable::parse(&format!("https://tok@{};{second_url}", front.addr)).unwrap();
-    let main = relay_endpoint(SecretKey::generate(), relay_map(main_table.relays(), 1)).await;
+    let main = relay_endpoint(SecretKey::generate(), relay_map(&main_table.views(), 1)).await;
     let fallback_endpoint =
-        relay_endpoint(SecretKey::generate(), relay_map(fallback_table.relays(), 1)).await;
+        relay_endpoint(SecretKey::generate(), relay_map(&fallback_table.views(), 1)).await;
     let mut fallback = spawn_tier_fallback(
         fallback_endpoint.clone(),
         fallback_table,

@@ -33,6 +33,8 @@ async fn pairing_with_another_server_forgets_the_previous_one() {
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: "app.photos".to_owned(),
                 delete_data: false,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();

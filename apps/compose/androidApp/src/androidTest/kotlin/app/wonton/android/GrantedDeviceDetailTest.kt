@@ -18,6 +18,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import app.wonton.protocol.Action
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.PluginDeviceKind
 import app.wonton.protocol.TabRef
@@ -74,7 +75,7 @@ class GrantedDeviceDetailTest {
 
     private fun openHomeHubDetail() {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
-        assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
+        assertNull(core.send(Action.Pages(PageAction.SelectBarItem(BarEntry.Agent))))
         compose.waitUntil(WAIT_MS) {
             compose.onAllNodes(hasTestTag("sidebar-open")).fetchSemanticsNodes().isNotEmpty()
         }

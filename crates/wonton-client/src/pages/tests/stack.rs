@@ -41,17 +41,14 @@ async fn closing_a_page_pops_the_top_and_root_pages_clear_the_stack() {
 
     rig.tabs.dispatch(PageAction::ClosePage).unwrap();
     assert_eq!(rig.view().stack.len(), 1);
-
-    // 根页面（聊天）一路弹回根。
-    rig.tabs
-        .dispatch(PageAction::OpenPage { tab: TabRef::Chat })
-        .unwrap();
+    // 选回 Agent 根一路弹回根。
+    rig.select(BarEntry::Agent);
     assert!(rig.view().stack.is_empty());
 
     // 栈空时再关一次：安静的什么也不做，页面栈不会因此变动。
     rig.tabs.dispatch(PageAction::ClosePage).unwrap();
     assert!(rig.view().stack.is_empty());
-    assert_eq!(rig.view().root, TabRef::Chat);
+    assert_eq!(rig.view().tab, BarEntry::Agent);
 }
 
 #[tokio::test]
@@ -98,7 +95,7 @@ async fn switching_servers_discards_previous_pages_and_reload_counts() {
     // 插件和插件里的某一页都绑在上一台服务器上；面板整个清掉（账号数据按服务器存）。
     let view = rig.view();
     assert!(view.stack.is_empty());
-    assert_eq!(view.root, TabRef::Chat);
+    assert_eq!(view.tab, BarEntry::Agent);
     assert!(panel_tabs(&rig).is_empty());
 
     assert_eq!(rig.my_app_titles(), ["new-content"]);
@@ -106,6 +103,7 @@ async fn switching_servers_discards_previous_pages_and_reload_counts() {
     assert_eq!(rig.page(&page_tab()).reload, 0);
 }
 
+#[allow(clippy::too_many_lines)] // 用例一次走完换机和插件列表先到的那条路，拆开要重复大半套装置。
 #[tokio::test]
 async fn new_list_before_pages_observes_server_change_starts_fresh() {
     let rig = Rig::new();
@@ -119,9 +117,7 @@ async fn new_list_before_pages_observes_server_change_starts_fresh() {
     // 两个来源都已发布，但 pages 尚未消费 home 的换机通知。
     rig.home.send_replace(home("new-server"));
     rig.plugins.send_replace(plugins("new-content"));
-    rig.tabs
-        .dispatch(PageAction::OpenPage { tab: TabRef::Chat })
-        .unwrap();
+    rig.select(BarEntry::Agent);
     let switched = rig.view();
     assert!(switched.stack.is_empty());
     assert!(switched.uninstalled.is_empty());
@@ -200,46 +196,43 @@ async fn restart_comes_back_to_the_root_and_keeps_the_panel() {
 }
 
 #[tokio::test]
-async fn apps_grid_stays_on_rejection_and_closes_when_a_page_opens() {
+async fn apps_root_stays_on_rejection_and_closes_when_a_page_opens() {
     let rig = Rig::new();
-    rig.open(TabRef::Apps);
-    assert!(rig.view().shows_apps);
+    rig.select(BarEntry::Apps);
+    assert_eq!(rig.view().tab, BarEntry::Apps);
     let rejected = rig.tabs.dispatch(PageAction::OpenPage {
         tab: url_tab("http://example.com/report"),
     });
     assert!(matches!(rejected, Err(CoreError::InvalidInput { .. })));
-    assert!(rig.view().shows_apps);
+    assert_eq!(rig.view().tab, BarEntry::Apps);
 
     rig.open(page_tab());
-    assert!(!rig.view().shows_apps);
+    assert_eq!(rig.view().tab, BarEntry::Apps);
     assert_eq!(rig.view().stack.last().unwrap().tab, page_tab());
     rig.tabs.dispatch(PageAction::ClosePage).unwrap();
-    assert_eq!(rig.view().root, TabRef::Chat);
     assert!(rig.view().stack.is_empty());
-    assert!(!rig.view().shows_apps);
+    assert_eq!(rig.view().tab, BarEntry::Apps);
 }
 
 #[tokio::test]
-async fn apps_grid_is_not_carried_between_servers_or_into_pairing() {
+async fn apps_root_is_not_carried_between_servers_or_into_pairing() {
     let rig = Rig::new();
-    rig.open(TabRef::Apps);
-    assert!(rig.view().shows_apps);
+    rig.select(BarEntry::Apps);
+    assert_eq!(rig.view().tab, BarEntry::Apps);
     rig.home.send_replace(home("new-server"));
     rig.tabs.recompute();
-    assert_eq!(rig.view().root, TabRef::Chat);
-    assert!(!rig.view().shows_apps);
+    assert_eq!(rig.view().tab, BarEntry::Agent);
 
-    rig.open(TabRef::Apps);
-    assert!(rig.view().shows_apps);
+    rig.select(BarEntry::Apps);
+    assert_eq!(rig.view().tab, BarEntry::Apps);
     let mut unpaired = home("new-server");
     unpaired.server_id = None;
     unpaired.status = HomeStatus::NotConfigured;
     rig.home.send_replace(unpaired);
     rig.tabs.recompute();
-    assert_eq!(rig.view().root, TabRef::Apps);
-    assert!(!rig.view().shows_apps);
-    rig.open(TabRef::Apps);
-    assert!(!rig.view().shows_apps);
+    assert_eq!(rig.view().tab, BarEntry::Agent);
+    rig.select(BarEntry::Apps);
+    assert_eq!(rig.view().tab, BarEntry::Apps);
 }
 
 #[tokio::test]
@@ -261,16 +254,14 @@ async fn unpaired_chat_returns_to_pairing_without_losing_pairing_failure() {
         let page = url_tab("https://example.com/report");
         rig.open(page.clone());
         assert_eq!(rig.view().stack.last().unwrap().tab, page);
-        rig.open(TabRef::Chat);
+        rig.select(BarEntry::Agent);
         let view = rig.view();
-        assert_eq!(view.root, TabRef::Apps);
+        assert_eq!(view.tab, BarEntry::Agent);
         assert!(view.stack.is_empty());
-        assert!(!view.shows_apps);
         assert_eq!(rig.home.borrow().pairing, pairing);
 
-        rig.open(TabRef::Apps);
-        assert_eq!(rig.view().root, TabRef::Apps);
-        assert!(!rig.view().shows_apps);
+        rig.select(BarEntry::Apps);
+        assert_eq!(rig.view().tab, BarEntry::Apps);
     }
 }
 
@@ -285,12 +276,11 @@ async fn paired_offline_chat_returns_to_chat_not_pairing() {
     rig.home.send_replace(offline);
     rig.tabs.recompute();
 
-    rig.open(TabRef::Apps);
-    assert!(rig.view().shows_apps);
-    rig.open(TabRef::Chat);
+    rig.select(BarEntry::Apps);
+    assert_eq!(rig.view().tab, BarEntry::Apps);
+    rig.select(BarEntry::Agent);
     let view = rig.view();
-    assert_eq!(view.root, TabRef::Chat);
-    assert!(!view.shows_apps);
+    assert_eq!(view.tab, BarEntry::Agent);
     assert!(view.stack.is_empty());
     assert!(matches!(
         rig.home.borrow().status,

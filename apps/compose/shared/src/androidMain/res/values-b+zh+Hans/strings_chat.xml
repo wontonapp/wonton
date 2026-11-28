@@ -123,6 +123,8 @@
     <string name="bot_state_working">工作中</string>
     <string name="bot_state_waiting">等你确认</string>
     <string name="bot_state_offline">离线</string>
+    <string name="bot_state_thinking">思考中</string>
+    <string name="bot_state_error">出错</string>
     <string name="bot_avatar_pick_state">更换%1$s头像</string>
     <string name="bot_profile_open">查看 Bot 资料</string>
     <string name="bot_identity_value">插件：%1$s\nBot：%2$s</string>
@@ -174,7 +176,6 @@
     <string name="room_bot_owner_private">这是家里人的私人 Bot，主人还没给授权。</string>
     <string name="room_bot_grant_revoked">这个 Bot 的授权已经收回。</string>
     <string name="room_bot_unavailable">这个 Bot 现在用不了。</string>
-    <string name="room_bot_unknown">还没核实这个 Bot 能不能发。</string>
     <string name="room_bot_role_lacks_shared_bots">这是家庭共享 Bot，但你的角色还不能用共享 Bot。</string>
     <string name="room_bot_app_not_shared">这个应用没开放给你。</string>
     <string name="room_bot_contact_pending">联系人还在等对方同意。</string>

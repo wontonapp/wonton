@@ -6,8 +6,6 @@ struct TabPageStateView: View {
     let session: TabWebSession
     let connected: Bool
     let shareProblem: Problem?
-    /// 面板里的这一份：失败时多一个“从面板移除”（ADR-0052）。
-    let isPanel: Bool
     let details: () -> Void
     let remove: () -> Void
     @State private var startProblem: Problem?
@@ -65,11 +63,10 @@ struct TabPageStateView: View {
             failure(String(localized: .Tab1.tabFailedTitle(page.title)), detail: reason) {
                 if case .plugin = session.tab { Button(TabText.details, action: details) }
                 Button(TabText.retry, action: session.retry)
-                if isPanel { Button(TabText.removePanelPage, action: remove) }
             }
         case .pageRemoved:
             failure(TabText.pageRemoved) {
-                Button(isPanel ? TabText.removePanelPage : TabText.close, action: remove)
+                Button(TabText.close, action: remove)
             }
         case let .loadFailed(reason, status, details):
             if reason == .transport, !connected {
@@ -78,14 +75,12 @@ struct TabPageStateView: View {
                 // 详情是核心按 App 语言写的（错误码收在里面）；核心没给时退回裸错误码。
                 failure(TabText.pageFailed, detail: details ?? status.map { "HTTP \($0)" }, next: reason.label) {
                     Button(TabText.retry, action: session.retry)
-                    if isPanel { Button(TabText.removePanelPage, action: remove) }
                 }
             }
         case .unknown:
             failure(TabText.unknown) {
                 if case .plugin = session.tab { Button(TabText.details, action: details) }
                 Button(TabText.retry, action: session.retry)
-                if isPanel { Button(TabText.removePanelPage, action: remove) }
             }
         }
     }

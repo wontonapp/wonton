@@ -33,4 +33,12 @@
     <string name="plugin_uninstall_action">卸载</string>
     <!-- Highlighted row in the install/upgrade confirmation and on the app's detail page: the app's web page can read and change message content in the room it is opened in. No arguments. -->
     <string name="plugin_widget_high">它的网页能在你打开它的房间里读到聊天内容，以你的名义发消息、撤回消息。</string>
+    <string name="plugin_dependency_start">启动「%1$s」</string>
+    <string name="plugin_dependency_missing">没有提供「%1$s」的插件，这个应用少点能力。</string>
+    <string name="plugin_capability_follow_default">跟默认</string>
+    <string name="plugin_uninstall_preview_failed">没能查清还有谁在用它。</string>
+    <string name="plugin_dependencyOptional">可选：「%1$@」</string>
+    <string name="plugin_dependencyProvidedBy">由 %1$@ 提供</string>
+    <string name="plugin_dependencies_missing">缺少的能力</string>
+    <string name="plugin_uninstall_together_keeps_data">一起卸载会保留它们的数据。</string>
 </resources>

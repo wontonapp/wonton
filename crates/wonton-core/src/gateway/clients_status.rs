@@ -117,7 +117,9 @@ async fn domain(gateway: &Gateway) -> DomainSettings {
         terms_accepted: false,
         certificate: CertificateState::None,
         caa: CaaState::Unknown,
+        caa_record: None,
         lan_record: LanRecordState::Unknown,
+        lan_target: None,
     };
     let Some(domain) = &gateway.domain else {
         return empty();

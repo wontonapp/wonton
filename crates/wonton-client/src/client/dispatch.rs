@@ -4,8 +4,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AgentAction, BotAction, ChatAction, DefaultBotVisibility, DeviceNetwork, HomeAction,
-    PageAction, PluginAction, PushAction, SessionAction, SettingsAction, TimelineAction,
+    Action, AgentAction, BotAction, ChatAction, ClientsAction, DefaultBotVisibility, DeviceNetwork,
+    HomeAction, PageAction, PluginAction, PushAction, SessionAction, SettingsAction,
+    TimelineAction,
 };
 
 use super::switch::PushInput;
@@ -98,6 +99,10 @@ impl ClientCore {
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
+                Action::Family { action } => {
+                    self.dispatch_ui_fake_family(action);
+                    Ok(())
+                }
                 // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。发送的检查放在前面：
                 // 先过发送的拒绝和附件区的检查：被拒的发送不进假时间线、不开假链，也不回显；收下了才记假时间线（发附言的顺带补一条）。
                 Action::Timeline { action } => {
@@ -138,12 +143,21 @@ impl ClientCore {
             Action::Family { action } => scope.family.dispatch(action),
             Action::Friends { action } => scope.friends.dispatch(action),
             Action::Sharing { action } => self.dispatch_sharing(&scope, action),
-            // 公网访问的模块还没接；接上之前如实报还没就绪，不静默当成功。
-            Action::Clients { .. } => Err(CoreError::NotReady {
-                reason: "clients module is not wired yet".into(),
-            }),
             Action::Timeline { action } => self.timeline_action(&scope, action),
             Action::Agent { action } => self.agent_action(&scope, action),
+            Action::Clients { action } => match action {
+                // 公网访问的模块还没接；接上之前如实报还没就绪，不静默当成功。
+                ClientsAction::RefreshDomain
+                | ClientsAction::CancelDomain
+                | ClientsAction::SelectDomainProvider { .. }
+                | ClientsAction::SaveDomain { .. }
+                | ClientsAction::RetryCertificate
+                | ClientsAction::DismissDomainProblem => scope.clients_domain.dispatch(action),
+                _ => Err(CoreError::NotReady {
+                    reason: "clients module is not wired yet".into(),
+                }),
+            },
+            Action::Media { action } => scope.media.dispatch(action),
         }
     }
 }
@@ -279,6 +293,12 @@ impl ClientCore {
                 scope.chat.dismiss_bot_profile_problem(&plugin_id);
                 Ok(())
             }
+            // 云朵的合成和写入不在这个核心里：如实报没就绪，不静默当成功。
+            BotAction::SetBotCloud { .. } | BotAction::SetBotCloudPart { .. } => {
+                Err(CoreError::NotReady {
+                    reason: "bot cloud avatars are not wired yet".into(),
+                })
+            }
         }
     }
 
@@ -306,6 +326,7 @@ impl ClientCore {
                 Ok(())
             }
             PluginAction::StartPlugin { plugin_id } => scope.plugins.start(plugin_id),
+            PluginAction::StopPlugin { plugin_id } => scope.plugins.stop(plugin_id),
             PluginAction::SetPortMapping { plugin_id, enabled } => {
                 scope.plugins.set_port_mapping(plugin_id, enabled)
             }
@@ -324,9 +345,14 @@ impl ClientCore {
                 settings,
             } => scope.plugins.upgrade(preview, secrets, settings),
             PluginAction::RetryPluginInstall { id } => scope.plugins.retry_install(id),
-            PluginAction::UninstallPlugin { id, delete_data } => {
-                scope.plugins.uninstall(id, delete_data)
-            }
+            PluginAction::UninstallPlugin {
+                id,
+                delete_data,
+                providers,
+                dependents,
+            } => scope
+                .plugins
+                .uninstall(id, delete_data, providers, dependents),
             PluginAction::SetPluginAudience { id, audience } => {
                 scope.plugins.set_plugin_audience(id, audience)
             }
@@ -403,7 +429,6 @@ impl ClientCore {
                 self.replay().languages = Some(languages);
                 Ok(())
             }
-            SettingsAction::SetAccentColor { color } => self.appearance.set_accent(color),
             SettingsAction::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
             SettingsAction::SetTextSize { size } => self.appearance.set_text_size(size),
             SettingsAction::SetFont { font } => self.appearance.set_font(font),
@@ -438,6 +463,7 @@ impl ClientCore {
             | PageAction::MoveMyApp { .. }
             | PageAction::SetAutoAddApps { .. }
             | PageAction::RetryMyAppSync
+            | PageAction::AddMyAppUrl { .. }
             | PageAction::AddPanelPage { .. }
             | PageAction::RemovePanelPage { .. }
             | PageAction::MovePanelPage { .. }
@@ -445,7 +471,11 @@ impl ClientCore {
             | PageAction::SetBotPinConsent { .. }
             | PageAction::PinCurrentPage { .. }
             | PageAction::ReloadTab { .. }
-            | PageAction::DismissUninstalledTabs) => scope.pages.dispatch(action),
+            | PageAction::DismissUninstalledTabs
+            | PageAction::SelectBarItem { .. }
+            | PageAction::AddBarItem { .. }
+            | PageAction::RemoveBarItem { .. }
+            | PageAction::MoveBarItem { .. }) => scope.pages.dispatch(action),
         }
     }
 

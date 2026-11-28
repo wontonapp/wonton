@@ -6,10 +6,14 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use wonton_l10n::l10n;
+use wonton_matrix::MatrixSession;
+
 use wonton_protocol::{ChatAccount, ChatFailure, ChatSync, HomeStatus, ProxySettings};
 
 use super::link::Active;
 use super::{ChatLink, failure, lock};
+use crate::l10n::{CATALOG, language};
 
 /// 登录到哪里：经家里的本地代理登录配对的服务器，或者直连外部 Matrix 账号的 homeserver（ADR-0051）。
 /// `HomeOffline` 是本机还有那台服务器的会话、本地代理却还没起来（隧道没通）：先不带代理恢复，代理来了再由带代理的
@@ -28,6 +32,9 @@ const OFFLINE_GRACE: Duration = Duration::from_millis(500);
 /// 第一次重试前等这么久，之后每次翻倍，最多等 [`MAX_BACKOFF`]。
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
+
+/// 一次登录最多等多久：开存储、建同步服务这几步没有自己的时限。超时按传输错误收掉，走退避重登。
+const SIGN_IN_BUDGET: Duration = Duration::from_secs(90);
 
 /// 自动重登的进度。每次开始登录都换一代：还在等的重试醒来发现代数变了就作罢，同一时刻最多一路重试在等。
 #[derive(Default)]
@@ -105,10 +112,10 @@ impl ChatLink {
             }
             Target::External => (String::new(), None),
         };
-        if let Some(old) = active.take() {
-            self.forget_current().await;
-            drop(old);
-        }
+        self.retire_active(&mut active).await;
+        let Some(proxy) = self.proxy_after_forget(&target, &server_id, proxy) else {
+            return;
+        };
         *lock(&self.signing_proxy) = proxy.clone();
         tracing::info!(server = %server_id, proxy = proxy.is_some(), "Matrix sign-in starting");
         // 账号数据跟着服务器走：断线时先留着，换服务器才清。
@@ -118,10 +125,9 @@ impl ChatLink {
         }
         self.view
             .send_modify(|view| view.account = ChatAccount::SigningIn);
-        let signed_in = match &target {
-            Target::External => self.sign_in_external().await,
-            _ => self.sign_in(proxy.as_ref(), server_id).await,
-        };
+        let signed_in = self
+            .sign_in_within_budget(&target, proxy.as_ref(), server_id)
+            .await;
         let session = match signed_in {
             Ok(session) => Arc::new(session),
             Err((reason, message)) => {
@@ -154,6 +160,65 @@ impl ChatLink {
                     message: error.to_string(),
                 };
             });
+        }
+    }
+
+    /// 收掉旧会话再登录：先把“正在登录”写进视图（不能还挂着“已登录”却没有会话），再等旧任务真的收完。
+    /// JoinHandle 落了只是请求中止，旧 Client 没落就会和新登录抢同一份存储，卡在开库上。
+    async fn retire_active(&self, active: &mut Option<Active>) {
+        let Some(mut old) = active.take() else { return };
+        self.view.send_modify(|view| {
+            view.account = ChatAccount::SigningIn;
+            view.sync = ChatSync::Starting;
+        });
+        self.forget_current().await;
+        for task in std::mem::take(&mut old.tasks) {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+
+    /// 登录一次。整个流程有时限：开存储、建同步服务这几步没有自己的时限，卡住时视图会一直停在“正在登录”、
+    /// 会话槽却是空的；超时按传输错误收掉，走退避重登。
+    async fn sign_in_within_budget(
+        &self,
+        target: &Target,
+        proxy: Option<&ProxySettings>,
+        server_id: String,
+    ) -> Result<MatrixSession, (ChatFailure, String)> {
+        let signed_in = async {
+            match target {
+                Target::External => self.sign_in_external().await,
+                _ => self.sign_in(proxy, server_id).await,
+            }
+        };
+        match tokio::time::timeout(SIGN_IN_BUDGET, signed_in).await {
+            Ok(result) => result,
+            Err(_) => Err((
+                ChatFailure::TransportUnavailable,
+                l10n!(CATALOG, language(), "chat-sign-in-timeout"),
+            )),
+        }
+    }
+
+    /// 清旧会话最多等两秒，隧道抖动时这期间代理可能又换了：用眼下的代理登录，不拿已经拆掉的旧地址去恢复。
+    /// 代理没了或换了服务器回 `None`，这次作罢：follow_home 看到这次变化会接着处理。
+    fn proxy_after_forget(
+        &self,
+        target: &Target,
+        server_id: &str,
+        proxy: Option<ProxySettings>,
+    ) -> Option<Option<ProxySettings>> {
+        match target {
+            Target::Home(_) => {
+                let home = self.home.view();
+                match home.proxy {
+                    Some(now) if home.server_id.as_deref() == Some(server_id) => Some(Some(now)),
+                    _ => None,
+                }
+            }
+            Target::HomeOffline => Some(self.home.view().proxy.or(proxy)),
+            Target::External => Some(proxy),
         }
     }
 

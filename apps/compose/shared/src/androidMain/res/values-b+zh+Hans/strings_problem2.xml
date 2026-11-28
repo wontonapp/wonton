@@ -29,6 +29,8 @@
     <string name="problem_store_other_title">应用列表可能不完整</string>
     <!-- Problem title: the source is answering too many requests. -->
     <string name="problem_store_rate_limited_title">请求太频繁了</string>
+    <!-- Next step under the not-paired problem: scan the home server's QR code, then retry. -->
+    <string name="problem_not_paired_next_step">先用家里的服务器上的二维码配对这台手机，再回来。</string>
     <!-- Next step under the can't-reach-the-server problem. -->
     <string name="problem_transport_unavailable_next_step">检查网络，连上后再试。</string>
     <!-- Next step: update the home server first. Used when the server is too old. -->
@@ -39,4 +41,6 @@
     <string name="problem_peer_public_access_off_next_step">等对方重新打开后再发；消息会在那之后补到。</string>
     <!-- Next step when the other server isn't paired: pair it first. -->
     <string name="problem_server_not_paired_next_step">先在“其他服务器”里配对，再打开聊天。</string>
+    <string name="problem_plugin_in_use_title">还有应用在用它</string>
+    <string name="problem_plugin_in_use_next_step">先卸掉在用的应用，或者装一个别的提供方。</string>
 </resources>

@@ -5,16 +5,6 @@ import WontonClient
 struct AppearanceView: View {
     let model: AppearanceModel
     @Environment(\.wontonColors) private var colors
-    @State private var showsMoreColors: Bool
-    @State private var hexText: String
-    @State private var isHexInvalid = false
-
-    init(model: AppearanceModel) {
-        self.model = model
-        let appearance = model.viewModel
-        _showsMoreColors = State(initialValue: !appearance.presets.contains(appearance.accent))
-        _hexText = State(initialValue: accentHex(color: appearance.accent))
-    }
 
     private var appearance: AppearanceViewModel { model.viewModel }
 
@@ -30,7 +20,6 @@ struct AppearanceView: View {
                         model.send(.settings(action: .setThemeMode(mode: $0)))
                     }
                 }
-                section(String(localized: .Appearance1.appearanceAccent)) { accent }
                 section(String(localized: .Appearance0.appearanceTextSize)) {
                     choices(appearance.textSizes, title: \.label, selected: appearance.textSize) {
                         model.send(.settings(action: .setTextSize(size: $0)))
@@ -39,11 +28,6 @@ struct AppearanceView: View {
                 section(String(localized: .Appearance0.appearanceFont)) { fonts }
             }
             .padding(WontonTheme.spacing.pageInset)
-        }
-        .scrollDismissesKeyboard(.interactively)
-        .onChange(of: appearance.accent) { _, accent in
-            hexText = accentHex(color: accent)
-            isHexInvalid = false
         }
     }
 
@@ -84,78 +68,6 @@ struct AppearanceView: View {
                 }
                 .fontDesign(option.design)
             }
-        }
-    }
-
-    private var accent: some View {
-        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            WontonGroup {
-                swatches(appearance.presets, label: String(localized: .Appearance1.appearanceAccent))
-                    .padding(WontonTheme.spacing.s8)
-                WontonSeparator()
-                Button {
-                    showsMoreColors.toggle()
-                } label: {
-                    MoreColorsRow(
-                        custom: appearance.presets.contains(appearance.accent)
-                            ? nil : accentHex(color: appearance.accent),
-                        isExpanded: showsMoreColors
-                    )
-                }
-                .buttonStyle(.plain)
-                if showsMoreColors {
-                    WontonSeparator()
-                    swatches(appearance.moreColors, label: String(localized: .Appearance1.appearanceMoreColors))
-                        .padding(WontonTheme.spacing.s8)
-                }
-            }
-            if showsMoreColors {
-                hexField
-            }
-        }
-    }
-
-    /// 放在组外面：输入框的底和组的底同色，放进去就看不见了。
-    @ViewBuilder private var hexField: some View {
-        TextField("#RRGGBB", text: $hexText)
-            .textFieldStyle(.plain)
-            .keyboardType(.asciiCapable)
-            .textInputAutocapitalization(.characters)
-            .autocorrectionDisabled()
-            .submitLabel(.done)
-            .onSubmit(submitHex)
-            .onChange(of: hexText) { isHexInvalid = false }
-            .wontonField()
-            .accessibilityLabel(String(localized: .Appearance0.appearanceColorValue))
-        if isHexInvalid {
-            Text(.Appearance1.appearanceHexInvalid)
-                .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.danger))
-        }
-    }
-
-    private func swatches(_ swatches: [Rgb], label: String) -> some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: Int(appearance.swatchColumns))
-        return LazyVGrid(columns: columns, spacing: 0) {
-            ForEach(Array(swatches.enumerated()), id: \.offset) { index, swatch in
-                let isSelected = swatch == appearance.accent
-                Button {
-                    model.send(.settings(action: .setAccentColor(color: swatch)))
-                } label: {
-                    Swatch(color: swatch, isSelected: isSelected)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(label) \(index + 1)")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-    }
-
-    private func submitHex() {
-        if let color = parseAccent(text: hexText) {
-            model.send(.settings(action: .setAccentColor(color: color)))
-        } else {
-            isHexInvalid = true
         }
     }
 }
@@ -216,7 +128,7 @@ private struct ChoiceRow: View {
                 Spacer(minLength: 0)
                 if isSelected {
                     WontonIcon.check.view(size: WontonTheme.size.iconSmall)
-                        .foregroundStyle(Color(colors.accentInk))
+                        .foregroundStyle(Color(colors.textPrimary))
                 }
             }
             .padding(.horizontal, WontonTheme.spacing.s16)
@@ -226,35 +138,6 @@ private struct ChoiceRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-private struct MoreColorsRow: View {
-    /// 选的颜色不在色板里时的色值。
-    let custom: String?
-    let isExpanded: Bool
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        HStack(spacing: WontonTheme.spacing.s12) {
-            Text(.Appearance0.appearanceMore)
-                .wontonText(WontonTheme.typography.body)
-                .foregroundStyle(Color(colors.textPrimary))
-            Spacer(minLength: 0)
-            if let custom {
-                Text(custom)
-                    .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(colors.textSecondary))
-            }
-            WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
-                .foregroundStyle(Color(colors.textSecondary))
-                .rotationEffect(.degrees(isExpanded ? 90 : 0))
-        }
-        .padding(.horizontal, WontonTheme.spacing.s16)
-        .padding(.vertical, WontonTheme.spacing.s12)
-        .frame(minHeight: WontonTheme.size.target)
-        .contentShape(Rectangle())
-        .accessibilityValue(isExpanded ? Text(.Appearance1.appearanceExpanded) : Text(.Appearance0.appearanceCollapsed))
     }
 }
 
@@ -277,39 +160,19 @@ private struct SettingsPreview: View {
             HStack {
                 Spacer(minLength: WontonTheme.spacing.s48)
                 HStack(alignment: .lastTextBaseline, spacing: WontonTheme.spacing.s8) {
-                    Text(.Appearance1.appearancePreviewName).foregroundStyle(Color(colors.textOnAccentFill))
+                    Text(.Appearance1.appearancePreviewName).foregroundStyle(Color(colors.onPrimary))
                     Text("21:08")
                         .wontonText(WontonTheme.typography.caption)
-                        .foregroundStyle(Color(colors.accentInkOnFill))
+                        .foregroundStyle(Color(colors.onPrimary))
                 }
                 .padding(.horizontal, WontonTheme.spacing.s12)
                 .padding(.vertical, WontonTheme.spacing.s8)
-                .accentFill(RoundedRectangle(cornerRadius: WontonTheme.radii.bubble))
+                .background {
+                    RoundedRectangle(cornerRadius: WontonTheme.radii.bubble).fill(Color(colors.primary))
+                }
             }
         }
         .wontonText(WontonTheme.typography.body)
         .accessibilityHidden(true)
-    }
-}
-
-/// 选中时外面多一圈：只靠颜色的话，和页面底色接近的色板看不出选没选中。
-private struct Swatch: View {
-    let color: Rgb
-    let isSelected: Bool
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(Color(color))
-                .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: 1) }
-                .frame(width: 36, height: 36)
-            if isSelected {
-                Circle().strokeBorder(Color(colors.textPrimary), lineWidth: 2).frame(width: 46, height: 46)
-            }
-        }
-        .frame(height: WontonTheme.size.target)
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
     }
 }

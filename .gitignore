@@ -24,6 +24,11 @@ apps/ios/WontonClient/Sources/WontonClient/Generated/
 *.mov
 *.log
 plugin-pr.md
+# 走查的截图和日志目录
+.walk/
+# 返修完成标记（写给负责人看的，不进仓库）
+.done
+*.done
 
 # 系统文件
 .DS_Store
@@ -33,6 +38,11 @@ __pycache__/
 
 # 通话冒烟用的插件包副本（真身在插件仓库，脚本用 PKG 指过来）
 deploy/dev/calls/plugin/
+
+# onboard 的作业状态（每台工作树本地）
+.state.toml
+.state.toml.lock
+.state.toml.*.tmp
 
 # dev.sh 快路径 marker（脚本自动 touch，退出清 .dev-no-deps）
 .dev-no-build

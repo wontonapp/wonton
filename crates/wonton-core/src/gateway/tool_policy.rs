@@ -156,6 +156,72 @@ pub async fn allow_all(
     apply(granted, PolicyChange::AllowAll { caller: &caller }, &method).await
 }
 
+/// `PUT`、`DELETE /_wonton/api/plugins/{id}/tool-policy/danger/{caller}`：只有主人能开（ADR-0091）。
+pub async fn danger(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    method: Method,
+    Path((id, caller)): Path<(String, String)>,
+) -> Response {
+    if let Some(denied) = permissions::require(&gateway, peer, &headers, PermissionItem::Owner) {
+        return denied;
+    }
+    let granted = match granted(&gateway, peer, &headers, &id) {
+        Ok(granted) => granted,
+        Err(response) => return *response,
+    };
+    if caller != id || !is_bot(&gateway, &caller) {
+        let langs = gateway.plugins.owner_languages();
+        let message = l10n::text(
+            &langs,
+            "gateway-bot-not-in-plugin",
+            &[
+                ("id", id.as_str().into()),
+                ("caller", caller.as_str().into()),
+            ],
+        );
+        return not_found(&message);
+    }
+    // ADR-0091：危险模式只给主人的 Bot；家人的私人 Bot 和共享 Bot 打开都回非法输入。
+    if !keeper_is_owner(&gateway, &granted.plugin) {
+        let langs = gateway.plugins.owner_languages();
+        let message = l10n::text(&langs, "gateway-danger-owner-bot", &[]);
+        return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+    }
+    apply(
+        granted,
+        PolicyChange::Danger {
+            plugin: &id,
+            caller: &caller,
+        },
+        &method,
+    )
+    .await
+}
+
+fn keeper_is_owner(gateway: &Gateway, id: &PluginId) -> bool {
+    gateway
+        .plugins
+        .store()
+        .bots()
+        .load(id)
+        .ok()
+        .and_then(|record| {
+            record
+                .bots
+                .get(crate::plugin::bot_services::DEFAULT_BOT)
+                .map(|bot| &bot.keeper)
+                .cloned()
+        })
+        .is_some_and(|keeper| match keeper {
+            wonton_protocol::BotKeeper::User { username } => {
+                username == gateway.plugins.owner_name()
+            }
+            wonton_protocol::BotKeeper::Household | wonton_protocol::BotKeeper::Other => false,
+        })
+}
+
 /// `PUT`、`DELETE /_wonton/api/plugins/{id}/tool-policy/read-only/{tool}`
 pub async fn read_only(
     State(gateway): State<Arc<Gateway>>,

@@ -7,6 +7,7 @@ mod audience;
 mod bots;
 mod cached_views;
 mod capability_install;
+mod capability_uninstall;
 mod chat_rows;
 mod connection;
 mod core_upgrade;
@@ -644,6 +645,8 @@ async fn uninstalling_deletes_data_only_when_asked() {
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: "app.photos".to_owned(),
                 delete_data: false,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();
@@ -662,6 +665,8 @@ async fn uninstalling_deletes_data_only_when_asked() {
             action: wonton_protocol::PluginAction::UninstallPlugin {
                 id: "app.photos".to_owned(),
                 delete_data: true,
+                providers: Vec::new(),
+                dependents: Vec::new(),
             },
         })
         .unwrap();

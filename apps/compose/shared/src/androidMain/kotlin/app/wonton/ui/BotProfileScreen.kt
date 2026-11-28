@@ -90,7 +90,7 @@ internal fun ReadOnlyBotProfile(bot: BotView, plugins: PluginsState) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
-            listOf(BotActivity.IDLE, BotActivity.WORKING, BotActivity.WAITING, BotActivity.OFFLINE).forEach { state ->
+            BotActivity.entries.forEach { state ->
                 Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
                     bot.stateAvatars.firstOrNull { it.state == state }?.image?.let { image ->
                         BotAvatarMedia(image, plugins, WontonTheme.size.previewIcon,

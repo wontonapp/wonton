@@ -147,6 +147,6 @@ private fun AgentIcon(state: WidgetState, size: Dp) {
         ImageProvider(R.drawable.widget_agent),
         contentDescription = null,
         modifier = GlanceModifier.size(size),
-        colorFilter = ColorFilter.tint(state.colors.accentInk),
+        colorFilter = ColorFilter.tint(state.colors.textPrimary),
     )
 }

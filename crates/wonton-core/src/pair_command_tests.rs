@@ -12,8 +12,7 @@ fn issued() -> Issued {
                 "https://aps1-1.relay.n0.iroh.link,https://euc1-1.relay.n0.iroh.link,https://usw1-1.relay.n0.iroh.link",
             )
             .unwrap()
-            .relays()
-            .to_vec(),
+            .views(),
             direct_addrs: vec!["192.0.2.10:4433".parse().unwrap()],
             base_domain: "wonton.localhost".to_owned(),
             core_url: "http://wonton.localhost:8480/".parse().unwrap(),

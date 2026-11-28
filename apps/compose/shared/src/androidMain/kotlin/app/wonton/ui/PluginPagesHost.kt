@@ -34,6 +34,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.NativePage
 import app.wonton.protocol.OpenPage
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.ProxySettings
@@ -43,6 +44,7 @@ import app.wonton.protocol.TabState
 import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.music.MusicLibraryPage
 import kotlin.math.roundToInt
 
 /** 最近关掉的页面还留着 WebView 实例，重开不重载；个数是内存考虑的折中（每个 WebView 一份独立渲染进程）。 */
@@ -57,21 +59,31 @@ internal fun PluginPagesHost(
     pages: PagesState, home: HomeViewModel, appearance: AppearanceViewModel,
     active: TabRef?, onDetails: (String) -> Unit, onDraft: (String) -> Unit, bannerTop: Dp,
 ) {
-    val stack = pages.viewModel.stack.filter { it.tab != TabRef.Chat && it.tab != TabRef.Apps }
+    val stack = pages.viewModel.stack.filter { !it.tab.isNativeRoot() }
     val closed = remember { ClosedPages() }
     val kept = remember(stack) { closed.update(stack) }
     val openTabs = stack.mapTo(HashSet()) { it.tab }
     for (open in kept + stack) {
         key(open.tab) {
-            PluginPageContainer(
-                open, pages, home, appearance, parked = open.tab !in openTabs,
-                active = open.tab == active, onDetails, onDraft, bannerTop,
-            )
+            val music = open.musicLibrary()
+            if (music == null) {
+                PluginPageContainer(
+                    open, pages, home, appearance, parked = open.tab !in openTabs,
+                    active = open.tab == active, onDetails, onDraft, bannerTop,
+                )
+            } else if (open.tab in openTabs) {
+                // 原生页没有要保活的网页：关掉就放下，重开从首页取。
+                MusicLibraryPage(music, open.page.title, pages, active = open.tab == active, onDetails)
+            }
         }
     }
     // 没有胶囊的整页只剩系统返回一个出口，第一次打开时教一次（[PageExitHint]）。
     if (active != null && active in openTabs && !pageKeepsCapsule(active)) PageExitHint()
 }
+
+/** 原生的音乐库只接就绪的入口页；启动中、已停止这些状态照旧由网页页的状态页说明。 */
+private fun OpenPage.musicLibrary(): TabRef.Plugin? =
+    (tab as? TabRef.Plugin)?.takeIf { page.native == NativePage.Music && page.state is TabState.Ready }
 
 /** 刚关掉的页（最旧的在前）；只在栈变化时算一次，不是快照状态。 */
 private class ClosedPages {

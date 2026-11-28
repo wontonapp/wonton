@@ -9,11 +9,11 @@ extension MainView {
                     wideEntries
                     if showsMyApps {
                         SidebarPanel(home: home, plugins: plugins,
-                                     current: pages.viewModel.stack.last?.tab ?? pages.viewModel.root,
+                                     current: pages.current,
                                      navigate: navigate, appsOnly: true)
                             .frame(maxHeight: 320)
                     }
-                    chatListPanel(listOnly: true)
+                    ChatListView(model: chat, plugins: plugins, listOnly: true)
                 }
                 .clipped()
                 .accessibilityIdentifier("wide-screen-list")
@@ -33,7 +33,7 @@ extension MainView {
                 .environment(\.wontonOpenSidebar) { showsSidebar = true }
             } panel: {
                 SidebarPanel(home: home, plugins: plugins,
-                             current: pages.viewModel.stack.last?.tab ?? pages.viewModel.root, navigate: navigate)
+                             current: pages.current, navigate: navigate)
             }
         }
     }

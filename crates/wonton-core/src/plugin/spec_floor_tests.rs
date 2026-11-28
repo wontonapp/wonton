@@ -667,8 +667,19 @@ const EXPECTED: &[(&str, &str)] = &[
     ("0.16", "x-wonton.provides.<名字>.kinds"),
     ("0.16", "permission models 退役"),
     // 0.17
+    ("0.17", "x-wonton.provides.<名字>.browse"),
+    ("0.17", "x-wonton.subtitle"),
     ("0.17", "x-wonton.agent.models"),
 ];
+
+#[test]
+fn a_subtitle_needs_spec_0_17() {
+    let manifest = json!({"subtitle": {"zh": "电影下载", "en": "Movie downloads"}});
+    let found = problems(&document("0.16", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("x-wonton.subtitle"), "{found:?}");
+    assert!(problems(&document("0.17", manifest, plain())).is_empty());
+}
 
 #[test]
 fn media_source_lists_need_0_16() {
@@ -694,6 +705,29 @@ fn media_source_lists_need_0_16() {
         "{found:?}"
     );
     assert!(problems(&document("0.16", manifest, plain())).is_empty());
+}
+
+#[test]
+fn media_browse_needs_0_17() {
+    let manifest = json!({
+        "provides": {
+            "media_source": {
+                "service": "sidecar",
+                "port": 8090,
+                "operations": ["playback"],
+                "kinds": ["audio"],
+                "browse": "opensubsonic",
+                "credentials": {"issue": ["i", "{name}"], "revoke": ["r", "{name}"]},
+            },
+        },
+    });
+    let found = problems(&document("0.16", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(
+        found[0].contains("provides.media_source.browse"),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.17", manifest, plain())).is_empty());
 }
 
 #[test]

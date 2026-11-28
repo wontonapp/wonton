@@ -122,6 +122,7 @@ gateway-body-unreadable = Can't read the request body: { $error }
 gateway-body-invalid = The request body isn't valid: { $error }
 gateway-bot-not-found = No such bot: { $caller }
 gateway-bot-not-in-plugin = The app { $id } has no such bot: { $caller }
+gateway-danger-owner-bot = Danger mode is only for the owner's bots.
 gateway-tool-not-found = The app { $id } has no tool { $tool }
 gateway-tool-deletes = The tool { $tool } deletes or overwrites data, so it asks every time and can't be marked read-only
 gateway-plugin-not-running = This app isn't running, or it doesn't declare any tools
@@ -180,6 +181,15 @@ clients-credentials-unavailable = The app isn't running, so passwords can't be i
 clients-credentials-missing-command = The app manifest has no { $op } command
 clients-credentials-failed = The command in the app failed: { $error }
 gateway-entry-credentials-not-issued = The app has no password yet, so its entry stays closed
+clients-guests-not-declared = This app doesn't accept guest links
+clients-guests-entry-closed = Turn on the app's LAN or public entry first
+clients-guests-label = Give the link a name of 1-128 characters without line breaks
+clients-guests-ttl = A link can stay valid for at most 7 days
+clients-guests-path = The landing path must start with / and stay inside this app
+clients-guests-max = This app already has 20 valid links; revoke one first
+clients-guests-not-found = This link was revoked or has expired
+clients-guests-unavailable = The guest links can't be read right now
+gateway-guest-invalid = This link has expired or isn't right
 clients-domain-read-failed = Couldn't read the domain settings: { $error }
 clients-public-access-save-failed = Couldn't save the public access switch: { $error }
 # The public access switch's gates: what didn't get done, per gate (ADR-0090).
@@ -192,6 +202,13 @@ clients-gate-public-list-not-cleared = The public certificate list wasn't cleare
 clients-gate-entry-not-reloaded = The entry didn't reload its configuration: { $error }
 clients-gate-connector-mismatch = The connector container doesn't match the switch
 clients-gate-public-list-mismatch = The public certificate list doesn't match the switch
+clients-domain-terms-required = Accept the Let's Encrypt subscriber agreement first
+clients-domain-external-certificate = This home uses its own certificate (WONTON_ENTRY_CERTIFICATE=external); the core doesn't issue one
+clients-domain-fixed-suffix = The server name is fixed; only the provider and its credentials can change
+clients-domain-suffix-required = Enter a domain
+clients-domain-suffix-invalid = Use a lower-case ASCII domain without wildcards or a port
+clients-domain-suffix-ip = Enter a domain name, not an IP address
+clients-domain-credentials-required = Fill in the provider's credentials when first setting it up or changing providers
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
 
 # agent_acp forwarding (ADR-0061, block 5): connect-time refusals and per-frame errors, returned to the consumer by category.

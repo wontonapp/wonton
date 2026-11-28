@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use wonton_protocol::{BotKeeper, BotRef, ContactRequestPush};
+use wonton_protocol::{BotKeeper, BotRef, ContactApply, ContactRequestPush};
 
 use super::{Contacts, Directory, Effects, LocalBot, Ports, StoreError};
 use crate::matrix::Matrix;
@@ -76,31 +76,46 @@ impl Directory for PluginDirectory {
     }
 }
 
-/// 重建 Bot 的服务、推送给归属人。重建排成一队：同一个 Bot 连着变两次，不能两次重建同时换容器。
+/// 重建 Bot 的服务。重建在后台任务里跑，请求超时断开不会取消它。重建排成一队：同一个 Bot 连着变两次，
+/// 不能两次重建同时换容器。
 pub struct CoreEffects {
     plugins: Arc<PluginManager>,
     push: Option<Arc<Push>>,
     owner_username: String,
     rebuilds: Arc<tokio::sync::Mutex<()>>,
+    receipts: Arc<super::ApplyReceipts>,
 }
 
 impl Effects for CoreEffects {
-    fn allowed_users_changed(&self, bot: &BotRef) {
+    fn allowed_users_changed(&self, bot: &BotRef) -> tokio::sync::oneshot::Receiver<ContactApply> {
+        let (done, wait) = tokio::sync::oneshot::channel();
         let plugins = self.plugins.clone();
         let rebuilds = self.rebuilds.clone();
+        let receipts = self.receipts.clone();
         let bot = bot.clone();
         tokio::spawn(async move {
             let _queue = rebuilds.lock().await;
-            match plugins.rebuild_for_contacts(&bot).await {
-                Ok(()) => {
-                    tracing::info!(plugin = %bot.plugin_id, bot = %bot.bot, "联系人变了，Bot 的名单已更新")
-                }
-                // 记录是准的：下次重建（启动、升级、再变一次）照记录渲染。
-                Err(e) => {
-                    tracing::error!(plugin = %bot.plugin_id, bot = %bot.bot, error = %e, "联系人变了，重建 Bot 失败")
-                }
+            let apply = plugins.rebuild_for_contacts(&bot).await;
+            match &apply {
+                ContactApply::Applied => tracing::info!(
+                    plugin = %bot.plugin_id,
+                    bot = %bot.bot,
+                    "联系人变了，Bot 的名单已更新"
+                ),
+                ContactApply::Failed { reason, detail } => tracing::error!(
+                    plugin = %bot.plugin_id,
+                    bot = %bot.bot,
+                    ?reason,
+                    %detail,
+                    "联系人变了，Bot 的名单没换上"
+                ),
+                ContactApply::Other => {}
             }
+            receipts.record(&bot, apply.clone());
+            // 请求可能已经超时断开，送不到就算了：回执已经记下。
+            let _ = done.send(apply);
         });
+        wait
     }
 
     fn notify_request(&self, keeper_username: &str, request: ContactRequestPush) {
@@ -137,6 +152,7 @@ pub fn start(state_dir: &Path, wiring: Wiring) -> Result<Arc<Contacts>, StoreErr
         state_dir.join("contact-sessions.json"),
         wiring.matrix.clone(),
     )?;
+    let receipts = Arc::new(super::ApplyReceipts::default());
     let ports = Ports {
         directory: Arc::new(PluginDirectory {
             plugins: wiring.plugins.clone(),
@@ -150,7 +166,9 @@ pub fn start(state_dir: &Path, wiring: Wiring) -> Result<Arc<Contacts>, StoreErr
             push: wiring.push,
             owner_username: wiring.owner.username().to_owned(),
             rebuilds: Arc::default(),
+            receipts: receipts.clone(),
         }),
+        receipts,
         // 有名字（送的名字或自己的域名）开放联邦（ADR-0051）；随机私用名保留 ADR-0050。
         open_federation: !crate::matrix::federation_config::is_private(&own_server),
     };

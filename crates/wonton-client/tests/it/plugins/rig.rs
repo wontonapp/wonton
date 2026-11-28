@@ -420,9 +420,13 @@ fn owner_json(name: Option<&str>, email: Option<&str>) -> serde_json::Value {
 
 pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
     InstalledPlugin {
+        bot_danger_can_toggle: false,
+        bot_shared: false,
+        bot_danger: false,
         chat: Default::default(),
         id: id.to_owned(),
         title: format!("标题 {id}"),
+        subtitle: None,
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: "1.0.0".to_owned(),
@@ -449,6 +453,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         install_progress: None,
         install_failure: None,
         tunnel_ports: Vec::new(),
+        media_browse: None,
         matrix_widget: None,
     }
 }
@@ -470,6 +475,7 @@ pub fn preview(id: &str) -> InstallPreview {
         plan: "opaque-install-plan".to_owned(),
         id: id.to_owned(),
         title: format!("标题 {id}"),
+        subtitle: None,
         license: Some("AGPL-3.0-only".into()),
         license_url: None,
         summary: String::new(),
@@ -505,6 +511,7 @@ pub fn preview(id: &str) -> InstallPreview {
         missing_requires: Vec::new(),
         missing_wants: Vec::new(),
         wanting_plugins: Vec::new(),
+        connected_plugins: Vec::new(),
         upgrade_from: None,
         release_notes: None,
         missing_profile: None,
@@ -515,6 +522,7 @@ pub fn preview(id: &str) -> InstallPreview {
         always_allowed: Vec::new(),
         audience: None,
         install_gate: wonton_client::Gate::Allow,
+        install_providers: Vec::new(),
     }
 }
 
@@ -523,6 +531,7 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         source: format!("github:owner/{id}"),
         id: id.to_owned(),
         title: title.to_owned(),
+        subtitle: None,
         summary: String::new(),
         icon: None,
         tags: tags.iter().map(ToString::to_string).collect(),

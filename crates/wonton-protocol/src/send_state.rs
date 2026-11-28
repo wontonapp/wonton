@@ -8,9 +8,10 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum SendState {
     /// 本地回显，在排队或正在发送。排在失败消息后面时，直到那条发出或取消才继续。
-    /// `progress` 是核心合并原图和缩略图后算好的上传比例，范围 `0.0..=1.0`；`None` 表示不确定（文字、排队或总量未知）。
+    /// `progress` 是核心合并原图和缩略图后算好的上传比例，范围 `0.0..=1.0`。字节都交给服务器以后是 `None`：
+    /// 剩下的不是传字节，是等服务器收下消息，壳写“已保存，等待送达”；文字、排队或总量未知时也是 `None`。
     /// 重试、重发或重启后可能倒退或回到 `None`，壳原样绘制，不自行换算或保持单调。
-    /// `Some(1.0)` 不代表发送成功，成功和失败分别由 [`SendState::Sent`] 和 [`SendState::Failed`] 表示。
+    /// 有进度不代表发送成功，成功和失败分别由 [`SendState::Sent`] 和 [`SendState::Failed`] 表示。
     Sending {
         progress: Option<f32>,
     },

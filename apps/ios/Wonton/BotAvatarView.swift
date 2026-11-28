@@ -372,8 +372,10 @@ extension BotActivity {
     var text: String {
         switch self {
         case .idle: String(localized: .Chat.botStateIdle)
+        case .thinking: String(localized: .Chat.botStateThinking)
         case .working: String(localized: .Chat.botStateWorking)
         case .waiting: String(localized: .Chat.botStateWaiting)
+        case .error: String(localized: .Chat.botStateError)
         case .offline: String(localized: .Chat.botStateOffline)
         }
     }
@@ -382,8 +384,10 @@ extension BotActivity {
     var identifier: String {
         switch self {
         case .idle: "idle"
+        case .thinking: "thinking"
         case .working: "working"
         case .waiting: "waiting"
+        case .error: "error"
         case .offline: "offline"
         }
     }

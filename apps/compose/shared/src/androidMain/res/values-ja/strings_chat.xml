@@ -123,6 +123,8 @@
     <string name="bot_state_working">作業中</string>
     <string name="bot_state_waiting">確認待ち</string>
     <string name="bot_state_offline">オフライン</string>
+    <string name="bot_state_thinking">考え中</string>
+    <string name="bot_state_error">エラー</string>
     <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
     <string name="bot_profile_open">Bot のプロフィールを表示</string>
     <string name="bot_identity_value">プラグイン：%1$s\nBot：%2$s</string>
@@ -174,7 +176,6 @@
     <string name="room_bot_owner_private">これは家族の他の人のプライベート Bot です。持ち主はまだ利用を許可していません。</string>
     <string name="room_bot_grant_revoked">この Bot へのアクセスは取り消されました。</string>
     <string name="room_bot_unavailable">この Bot は今使えません。</string>
-    <string name="room_bot_unknown">この Bot に送れるかまだ確かめていません。</string>
     <string name="room_bot_role_lacks_shared_bots">これは家族の共有 Bot ですが、あなたの役割では共有 Bot を使えません。</string>
     <string name="room_bot_app_not_shared">このアプリはあなたに開放されていません。</string>
     <string name="room_bot_contact_pending">連絡先のリクエストはまだ承認待ちです。</string>

@@ -14,10 +14,10 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
-    BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel, LayoutSettings,
-    MAX_PANEL_PAGES, MyAppRef, PageAction, PagesFailure, PagesProblem, PagesViewModel, PanelEntry,
-    PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel, TabIcon,
-    TabLoadFailure, TabRef,
+    BarEntry, BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel,
+    LayoutSettings, MAX_PANEL_PAGES, MyAppRef, PageAction, PagesFailure, PagesProblem,
+    PagesViewModel, PanelEntry, PanelItem, PanelScope, PinTarget, PlacedTab, PluginState,
+    PluginsViewModel, RoomPanel, TabIcon, TabLoadFailure, TabRef,
 };
 
 use crate::home::HomeLink;
@@ -46,6 +46,7 @@ use panel_view::*;
 mod reload;
 use reload::*;
 mod actions;
+mod add_url;
 mod bot;
 mod content;
 mod panel;
@@ -85,7 +86,10 @@ struct PagesState {
     content: HashMap<TabRef, content::ContentPage>,
     /// 配上了服务器：根页面是聊天；没配对时根是应用网格页（配对页在它上面）。
     paired: bool,
-    shows_apps: bool,
+    /// 当前选中的底栏项（ADR-0126）。选中的应用项压栈打开，选中的根页只在栈空时露出。
+    tab: BarEntry,
+    /// 刚才加项因为满了被拒；下一次加成功时清掉。
+    bar_full: bool,
     /// 加载失败和重载计数都按页面实例记：同一页面在栈里和面板里是两份（ADR-0052）。
     failures: HashMap<PlacedTab, (TabLoadFailure, Option<u16>)>,
     reloads: HashMap<PlacedTab, u64>,
@@ -185,6 +189,7 @@ impl PagesLink {
                 Err(error) => problem = Some(storage_problem(&error)),
             }
         }
+        let tab = config.bar.first().cloned().unwrap_or(BarEntry::Agent);
         let state = PagesState {
             config,
             problem,
@@ -193,7 +198,8 @@ impl PagesLink {
             stack: Vec::new(),
             content: HashMap::new(),
             paired: home_view.server_id.is_some(),
-            shows_apps: false,
+            tab,
+            bar_full: false,
             failures: HashMap::new(),
             reloads: HashMap::new(),
             uninstalled: Vec::new(),
@@ -259,6 +265,7 @@ impl PagesLink {
                 bot,
                 allowed,
             } => self.set_bot_consent(plugin_id, bot, allowed),
+            PageAction::AddMyAppUrl { url, title } => self.add_my_app_url(&url, title),
             PageAction::RetryMyAppSync => {
                 let weak = lock(&self.weak).clone();
                 if let Some(link) = weak.upgrade() {
@@ -277,6 +284,10 @@ impl PagesLink {
             PageAction::SelectPanelPage { scope, tab } => self.select_panel_page(scope, tab),
             PageAction::PinCurrentPage { url, title, to } => self.pin_current_page(&url, title, to),
             PageAction::DismissUninstalledTabs => self.dismiss_uninstalled(),
+            PageAction::SelectBarItem { entry } => self.select_bar_item(entry),
+            PageAction::AddBarItem { entry } => self.add_bar_item(entry),
+            PageAction::RemoveBarItem { entry } => self.remove_bar_item(&entry),
+            PageAction::MoveBarItem { from, to } => self.move_bar_item(from, to),
         }
     }
 
@@ -422,12 +433,27 @@ impl PagesLink {
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
     }
 
     fn config_change<F>(&self, change: F) -> Result<(), CoreError>
+    where
+        F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
+    {
+        self.config_change_with(false, change)
+    }
+
+    /// 动作返回失败也要把改动后的展示状态发布出去的变体：只给改展示标志的动作用（`bar_full`）。
+    fn config_change_commit_on_error<F>(&self, change: F) -> Result<(), CoreError>
+    where
+        F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
+    {
+        self.config_change_with(true, change)
+    }
+
+    fn config_change_with<F>(&self, commit_on_error: bool, change: F) -> Result<(), CoreError>
     where
         F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
     {
@@ -443,14 +469,25 @@ impl PagesLink {
         }
         bot::replace_bots(&mut state, bots);
         refresh_state(&mut state, &plugins, &home);
-        change(&mut state, &plugins)?;
+        if let Err(error) = change(&mut state, &plugins) {
+            if commit_on_error {
+                ensure_stack(&mut state, &plugins);
+                clear_gone_prompt(&mut state);
+                widget::clear_closed(&mut state);
+                let sync_stale = self.sync_problem.borrow().is_some();
+                let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
+                *lock(&self.state) = state;
+                self.publish(view, &plugins);
+            }
+            return Err(error);
+        }
         ensure_stack(&mut state, &plugins);
         if let Err(error) = persist(&self.path, &state.config) {
             let mut failed = previous;
             bot::replace_bots(&mut failed, state.bots.clone());
             failed.problem = Some(storage_problem(&error));
             let sync_stale = self.sync_problem.borrow().is_some();
-            let view = make_view(&failed, &plugins, sync_stale);
+            let view = make_view(&failed, &plugins, &self.chat.borrow(), sync_stale);
             *lock(&self.state) = failed;
             self.publish(view, &plugins);
             return Err(error);
@@ -460,7 +497,7 @@ impl PagesLink {
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         let settings = state.config.layout();
         *lock(&self.state) = state;
         self.publish(view, &plugins);
@@ -509,7 +546,7 @@ impl PagesLink {
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         Ok(())
@@ -581,12 +618,10 @@ impl PagesLink {
 }
 
 impl PagesState {
-    /// 不在栈里时露出来的那一页。
-    fn root(&self) -> TabRef {
-        if self.paired {
-            TabRef::Chat
-        } else {
-            TabRef::Apps
+    /// 选中项还在栏上就用它；被别的设备删掉了就落到第一项。
+    fn settle_tab(&mut self) {
+        if !self.config.bar.contains(&self.tab) {
+            self.tab = self.config.bar.first().cloned().unwrap_or(BarEntry::Agent);
         }
     }
 }

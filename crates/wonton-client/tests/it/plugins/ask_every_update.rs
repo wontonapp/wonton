@@ -13,6 +13,7 @@ fn detail(ask: bool) -> Canned {
         source: None,
         id: ID.to_owned(),
         title: "标题 app.agent.notes".to_owned(),
+        subtitle: None,
         summary: String::new(),
         about: None,
         setup: None,

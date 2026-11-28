@@ -34,11 +34,18 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">アンインストール（データも削除）</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">データを削除すると、鍵とボットのアカウントも一緒に削除され、ボットとの過去の暗号化メッセージも読めなくなります。元に戻せません。</string>
+    <string name="plugin_uninstall_delete_data_warning">データを削除すると、鍵とボットのアカウントも一緒に削除され、ボットとの過去の暗号化メッセージも読めなくなります。一緒に外すアプリのデータも削除されます。元に戻せません。</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">「%1$s」をアンインストールしますか？</string>
     <string name="plugin_screenshot">スクリーンショット</string>
     <!-- Row in the install/upgrade confirmation and on the app's detail page: what the app's web page may do when opened inside a chat room, for the capabilities that never touch message content. No arguments. -->
     <string name="plugin_widget_normal">ルームで開くと、このアプリのページは通話の状態などメッセージを含まない情報を読み書きでき、通話サービスにあなた本人であることを証明できます。</string>
     <string name="plugin_setup_title">はじめて使うとき</string>
+    <string name="plugin_dependency_connect">接続</string>
+    <string name="plugin_dependency_find_in_store">ストアで提供元のアプリを探してください。</string>
+    <string name="plugin_uninstall_in_use">これらのアプリがまだ「%1$s」を使っています</string>
+    <string name="plugin_uninstall_unused_providers">ほかに使っているアプリはありません：</string>
+    <string name="plugin_uninstall_checking">まだ使っているアプリを確認しています…</string>
+    <string name="plugin_dependenciesMissing">不足している機能</string>
+    <string name="plugin_dependencyRequires">「%1$@」が必要</string>
 </resources>

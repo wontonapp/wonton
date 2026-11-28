@@ -7,9 +7,9 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::{MyAppEntry, TabRef};
+use crate::{BarEntry, MyAppEntry, TabRef};
 
-/// 全局账号数据事件类型，内容是 [`LayoutSettings`]：我的应用和主面板。
+/// 全局账号数据事件类型，内容是 [`LayoutSettings`]：我的应用、底栏和主面板。
 pub const LAYOUT_EVENT: &str = "app.wonton.layout";
 
 /// 房间账号数据事件类型，内容是 [`RoomPanel`]：这个房间的面板。
@@ -79,7 +79,7 @@ pub struct PanelEntry {
     pub title: Option<String>,
 }
 
-/// 账号数据 [`LAYOUT_EVENT`] 的内容：我的应用和主面板。
+/// 账号数据 [`LAYOUT_EVENT`] 的内容：我的应用、底栏和主面板。
 ///
 /// 客户端改一项时按原始 JSON 只改那一处，其余原样写回：旧 App 读到不认识的取值会丢掉那一项，
 /// 整份重写会把别的设备存的配置冲掉（写法同 [`crate::ChatLayoutSettings`]）。
@@ -94,6 +94,12 @@ pub struct LayoutSettings {
     /// 主面板里的页面，按显示顺序。
     #[serde(default, deserialize_with = "drop_unknown")]
     pub panel: Vec<PanelEntry>,
+    /// 底栏的成员和顺序（ADR-0126）。缺这一项时是 [`crate::default_bar`]；认不出的项在反序列化时逐项丢掉。
+    ///
+    /// 这里只做逐项解析，不查 [`crate::check_bar`]：核心改栏时查，读别人的栏时由客户端核对后再用/写回。
+    /// 和我的应用的顺序各管各的。
+    #[serde(default = "crate::default_bar", deserialize_with = "drop_unknown")]
+    pub bar: Vec<BarEntry>,
 }
 
 impl Default for LayoutSettings {
@@ -102,6 +108,7 @@ impl Default for LayoutSettings {
             my_apps: Vec::new(),
             auto_add: auto_add_default(),
             panel: Vec::new(),
+            bar: crate::default_bar(),
         }
     }
 }
@@ -276,8 +283,10 @@ mod tests {
                 tab: plugin_page(),
                 title: Some("动态".into()),
             }],
+            bar: vec![crate::BarEntry::Apps],
         };
         let json = serde_json::to_value(&settings).unwrap();
+        assert_eq!(json["bar"], serde_json::json!([{"type": "apps"}]));
         assert_eq!(json["auto_add"], serde_json::json!(false));
         assert_eq!(
             json["my_apps"][1],

@@ -1,17 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Section title for the accent color, and accessibility label prefix of the accent color swatches. -->
-    <string name="appearance_accent">Accent color</string>
-    <!-- Accessibility state of the More row while the extra colors are hidden. -->
+    <!-- Accessibility state of an expandable row or text while it is collapsed. -->
     <string name="appearance_collapsed">Collapsed</string>
-    <!-- Label of the color input field for a hex value like #RRGGBB. -->
-    <string name="appearance_color_value">Color value</string>
     <!-- Choice row: the serif system font design. -->
     <string name="appearance_font_serif">Serif</string>
-    <!-- Error under the color input field when the text isn't a valid #RRGGBB value. -->
-    <string name="appearance_hex_invalid">Enter the color as #RRGGBB</string>
-    <!-- Accessibility label prefix of the extra color swatches behind the More row. -->
-    <string name="appearance_more_colors">More colors</string>
     <!-- Sender name in the sample chat bubble on the appearance page: the app's own name. -->
     <string name="appearance_preview_name">Wonton</string>
     <!-- Choice row: extra large text size. -->

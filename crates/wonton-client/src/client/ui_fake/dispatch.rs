@@ -3,8 +3,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wonton_protocol::{
-    AskFailure, AskProblem, AskReceipt, AskState, ChatAction, CoreError, OpenPage, PageAction,
-    PanelItem, PanelScope, PanelSource, TabRef,
+    AskFailure, AskProblem, AskReceipt, AskState, BarEntry, BarIcon, BarItem, ChatAction,
+    CoreError, MAX_BAR_ITEMS, OpenPage, PageAction, PanelItem, PanelScope, PanelSource, TabIcon,
+    TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::super::ClientCore;
@@ -15,34 +16,256 @@ static UI_FAKE_ASKS: AtomicUsize = AtomicUsize::new(0);
 
 impl ClientCore {
     /// 假数据下的操作：开页、关页照真核心的规则改页面栈（`pages::actions`），其余不动 ViewModel。
+    #[allow(clippy::too_many_lines)] // 假数据把真核心的各条规则摆在一处，拆开要来回传同一份视图。
     pub(in crate::client) fn dispatch_ui_fake(&self, action: PageAction) -> Result<(), CoreError> {
         let views = self.views();
         match action {
             PageAction::OpenPage { tab } => {
+                if matches!(tab, TabRef::Rooms) {
+                    views.pages.send_modify(|pages| pages.stack.clear());
+                    return Ok(());
+                }
+                if matches!(tab, TabRef::Inbox) {
+                    views.pages.send_modify(|pages| {
+                        if pages.stack.last().is_some_and(|open| open.tab == tab) {
+                            return;
+                        }
+                        pages.stack.retain(|open| open.tab != tab);
+                        pages.stack.push(fake_root_page(tab.clone()));
+                    });
+                    return Ok(());
+                }
                 let Some((tab, page)) = fake_open(tab.clone()) else {
-                    // 根页面（聊天、应用）一路弹回根；应用网格开没开记在页面视图里。
                     views.pages.send_modify(|pages| {
                         pages.stack.clear();
-                        pages.shows_apps = tab == TabRef::Apps;
+                        if let BarEntry::App { .. } = pages.tab {
+                            pages.tab = BarEntry::Agent;
+                        }
                     });
                     return Ok(());
                 };
-                views.pages.send_if_modified(|pages| {
-                    let left_apps = std::mem::take(&mut pages.shows_apps);
+                views.pages.send_modify(|pages| {
                     if pages.stack.last().is_some_and(|open| open.tab == tab) {
-                        return left_apps;
+                        return;
                     }
                     pages.stack.retain(|open| open.tab != tab);
                     pages.stack.push(OpenPage { tab, page });
-                    true
                 });
                 Ok(())
             }
             PageAction::ClosePage => {
-                // 和真核心一样：没有开着的页时是安静的什么也不做。
-                views.pages.send_if_modified(|pages| {
-                    // 应用网格开着时关的是它，栈不动。
-                    std::mem::take(&mut pages.shows_apps) || pages.stack.pop().is_some()
+                // 和真核心一样：栈空时的“关”从应用根回 Agent。
+                views.pages.send_modify(|pages| {
+                    if !pages.stack.pop().is_some()
+                        && pages.tab == BarEntry::Apps
+                        && pages
+                            .bar
+                            .items
+                            .iter()
+                            .any(|item| item.entry == BarEntry::Agent)
+                    {
+                        pages.tab = BarEntry::Agent;
+                    }
+                });
+                Ok(())
+            }
+            PageAction::SelectBarItem { entry } => {
+                let mut refused = false;
+                views.pages.send_modify(|pages| match &entry {
+                    BarEntry::Agent | BarEntry::Apps => {
+                        pages.tab = entry.clone();
+                        pages.stack.clear();
+                    }
+                    BarEntry::App { app } => {
+                        if !pages.bar.items.iter().any(|item| item.entry == entry) {
+                            refused = true;
+                            return;
+                        }
+                        let tab = match app {
+                            wonton_protocol::MyAppRef::Page { tab } => tab.clone(),
+                            wonton_protocol::MyAppRef::Plugin { plugin_id } => TabRef::Plugin {
+                                plugin_id: plugin_id.clone(),
+                                page: None,
+                            },
+                        };
+                        if let Some((tab, page)) = fake_open(tab.clone()) {
+                            pages.stack.retain(|open| open.tab != tab);
+                            pages.stack.push(OpenPage { tab, page });
+                        }
+                    }
+                });
+                if refused {
+                    Err(CoreError::InvalidInput {
+                        reason: "fake bar item is not pinned".into(),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            PageAction::AddBarItem { entry } => {
+                let mut added = true;
+                views.pages.send_modify(|pages| {
+                    let (label, icon) = match &entry {
+                        BarEntry::Agent => ("Agent".to_owned(), BarIcon::Agent),
+                        BarEntry::Apps => ("Apps".to_owned(), BarIcon::Apps),
+                        BarEntry::App { .. } => ("App".to_owned(), BarIcon::App { icon: None }),
+                    };
+                    let known = match &entry {
+                        BarEntry::Agent | BarEntry::Apps => true,
+                        BarEntry::App { app } => views
+                            .plugins
+                            .borrow()
+                            .sidebar
+                            .apps
+                            .iter()
+                            .any(|row| side_app_matches(app, row)),
+                    };
+                    if !known || pages.bar.items.iter().any(|item| item.entry == entry) {
+                        added = false;
+                        return;
+                    }
+                    if pages.bar.items.len() >= MAX_BAR_ITEMS as usize {
+                        pages.bar.full = true;
+                        added = false;
+                        return;
+                    }
+                    pages.bar.full = false;
+                    pages.bar.items.push(BarItem {
+                        entry,
+                        label,
+                        icon,
+                        badge: 0,
+                    });
+                });
+                if added {
+                    Ok(())
+                } else {
+                    Err(CoreError::InvalidInput {
+                        reason: "fake bar refused".into(),
+                    })
+                }
+            }
+            PageAction::RemoveBarItem { entry } => {
+                let mut refused = false;
+                views.pages.send_modify(|pages| {
+                    if !pages.bar.items.iter().any(|item| item.entry == entry)
+                        || pages.bar.items.len() <= 1
+                    {
+                        refused = true;
+                    } else {
+                        pages.bar.items.retain(|item| item.entry != entry);
+                        pages.bar.full = false;
+                    }
+                });
+                if refused {
+                    Err(CoreError::InvalidInput {
+                        reason: "fake bar refused".into(),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            PageAction::MoveBarItem { from, to } => {
+                let mut refused = false;
+                views.pages.send_modify(|pages| {
+                    let len = pages.bar.items.len();
+                    let (from, to) = (from as usize, to as usize);
+                    if from >= len || to >= len {
+                        refused = true;
+                        return;
+                    }
+                    let item = pages.bar.items.remove(from);
+                    pages.bar.items.insert(to, item);
+                });
+                if refused {
+                    Err(CoreError::InvalidInput {
+                        reason: "fake bar index out of range".into(),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+            PageAction::AddMyApp { app, .. } => {
+                let tab = match &app {
+                    wonton_protocol::MyAppRef::Page { tab } => tab.clone(),
+                    wonton_protocol::MyAppRef::Plugin { plugin_id } => TabRef::Plugin {
+                        plugin_id: plugin_id.clone(),
+                        page: None,
+                    },
+                };
+                let known = match &tab {
+                    TabRef::Url { url } => {
+                        url::Url::parse(url).is_ok_and(|url| url.scheme() == "https")
+                    }
+                    _ => fake_open(tab.clone()).is_some(),
+                };
+                if !known {
+                    return Err(CoreError::InvalidInput {
+                        reason: "fake app is unknown".into(),
+                    });
+                }
+                let mut duplicate = false;
+                views.plugins.send_modify(|plugins| {
+                    if plugins
+                        .sidebar
+                        .apps
+                        .iter()
+                        .any(|row| side_app_matches(&app, row))
+                    {
+                        duplicate = true;
+                        return;
+                    }
+                    let title = super::tabs::fake_page(&tab)
+                        .map(|page| page.title)
+                        .or_else(|| match &app {
+                            wonton_protocol::MyAppRef::Plugin { plugin_id } => {
+                                Some(plugin_id.clone())
+                            }
+                            _ => None,
+                        })
+                        .unwrap_or_else(|| "App".to_owned());
+                    plugins.sidebar.apps.push(wonton_protocol::SidebarApp {
+                        plugin_id: match &tab {
+                            TabRef::Plugin { plugin_id, .. } => Some(plugin_id.clone()),
+                            _ => None,
+                        },
+                        tab: Some(tab.clone()),
+                        title,
+                        subtitle: None,
+                        open: wonton_protocol::SidebarOpen::Page { tab },
+                        icon: None,
+                        badge: wonton_protocol::SidebarBadge::default(),
+                    });
+                });
+                if duplicate {
+                    return Err(CoreError::InvalidInput {
+                        reason: "fake app is already in my apps".into(),
+                    });
+                }
+                Ok(())
+            }
+            PageAction::RemoveMyApp { app } => {
+                let entry = BarEntry::App { app: app.clone() };
+                let mut removed = false;
+                views.plugins.send_modify(|plugins| {
+                    let before = plugins.sidebar.apps.len();
+                    plugins
+                        .sidebar
+                        .apps
+                        .retain(|row| !side_app_matches(&app, row));
+                    removed = plugins.sidebar.apps.len() < before;
+                });
+                if !removed {
+                    return Err(CoreError::InvalidInput {
+                        reason: "fake app is not in my apps".into(),
+                    });
+                }
+                views.pages.send_modify(|pages| {
+                    let before = pages.bar.items.len();
+                    pages.bar.items.retain(|item| item.entry != entry);
+                    if pages.bar.items.len() < before {
+                        pages.bar.full = false;
+                    }
                 });
                 Ok(())
             }
@@ -138,5 +361,35 @@ impl ClientCore {
             }
             _ => {}
         }
+    }
+}
+
+/// 侧边栏这一行是不是这个应用行。
+fn side_app_matches(app: &wonton_protocol::MyAppRef, row: &wonton_protocol::SidebarApp) -> bool {
+    match (app, &row.open) {
+        (
+            wonton_protocol::MyAppRef::Page { tab },
+            wonton_protocol::SidebarOpen::Page { tab: open },
+        ) => tab == open,
+        (wonton_protocol::MyAppRef::Plugin { plugin_id }, _) => {
+            row.tab.is_none() && row.plugin_id.as_deref() == Some(plugin_id)
+        }
+        _ => false,
+    }
+}
+/// 假收件箱页：壳按 `TabRef::Inbox` 画自己的原生列表，元数据只给胶囊用。
+fn fake_root_page(tab: TabRef) -> OpenPage {
+    OpenPage {
+        tab,
+        page: TabPage {
+            title: "Inbox".into(),
+            icon: TabIcon::Plugin { icon: None },
+            url: None,
+            layout: TabLayout::Inset,
+            state: TabState::Ready,
+            reload: 0,
+            opens_in_browser: false,
+            native: None,
+        },
     }
 }

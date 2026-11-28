@@ -1,6 +1,6 @@
-//! App 的外观（ADR-0026、ADR-0028）：用户选的重点色、明暗、字号和字体，以及由重点色推导出的颜色令牌。
+//! App 的外观（ADR-0026、ADR-0028、ADR-0130）：用户选的明暗、字号和字体，以及浅色、深色两套黑白颜色令牌。
 //!
-//! 颜色只在客户端核心里算一份，壳按明暗选一套来渲染，自己不写色值。
+//! 颜色只在客户端核心里定一份，壳按明暗选一套来渲染，自己不写色值。
 
 use serde::{Deserialize, Serialize};
 
@@ -17,14 +17,6 @@ pub struct Rgb {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AppearanceViewModel {
-    /// 用户选的重点色；没选过，或者设置读不了时，是默认值。
-    pub accent: Rgb,
-    /// 设置页列出的色板，第一个是默认值。
-    pub presets: Vec<Rgb>,
-    /// 收在“更多”里的色板。
-    pub more_colors: Vec<Rgb>,
-    /// 两组色板每行的个数。
-    pub swatch_columns: u32,
     pub theme_mode: ThemeMode,
     /// 设置页能选的明暗，按显示的顺序排；名字由壳按枚举写。
     pub theme_modes: Vec<ThemeMode>,
@@ -88,23 +80,14 @@ pub struct ThemeColors {
     pub text_primary: Rgb,
     pub text_secondary: Rgb,
     pub separator: Rgb,
-    /// 主按钮的底色。
+    /// 强调填充：浅色是黑，深色是比卡片浅一档的深灰。主按钮、选中、开关、角标、自己的气泡的底；
+    /// 只当填充用，页面上要强调的字和图标用 `text_primary`。
     pub primary: Rgb,
-    /// 主按钮上的字和图标。
+    /// `primary` 底上的字和图标。
     pub on_primary: Rgb,
     pub success: Rgb,
     pub warning: Rgb,
     pub danger: Rgb,
-    /// 重点色的填充和底色。选中状态不能只靠它表示，对页面底色的对比度可能很低。
-    pub accent_fill: Rgb,
-    /// 页面底色上的字和图标。
-    pub accent_ink: Rgb,
-    /// 填充上的图标和小标签。
-    pub accent_ink_on_fill: Rgb,
-    /// 填充上的正文。
-    pub text_on_accent_fill: Rgb,
-    /// 填充的描边；填充和页面底色分得清时为空，这时不描边。
-    pub accent_fill_border: Option<Rgb>,
 }
 
 /// 外观设置读不了的原因。

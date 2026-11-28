@@ -319,6 +319,7 @@ async fn family_member_forbidden() {
     let h = Harness::start(None).await;
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             username: "mia".into(),
             user_id: "@mia:test".into(),
             display_name: "Mia".into(),
@@ -674,7 +675,7 @@ async fn opening_is_not_published_until_reload_succeeds() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_reload_still_in_progress_is_retried() {
     // 装机首次启动就对账时，入口的主进程可能刚起来、上一次重载还没完。
     let rig = Rig::start_with_reload(

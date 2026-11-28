@@ -11,6 +11,9 @@ use super::{
     stored_or_placeholder,
 };
 
+use crate::l10n::{CATALOG, language};
+use wonton_l10n::l10n;
+
 /// 还没加进我的应用的插件页，按已装插件的顺序。没有网页的插件没有页面可加。
 pub(crate) fn my_app_candidates(
     state: &PagesState,
@@ -139,6 +142,16 @@ pub(crate) fn compose_page(
             return page_from_metadata(state, placed, metadata, url, state_value, plugins);
         }
         TabRef::Url { url } => return build_url_page(state, placed, stored, url, plugins),
+        // 两个根页是壳自己画的原生列表，核心只给胶囊要的标题。
+        TabRef::Rooms | TabRef::Inbox => {
+            let metadata = stored.page.clone().unwrap_or_else(|| StoredPage {
+                plugin_title: "Wonton".to_owned(),
+                title: l10n!(CATALOG, language(), "tabs-rooms-title"),
+                icon: TabIcon::Plugin { icon: None },
+                layout: TabLayout::Inset,
+            });
+            return page_from_metadata(state, placed, metadata, None, TabState::Ready, plugins);
+        }
         _ => {}
     }
     let Some(plugin) = plugin else {
