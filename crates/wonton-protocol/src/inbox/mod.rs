@@ -843,7 +843,7 @@ impl InboxPayload {
 }
 
 #[cfg(test)]
-#[path = "inbox_tests.rs"]
+#[path = "../inbox_tests.rs"]
 mod tests;
 
 pub use crate::inbox_request::*;
