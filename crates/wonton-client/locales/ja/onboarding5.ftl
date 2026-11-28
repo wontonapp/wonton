@@ -2,8 +2,3 @@
 onboarding-steps-not-in-flow = セットアップが進行中ではありません
 
 onboarding-steps-state-missing = セットアップの状態をまだ取得していません
-
-
-
-onboarding-model-none-configured = モデルゲートウェイに接続済みのモデルがありません
-

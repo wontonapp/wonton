@@ -1,9 +1,9 @@
 //! 新用户引导：每一步记下的选择、最后一页的提交和设备上的一次性提示（ADR-0034、ADR-0038）。
 
 mod api;
+mod assistant;
 mod draft;
 mod follow;
-mod model;
 mod refresh;
 mod review;
 mod steps;
@@ -13,14 +13,14 @@ mod view;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    CoreError, HomeStatus, Me, ModelSettings, ModelSettingsProblem, ONBOARDING_PATH, Onboarding,
-    OnboardingAction, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingTooOld,
-    OnboardingViewModel, PluginFailure, PluginProblem, minimum_server_version,
+    AgentModelsViewModel, CoreError, HomeStatus, Me, ONBOARDING_PATH, Onboarding, OnboardingAction,
+    OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingTooOld, OnboardingViewModel,
+    PluginFailure, PluginProblem, minimum_server_version,
 };
 
 use crate::chat::ChatLink;
@@ -35,7 +35,7 @@ use view::render;
 /// 谁要的这趟重新取。
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Trigger {
-    /// 主人要的：从网关网页回来、出错后点重试。设备被拒绝过就先再拨一次，主人可能刚把它加回去。
+    /// 主人要的：出错后点重试。设备被拒绝过就先再拨一次，主人可能刚把它加回去。
     Owner,
     /// 重看引导后的那趟，也是主人要的；失败另外处理，见 [`OnboardingLink::refresh_after_local_reset`]。
     AfterReset,
@@ -55,7 +55,6 @@ struct LocalState {
     /// 从设置重看已经走完的引导：每一步都能不提交就离开，完成时只存动过的项。
     revisit: bool,
     owner: Option<Me>,
-    model_settings: Option<ModelSettings>,
     draft: Draft,
     review: Vec<ReviewEntry>,
     /// 每次进出最后一页加一，旧的预览结果不落到新列出的项上。
@@ -64,9 +63,8 @@ struct LocalState {
     problem: Option<PluginProblem>,
     bot_refreshing: bool,
     bot_problem: Option<PluginProblem>,
-    model_problem: Option<ModelSettingsProblem>,
     loading: bool,
-    /// 这一趟里因为服务器太旧整步显不出来的步骤：这些步直接跳过。
+    /// 这一趟里显不出来的步骤：服务器太旧，或者没有默认 Bot（助手和接模型）。这些步直接跳过。
     unavailable: HashSet<OnboardingStep>,
     /// 服务器比引导接口还旧：整段引导都不显示，只留一条升级提示。
     too_old: Option<OnboardingTooOld>,
@@ -81,6 +79,8 @@ pub(crate) struct OnboardingLink {
     home: Arc<HomeLink>,
     chat: Arc<ChatLink>,
     plugins: Arc<PluginsLink>,
+    /// 模型页：接模型这一步看默认 Bot 选没选好主模型，最后一页列出它。
+    models: watch::Receiver<AgentModelsViewModel>,
     view: watch::Sender<OnboardingViewModel>,
     state: Mutex<LocalState>,
     storage: OnboardingStorage,
@@ -103,6 +103,7 @@ impl OnboardingLink {
         home: Arc<HomeLink>,
         chat: Arc<ChatLink>,
         plugins: Arc<PluginsLink>,
+        models: watch::Receiver<AgentModelsViewModel>,
         data_dir: &Path,
         view: Option<watch::Sender<OnboardingViewModel>>,
     ) -> Arc<Self> {
@@ -113,6 +114,7 @@ impl OnboardingLink {
             home: home.clone(),
             chat: chat.clone(),
             plugins,
+            models: models.clone(),
             view: reuse(view, OnboardingViewModel::default()),
             state: Mutex::new(LocalState {
                 problem: problem.map(storage_problem),
@@ -132,6 +134,7 @@ impl OnboardingLink {
             Arc::downgrade(&link),
             link.plugins.subscribe(),
         ));
+        runtime.spawn(follow_models(Arc::downgrade(&link), models));
         link
     }
 
@@ -176,7 +179,7 @@ impl OnboardingLink {
                 display_name,
                 email,
             } => self.edit_profile(display_name, email),
-            OnboardingAction::UseCurrentModel => self.use_current_model(),
+            OnboardingAction::EditOnboardingAssistant { name } => self.edit_assistant(name),
             OnboardingAction::RetryOnboardingItem { id } => self.retry_item(&id),
             OnboardingAction::DismissOnboardingTip { tip } => self.dismiss_tip(tip),
             OnboardingAction::CloseOnboarding => {
@@ -205,7 +208,7 @@ impl OnboardingLink {
         self.generation() == generation && self.operation.load(Ordering::SeqCst) == operation
     }
 
-    /// 重新取家里服务器上的状态。记下的选择和正在显示的一步不变：从网关网页回来、出错后重试都走这里。
+    /// 重新取家里服务器上的状态。记下的选择和正在显示的一步不变：出错后重试走这里。
     fn refresh(self: &Arc<Self>) {
         self.refresh_impl(Trigger::Owner);
     }
@@ -215,9 +218,9 @@ impl OnboardingLink {
         self.refresh_impl(Trigger::Automatic);
     }
 
-    /// 本地重置（重看引导）后的那趟和普通刷新一样，完整取到的资料、模型设置和错误必须落地。
+    /// 本地重置（重看引导）后的那趟和普通刷新一样，完整取到的资料和错误必须落地。
     /// 插件变化触发的静默刷新只更新 onboarding，可能先一步增加 revision；它不能让这趟已取到的详情失效。
-    /// 重置后的失败仍由 `after_reset` 单独处理，因为那是之后唯一会取资料和模型设置的请求。
+    /// 重置后的失败仍由 `after_reset` 单独处理，因为那是之后唯一会取资料的请求。
     pub(super) fn refresh_after_local_reset(self: &Arc<Self>) {
         self.refresh_impl(Trigger::AfterReset);
     }
@@ -228,7 +231,6 @@ impl OnboardingLink {
             let mut state = lock(&self.state);
             state.loading = true;
             state.problem = None;
-            state.model_problem = None;
             // 每次重新取都从头判：服务器升级了，踢掉的步会回来。
             state.unavailable.clear();
             state.too_old = None;
@@ -265,9 +267,9 @@ impl OnboardingLink {
                 let step = state.step.unwrap_or(onboarding.step);
                 !matches!(step, OnboardingStep::Finished | OnboardingStep::Other)
             };
-            // 走完了的不取资料和模型设置：没有地方显示它，重看引导时再取。
+            // 走完了的不取资料：没有地方显示它，重看引导时再取。
             let details = if in_flow {
-                Some(tokio::join!(api::me(&api), api::settings(&api)))
+                Some(api::me(&api).await)
             } else {
                 None
             };
@@ -281,10 +283,7 @@ impl OnboardingLink {
     fn received(
         &self,
         onboarding: Onboarding,
-        details: Option<(
-            Result<Me, PluginProblem>,
-            Result<ModelSettings, ModelSettingsProblem>,
-        )>,
+        details: Option<Result<Me, PluginProblem>>,
         revision: u64,
     ) {
         {
@@ -293,6 +292,11 @@ impl OnboardingLink {
             // 更新的响应落过地（静默刷新、点完成的保存），这份旧的丢弃，视图保持已落地的状态。
             let current = state.revision == revision;
             if current {
+                if onboarding.default_bot_plugin.is_none() {
+                    state
+                        .unavailable
+                        .extend([OnboardingStep::Assistant, OnboardingStep::Model]);
+                }
                 if state.step.is_none() {
                     // 中间的步骤不存在家里服务器上：没走完的从第一个能显示的步开始，每一步显示现在的设置。
                     state.revisit = onboarding.step == OnboardingStep::Finished;
@@ -309,7 +313,7 @@ impl OnboardingLink {
                 state.revision += 1;
             }
             // 静默刷新只更新 onboarding；完整刷新已取到的详情仍是这趟请求的结果。
-            if let Some((owner, model_settings)) = details {
+            if let Some(owner) = details {
                 match owner {
                     Ok(owner) => state.owner = Some(owner),
                     Err(problem) => {
@@ -324,13 +328,6 @@ impl OnboardingLink {
                         } else {
                             state.problem = Some(problem);
                         }
-                    }
-                }
-                match model_settings {
-                    Ok(model_settings) => state.model_settings = Some(model_settings),
-                    Err(problem) => {
-                        state.model_settings = None;
-                        state.model_problem = Some(problem);
                     }
                 }
             }
@@ -397,6 +394,7 @@ impl OnboardingLink {
         let mut state = lock(&self.state);
         let mut records = self.storage.snapshot();
         let chat = self.chat.view();
+        let models = self.models.borrow().clone();
         let sent_rooms = lock(&self.sent_rooms).clone();
         // 发过消息先落盘再渲染：收起提问的视图发出去时 `prompts_used` 一定已经在盘上。落盘和渲染用
         // 同一份快照，房间行或私聊标记短暂缺失时不落盘也不收起，回来后的发布再收。
@@ -411,7 +409,7 @@ impl OnboardingLink {
                 Err(error) => state.problem = Some(storage_problem(error)),
             }
         }
-        let (view, default_bot) = render(&state, &records);
+        let (view, default_bot) = render(&state, &records, &chat, &models);
         #[cfg(feature = "test-hooks")]
         if let Some(hook) = lock(&self.test_publish_hook).as_ref() {
             hook(&view, &sent_rooms);
@@ -420,6 +418,17 @@ impl OnboardingLink {
         self.view.send_replace(view);
         drop(state);
         self.chat.set_default_bot(default_bot);
+    }
+}
+
+/// 模型页上选了模型：接模型这一步的“下一步”跟着变。
+async fn follow_models(
+    link: Weak<OnboardingLink>,
+    mut models: watch::Receiver<AgentModelsViewModel>,
+) {
+    while models.changed().await.is_ok() {
+        let Some(link) = link.upgrade() else { return };
+        link.publish();
     }
 }
 

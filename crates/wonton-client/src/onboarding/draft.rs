@@ -1,12 +1,12 @@
-//! 资料和应用的选择只在内存里，点完成才保存。模型网页不属于草稿；这里只记沿用配置。
+//! 资料、助手的名字和应用的选择只在内存里，点完成才保存。模型页里的操作当场存进 Bot，不属于草稿。
 //! 没改过的步骤取家里服务器上的设置。
 
 use std::collections::HashSet;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    MAX_DISPLAY_NAME_CHARS, Me, ModelSettings, Onboarding, OnboardingModelChoice,
-    OnboardingProfileStep, OwnerProfileUpdate, ProfileProblem, check_display_name,
+    BotNameProblem, MAX_DISPLAY_NAME_CHARS, Me, Onboarding, OnboardingAssistantStep,
+    OnboardingProfileStep, OwnerProfileUpdate, ProfileProblem, check_bot_name, check_display_name,
     check_email_change, normalized_email,
 };
 
@@ -19,15 +19,11 @@ pub(super) struct Draft {
     pub profile_skipped: bool,
     pub name_problem: Option<String>,
     pub email_problem: Option<String>,
-    /// 为空时：网关里已经接了模型就是“用现在的”，否则不动模型。
-    pub model: Option<ModelDraft>,
+    /// 改过的助手名字；为空时用 Bot 现在的。
+    pub assistant: Option<String>,
+    pub assistant_problem: Option<BotNameProblem>,
     /// 为空时：推荐的插件都已经装着的需求算选中。
     pub needs: Option<HashSet<String>>,
-}
-
-pub(super) enum ModelDraft {
-    Current,
-    Skipped,
 }
 
 impl Draft {
@@ -81,12 +77,29 @@ impl Draft {
         })
     }
 
-    pub fn model<'a>(&'a self, settings: Option<&ModelSettings>) -> Option<&'a ModelDraft> {
-        let configured = settings.is_some_and(|settings| settings.has_configured_models);
-        match &self.model {
-            Some(ModelDraft::Current) | None if configured => Some(&ModelDraft::Current),
-            Some(ModelDraft::Current | ModelDraft::Skipped) | None => None,
+    pub fn assistant_step(&self, current: Option<&str>) -> OnboardingAssistantStep {
+        OnboardingAssistantStep {
+            name: self
+                .assistant
+                .clone()
+                .unwrap_or_else(|| current.unwrap_or_default().to_owned()),
+            name_problem: self.assistant_problem,
         }
+    }
+
+    /// 查名字，规则和家里服务器保存时的同一份。没改过的不查：不改就不发请求。
+    pub fn check_assistant(&mut self) -> bool {
+        self.assistant_problem = self
+            .assistant
+            .as_deref()
+            .and_then(|name| check_bot_name(name.trim()).err());
+        self.assistant_problem.is_none()
+    }
+
+    /// 要保存的名字；改过、和 Bot 现在的不一样时才有。
+    pub fn assistant_update(&self, current: Option<&str>) -> Option<String> {
+        let name = self.assistant.as_deref()?.trim();
+        (Some(name) != current).then(|| name.to_owned())
     }
 
     pub fn needs(&self, onboarding: &Onboarding) -> HashSet<String> {
@@ -104,15 +117,6 @@ impl Draft {
                 .map(|need| need.id.clone())
                 .collect()
         })
-    }
-}
-
-impl ModelDraft {
-    pub fn choice(&self) -> Option<OnboardingModelChoice> {
-        match self {
-            Self::Current => Some(OnboardingModelChoice::Current),
-            Self::Skipped => None,
-        }
     }
 }
 

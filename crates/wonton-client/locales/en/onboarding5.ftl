@@ -3,8 +3,3 @@
 onboarding-steps-not-in-flow = Setup isn't running.
 
 onboarding-steps-state-missing = Setup status hasn't loaded yet.
-
-
-
-onboarding-model-none-configured = The model gateway has no connected models.
-

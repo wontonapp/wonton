@@ -5,8 +5,7 @@ use std::sync::Arc;
 use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, OnboardingCommit, OnboardingStep};
 
-use super::draft::ModelDraft;
-use super::{OnboardingLink, invalid, lock, view};
+use super::{OnboardingLink, assistant, invalid, lock, view};
 use crate::l10n::{CATALOG, language};
 
 impl OnboardingLink {
@@ -67,6 +66,24 @@ impl OnboardingLink {
         if state.draft.name_problem.is_some() || state.draft.email_problem.is_some() {
             let owner = state.owner.clone();
             state.draft.check_profile(owner.as_ref());
+        }
+        drop(state);
+        self.publish();
+        Ok(())
+    }
+
+    pub(super) fn edit_assistant(&self, name: String) -> Result<(), CoreError> {
+        let mut state = lock(&self.state);
+        if Self::flow_step(&state)? != OnboardingStep::Assistant {
+            return Err(invalid(&l10n!(
+                CATALOG,
+                language(),
+                "onboarding-steps-not-assistant-step"
+            )));
+        }
+        state.draft.assistant = Some(name);
+        if state.draft.assistant_problem.is_some() {
+            state.draft.check_assistant();
         }
         drop(state);
         self.publish();
@@ -136,10 +153,18 @@ impl OnboardingLink {
                     self.publish();
                     return Ok(());
                 }
+                OnboardingStep::Assistant
+            }
+            OnboardingStep::Assistant => {
+                if !state.draft.check_assistant() {
+                    drop(state);
+                    self.publish();
+                    return Ok(());
+                }
                 OnboardingStep::Model
             }
             OnboardingStep::Model => {
-                if state.draft.model(state.model_settings.as_ref()).is_none() {
+                if assistant::chosen_model(&state, &self.models.borrow()).is_none() {
                     return Err(invalid(&l10n!(
                         CATALOG,
                         language(),
@@ -176,13 +201,15 @@ impl OnboardingLink {
                 draft.profile_skipped = true;
                 draft.name_problem = None;
                 draft.email_problem = None;
+                OnboardingStep::Assistant
+            }
+            OnboardingStep::Assistant => {
+                state.draft.assistant = None;
+                state.draft.assistant_problem = None;
                 OnboardingStep::Model
             }
-            OnboardingStep::Model => {
-                state.model_problem = None;
-                state.draft.model = Some(ModelDraft::Skipped);
-                OnboardingStep::Apps
-            }
+            // 模型页里做过的都已经存进 Bot：跳过只是不等选好模型。
+            OnboardingStep::Model => OnboardingStep::Apps,
             OnboardingStep::Apps => {
                 state.draft.needs = Some(Default::default());
                 drop(state);
@@ -207,7 +234,8 @@ impl OnboardingLink {
         let mut state = lock(&self.state);
         let step = Self::flow_step(&state)?;
         let mut target = match step {
-            OnboardingStep::Model => OnboardingStep::Profile,
+            OnboardingStep::Assistant => OnboardingStep::Profile,
+            OnboardingStep::Model => OnboardingStep::Assistant,
             OnboardingStep::Apps => OnboardingStep::Model,
             OnboardingStep::Review => {
                 // 旧预览的结果按 review_generation 丢掉。
@@ -292,7 +320,6 @@ impl OnboardingLink {
             state.review.clear();
             state.review_generation += 1;
             state.commit = OnboardingCommit::NotStarted;
-            state.model_problem = None;
             state.step = None;
         }
         self.publish();

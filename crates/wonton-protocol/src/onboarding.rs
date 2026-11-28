@@ -5,7 +5,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CardLine, PermissionLine, PluginIcon, PluginProblem, StoreItem, StoreProblem};
+use crate::{
+    BotNameProblem, BotRef, CardLine, ModelTestResult, PermissionLine, PluginIcon, PluginProblem,
+    StoreItem, StoreProblem,
+};
 
 /// 读写引导状态的接口：`GET` 和 `PUT` 都返回 [`Onboarding`]，`PUT` 的请求体是 [`OnboardingUpdate`]。
 pub const ONBOARDING_PATH: &str = "/_wonton/api/onboarding";
@@ -20,6 +23,8 @@ pub const MODEL_SETTINGS_PATH: &str = "/_wonton/api/models/settings";
 #[serde(rename_all = "snake_case")]
 pub enum OnboardingStep {
     Profile,
+    /// 你的助手：默认 Bot 的名字（和头像）。
+    Assistant,
     Model,
     Apps,
     /// 列出所有选择和应用要的权限，点完成才执行。
@@ -60,6 +65,9 @@ pub struct OnboardingUpdate {
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub agent_intro: Option<bool>,
 }
+
+/// 每个 Agent 插件装好就有的那个 Bot（插件规范 `bots` 里的名字）：默认 Bot 插件上的它就是默认 Bot。
+pub const DEFAULT_BOT: &str = "default";
 
 /// 默认 Bot 插件：家人的私人 Bot 装在它上面，“问 Bot”和聊天列表置顶都找它的默认 Bot。由随核心附带的默认插件
 /// 定，主人不在引导里选；主人卸掉它以后仍是它，私人 Bot 如实报未安装。
@@ -110,6 +118,7 @@ pub struct OnboardingViewModel {
     /// 官方索引的推荐清单取不到或者可能不是最新的原因：这一页说明它，可以跳过。
     pub catalog_problem: Option<StoreProblem>,
     pub profile: OnboardingProfileStep,
+    pub assistant: OnboardingAssistantStep,
     pub model: OnboardingModelStep,
     pub needs: Vec<OnboardingNeedRow>,
     pub review: OnboardingReview,
@@ -179,60 +188,23 @@ pub struct OnboardingProfileStep {
     pub email_problem: Option<String>,
 }
 
-/// 接模型这一步。
+/// 你的助手这一步：给默认 Bot 起名字。只记下来，点完成时才保存。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct OnboardingAssistantStep {
+    /// 先是 Bot 现在的名字，主人改了以后是改后的（[`OnboardingAction::EditOnboardingAssistant`](crate::OnboardingAction::EditOnboardingAssistant)）。
+    pub name: String,
+    /// 点下一步时名字不合规则的原因。
+    pub name_problem: Option<BotNameProblem>,
+}
+
+/// 接模型这一步：壳在这一步放默认 Bot 的模型页（[`AgentModelsAction::OpenAgentModels`](crate::AgentModelsAction::OpenAgentModels)）。
+/// 模型页里的操作当场存进 Bot，不属于引导草稿；选好主模型才能点下一步。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingModelStep {
-    /// 模型设置的插件网页；没有可打开的页面时为空，原因在 `problem`。
-    pub settings: Option<ModelSettingsPage>,
-    /// 网关已有模型配置，不表示上游可达或凭据有效，也不因打开网页变为真。
-    pub has_configured_models: bool,
-    /// 沿用网关配置；网页自己的保存动作不属于引导草稿。
-    pub choice: Option<OnboardingModelChoice>,
-    pub problem: Option<ModelSettingsProblem>,
-}
-
-/// 与侧栏共用的模型设置网页，壳复用插件网页容器，不另开原生配置表单。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ModelSettingsPage {
-    pub plugin_id: String,
-    pub web_url: String,
-}
-
-/// 接模型这一步记下的选择。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum OnboardingModelChoice {
-    /// 沿用模型网关里的配置，点完成时不保存模型；不代表上游存活测试通过。
-    Current,
-}
-
-/// 取模型设置网页失败了；可以重试或跳过，不改连其他模型来源。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ModelSettingsProblem {
-    pub reason: ModelSettingsFailure,
-    /// 核心写的说明，壳原样显示。
-    pub message: String,
-}
-
-/// 失败的原因，壳据此提示主人下一步。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ModelSettingsFailure {
-    /// 模型网关没就绪。
-    GatewayNotReady,
-    /// 连不上家里的服务器。
-    TransportUnavailable,
-    /// 家里的服务器不认这台设备，或者不让它做这件事。
-    Unauthorized,
-    /// 家里的服务器上出错了。
-    Upstream,
-    /// App 和家里服务器的版本对不上，有一边要更新。
-    Protocol,
+    /// 默认 Bot；没有默认 Bot 插件时这一步不显示。
+    pub bot: Option<BotRef>,
 }
 
 /// 选需求这一步的一行。
@@ -262,7 +234,7 @@ pub enum OnboardingCommit {
     /// 还没点完成，什么都没有执行。
     #[default]
     NotStarted,
-    /// 在保存资料和引导状态；模型网页已保存的修改不在此处重做。
+    /// 在保存资料、助手的名字和引导状态；模型页里的操作当场存过，这里不重做。
     Running,
     /// 都保存好了，安装在后台接着做；可以离开引导（再发一次 `ContinueOnboarding`）。
     Done,
@@ -275,7 +247,7 @@ pub struct OnboardingReviewItem {
     /// 重试时带回（[`OnboardingAction::RetryOnboardingItem`](crate::OnboardingAction::RetryOnboardingItem)）。应用是插件 ID。
     pub id: String,
     pub kind: OnboardingReviewKind,
-    /// 资料是填的名字，应用是插件名；沿用模型配置时不复制网关里的服务商列表。
+    /// 资料是填的名字，助手是 Bot 的名字，模型是服务商和模型，应用是插件名。
     pub titles: Vec<String>,
     /// 第二行的内容，壳按类别写文字；没有时为空。
     pub detail: Option<OnboardingReviewDetail>,
@@ -295,8 +267,8 @@ pub struct OnboardingReviewItem {
 pub enum OnboardingReviewDetail {
     /// 资料的邮箱。
     Email { email: String },
-    /// 沿用模型网关的配置，不代表上游可达。
-    KeepCurrent,
+    /// 默认 Bot 选好的模型（`titles` 是服务商和模型）和这次打开模型页以来最近一次测试的结果；没测过时为空。
+    Model { test: Option<ModelTestResult> },
     /// 这一类这次不动：完成时不发请求，服务器上的现值保持原样。
     Unchanged,
 }
@@ -306,6 +278,7 @@ pub enum OnboardingReviewDetail {
 #[serde(rename_all = "snake_case")]
 pub enum OnboardingReviewKind {
     Profile,
+    Assistant,
     Model,
     App,
 }
