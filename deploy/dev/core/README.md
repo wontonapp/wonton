@@ -35,13 +35,15 @@ Cookie 罐路径，curl 加 `-b` 复用。
 
 - 端口 `WONTON_DEV_PORT`（默认 18480），基础域名 `WONTON_DEV_DOMAIN`（默认项目用 `wonton.localhost`，其他项目默认用 `<项目名>.wonton.localhost`）。
   端口也是浏览器看到的地址的一部分，改端口后要重新安装 SSO 插件；需要并行栈时可显式覆盖基础域名。
+- challtestsrv 的管理口 `WONTON_DEV_ACME_DNS_PORT` 每套栈一个：不给时 `up` 从 `WONTON_DEV_PORT` 往上找空口，记在
+  `deploy/dev/core/.data/acme-dns-port`，两套栈同时起也不会都抢 18086。用 `dev.sh acme-port` 取当前值。
 - core 网络 `<项目名>_core` 由 `dev.sh` 建一次（子网用 `WONTON_DEV_CORE_SUBNET`，不设由 Docker 从默认地址池分），
   compose 里是 external，只负责把容器接上去。网络已经在了就沿用；换子网要先 `down`。子网和别的网络撞了时 `up` 报出
   撞的是哪张网，换一个子网或先把那套 `down`。
   `down`、`reset` 先删插件容器再删网络（容器还接着时 Docker 拒删）；没删掉时 `down` 返回非零，别当成拆完了。
   不让 compose 管它是因为：渲染出来的配置和现有的对不上时它会删了重建，重建后接回去的系统服务不带别名
   （`hydra.wonton.internal` 等），核心再也解析不到，一直重试（#187）。
-- 一台 Docker 上跑几套：每套设自己的 `WONTON_DEV_PROJECT`、端口和 `WONTON_DEV_DATA`。`up` 在构建之前查网关和隧道端口
+- 一台 Docker 上跑几套：每套设自己的 `WONTON_DEV_PROJECT`、端口和 `WONTON_DEV_DATA`，ACME 管理口按栈自动取。`up` 在构建之前查网关、隧道和 ACME 管理端口
   （`port-preflight.sh`）：别的项目的容器发布了、或本机已有 socket 时直接失败，说明谁占着，并给出往后第一个空的端口。
   实例名 `WONTON_DEV_INSTANCE` 默认取项目名（去掉开头的 `wonton-` 和非字母数字，最多 16 个字符；去了标点时在截短后的名字后面接项目名哈希的前 5 位
   十六进制，只差标点的两个项目名不会得到同一个实例名），插件的资源名和标签都带上它，各管各的。
@@ -184,10 +186,11 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 Pebble 的根证书由 `dev.sh up` 取到数据目录交给核心。走查“HTTPS 和域名”设置页时用 `dev.sh up` 末尾打印的
 `HTTPREQ_ENDPOINT`（服务商选“其他”），后缀填 `example.test`。
 
-局域网记录要的地址用 challtestsrv 加（它同时从 `127.0.0.1:18086` 暴露管理接口）：
+局域网记录要的地址用 challtestsrv 加（管理接口只发布在宿主 `127.0.0.1` 上，端口按栈取）：
 
 ```bash
-curl -sS --noproxy '*' -X POST http://127.0.0.1:18086/add-a \
+port="$(deploy/dev/core/dev.sh acme-port)"
+curl -sS --noproxy '*' -X POST "http://127.0.0.1:$port/add-a" \
   -d '{"host":"*.lan.example.test","addresses":["<这台主机的局域网地址>"]}'
 ```
 
