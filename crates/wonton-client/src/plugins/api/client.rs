@@ -1,148 +1,45 @@
-//! 核心的插件管理接口（ADR-0017 的“管理接口”）：请求走本地代理，核心凭隧道身份认出这台已配对设备。请求不带
-//! `Origin` 和 `Sec-Fetch-Site`，核心据此知道它不是网页发起的。
+//! 走本地代理的插件管理请求：地址、超时、发送与解析，传输失败统一成“连不上”。
 
-#[path = "api_error.rs"]
-mod error;
-use error::core_error;
-pub(crate) use error::failure_kind;
-
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use reqwest::header::{ACCEPT_LANGUAGE, CONTENT_TYPE};
 use reqwest::{Client, Method};
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CapabilityProviderRef, CoreError, CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus,
-    PluginFailure, PluginImage, PluginProblem, SettingsFieldError, SettingsSchemaProblem,
-    minimum_server_version, window_path,
+    CoreUpgradeFailure, CoreUpgradeProblem, CoreUpgradeStatus, PluginFailure, PluginImage,
+    PluginProblem, minimum_server_version, window_path,
 };
 
+use super::ServerVersion;
+use super::error::core_error;
+use super::response::{CoreApiError, http_error, upgrade_error};
 use crate::chat::proxy_url;
 use crate::l10n::{CATALOG, language};
-use crate::plugins::lock;
 
 /// 列表、详情、图片：只读家里服务器上已有的东西。隧道卡住时按“连不上”失败，不一直转圈。
 pub(crate) const READ_TIMEOUT: Duration = Duration::from_secs(30);
-/// 问服务器版本：接口已经回过 404，等久了不如先按原来的类别报。
-const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 /// 家里的服务器要去来源（GitHub）取东西：商店、商店里的详情、预览，以及引导要取的官方索引和图标。
 pub(crate) const SOURCE_TIMEOUT: Duration = Duration::from_secs(120);
 /// 安装和升级：响应要等拉完镜像、通过健康检查。Hermes 的镜像约 1 GB，慢的网络要很久；超时后核心照样做完，
 /// 结果从已安装列表里看。核心等健康至多 60 分钟（按插件的 healthcheck.start_period 放宽），再留出拉镜像的时间。
-pub(super) const INSTALL_TIMEOUT: Duration = Duration::from_secs(90 * 60);
+pub(in crate::plugins) const INSTALL_TIMEOUT: Duration = Duration::from_secs(90 * 60);
 
 const IMAGE_PREFIX: &str = "/_wonton/api/images/";
-
-/// 核心的错误响应：`{"error": {"kind": …, "message": …}}`。
-#[derive(Deserialize)]
-struct ErrorBody {
-    error: ErrorDetail,
-}
-
-#[derive(Deserialize)]
-struct ErrorDetail {
-    kind: String,
-    message: String,
-    #[serde(default)]
-    problem: Option<String>,
-    #[serde(default)]
-    fields: Vec<SettingsFieldError>,
-    #[serde(default)]
-    problems: Vec<SettingsSchemaProblem>,
-    /// `in_use` 时还在用这个插件的依赖方（ADR-0053）。
-    #[serde(default)]
-    plugins: Vec<CapabilityProviderRef>,
-}
-pub(crate) enum CoreApiError {
-    Transport(PluginProblem),
-    Http {
-        status: u16,
-        kind: Option<String>,
-        message: String,
-        problem: Option<String>,
-        /// `in_use` 的依赖方（ADR-0053）；别的类别为空。
-        plugins: Vec<CapabilityProviderRef>,
-    },
-    Protocol(String),
-}
 
 /// 一次请求要用的连接信息：核心的地址、本地代理，以及主人的语言。
 #[derive(Clone)]
 pub(crate) struct CoreApi {
-    pub(super) base: Url,
-    pub(super) client: Client,
-    pub(super) languages: String,
+    pub(in crate::plugins) base: Url,
+    pub(in crate::plugins) client: Client,
+    pub(in crate::plugins) languages: String,
     /// 这台服务器报过的版本。只有接口回 404 时才去取一次，取不到就不判旧。
-    pub(super) version: ServerVersion,
-}
-
-/// 服务器版本的一次性缓存，随作用域活着：升级状态的每次成功回应都写进来。
-#[derive(Clone, Default)]
-pub(crate) struct ServerVersion(Arc<VersionCache>);
-
-#[derive(Default)]
-struct VersionCache {
-    value: Mutex<Option<String>>,
-    /// 问过一次了：服务器不报版本时不再每次都问。
-    asked: AtomicBool,
-}
-
-impl ServerVersion {
-    /// 记下服务器自己报的版本；空的不覆盖已有的。
-    pub(super) fn seed(&self, version: Option<String>) {
-        if let Some(version) = version {
-            *lock(&self.0.value) = Some(version);
-        }
-    }
-
-    fn known(&self) -> Option<String> {
-        lock(&self.0.value).clone()
-    }
-
-    /// 还不知道时问服务器一次（核心升级状态的 `current.version`）；问不到就是不知道。
-    async fn get(&self, api: &CoreApi) -> Option<String> {
-        if let Some(version) = self.known() {
-            return Some(version);
-        }
-        if self.0.asked.swap(true, Ordering::SeqCst) {
-            return None;
-        }
-        #[derive(Deserialize)]
-        struct Reported {
-            current: Current,
-        }
-        #[derive(Deserialize)]
-        struct Current {
-            #[serde(default)]
-            version: Option<String>,
-        }
-        let probed = match api
-            .exchange(
-                Method::GET,
-                api.url(&["core", "upgrade"], &[]),
-                None,
-                "application/json",
-                VERSION_TIMEOUT,
-            )
-            .await
-        {
-            Ok((status, bytes)) if status < 400 => serde_json::from_slice::<Reported>(&bytes)
-                .ok()
-                .and_then(|reported| reported.current.version),
-            _ => None,
-        };
-        self.seed(probed.clone());
-        probed
-    }
+    pub(in crate::plugins) version: ServerVersion,
 }
 
 /// 建本地代理的 HTTP 客户端。
-pub(super) fn proxied_client(
+pub(crate) fn proxied_client(
     proxy: &wonton_protocol::ProxySettings,
 ) -> Result<Client, PluginProblem> {
     Client::builder()
@@ -219,7 +116,7 @@ impl CoreApi {
         Ok((status, kind, bytes.to_vec()))
     }
 
-    async fn exchange(
+    pub(super) async fn exchange(
         &self,
         method: Method,
         url: Url,
@@ -275,7 +172,7 @@ impl CoreApi {
     }
 
     /// 升级的接口都回 [`CoreUpgradeStatus`]；被拒绝的原因（`changed`、`busy`……）比插件的失败分类细，要原样保留。
-    pub(super) async fn core_upgrade(
+    pub(crate) async fn core_upgrade(
         &self,
         method: Method,
         segments: &[&str],
@@ -346,7 +243,7 @@ impl CoreApi {
     }
 
     /// 发主人选的压缩包，响应是 JSON。核心按内容认格式，这里不用说是哪一种。
-    pub(super) async fn post_archive<T: DeserializeOwned>(
+    pub(crate) async fn post_archive<T: DeserializeOwned>(
         &self,
         segments: &[&str],
         archive: Vec<u8>,
@@ -466,7 +363,7 @@ impl CoreApi {
     }
 
     /// 没有请求体，响应是 JSON。
-    pub(super) async fn empty<T: DeserializeOwned>(
+    pub(crate) async fn empty<T: DeserializeOwned>(
         &self,
         method: Method,
         segments: &[&str],
@@ -479,7 +376,7 @@ impl CoreApi {
     }
 
     /// 停止放行时段。核心回 404 说明已经结束了，主人要的就是这个。
-    pub(super) async fn stop_window(
+    pub(crate) async fn stop_window(
         &self,
         card: &str,
         timeout: Duration,
@@ -496,7 +393,7 @@ impl CoreApi {
     }
 
     /// 只看成败，不解析响应：安装的结果以已安装列表为准，核心比 App 新时响应的形状可以变。
-    pub(super) async fn post_unit(
+    pub(crate) async fn post_unit(
         &self,
         segments: &[&str],
         body: &impl serde::Serialize,
@@ -505,7 +402,7 @@ impl CoreApi {
         self.post_raw(segments, body, timeout).await.map(drop)
     }
 
-    pub(super) async fn post_raw(
+    pub(crate) async fn post_raw(
         &self,
         segments: &[&str],
         body: &impl serde::Serialize,
@@ -527,7 +424,7 @@ impl CoreApi {
     }
 
     /// 发 JSON 请求体，响应是空的。
-    pub(super) async fn put_unit_body(
+    pub(crate) async fn put_unit_body(
         &self,
         segments: &[&str],
         body: &impl serde::Serialize,
@@ -550,7 +447,7 @@ impl CoreApi {
     }
 
     /// 响应是空的。
-    pub(super) async fn put_unit(
+    pub(crate) async fn put_unit(
         &self,
         segments: &[&str],
         timeout: Duration,
@@ -560,7 +457,7 @@ impl CoreApi {
             .map(drop)
     }
 
-    pub(super) async fn delete(
+    pub(crate) async fn delete(
         &self,
         segments: &[&str],
         query: &[(&str, &str)],
@@ -572,7 +469,7 @@ impl CoreApi {
     }
 
     /// 同 [`Self::delete`]，错误带类别、原话和 `in_use` 的依赖方。
-    pub(super) async fn delete_detailed(
+    pub(crate) async fn delete_detailed(
         &self,
         segments: &[&str],
         query: &[(&str, &str)],
@@ -600,7 +497,7 @@ impl CoreApi {
     }
 
     /// `PluginImage.path` 是核心给的地址，只取图片接口下面的。
-    pub(super) async fn image(&self, image: &PluginImage) -> Result<Vec<u8>, PluginProblem> {
+    pub(crate) async fn image(&self, image: &PluginImage) -> Result<Vec<u8>, PluginProblem> {
         if !image.path.starts_with(IMAGE_PREFIX) {
             return Err(PluginProblem {
                 reason: PluginFailure::Invalid,
@@ -643,61 +540,6 @@ impl CoreApi {
     }
 }
 
-/// 错误响应里能认出来的类别和原话；认不出来时只留状态码。
-fn http_error(status: u16, bytes: &[u8]) -> CoreApiError {
-    let detail = serde_json::from_slice::<ErrorBody>(bytes)
-        .ok()
-        .map(|body| body.error);
-    let (kind, message, problem, plugins) = match detail {
-        Some(ErrorDetail {
-            kind,
-            message,
-            problem,
-            plugins,
-            ..
-        }) => (Some(kind), message, problem, plugins),
-        None => (
-            None,
-            l10n!(
-                CATALOG,
-                language(),
-                "plugins-api-server-status",
-                status = status
-            ),
-            None,
-            Vec::new(),
-        ),
-    };
-    CoreApiError::Http {
-        status,
-        kind,
-        message,
-        problem,
-        plugins,
-    }
-}
-
-impl CoreApiError {
-    /// 转成壳能显示的问题；`in_use` 的依赖方由调用方从 [`CoreApiError::Http`] 里另取。
-    pub(crate) fn into_problem(self) -> PluginProblem {
-        match self {
-            Self::Transport(problem) => problem,
-            Self::Http {
-                status,
-                kind,
-                message,
-                ..
-            } => error::problem_from_parts(status, kind.as_deref(), message),
-            Self::Protocol(message) => PluginProblem {
-                reason: PluginFailure::Protocol,
-                min_version: None,
-                message,
-                settings: None,
-            },
-        }
-    }
-}
-
 fn parse<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, PluginProblem> {
     serde_json::from_slice(bytes).map_err(|e| PluginProblem {
         reason: PluginFailure::Protocol,
@@ -722,7 +564,7 @@ fn transport(error: &reqwest::Error, timeout: Duration) -> PluginProblem {
     not_connected()
 }
 
-pub(super) fn not_connected() -> PluginProblem {
+pub(crate) fn not_connected() -> PluginProblem {
     PluginProblem {
         reason: PluginFailure::TransportUnavailable,
         min_version: None,
@@ -732,88 +574,11 @@ pub(super) fn not_connected() -> PluginProblem {
 }
 
 /// 这台手机还没有配对信息：不是连不上，是还没配对，壳据此引导去配对。
-pub(super) fn not_paired() -> PluginProblem {
+pub(crate) fn not_paired() -> PluginProblem {
     PluginProblem {
         reason: PluginFailure::NotPaired,
         min_version: None,
         message: l10n!(CATALOG, language(), "plugins-api-not-paired"),
         settings: None,
-    }
-}
-
-fn upgrade_error(status: u16, body: &[u8]) -> CoreUpgradeProblem {
-    let detail = serde_json::from_slice::<ErrorBody>(body)
-        .ok()
-        .map(|body| body.error);
-    let reason = match detail.as_ref().map(|detail| detail.kind.as_str()) {
-        Some("unauthenticated" | "cross_site") => CoreUpgradeFailure::Unauthorized,
-        Some("changed") => CoreUpgradeFailure::Changed,
-        Some("not_ready") => CoreUpgradeFailure::NotReady,
-        Some("busy") => CoreUpgradeFailure::Busy,
-        Some("too_late") => CoreUpgradeFailure::TooLate,
-        Some(_) if status >= 500 => CoreUpgradeFailure::Upstream,
-        Some(_) => CoreUpgradeFailure::Protocol,
-        None => match status {
-            401 | 403 => CoreUpgradeFailure::Unauthorized,
-            502 => CoreUpgradeFailure::TransportUnavailable,
-            500..=599 => CoreUpgradeFailure::Upstream,
-            _ => CoreUpgradeFailure::Protocol,
-        },
-    };
-    let message = detail.map_or_else(
-        || {
-            l10n!(
-                CATALOG,
-                language(),
-                "plugins-api-server-status",
-                status = status
-            )
-        },
-        |detail| detail.message,
-    );
-    CoreUpgradeProblem { reason, message }
-}
-
-/// 直接返回结果的调用（详情、预览、图片）按 [`CoreError`] 的分类失败，核心写的说明原样带上。
-pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
-    let reason = problem.message;
-    match problem.reason {
-        PluginFailure::TransportUnavailable => CoreError::TransportUnavailable { reason },
-        PluginFailure::Unauthorized => CoreError::Unauthorized { reason },
-        PluginFailure::SettingsInvalid => CoreError::SettingsInvalid {
-            reason,
-            fields: problem.settings.map(|settings| settings.fields).unwrap_or_default(),
-        },
-        PluginFailure::NotFound
-        | PluginFailure::Invalid
-        | PluginFailure::Changed
-        | PluginFailure::SettingsSchemaInvalid => CoreError::InvalidInput { reason },
-        PluginFailure::Unsupported
-        | PluginFailure::Conflict
-        | PluginFailure::DeviceUnavailable
-        | PluginFailure::LanUnavailable
-        | PluginFailure::LanPortTaken
-        | PluginFailure::EgressProxyUnavailable
-        | PluginFailure::EgressProxyWaiting
-        | PluginFailure::CoreUpgrading
-        // 服务还在起，现在做不了，缓过来再试就能过（#682）。
-        | PluginFailure::TimedOut
-        // 记录不可用：现在做不了。壳按类别出「重新安装」的下一步（#198 的核心行为、#230 的 iOS 壳）。
-        | PluginFailure::RecordUnusable
-        // 卸载被在用的依赖挡住：卸掉依赖方或先停掉它们再试。
-        | PluginFailure::InUse => CoreError::NotReady { reason },
-        // 还没配对家里的服务器：前置条件不满足，配对后再试。
-        PluginFailure::NotPaired => CoreError::NotReady { reason },
-        PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
-            CoreError::Upstream { reason }
-        }
-        // 远端 MCP 服务器连不上或者回错了：都是家外的一方出事。专门的界面在 App 那一步补。
-        PluginFailure::RemoteUnavailable | PluginFailure::RemoteError => {
-            CoreError::Upstream { reason }
-        }
-        PluginFailure::ServerTooOld => CoreError::ServerTooOld {
-            reason,
-            min_version: problem.min_version,
-        },
     }
 }
