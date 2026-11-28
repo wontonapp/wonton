@@ -1,3 +1,4 @@
+use super::Home;
 use serde_json::{Value, json};
 
 #[derive(Default)]
@@ -69,4 +70,11 @@ pub(super) fn respond(core: &super::Core, head: &str, body: &[u8]) -> Option<(u1
         return Some((204, String::new()));
     }
     Some((404, String::new()))
+}
+
+impl Home {
+    /// 好友接口收到的请求：方法和小写路径。
+    pub fn friends_calls(&self) -> Vec<(String, String)> {
+        self.core.friends.lock().unwrap().calls.clone()
+    }
 }

@@ -487,11 +487,6 @@ impl Home {
     pub fn members_requests_dropped(&self) -> usize {
         self.core.members_requests_dropped.load(Ordering::SeqCst)
     }
-
-    /// 好友接口收到的请求：方法和小写路径。
-    pub fn friends_calls(&self) -> Vec<(String, String)> {
-        self.core.friends.lock().unwrap().calls.clone()
-    }
 }
 
 pub use super::timeline::Timeline;
