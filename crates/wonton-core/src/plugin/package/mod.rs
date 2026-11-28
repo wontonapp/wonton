@@ -7,8 +7,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::os::fd::AsFd;
-use std::path::Path;
 
 use serde::Deserialize;
 // `serde_saphyr::Error::custom` 是 serde 的 trait 方法，路径经它带出反序列化器闭包。
@@ -20,21 +18,19 @@ use super::compose::{
     strip_extensions,
 };
 use super::github_source::Origin;
-use super::images::IconFormat;
 use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, ManifestExt};
 use super::manifest_static::StaticWebManifestExt;
-use super::package_archive;
-use super::package_files::{
-    self, COMPOSE_FILE, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, PackageFiles,
-};
+use super::package_files::PackageFiles;
 use crate::l10n::text;
 
 mod bot_service;
 #[path = "package_capability_services.rs"]
 mod capability_services;
 mod configs;
+mod file_refs;
 mod gpu_images;
+mod load;
 mod references;
 mod runtime;
 mod services;
@@ -45,10 +41,7 @@ pub(super) mod errors;
 
 pub use configs::ConfigSource;
 pub use errors::PackageError;
-use errors::{
-    archive_error, compose_file_error, file_error, interpolate_error, reference_error,
-    service_error, static_error, too_big_error, top_level_error, yaml_error,
-};
+use errors::{interpolate_error, service_error, top_level_error, yaml_error};
 
 /// 解析好的插件包。
 #[derive(Debug, Clone)]
@@ -69,106 +62,9 @@ pub struct PluginPackage {
 }
 
 impl PluginPackage {
-    /// 只有 compose 文本的插件包：引用了包里的文件时失败。
-    pub fn parse(source: &str, langs: &Languages) -> Result<Self, PackageError> {
-        Self::with_files(source, PackageFiles::new(), langs)
-    }
-
-    /// compose 文本加上被引用的文件（如安装记录里保存的那些）。`files` 里没被引用的文件不保留。
-    pub fn with_files(
-        source: &str,
-        files: PackageFiles,
-        langs: &Languages,
-    ) -> Result<Self, PackageError> {
-        Self::structure(source, langs)?.attach(files, langs)
-    }
-
-    /// 插件包打成的压缩包，规则见 [`package_archive`]：只解压 `docker-compose.yml` 和它引用的文件。
-    pub fn from_archive(body: &[u8], langs: &Languages) -> Result<Self, PackageError> {
-        let archive = package_archive::Archive::open(body).map_err(|e| archive_error(langs, e))?;
-        let root = archive.root(langs).map_err(|e| archive_error(langs, e))?;
-        let compose = archive
-            .read(&root, &[COMPOSE_FILE.to_owned()], langs)
-            .map_err(|e| archive_error(langs, e))?
-            .remove(COMPOSE_FILE)
-            .ok_or_else(|| compose_file_error(langs, FileError::Missing))?;
-        let source = String::from_utf8(compose)
-            .map_err(|_| yaml_error(langs, text(langs, "plugin-install-pkg-not-utf8", &[])))?;
-        let files = archive
-            .read(&root, &Self::referenced_files(&source, langs)?, langs)
-            .map_err(|e| archive_error(langs, e))?;
-        let package = Self::with_files(&source, files, langs)?;
-        let Some(static_root) = package.static_root() else {
-            return Ok(package);
-        };
-        let prefix = format!("{root}{static_root}/");
-        let files = archive
-            .read_tree(&prefix, static_files::MAX_FILE_BYTES, langs)
-            .map_err(|e| archive_error(langs, e))?;
-        package.with_static(files, langs)
-    }
-
-    /// 读插件包目录：`docker-compose.yml` 和它引用的文件，路径和软链接的规则见 [`super::package_files`]。
-    pub fn load_dir(dir: &Path, langs: &Languages) -> Result<Self, PackageError> {
-        let opened =
-            super::package_files::open_dir(dir).map_err(|e| compose_file_error(langs, e))?;
-        Self::load_dir_at(opened.as_fd(), langs)
-    }
-
-    /// 同 [`Self::load_dir`]，从已打开的目录读：调用方（如 outbox 的解析）钉住目录，中途换不掉。
-    pub fn load_dir_at(
-        dir: std::os::fd::BorrowedFd<'_>,
-        langs: &Languages,
-    ) -> Result<Self, PackageError> {
-        let source =
-            package_files::read_at(dir, COMPOSE_FILE).map_err(|e| compose_file_error(langs, e))?;
-        let source = String::from_utf8(source)
-            .map_err(|_| yaml_error(langs, text(langs, "plugin-install-pkg-not-utf8", &[])))?;
-        let package = Self::structure(&source, langs)?;
-        let mut files = PackageFiles::new();
-        let optional = package.optional_references(langs)?;
-        let required = package.references(langs)?;
-        for (field, path) in required.iter().chain(&optional) {
-            let data = match package_files::read_at(dir, path) {
-                Ok(data) => data,
-                Err(FileError::Missing) if optional.iter().any(|(_, p)| p == path) => continue,
-                Err(source) => return Err(file_error(langs, field, path, source)),
-            };
-            files.insert(path.clone(), data);
-        }
-        let package = package.attach(files, langs)?;
-        match package.static_root() {
-            Some(root) => {
-                let files = static_files::read_dir(dir, &root)
-                    .map_err(|problem| static_error(langs, &root, &problem))?;
-                package.with_static(files, langs)
-            }
-            None => Ok(package),
-        }
-    }
-
     /// compose 文本里的清单，不管它引用的文件：商店列表只要清单。
     pub fn manifest_of(source: &str, langs: &Languages) -> Result<Manifest, PackageError> {
         Ok(Self::structure(source, langs)?.manifest)
-    }
-
-    /// 包里的引用路径，含可选的状态头像首帧；缺少首帧可以省略，其他引用都必须存在。
-    pub fn referenced_files(source: &str, langs: &Languages) -> Result<Vec<String>, PackageError> {
-        let package = Self::structure(source, langs)?;
-        let refs = package.references(langs)?;
-        Ok(refs
-            .into_iter()
-            .chain(package.optional_references(langs)?)
-            .map(|(_, path)| path)
-            .collect())
-    }
-
-    pub fn optional_files(source: &str, langs: &Languages) -> Result<Vec<String>, PackageError> {
-        Ok(Self::structure(source, langs)?
-            .optional_references(langs)?
-            .into_iter()
-            .map(|(_, path)| path)
-            .collect())
     }
 
     fn structure(source: &str, langs: &Languages) -> Result<Self, PackageError> {
@@ -226,127 +122,6 @@ impl PluginPackage {
         Ok(package)
     }
 
-    /// 被引用的文件：（引用它的字段，规范化后的路径）。
-    fn references(&self, langs: &Languages) -> Result<Vec<(String, String)>, PackageError> {
-        let manifest = &self.manifest;
-        let mut refs = Vec::new();
-        let mut add = |field: &str, raw: &str| {
-            let path = package_files::normalize(raw)
-                .map_err(|message| reference_error(langs, field, message))?;
-            refs.push((field.to_owned(), path));
-            Ok::<_, PackageError>(())
-        };
-        let mut image_refs = Vec::new();
-        if let Some(icon) = &manifest.icon {
-            image_refs.push(("icon".to_owned(), icon.as_str()));
-        }
-        for (index, tab) in manifest
-            .tabs
-            .as_deref()
-            .unwrap_or_default()
-            .iter()
-            .enumerate()
-        {
-            image_refs.extend(tab.icon_refs(index));
-        }
-        for (field, icon) in image_refs {
-            // 图标随提交固定，App 也不向第三方取图（ADR-0017），所以不收网址。
-            if IconFormat::from_path(icon).is_none() || icon.contains("://") {
-                return Err(reference_error(
-                    langs,
-                    &field,
-                    text(
-                        langs,
-                        "plugin-install-pkg-icon-file",
-                        &[("icon", icon.into())],
-                    ),
-                ));
-            }
-            add(&field, icon)?;
-        }
-        if let Some(settings) = &manifest.settings {
-            add("settings", settings)?;
-        }
-        if let Some(avatar) = manifest.bot.as_ref().and_then(|b| b.avatar.as_ref()) {
-            add("bot.avatar", avatar)?;
-        }
-        if let Some(avatars) = manifest.bot.as_ref().and_then(|b| b.avatars.as_ref()) {
-            for (state, path) in avatars {
-                add(&format!("bot.avatars.{state}"), path)?;
-            }
-        }
-        for notice in &manifest.notices {
-            add("notices", notice)?;
-        }
-        for (name, config) in &self.configs {
-            if let ConfigSource::File(path) = config {
-                refs.push((format!("configs.{name}.file"), path.clone()));
-            }
-        }
-        Ok(refs)
-    }
-
-    fn optional_references(
-        &self,
-        langs: &Languages,
-    ) -> Result<Vec<(String, String)>, PackageError> {
-        let required: BTreeSet<_> = self
-            .references(langs)?
-            .into_iter()
-            .map(|(_, path)| path)
-            .collect();
-        let mut optional = BTreeMap::new();
-        if let Some(avatars) = self
-            .manifest
-            .bot
-            .as_ref()
-            .and_then(|bot| bot.avatars.as_ref())
-        {
-            for (state, raw) in avatars {
-                let path = package_files::normalize(raw).map_err(|message| {
-                    reference_error(langs, &format!("bot.avatars.{state}"), message)
-                })?;
-                let poster = super::bot_avatars::poster_path(&path);
-                if poster != path && !required.contains(&poster) {
-                    optional.insert(poster, format!("bot.avatars.{state}.poster"));
-                }
-            }
-        }
-        Ok(optional
-            .into_iter()
-            .map(|(path, field)| (field, path))
-            .collect())
-    }
-
-    /// 配上被引用的文件：每个都要有，且不超过大小上限。
-    fn attach(mut self, mut files: PackageFiles, langs: &Languages) -> Result<Self, PackageError> {
-        let optional = self.optional_references(langs)?;
-        let required = self.references(langs)?;
-        for (field, path) in required.iter().chain(&optional) {
-            if self.files.contains_key(path) {
-                continue;
-            }
-            let Some(data) = files.remove(path) else {
-                if optional.iter().any(|(_, p)| p == path) {
-                    continue;
-                }
-                return Err(file_error(langs, field, path, FileError::Missing));
-            };
-            if data.len() as u64 > MAX_FILE_BYTES {
-                return Err(file_error(langs, field, path, FileError::TooBig));
-            }
-            if field == "notices" && std::str::from_utf8(&data).is_err() {
-                return Err(file_error(langs, field, path, FileError::NotText));
-            }
-            self.files.insert(path.clone(), data);
-        }
-        let total = self.source.len() + self.files.values().map(Vec::len).sum::<usize>();
-        if total as u64 > MAX_PACKAGE_BYTES {
-            return Err(too_big_error(langs, total as u64));
-        }
-        Ok(self)
-    }
-
     /// 插件包打成的 tar 归档，[`Self::from_archive`] 读得回来。
     pub fn archive(&self) -> Vec<u8> {
         let mut files = self.files.clone();
@@ -354,7 +129,7 @@ impl PluginPackage {
             self.static_blobs()
                 .map(|(path, data)| (path, data.to_vec())),
         );
-        package_files::write_archive(self.source.as_bytes(), &files)
+        super::package_files::write_archive(self.source.as_bytes(), &files)
     }
 
     /// 插件包摘要，见 [`package_files::digest`]：静态网页的文件也算在内，按包里的路径。
@@ -364,18 +139,7 @@ impl PluginPackage {
             .static_hashes
             .iter()
             .map(|(path, hash)| (format!("{root}/{path}"), hash.clone()));
-        package_files::digest_with(self.source.as_bytes(), &self.files, hashes)
-    }
-
-    /// 被引用的文件，安装时随记录保存。
-    pub fn files(&self) -> &PackageFiles {
-        &self.files
-    }
-
-    /// 清单 `x-wonton.settings` 指向的设置 Schema 原文；没声明时为空（引用在解析包时已核对存在并是 UTF-8）。
-    pub fn settings(&self) -> Option<&[u8]> {
-        let path = self.manifest.settings.as_deref()?;
-        self.files.get(path).map(Vec::as_slice)
+        super::package_files::digest_with(self.source.as_bytes(), &self.files, hashes)
     }
 }
 
