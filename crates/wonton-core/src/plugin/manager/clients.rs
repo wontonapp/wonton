@@ -12,6 +12,8 @@ pub(crate) struct ClientPlugin {
     pub title: LocalizedText,
     pub record: InstalledRecord,
     pub http: bool,
+    /// `webui.guests: true`：能给这个应用建访客链接（ADR-0090 第 5 节）。
+    pub guests: bool,
     pub auth: ClientAuthKind,
     pub username: Option<String>,
     pub public_rules: Option<PublicRules>,
@@ -27,12 +29,18 @@ impl PluginManager {
             let Some(listed) = &entry.listed else {
                 continue;
             };
-            let Some(clients) = &listed.manifest.clients else {
-                continue;
-            };
-            if clients.http.is_none() && clients.tcp.as_ref().is_none_or(Vec::is_empty) {
+            let guests = listed
+                .manifest
+                .webui
+                .as_ref()
+                .is_some_and(|webui| webui.guests);
+            let has_http = listed.manifest.clients.as_ref().is_some_and(|clients| {
+                clients.http.is_some() || clients.tcp.as_ref().is_some_and(|tcp| !tcp.is_empty())
+            });
+            if !has_http && !guests {
                 continue;
             }
+            let clients = listed.manifest.clients.as_ref();
             let record = match self.store.load(id) {
                 Ok(Some(record)) => record,
                 Ok(None) if matches!(entry.status, PluginStatus::Installing) => continue,
@@ -43,44 +51,46 @@ impl PluginManager {
                     continue;
                 }
             };
-            let (http, auth, username, public_rules) = match clients.http.as_ref() {
-                Some(http) => {
-                    // `app` 和没写验证方式的都是应用自己的账号；只有 `clients.tcp` 的插件同样按 `app` 列出。
-                    let auth = if http.auth.gateway.is_some() {
-                        ClientAuthKind::Gateway
-                    } else if http.auth.credentials.is_some() {
-                        ClientAuthKind::Credentials
-                    } else {
-                        ClientAuthKind::App
-                    };
-                    let username = http.auth.credentials.as_ref().map(|credentials| {
-                        credentials
-                            .username
-                            .clone()
-                            .unwrap_or_else(|| "{user}".to_owned())
-                    });
-                    let public_rules = http.public.as_ref().map(|public| {
-                        if let Some(paths) = &public.allow {
-                            PublicRules {
-                                mode: PublicRuleMode::Allow,
-                                paths: paths.clone(),
-                            }
+            let (http, auth, username, public_rules) =
+                match clients.and_then(|clients| clients.http.as_ref()) {
+                    Some(http) => {
+                        // `app` 和没写验证方式的都是应用自己的账号；只有 `clients.tcp` 的插件同样按 `app` 列出。
+                        let auth = if http.auth.gateway.is_some() {
+                            ClientAuthKind::Gateway
+                        } else if http.auth.credentials.is_some() {
+                            ClientAuthKind::Credentials
                         } else {
-                            PublicRules {
-                                mode: PublicRuleMode::Deny,
-                                paths: public.deny.clone().unwrap_or_default(),
+                            ClientAuthKind::App
+                        };
+                        let username = http.auth.credentials.as_ref().map(|credentials| {
+                            credentials
+                                .username
+                                .clone()
+                                .unwrap_or_else(|| "{user}".to_owned())
+                        });
+                        let public_rules = http.public.as_ref().map(|public| {
+                            if let Some(paths) = &public.allow {
+                                PublicRules {
+                                    mode: PublicRuleMode::Allow,
+                                    paths: paths.clone(),
+                                }
+                            } else {
+                                PublicRules {
+                                    mode: PublicRuleMode::Deny,
+                                    paths: public.deny.clone().unwrap_or_default(),
+                                }
                             }
-                        }
-                    });
-                    (true, auth, username, public_rules)
-                }
-                None => (false, ClientAuthKind::App, None, None),
-            };
+                        });
+                        (true, auth, username, public_rules)
+                    }
+                    None => (false, ClientAuthKind::App, None, None),
+                };
             result.push(ClientPlugin {
                 id: id.clone(),
                 title: listed.manifest.title.clone(),
                 record,
                 http,
+                guests,
                 auth,
                 username,
                 public_rules,

@@ -383,9 +383,37 @@ async fn start_backend() -> (
     use axum::routing::get;
     let received: Arc<Mutex<Vec<Received>>> = Arc::new(Mutex::new(Vec::new()));
     let recorded = received.clone();
+    let ws_recorded = received.clone();
     let (listener, addr) = bind().await;
     let router = Router::new()
-        .route("/ws", get(upgrade_echo))
+        .route(
+            "/ws",
+            get(move |mut req: Request| {
+                let recorded = ws_recorded.clone();
+                async move {
+                    let (parts, _) = req.into_parts();
+                    received_request(
+                        &recorded,
+                        Received {
+                            method: parts.method.clone(),
+                            uri: parts.uri.to_string(),
+                            headers: parts
+                                .headers
+                                .iter()
+                                .map(|(k, v)| {
+                                    (
+                                        k.as_str().to_owned(),
+                                        String::from_utf8_lossy(v.as_bytes()).into_owned(),
+                                    )
+                                })
+                                .collect(),
+                        },
+                    );
+                    req = Request::from_parts(parts, Body::empty());
+                    upgrade_echo(req).await
+                }
+            }),
+        )
         .route(
             "/cookies",
             get(|| async {
@@ -513,3 +541,6 @@ mod clients_entry_credentials_tests;
 
 #[path = "clients_entry_single_host_tests.rs"]
 mod clients_entry_single_host_tests;
+
+#[path = "clients_guest_entry_tests.rs"]
+mod clients_guest_entry_tests;

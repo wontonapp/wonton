@@ -185,20 +185,37 @@ pub(super) async fn master_cli(reply: &'static str) -> (String, tokio::task::Joi
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio_listener().await;
     let addr = listener.local_addr().unwrap().to_string();
-    let handle = tokio::spawn(async move {
-        let (mut socket, _) = listener.accept().await.unwrap();
-        let mut command = Vec::new();
-        let mut byte = [0u8; 1];
+    let (seen, received) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        let mut seen = Some(seen);
         loop {
-            socket.read_exact(&mut byte).await.unwrap();
-            command.push(byte[0]);
-            if byte[0] == b'\n' {
+            let Ok((mut socket, _)) = listener.accept().await else {
                 break;
+            };
+            let mut command = Vec::new();
+            let mut byte = [0u8; 1];
+            while socket.read_exact(&mut byte).await.is_ok() && byte[0] != b'\n' {
+                command.push(byte[0]);
             }
+            let command = String::from_utf8_lossy(&command).into_owned();
+            let text = if command.starts_with("show proc") {
+                // 一个站稳了的 worker，别让等待站稳的轮询一直重来。
+                "#<PID>          <type>          <reloads>       <uptime>        <version>
+1               master          1              0d00h05m00s     3.4
+# workers
+9               worker          0              0d00h01m00s     3.4
+"
+                .to_owned()
+            } else {
+                if let Some(seen) = seen.take() {
+                    let _ = seen.send(format!("{command}\n"));
+                }
+                reply.to_owned()
+            };
+            let _ = socket.write_all(text.as_bytes()).await;
         }
-        socket.write_all(reply.as_bytes()).await.unwrap();
-        String::from_utf8(command).unwrap()
     });
+    let handle = tokio::spawn(async move { received.await.unwrap_or_default() });
     (addr, handle)
 }
 

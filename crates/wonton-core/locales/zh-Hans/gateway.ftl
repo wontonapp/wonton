@@ -181,6 +181,15 @@ clients-credentials-unavailable = 插件没在运行，现在发不了密码
 clients-credentials-missing-command = 清单里没有 { $op } 命令
 clients-credentials-failed = 应用里的命令失败：{ $error }
 gateway-entry-credentials-not-issued = 应用还没有密码，入口先不开
+clients-guests-not-declared = 这个应用不能接待访客
+clients-guests-entry-closed = 先打开这个应用的局域网或公网入口
+clients-guests-label = 给链接起 1–128 个字的名字，不要换行
+clients-guests-ttl = 一条链接最长有效 7 天
+clients-guests-path = 落地路径要以 / 开头，并且还在这个应用里
+clients-guests-max = 这个应用已经有 20 条有效链接，先收回一条
+clients-guests-not-found = 这条链接已经收回或过期了
+clients-guests-unavailable = 访客链接暂时读不出来
+gateway-guest-invalid = 链接已失效或不对
 clients-domain-read-failed = 域名设置读不了：{ $error }
 clients-public-access-save-failed = 公网访问开关保存不了：{ $error }
 # 公网访问开关的各道闸门：哪道没做成，就按道写哪道（ADR-0090）。

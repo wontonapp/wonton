@@ -1,6 +1,7 @@
 //! 8484 上插件主机名的转发（ADR-0021「核心给入口容器开一个专用监听端口」、ADR-0090）：开关、入口头、
 //! 公网路径规则、`setup_done`、头和 Cookie 的清理都在这里。对端是不是入口容器由 `entry_runtime` 的
-//! `trusted_entry` 中间件把关；`/_wonton/` 前缀在插件主机名上归核心（ADR-0080），一律 404。
+//! `trusted_entry` 中间件把关；`/_wonton/` 前缀在插件主机名上归核心（ADR-0080）：访客链接的
+//! `/_wonton/guest/<令牌>` 在 [`guest_entry`]，其余一律 404。
 //!
 //! `auth.credentials` 的入口：先要求已经成功发过密码（否则 409），再用应用的 `verify` 判 HTTP
 //! `Basic`；没有 `verify` 时值匹配即放行。`.clients` 的网关验证在 C7，这里只管凭据。
@@ -14,7 +15,7 @@ use hyper::header::{self, HeaderMap, HeaderValue};
 use tokio::sync::watch;
 
 use super::matrix::matrix_error;
-use super::{Gateway, api, pages, proxy, session};
+use super::{Gateway, api, guest_entry, pages, proxy, session};
 use crate::clients::gateway_auth::{self, Attempt};
 use crate::clients::path_rules::{self, PathRules};
 use crate::clients::state::Kind;
@@ -89,8 +90,9 @@ pub(super) async fn dispatch(
 ) -> Response {
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
-    // 访客链接（C18）还没来；这个前缀是核心的，不问开关、不转发，也不借它探测标签和开关。
-    if path_rules::is_reserved_path(req.uri().path()) {
+    // `/_wonton/guest/<令牌>` 和其余的 `/_wonton/` 都归核心、不问开关；访客以外的核心路径还没有页面。
+    let guest_path = guest_entry::token(req.uri().path()).is_some();
+    if !guest_path && path_rules::is_reserved_path(req.uri().path()) {
         return deny(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -102,7 +104,7 @@ pub(super) async fn dispatch(
     let resolved = match gateway.clients.resolve(&label, kind) {
         Ok(Some(resolved)) => resolved,
         Ok(None) => return misdirected(),
-        Err(_) => return entry_unavailable(&langs, format),
+        Err(_) => return unavailable(&langs, format),
     };
     // 入口容器的标记：恰好一个，取值和主机名的形式对得上。放在标签解析之后：不是插件的名字先按
     // 421 拒（和联邦用例对非服务器名的断言一致），是插件的名字才看标记。
@@ -116,23 +118,37 @@ pub(super) async fn dispatch(
         );
     };
     if !resolved.switches.of(kind) || (kind == Kind::Public && !gateway.public_access_enabled()) {
-        return pages::error(
-            StatusCode::FORBIDDEN,
-            "entry_closed",
-            &l10n::text(&langs, "gateway-entry-closed", &[]),
-            &langs,
-            format,
-        );
+        // 访客链接在入口页面上和失效一样（ADR-0090 第 5 节）。
+        return if guest_path {
+            guest_entry::invalid(&langs, format, false)
+        } else {
+            entry_closed(&langs, format)
+        };
     }
     let Some(route) = gateway.plugins.route(&resolved.id.slug(), req.uri().path()) else {
         return misdirected();
     };
-    let Some(clients) = &route.clients else {
-        // 有标签不代表有 HTTP 入口：只声明 `clients.tcp` 或根本没声明 `clients` 的插件不通网页。
+    route_request(
+        gateway, req, resolved, route, kind, guest_path, &langs, format,
+    )
+    .await
+}
+
+/// 标签和开关都过了：路径规则、访客链接、验证和转发。
+#[allow(clippy::too_many_arguments)]
+async fn route_request(
+    gateway: &Gateway,
+    req: Request,
+    resolved: crate::clients::state::Resolved,
+    route: Route,
+    kind: Kind,
+    guest_path: bool,
+    langs: &Languages,
+    format: pages::Format,
+) -> Response {
+    if route.clients.is_none() && !route.guests {
+        // 有标签不代表有网页入口：只声明 `clients.tcp` 或根本没声明 `clients` 的插件不通网页。
         return misdirected();
-    };
-    let Some(upstream) = &clients.upstream else {
-        return plugin_unavailable(&route, &langs, format);
     };
     // 路径按值存：原始路径一路转发，命中 auth_failures 时还要拿它比对。
     let path = req.uri().path().to_owned();
@@ -143,38 +159,100 @@ pub(super) async fn dispatch(
             StatusCode::BAD_REQUEST,
             "invalid_input",
             "gateway-invalid-path",
-            &langs,
+            langs,
             format,
         );
     }
+    if guest_path {
+        if !route.guests {
+            return deny(
+                StatusCode::NOT_FOUND,
+                "not_found",
+                "gateway-not-found",
+                langs,
+                format,
+            );
+        }
+        // 令牌路径是核心自己的，不受这个入口的 `public` 规则约束；换完 Cookie 的落地请求照常受限。
+        return guest_entry::exchange(gateway, req, &resolved.id, langs, format);
+    }
     if kind == Kind::Public
-        && let Some(response) = public_rules_reject(clients, &path, &langs, format)
+        && let Some(response) = public_rules_reject(route.clients.as_ref(), &path, langs, format)
     {
         return response;
     }
-    let entry_cancel = proxy::Cancel::Entry(resolved.revoked.clone());
+    admit_and_forward(gateway, req, resolved, route, &path, langs, format).await
+}
+
+/// 访客 Cookie 或入口验证通过后转发；两者都没有时，只声明 `webui.guests` 的入口回失效页。
+async fn admit_and_forward(
+    gateway: &Gateway,
+    req: Request,
+    resolved: crate::clients::state::Resolved,
+    route: Route,
+    path: &str,
+    langs: &Languages,
+    format: pages::Format,
+) -> Response {
     let mut req = req;
+    // 有效的访客 Cookie 且路径在链接范围内：按匿名访客转发，不问密码。
+    let guest = match guest_entry::authenticate(gateway, &resolved.id, &req, path) {
+        guest_entry::GuestAuth::Guest(guest) => Some(guest),
+        guest_entry::GuestAuth::None => None,
+    };
+    let cancel = match &guest {
+        Some(guest) => proxy::Cancel::Both {
+            entry: resolved.revoked.clone(),
+            password: guest.revoke.clone(),
+        },
+        None => proxy::Cancel::Entry(resolved.revoked.clone()),
+    };
+    // 规范对外地址只在声明了 `single_host` 时改写 `Host`（ADR-0089 第 5 节）；值在入口快照里算好。
+    let external = route
+        .clients
+        .as_ref()
+        .is_some_and(|clients| clients.http.single_host)
+        .then_some(resolved.external_url.as_str());
+    if let Some(guest) = guest {
+        // 访客去应用的网页服务（`webui`）。
+        let Some(upstream) = route.upstream.as_ref().filter(|_| route.web_serving) else {
+            return plugin_unavailable(&route, langs, format);
+        };
+        strip_entry_headers(req.headers_mut(), route.proxy.as_deref());
+        return forward_to_plugin(
+            gateway,
+            req,
+            &route,
+            route.clients.as_ref(),
+            upstream,
+            cancel,
+            path,
+            langs,
+            format,
+            external,
+            Some(&guest),
+        )
+        .await;
+    }
+    let Some(clients) = &route.clients else {
+        // 只声明 `webui.guests`：没有别的认证方式，没有有效 Cookie 就是这个页面。
+        return guest_entry::invalid(langs, format, false);
+    };
+    let Some(upstream) = &clients.upstream else {
+        return plugin_unavailable(&route, langs, format);
+    };
     let pass = tokio::select! {
         biased;
-        _ = entry_cancel.cancelled() => return entry_closed(&langs, format),
-        result = auth_reject(gateway, &route, clients, &mut req, &langs, format) => match result {
+        _ = cancel.cancelled() => return entry_closed(langs, format),
+        result = auth_reject(gateway, &route, clients, &mut req, langs, format) => match result {
             Ok(pass) => pass,
             Err(response) => return response,
         },
     };
-    let cancel = pass
-        .as_ref()
-        .map_or(proxy::Cancel::Entry(resolved.revoked.clone()), |pass| {
-            proxy::Cancel::Both {
-                entry: resolved.revoked.clone(),
-                password: pass.revoke.clone(),
-            }
-        });
-    // 规范对外地址只在声明了 `single_host` 时改写 `Host`（ADR-0089 第 5 节）；值在入口快照里算好。
-    let external = clients
-        .http
-        .single_host
-        .then_some(resolved.external_url.as_str());
+    let cancel = pass.as_ref().map_or(cancel, |pass| proxy::Cancel::Both {
+        entry: resolved.revoked.clone(),
+        password: pass.revoke.clone(),
+    });
     strip_entry_headers(req.headers_mut(), route.proxy.as_deref());
     // 代加的身份头在剥头之后注入：插件声明的同名头已删，这里是唯一来源（ADR-0021「接口」）。
     if let Some(pass) = &pass {
@@ -184,7 +262,17 @@ pub(super) async fn dispatch(
         }
     }
     forward_to_plugin(
-        gateway, req, &route, clients, upstream, cancel, &path, &langs, format, external,
+        gateway,
+        req,
+        &route,
+        Some(clients),
+        upstream,
+        cancel,
+        path,
+        langs,
+        format,
+        external,
+        None,
     )
     .await
 }
@@ -195,13 +283,15 @@ async fn forward_to_plugin(
     gateway: &Gateway,
     mut req: Request,
     route: &crate::plugin::manager::Route,
-    clients: &crate::plugin::manager::ClientsRoute,
+    clients: Option<&crate::plugin::manager::ClientsRoute>,
     upstream: &crate::plugin::upstreams::Endpoint,
     cancel: proxy::Cancel,
     path: &str,
     langs: &Languages,
     format: pages::Format,
     external_url: Option<&str>,
+    // 这次请求走的访客链接；成功转发后记一次使用。
+    used: Option<&crate::clients::guests::Authenticated>,
 ) -> Response {
     // 入口容器写的真实来源；解析不出就不写，不编一个。
     let client = req
@@ -229,6 +319,9 @@ async fn forward_to_plugin(
         };
     super::isolation::sanitize_set_cookies(response.headers_mut());
     mark_auth_failure(&mut response, clients, path);
+    if let (Some(store), Some(used)) = (&gateway.plugins.client_guests, used) {
+        store.note_used(route.id.as_str(), &used.id);
+    }
     response
 }
 
@@ -242,7 +335,7 @@ fn entry_closed(langs: &Languages, format: pages::Format) -> Response {
     )
 }
 
-fn entry_unavailable(langs: &Languages, format: pages::Format) -> Response {
+pub(super) fn unavailable(langs: &Languages, format: pages::Format) -> Response {
     deny(
         StatusCode::SERVICE_UNAVAILABLE,
         "plugin_unavailable",
@@ -280,11 +373,12 @@ fn plugin_unavailable(route: &Route, langs: &Languages, format: pages::Format) -
 /// 公网入口的 `public.allow`/`deny`（局域网入口不受 ADR-0021 的 `public` 限制；点段的检查对
 /// 两种入口都在 [`dispatch`] 里执行）。转发给插件的始终是原始路径。
 fn public_rules_reject(
-    clients: &crate::plugin::manager::ClientsRoute,
+    clients: Option<&crate::plugin::manager::ClientsRoute>,
     path: &str,
     langs: &Languages,
     format: pages::Format,
 ) -> Option<Response> {
+    let clients = clients?;
     let rules =
         clients
             .http
@@ -505,12 +599,15 @@ fn strip_entry_headers(headers: &mut HeaderMap, auth: Option<&ProxyAuth>) {
 /// 插件自己带的这个头先删，冒充不了计数（ADR-0021「公网暴露面」）。
 fn mark_auth_failure(
     response: &mut Response,
-    clients: &crate::plugin::manager::ClientsRoute,
+    clients: Option<&crate::plugin::manager::ClientsRoute>,
     path: &str,
 ) {
     let status = response.status().as_u16();
     let headers = response.headers_mut();
     headers.remove(AUTH_FAILURE_HEADER);
+    let Some(clients) = clients else {
+        return;
+    };
     let Some(rules) = &clients.http.auth_failures else {
         return;
     };

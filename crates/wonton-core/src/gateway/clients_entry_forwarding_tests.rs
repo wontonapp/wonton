@@ -8,7 +8,7 @@ async fn core_routes_not_reachable() {
     let home = Home::start().await;
     home.register(ENTRY_APP, "entryapp", false, true);
     let host = home.host("entryapp");
-    // `/_wonton/` 在插件主机名上归核心（ADR-0080），访客链接（C18）还没来：一律 404，不转发。
+    // `/_wonton/` 在插件主机名上归核心（ADR-0080）；没声明访客的插件上，访客令牌路径也是 404，不转发。
     for path in ["/_wonton/api/status", "/_wonton/guest/token"] {
         let reply = home.get(&host, path, &entry_public()).await;
         assert_eq!(reply.status, StatusCode::NOT_FOUND, "{path}");

@@ -106,6 +106,8 @@ pub struct PluginManager {
     pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
     pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
+    /// 访客链接（ADR-0090 第 5 节）；打不开时访客接口和入口上的链接都如实报不可用。
+    pub(crate) client_guests: Option<Arc<crate::clients::guests::GuestStore>>,
     /// 跑应用的凭据命令；生产是 Docker，测试换成按队列给结果的假实现。
     pub(crate) credential_exec: RwLock<Arc<dyn crate::clients::credentials::CredentialExec>>,
     /// 每个插件一把异步锁：并发的启动/安装对账串行跑，第二个先看到第一个的结果。
@@ -214,11 +216,19 @@ impl PluginManager {
                 None
             }
         };
+        let client_guests = match crate::clients::guests::GuestStore::open(&cfg.data_dir) {
+            Ok(guests) => Some(Arc::new(guests)),
+            Err(error) => {
+                tracing::error!(%error, "访客链接库打开失败");
+                None
+            }
+        };
         let credential_exec: Arc<dyn crate::clients::credentials::CredentialExec> = Arc::new(
             crate::clients::credentials::EngineExec::new(Arc::new(engine.clone())),
         );
         Self {
             client_passwords,
+            client_guests,
             credential_exec: RwLock::new(credential_exec),
             credential_locks: Default::default(),
             engine,

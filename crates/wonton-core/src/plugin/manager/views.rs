@@ -59,6 +59,8 @@ pub struct Route {
     pub hosted: Option<HostedRoute>,
     /// 声明了 `clients.http` 时的客户端入口（ADR-0021）；没声明时为空。
     pub clients: Option<ClientsRoute>,
+    /// `webui.guests: true`：能建访客链接，入口上认访客 Cookie（ADR-0090 第 5 节）。
+    pub guests: bool,
 }
 
 /// 网关转发托管插件的请求要的东西。
@@ -110,6 +112,13 @@ fn clients_route(manifest: Option<&Manifest>, entry: &Entry) -> Option<ClientsRo
     })
 }
 
+/// 清单能接待匿名访客（`webui.guests`）。
+fn guests_declared(manifest: Option<&Manifest>) -> bool {
+    manifest
+        .and_then(|manifest| manifest.webui.as_ref())
+        .is_some_and(|webui| webui.guests)
+}
+
 impl PluginManager {
     pub fn route(&self, slug: &str, path: &str) -> Option<Route> {
         let langs = self.owner_languages();
@@ -139,6 +148,7 @@ impl PluginManager {
                     }),
                 }),
                 clients: clients_route(manifest, entry),
+                guests: guests_declared(manifest),
             });
         }
         Some(Route {
@@ -159,6 +169,7 @@ impl PluginManager {
             oidc_callback: oidc_callback(entry, path),
             hosted: None,
             clients: clients_route(manifest, entry),
+            guests: guests_declared(manifest),
         })
     }
 

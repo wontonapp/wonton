@@ -11,6 +11,29 @@ fn model() -> Model {
     model
 }
 
+#[test]
+fn startup_does_not_wait_for_name_resolution() {
+    // 接上 lanfwd 网后 libc 解析 server 可能先超时 10 秒；启动要能先起来（3.4 的 bind 不认 init-addr）。
+    let rendered = render(&model()).unwrap();
+    for line in rendered
+        .config
+        .lines()
+        .filter(|line| line.trim_start().starts_with("server "))
+    {
+        assert!(line.contains("init-addr last,none"), "{line}");
+    }
+}
+
+#[test]
+fn workers_exit_within_the_docker_stop_grace() {
+    let rendered = render(&model()).unwrap();
+    assert!(
+        rendered.config.contains("\n  hard-stop-after 5s\n"),
+        "{}",
+        rendered.config
+    );
+}
+
 fn frontend<'a>(config: &'a str, name: &str) -> &'a str {
     let start = config
         .find(&format!("frontend {name}\n"))
@@ -199,8 +222,8 @@ fn federation_only_model_matches_the_previous_configuration() {
         "  http-request set-header X-Real-IP %[src]\n  http-request set-header X-Wonton-Entry public\n",
         "  default_backend gateway\n",
         "frontend paired\n  bind entry.wonton.internal:8449 ssl crt /certs/site.pem strict-sni expose-fd listeners\n  acl correct_sni ssl_fc_sni -i home.example\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless { hdr(host),lower -i home.example home.example:443 home.example:8448 }\n  http-request set-header X-Wonton-Entry paired\n  use_backend gateway if { path_beg /_matrix/federation/ }\n  use_backend gateway if { path_beg /_matrix/key/ }\n  use_backend gateway if { path /.well-known/matrix/server }\n  use_backend gateway if { path /.well-known/matrix/client }\n  use_backend gateway if { path /.well-known/wonton }\n  default_backend tuwunel\n",
-        "backend gateway\n  server core entry-gateway.wonton.internal:8484 resolvers docker init-addr libc,none\n",
-        "backend tuwunel\n  server tuwunel tuwunel.wonton.internal:8008 resolvers docker init-addr libc,none\n",
+        "backend gateway\n  server core entry-gateway.wonton.internal:8484 resolvers docker init-addr last,none\n",
+        "backend tuwunel\n  server tuwunel tuwunel.wonton.internal:8008 resolvers docker init-addr last,none\n",
         "resolvers docker\n  nameserver docker 127.0.0.11:53\n  resolve_retries 1\n  timeout resolve 1s\n  timeout retry 1s\n  hold valid 10s\n",
         "option http-restrict-req-hdr-names delete\n",
     ] {

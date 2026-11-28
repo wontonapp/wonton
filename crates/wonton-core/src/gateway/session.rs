@@ -21,6 +21,7 @@ pub const CORE_COOKIE: &str = "wonton_session";
 pub const APP_COOKIE: &str = "wonton_app";
 
 const RESERVED_PREFIX: &[u8] = b"wonton_";
+const HOST_RESERVED_PREFIX: &[u8] = b"__host-wonton_";
 
 pub const CORE_TTL: Duration = Duration::from_secs(7 * 24 * 3600);
 pub const APP_TTL: Duration = Duration::from_secs(12 * 3600);
@@ -125,11 +126,16 @@ impl SessionStore {
     }
 }
 
-/// `wonton_` 开头的 Cookie 名归网关：插件设置不了（见 `isolation::sanitize_set_cookies`），也收不到。
-/// 不分大小写，免得各处比较方式不一致。
+/// `wonton_` 和 `__Host-wonton_` 开头的 Cookie 名归网关：插件设置不了（见
+/// `isolation::sanitize_set_cookies`），也收不到。后者是访客链接的 Cookie，`__Host-` 前缀要求浏览器不把它
+/// 发给别的子域。不分大小写，免得各处比较方式不一致。
 pub fn is_reserved_cookie(name: &[u8]) -> bool {
-    name.get(..RESERVED_PREFIX.len())
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(RESERVED_PREFIX))
+    has_prefix(name, RESERVED_PREFIX) || has_prefix(name, HOST_RESERVED_PREFIX)
+}
+
+fn has_prefix(name: &[u8], prefix: &[u8]) -> bool {
+    name.get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix))
 }
 
 /// 请求 `Cookie` 头里的每一对 `名=值`。按字节解析：插件可以设置非 ASCII 的 Cookie，网关不能因此读不出
