@@ -3,26 +3,24 @@
 //! 主人的回答只经 [`Confirmations::answer`] 进来，网关只在已配对设备或主人令牌的请求上调用它（ADR-0024）。
 
 mod activity;
+mod store;
 mod types;
 mod windows;
 
 pub use windows::EndedWindow;
 
-pub use types::{
-    AnswerError, Audience, Chosen, DEFAULT_WINDOW, Notifier, Recipients, Refusal, Ticket,
-};
+#[allow(unused_imports)] // 只有测试经 `super::confirm::DEFAULT_WINDOW` 用。
+pub use store::{Confirmations, DEFAULT_WINDOW};
+pub use types::{AnswerError, Audience, Chosen, Notifier, Recipients, Refusal, Ticket};
 
 pub(super) use types::{CANCELLED, MAX_PENDING_PER_CALLER, SUPERSEDED};
 
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+pub(super) use store::{Slot, Table, now_ms};
+
+use std::time::{Duration, SystemTime};
 
 use tokio::sync::{oneshot, watch};
-use wonton_protocol::{
-    Answer, CardChoice, ConfirmationCard, ConfirmationState, SecretInput, SecretValues,
-};
+use wonton_protocol::{Answer, CardChoice, ConfirmationCard, ConfirmationState, SecretValues};
 
 use super::cards::Draft;
 use crate::l10n;
@@ -30,95 +28,7 @@ use crate::plugin::PluginId;
 use crate::plugin::languages::Languages;
 use crate::secret::random_token;
 
-/// 回答过、过期的确认留这么久，之后再回答得到“不存在”。
-const KEEP_FINISHED: Duration = Duration::from_secs(24 * 3600);
-
-struct Slot {
-    caller: PluginId,
-    /// 这张卡片的冻结收件人。
-    recipients: Recipients,
-    /// 这张卡片能打开放行时段时，时段管哪个插件。
-    scope: Option<String>,
-    /// 见 [`Ticket::window`]。
-    released_by: Option<String>,
-    card: ConfirmationCard,
-    waiter: Option<oneshot::Sender<Chosen>>,
-    /// 这张卡片要填的密钥（ADR-0064）；不填密钥的卡片是空的。
-    secret_inputs: Vec<SecretInput>,
-    /// 不再等回答的时刻（Unix 毫秒）：答了、拒了、过期或被取代。结束的卡片按 [`KEEP_FINISHED`] 留这么久。
-    ended: Option<u64>,
-}
-
-impl Slot {
-    fn includes(&self, recipient: Option<&str>) -> bool {
-        self.recipients.includes(recipient)
-    }
-}
-
-#[derive(Default)]
-struct Table {
-    slots: HashMap<String, Slot>,
-    /// 生效中的放行时段：（Bot，插件）→ 打开它的卡片。其余状态在卡片的 `window` 里。
-    windows: HashMap<(PluginId, String), String>,
-    /// 按收件人放宽的时段（ADR-0024，`wonton__send_message`）：（Bot，收件人）→ 打开它的卡片。
-    recipient_windows: HashMap<(PluginId, String), String>,
-    /// 上次运行留下、卡片还没改成“已结束”的时段。
-    leftovers: HashMap<String, windows::Persisted>,
-}
-
-pub struct Confirmations {
-    notifier: Arc<dyn Notifier>,
-    ttl: Duration,
-    window: Duration,
-    /// 结束的卡片留多久（`KEEP_FINISHED`，测试里可改短）。
-    keep: Duration,
-    /// 记着哪些卡片显示着时段，核心重启后才改得了它们。判定不读它。
-    windows_file: Option<PathBuf>,
-    table: Mutex<Table>,
-    /// 列表的版本：任何一张卡片变了就加一，网关的长轮询挂在这个通道上（[`wonton_protocol::CONFIRMATIONS_PATH`]）。
-    revision: watch::Sender<u64>,
-    /// 确认状态变化要唤醒的活动表。挂它的 Bus 可能重建（测试里共用 Confirmations），
-    /// 所以允许换接：新 Bus 的活动表才是当前事实源。
-    activity: RwLock<Option<Arc<crate::bot_activity::BotActivity>>>,
-}
-
-fn now_ms(at: SystemTime) -> u64 {
-    at.duration_since(UNIX_EPOCH)
-        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or_default()
-}
-
 impl Confirmations {
-    /// `ttl`：卡片发出后多久没回答就过期。
-    pub fn new(notifier: Arc<dyn Notifier>, ttl: Duration) -> Self {
-        Self {
-            notifier,
-            ttl,
-            window: DEFAULT_WINDOW,
-            keep: KEEP_FINISHED,
-            windows_file: None,
-            table: Mutex::new(Table::default()),
-            revision: watch::Sender::new(0),
-            activity: RwLock::new(None),
-        }
-    }
-
-    pub fn ttl(&self) -> Duration {
-        self.ttl
-    }
-
-    /// 结束的卡片留多久（测试里改短，好验证“过了保留期取不到”）。
-    #[cfg(test)]
-    #[must_use]
-    pub fn with_keep_finished(mut self, keep: Duration) -> Self {
-        self.keep = keep;
-        self
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, Table> {
-        self.table.lock().expect("确认表锁中毒")
-    }
-
     /// 请主人确认，等到主人回答或者过期。确认了返回 [`Ticket`]，执行完要调 [`Self::finish`]。
     pub async fn ask(&self, caller: &PluginId, draft: Draft) -> Result<Ticket, Refusal> {
         self.ask_as(caller, draft, Audience::default()).await
@@ -257,22 +167,6 @@ impl Confirmations {
         Ok((card, answered))
     }
 
-    /// 清掉结束超过保留期的卡片。
-    fn prune(&self, table: &mut Table, now: SystemTime) {
-        let before = table.slots.len();
-        let open: Vec<String> = table.windows.values().cloned().collect();
-        table.slots.retain(|id, slot| {
-            slot.waiter.is_some()
-                || open.contains(id)
-                || slot.ended.is_none_or(|ended| {
-                    Duration::from_millis(now_ms(now).saturating_sub(ended)) < self.keep
-                })
-        });
-        if table.slots.len() != before {
-            self.bump();
-        }
-    }
-
     /// 通知收件人的设备有一张新卡片，然后等回答。回答之后卡片的变化只改确认表。
     pub(super) async fn deliver(
         &self,
@@ -365,11 +259,6 @@ impl Confirmations {
     /// 版本变化的订阅：网关的长轮询挂在它上面等下一张卡片。
     pub fn subscribe(&self) -> watch::Receiver<u64> {
         self.revision.subscribe()
-    }
-
-    /// 卡片变了：版本加一，挂着的长轮询知道。状态变化只改确认表，不再改任何 Matrix 消息。
-    pub(super) fn bump(&self) {
-        self.revision.send_modify(|revision| *revision += 1);
     }
 
     /// 单收件人卡片返回收件人；管理员卡片和不存在的 ID 返回 `None`。
