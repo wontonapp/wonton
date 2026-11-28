@@ -1,9 +1,8 @@
 //! 假扮的核心管理接口和驱动 App 的工具，只走回环地址。
 
-use std::collections::{HashMap, VecDeque};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use axum::Router;
@@ -14,7 +13,6 @@ use axum::response::{IntoResponse, Response};
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointId, SecretKey};
 use tokio::net::TcpListener;
-use tokio::sync::watch;
 use wonton_client::{
     Action, ClientCore, HomeStatus, InstallPreview, InstalledPlugin, InstalledPlugins, Network,
     OnboardingViewModel, PermissionLine, PluginHealth, PluginKind, PluginState, PluginTaskState,
@@ -24,152 +22,18 @@ use wonton_tunnel::{Allowlist, TunnelServer};
 
 mod answers;
 mod bot_activity;
+mod state;
 
 pub use answers::{Canned, Headered, core_error};
+pub use state::{CoreState, Seen};
 
 use answers::{core_error_response, json_value};
+
 pub const WAIT: Duration = Duration::from_secs(20);
 /// 兜底预算，不是节奏：繁忙时建连实测 16s+（登录令牌两次超时重连），单次建连限时 12s，
 /// 失败后按退避重试；取 60s，超过就是真的连不上。
 pub const CONNECT_BACKSTOP: Duration = Duration::from_secs(60);
 pub const IMAGE: &str = "/_wonton/api/images/abc/icon-192.png";
-
-/// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
-type Holds = Mutex<HashMap<(Method, String), Arc<watch::Sender<bool>>>>;
-
-/// 排队给一个方法+路径的带延迟预设回应。
-type DelayedCanned = VecDeque<(Canned, Duration)>;
-
-#[derive(Default)]
-pub struct CoreState {
-    /// 依次给出的已安装列表，最后一份一直用下去。
-    lists: Mutex<VecDeque<Vec<InstalledPlugin>>>,
-    /// 假核心保存的引导状态和模型设置。
-    onboarding: Mutex<Option<serde_json::Value>>,
-    /// 假核心保存的资料；为空时是还没填的。
-    owner: Mutex<Option<serde_json::Value>>,
-    /// 某个方法和路径依次给出的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
-    canned: Mutex<HashMap<(Method, String), VecDeque<Canned>>>,
-    /// 用完预设的回应后，某个方法和路径一直用的回应。
-    standing: Mutex<HashMap<(Method, String), Canned>>,
-    /// 同上，但带响应头：有的接口把错误类别写在响应头里（如 `X-Wonton-Error`）。
-    canned_headered: Mutex<HashMap<(Method, String), Headered>>,
-    standing_headered: Mutex<HashMap<(Method, String), Headered>>,
-    /// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
-    holds: Holds,
-    /// 带延迟的预设回应：发出早的请求把它取走，睡完才回，制造“发得早、回得晚”。
-    canned_delayed: Mutex<HashMap<(Method, String), DelayedCanned>>,
-    seen: Mutex<Vec<Seen>>,
-    pub family: Arc<crate::family_support::FamilyFake>,
-    bot_activity: bot_activity::Activity,
-}
-
-#[derive(Clone, Debug)]
-pub struct Seen {
-    pub method: Method,
-    pub path: String,
-    pub language: Option<String>,
-    pub from_page: bool,
-    pub body: String,
-}
-
-impl CoreState {
-    pub fn answer(&self, method: Method, path: &str, canned: Canned) {
-        self.canned
-            .lock()
-            .unwrap()
-            .entry((method, path.to_owned()))
-            .or_default()
-            .push_back(canned);
-    }
-
-    pub fn answer_always(&self, method: Method, path: &str, canned: Canned) {
-        self.standing
-            .lock()
-            .unwrap()
-            .insert((method, path.to_owned()), canned);
-    }
-
-    pub fn answer_headered(&self, method: Method, path: &str, headered: Headered) {
-        self.canned_headered
-            .lock()
-            .unwrap()
-            .insert((method, path.to_owned()), headered);
-    }
-
-    pub fn answer_always_headered(&self, method: Method, path: &str, headered: Headered) {
-        self.standing_headered
-            .lock()
-            .unwrap()
-            .insert((method, path.to_owned()), headered);
-    }
-
-    pub fn stop_answering_headered(&self, method: Method, path: &str) {
-        self.standing_headered
-            .lock()
-            .unwrap()
-            .remove(&(method, path.to_owned()));
-    }
-
-    pub fn stop_answering(&self, method: Method, path: &str) {
-        self.standing
-            .lock()
-            .unwrap()
-            .remove(&(method, path.to_owned()));
-    }
-
-    /// 让这个请求一直等，直到 [`Self::release`]。
-    pub fn hold(&self, method: Method, path: &str) -> Arc<watch::Sender<bool>> {
-        let held = Arc::new(watch::channel(true).0);
-        self.holds
-            .lock()
-            .unwrap()
-            .insert((method, path.to_owned()), held.clone());
-        held
-    }
-
-    pub fn release(&self, method: Method, path: &str) {
-        if let Some(held) = self.holds.lock().unwrap().get(&(method, path.to_owned())) {
-            held.send_replace(false);
-        }
-    }
-
-    /// 发得早的请求取走这份回应、睡完 `delay` 才回：制造“发得早、回得晚”的旧响应。
-    pub fn answer_delayed(&self, method: Method, path: &str, canned: Canned, delay: Duration) {
-        self.canned_delayed
-            .lock()
-            .unwrap()
-            .entry((method, path.to_owned()))
-            .or_default()
-            .push_back((canned, delay));
-    }
-
-    pub fn set_lists(&self, lists: Vec<Vec<InstalledPlugin>>) {
-        *self.lists.lock().unwrap() = lists.into();
-    }
-
-    pub fn set_onboarding(&self, onboarding: serde_json::Value) {
-        *self.onboarding.lock().unwrap() = Some(onboarding);
-    }
-
-    pub fn set_owner(&self, name: Option<&str>, email: Option<&str>) {
-        *self.owner.lock().unwrap() = Some(owner_json(name, email));
-    }
-
-    pub fn all_seen(&self) -> Vec<Seen> {
-        self.seen.lock().unwrap().clone()
-    }
-
-    pub fn seen(&self, method: &Method, path: &str) -> Vec<Seen> {
-        self.seen
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|seen| seen.method == *method && seen.path == path)
-            .cloned()
-            .collect()
-    }
-}
 
 /// 带响应头的预设回应（如 `X-Wonton-Error`）：排在前头，先于不带头的查。
 fn headered_response(core: &CoreState, method: &Method, path: &str) -> Option<Response> {
