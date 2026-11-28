@@ -24,7 +24,8 @@ use super::api::error_response;
 use super::{Gateway, TunnelPeer, isolation};
 use crate::l10n;
 use crate::plugin::PluginId;
-use crate::plugin::pins::{PanelPin, PinScope};
+use crate::plugin::pins::PanelPin;
+use wonton_protocol::PanelScope;
 
 const HOST_PAGE: &str = include_str!("mcp_apps/host.html");
 
@@ -538,8 +539,8 @@ pub(super) async fn message(
         return error_response(StatusCode::NOT_FOUND, "not_found", "没有这个钉页");
     };
     let room = match &found.scope {
-        PinScope::Room { room_id } => room_id.clone(),
-        PinScope::Main => {
+        PanelScope::Room { room_id } => room_id.clone(),
+        PanelScope::Main => {
             let entry = gateway
                 .plugins
                 .store()

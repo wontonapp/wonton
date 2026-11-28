@@ -1,13 +1,14 @@
 //! 页面（ADR-0095）：引用、状态，和打开页面用的栈。
 //!
 //! 应用页只有一种打开方式：压进栈、整页铺满（壳按 [`TabPage`] 渲染），关闭弹栈。
-//! 我的应用、深链都用 [`TabRef`] 指页面，壳不自己拼。
+//! 我的应用、面板、深链都用 [`TabRef`] 指页面，壳不自己拼。
 
 use serde::{Deserialize, Serialize};
 
-use crate::{PluginIcon, PluginImage};
+use crate::{BarEntry, BarViewModel, PluginIcon, PluginImage};
 
-/// 栈里最多保活几个页面的网页（栈顶往下数）。每多一个多一份整个第三方网页的内存。
+/// 栈里最多保活几个页面的网页（栈顶往下数）。每多一个多一份整个第三方网页的内存，
+/// 和面板的 [`crate::MAX_PANEL_PAGES`] 同一个考虑。
 pub const KEEP_ALIVE_PAGES: usize = 3;
 
 /// 插件声明的一个页面（清单 `tabs` 的一项）。
@@ -41,38 +42,40 @@ pub enum TabLayout {
 }
 
 /// 指一个页面。操作都用它，壳从 [`OpenPage::tab`] 或插件列表拿，不自己拼。
+///
+/// 主界面的两个根页是底栏项（[`BarEntry`]），不是页面；这里只留压栈的页面。
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TabRef {
-    Chat,
-    /// 应用网格页。
-    Apps,
+    /// 所有会话页（侧边栏“所有会话”和通知的落点）。
+    ///
+    /// 旧的 `{"type":"chat"}` 就是它：不迁移，读的时候按 `rooms` 收。
+    #[serde(alias = "chat")]
+    Rooms,
+    /// 收件箱页（顶栏铃铛、侧边栏的同一入口）。
+    Inbox,
     Plugin {
         plugin_id: String,
         /// 清单 `tabs` 里的 `id`；空的是没声明 `tabs` 的插件的网页入口（`webui`）。
         page: Option<String>,
     },
     /// 插件网站里的某一页：网页入口下的路径（含查询和 `#` 后面的部分），只认同一个插件网站。
-    /// 按网址加进我的应用的（[`PageAction::AddMyAppUrl`](crate::PageAction::AddMyAppUrl)）。
-    PluginPath {
-        plugin_id: String,
-        path: String,
-    },
-    /// 独立 Bot 网页。选择、我的应用、桥及媒体操作都保留这个身份，不借用插件默认页。
+    /// 从正在看的页面加进我的应用或面板的（[`PageAction::PinCurrentPage`](crate::PageAction::PinCurrentPage)），
+    /// 或者编辑器里给插件填的路径。
+    PluginPath { plugin_id: String, path: String },
+    /// 独立 Bot 网页。选择、我的应用、面板、桥及媒体操作都保留这个身份，不借用插件默认页。
     /// URL 来自同一 BotRef 的 BotView.web；没有已核实的 Ready 时不能用插件 web_url 代替。
     Bot {
         bot: crate::BotRef,
-        /// 空值打开清单入口；非空为同一 Bot origin 内的路径，不存完整 URL。
+        /// 空值打开清单入口；非空为同一 Bot origin 内的路径，加进我的应用时使用，不存完整 URL。
         #[serde(default)]
         path: Option<String>,
     },
     /// 公网网页，只收 `https://`。手机直接访问，不经隧道：没有登录身份、桥和 `--wonton-*` 变量，
     /// 存储和插件页面分开。
-    Url {
-        url: String,
-    },
-    /// 插件的 MCP Apps 界面（`ui://` 资源）。核心另给宿主页，
+    Url { url: String },
+    /// 插件的 MCP Apps 界面（`ui://` 资源），Bot 钉上来的（ADR-0052）。核心另给宿主页，
     /// 界面在隔离的 iframe 里，只经 MCP Apps 的 postMessage 说话。
     UiResource {
         plugin_id: String,
@@ -85,23 +88,18 @@ pub enum TabRef {
     },
     /// 插件网页作为 Matrix widget 在某个房间里打开（ADR-0096）：全屏盖在聊天上，不能固定。
     /// 每次打开都是新的 widget 会话，关掉、换房间或退出登录时结束；同一时间只有一个。
-    Widget {
-        plugin_id: String,
-        room_id: String,
-    },
+    Widget { plugin_id: String, room_id: String },
 }
 
 /// 主界面和打开着的页面。壳按 [`PagesViewModel::stack`] 渲染，栈顶在最上面。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PagesViewModel {
-    /// 不在栈里时露出来的那一页：配对后是聊天，没配对时是应用网格页（配对页也在它上面）。
-    pub root: TabRef,
-    /// 配对后的应用网格覆盖层；打开应用或聊天时收起，不改变根页面。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
-    pub shows_apps: bool,
-    /// 打开着的页面，从底到顶；空就是根页面。最后一个元素是当前页。
+    /// 当前选中的根页（`Agent` 或 `Apps`）。点应用项只把它的整页压栈，不改这里；两个根页删出栏也选得动。
+    pub tab: BarEntry,
+    /// 底栏的成员和展示；只在两个根页上画，压着页面时壳不画。
+    pub bar: BarViewModel,
+    /// 打开着的页面，从底到顶；空就是 [`Self::tab`] 那个根页面。最后一个元素是当前页。
     pub stack: Vec<OpenPage>,
     /// 刚被卸载、已从我的应用移除的插件的标题，提示一次，见
     /// [`PageAction::DismissUninstalledTabs`](crate::PageAction::DismissUninstalledTabs)。
@@ -114,9 +112,23 @@ pub struct PagesViewModel {
     pub my_app_candidates: Vec<TabCandidate>,
     /// 新装的应用自动加到我的应用末尾，见 [`PageAction::SetAutoAddApps`](crate::PageAction::SetAutoAddApps)。
     pub auto_add: bool,
+    /// 主聊天页下拉面板里的页面，按显示顺序（ADR-0052）。空的时候壳画大加号。
+    #[serde(default)]
+    pub panel: Vec<crate::PanelItem>,
+    /// 还没放进主面板、可以放进去的页面：已装插件的页面，去掉已经在面板里的。
+    /// 插件里的某一页和公网网页不走这里：钉当前页（[`PageAction::PinCurrentPage`](crate::PageAction::PinCurrentPage)）
+    /// 或在编辑面板里填。
+    #[serde(default)]
+    pub panel_candidates: Vec<TabCandidate>,
+    /// 主面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`，壳从第一页开。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel_selected: Option<TabRef>,
     /// 本机改动还没同步上账号数据（多半是断网）：按不确定显示，连上后自动重试，不是错误。
     #[serde(default)]
     pub sync_stale: bool,
+    /// 每个 Bot 往主面板钉页的同意（服务器上的）；设置里按它显示和收回。
+    #[serde(default)]
+    pub bot_pin_consents: Vec<crate::BotPinOwner>,
     /// 插件页在问摄像头和麦克风：壳画成平台风格的弹窗（允许 / 不允许）。一次只有一张，
     /// 页面关掉或答完就清；决定按插件记在本机（[`PluginAction::SetPluginMediaPermission`](crate::PluginAction::SetPluginMediaPermission)）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -131,7 +143,7 @@ pub struct OpenPage {
     pub page: TabPage,
 }
 
-/// 一个可以加进我的应用的页面。
+/// 一个可以加进我的应用、或者放进面板的页面。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TabCandidate {
@@ -266,6 +278,24 @@ pub enum PagesFailure {
     StorageWrite,
     /// 本机的页面配置内容无法解析或校验。
     InvalidConfig,
+    /// 连不上家里的服务器或隧道。
+    TransportUnavailable,
+    /// 服务器不认这台设备。
+    Unauthorized,
+    /// 服务器拒绝了这次页面操作。
+    Forbidden,
+    /// 页面操作的前置条件还没满足。
+    NotReady,
+    /// 页面操作的输入不合法。
+    InvalidInput,
+    /// 要操作的页面已经不存在。
+    NotFound,
+    /// 服务器返回的页面数据无法解析。
+    InvalidResponse,
+    /// 隧道或客户端协议出错。
+    Protocol,
+    /// 家里的服务器返回了错误。
+    Upstream,
     /// 比这个 App 新的错误类别。
     #[serde(other)]
     Other,
@@ -349,6 +379,16 @@ mod tests {
         }
     }
 
+    /// 老 `layout.json` 和账号数据里的 `{"type":"chat"}` 是现在的 Rooms。
+    #[test]
+    fn the_old_chat_page_reads_as_rooms() {
+        let old: TabRef = serde_json::from_value(serde_json::json!({"type": "chat"})).unwrap();
+        assert_eq!(old, TabRef::Rooms);
+        assert_eq!(
+            serde_json::to_value(TabRef::Rooms).unwrap(),
+            serde_json::json!({"type": "rooms"})
+        );
+    }
     #[test]
     fn the_view_model_round_trips_through_json() {
         let image = |path: &str| PluginImage { path: path.into() };
@@ -386,16 +426,29 @@ mod tests {
                 page: sample_page(state, monochrome.clone()),
             });
         }
-        stack.push(OpenPage {
+        let panel = vec![crate::PanelItem {
             tab: page(),
             page: sample_page(TabState::Ready, colored),
-        });
+            attention: true,
+            source: crate::PanelSource::User,
+            movable: true,
+        }];
         round_trip(PagesViewModel {
-            root: TabRef::Chat,
-            shows_apps: true,
+            tab: crate::BarEntry::Agent,
+            bar: crate::BarViewModel {
+                items: vec![crate::BarItem {
+                    entry: crate::BarEntry::Agent,
+                    label: "Agent".into(),
+                    icon: crate::BarIcon::Agent,
+                    badge: 1,
+                }],
+                max_items: crate::MAX_BAR_ITEMS,
+                full: false,
+            },
             stack,
             uninstalled: vec!["相册".into()],
             sync_stale: true,
+            bot_pin_consents: Vec::new(),
             problem: Some(PagesProblem {
                 reason: Some(PagesFailure::InvalidConfig),
                 message: "读不了 layout.json".into(),
@@ -415,6 +468,9 @@ mod tests {
                 camera: true,
                 microphone: true,
             }),
+            panel,
+            panel_candidates: vec![],
+            panel_selected: Some(page()),
         });
     }
 
@@ -463,7 +519,10 @@ mod tests {
             },
             Action::Pages {
                 action: PageAction::TabLoadFailed {
-                    page: crate::PlacedTab::Content { tab: page() },
+                    page: crate::PlacedTab::Panel {
+                        scope: crate::PanelScope::Main,
+                        tab: page(),
+                    },
                     status: Some(503),
                 },
             },
@@ -481,13 +540,49 @@ mod tests {
     }
 
     #[test]
-    fn add_my_app_url_round_trips_through_json() {
-        round_trip(Action::Pages {
-            action: PageAction::AddMyAppUrl {
-                url: "https://app.example.wonton.localhost/stats".into(),
-                title: Some("本月统计".into()),
+    fn panel_actions_round_trip_through_json() {
+        for action in [
+            Action::Pages {
+                action: PageAction::AddPanelPage {
+                    scope: crate::PanelScope::Main,
+                    tab: crate::TabRef::Url {
+                        url: "https://example.com/weather".into(),
+                    },
+                },
             },
-        });
+            Action::Pages {
+                action: PageAction::RemovePanelPage {
+                    scope: crate::PanelScope::Room {
+                        room_id: "!room:home.example".into(),
+                    },
+                    tab: page(),
+                },
+            },
+            Action::Pages {
+                action: PageAction::MovePanelPage {
+                    scope: crate::PanelScope::Main,
+                    tab: page(),
+                    index: 1,
+                },
+            },
+            Action::Pages {
+                action: PageAction::SelectPanelPage {
+                    scope: crate::PanelScope::Main,
+                    tab: page(),
+                },
+            },
+            Action::Pages {
+                action: PageAction::PinCurrentPage {
+                    url: "https://app.example.wonton.localhost/stats".into(),
+                    title: Some("本月统计".into()),
+                    to: crate::PinTarget::Panel {
+                        scope: crate::PanelScope::Main,
+                    },
+                },
+            },
+        ] {
+            round_trip(action);
+        }
     }
 
     #[test]

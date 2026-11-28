@@ -132,6 +132,9 @@ impl Bots {
                         activity: None,
                         saving: false,
                         problem: None,
+                        cloud: None,
+                        face: None,
+                        custom_media: false,
                     });
                 bot.chat = layout::bot_settings(
                     &self.layouts.current(),
@@ -248,6 +251,9 @@ impl Bots {
                 activity: None,
                 saving: false,
                 problem: None,
+                cloud: None,
+                face: None,
+                custom_media: false,
             });
         bot.availability = facts.chat;
         bot.chat = layout::bot_settings(

@@ -116,6 +116,9 @@ mod tests {
             activity,
             saving: false,
             problem: None,
+            cloud: None,
+            face: None,
+            custom_media: false,
         }
     }
 

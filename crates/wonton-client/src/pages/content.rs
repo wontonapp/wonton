@@ -62,7 +62,7 @@ impl PagesLink {
                 receiver = Some(content.view.subscribe());
                 return Ok(());
             }
-            let not_a_page = matches!(tab, TabRef::Chat | TabRef::Apps | TabRef::Widget { .. })
+            let not_a_page = matches!(tab, TabRef::Rooms | TabRef::Inbox | TabRef::Widget { .. })
                 || (!page_available(&tab, plugins) && !matches!(tab, TabRef::Plugin { .. }));
             if not_a_page {
                 return Err(invalid(&l10n!(CATALOG, language(), "tabs-view-not-a-page")));
@@ -110,7 +110,12 @@ impl PagesLink {
             }
         }
         clear_gone_prompt(&mut state);
-        let view = make_view(&state, &plugins, self.sync_problem.borrow().is_some());
+        let view = make_view(
+            &state,
+            &plugins,
+            &self.chat.borrow(),
+            self.sync_problem.borrow().is_some(),
+        );
         drop(state);
         self.publish(view, &plugins);
     }

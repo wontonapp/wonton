@@ -34,7 +34,7 @@ struct HomeView: View {
         NavigationStack(path: $path) { prompts(on: stackRoot) }
             .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
             .environment(\.goToInstalledApps, {
-                pages.open(.apps)
+                pages.select(.apps)
             })
     }
 

@@ -166,8 +166,11 @@ struct SidebarPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                     if !appsOnly {
-                        SidebarRow(title: TabText.chat, selected: current == .chat) {
-                            (current == .chat ? WontonIcon.chatFill : WontonIcon.chat).view()
+                        SidebarRow(
+                            title: TabText.chat,
+                            selected: pages.viewModel.tab == .agent && current == .rooms
+                        ) {
+                            (pages.viewModel.tab == .agent ? WontonIcon.chatFill : WontonIcon.chat).view()
                         } action: { openDestination(.chat) }
                         SidebarRow(
                             title: String(localized: .Store.storeTitle),
@@ -273,7 +276,7 @@ struct SidebarPanel: View {
             .padding(.horizontal, WontonTheme.spacing.s12)
         }
         if sidebar.moreApps {
-            SidebarRow(title: String(localized: .Sidebar.sidebarAllApps), selected: current == .apps) {
+            SidebarRow(title: String(localized: .Sidebar.sidebarAllApps), selected: pages.viewModel.tab == .apps) {
                 WontonIcon.apps.view()
             } action: { openDestination(.allApps) }
         }

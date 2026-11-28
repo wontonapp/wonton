@@ -19,13 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.PageAction
-import app.wonton.ui.design.WontonTextField
-import app.wonton.ui.design.WontonDialogAction
-import app.wonton.ui.design.WontonDialog
-import app.wonton.ui.design.WontonButtonKind
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardOptions
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.MyAppRef
@@ -98,35 +91,4 @@ internal fun MyAppsControls(plugin: InstalledPlugin) {
             }
         }
     }
-}
-
-/** 填网址：对不对由核心判断（只收 https、Bot 的网页不收），不对的原因出在列表下面的问题里。 */
-@Composable
-internal fun MyAppUrlDialog(onDismiss: () -> Unit) {
-    val pages = LocalPages.current
-    var url by remember { mutableStateOf("") }
-    WontonDialog(
-        title = stringResource(R.string.myapp_url),
-        onDismiss = onDismiss,
-        detail = {
-            WontonTextField(
-                url,
-                { url = it },
-                Modifier.fillMaxWidth(),
-                placeholder = "https://example.com",
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
-            )
-        },
-        actions = listOf(
-            WontonDialogAction(stringResource(R.string.common_cancel), onClick = onDismiss),
-            WontonDialogAction(
-                stringResource(R.string.myapp_url_add),
-                WontonButtonKind.PRIMARY,
-                onClick = {
-                    if (url.isNotBlank()) pages.send(Action.Pages(PageAction.AddMyAppUrl(url.trim(), null)))
-                    onDismiss()
-                },
-            ),
-        ),
-    )
 }

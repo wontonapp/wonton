@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.wonton.protocol.Action
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.TabRef
 import app.wonton.ui.send
@@ -40,12 +41,12 @@ class PageFlipMovableContentTest {
     @Test
     fun chatPageSurvivesRepeatedPageFlips() {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
-        assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
+        assertNull(core.send(Action.Pages(PageAction.SelectBarItem(BarEntry.Agent))))
         assertPageFixture("Echo")
         repeat(FLIPS) {
-            assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Apps))))
+            assertNull(core.send(Action.Pages(PageAction.SelectBarItem(BarEntry.Apps))))
             assertPageFixture("Notes")
-            assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
+            assertNull(core.send(Action.Pages(PageAction.SelectBarItem(BarEntry.Agent))))
             assertPageFixture("Echo")
         }
         compose.onNodeWithText("Echo").performClick()

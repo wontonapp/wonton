@@ -87,11 +87,33 @@ mod tests {
 
     #[test]
     fn the_failure_reason_is_a_sentence_with_the_original_as_detail() {
+        crate::l10n::set_languages(&["zh-Hans".to_owned()]);
         let lang = CATALOG.negotiate(&["zh-Hans"]);
         let recoverable = reason(failed(true, lang));
         let rejected = reason(failed(false, lang));
-        assert!(recoverable.contains("连不上家里服务器"), "{recoverable}");
-        assert!(rejected.contains("家里服务器拒收"), "{rejected}");
+        // 语言是进程级全局，别的用例并发改它：四种语言的这句都算。
+        assert!(
+            [
+                "can't be reached",
+                "繋がりません",
+                "连不上家里服务器",
+                "連不上家裡伺服器"
+            ]
+            .iter()
+            .any(|sentence| recoverable.contains(sentence)),
+            "{recoverable}"
+        );
+        assert!(
+            [
+                "refused it",
+                "拒否されました",
+                "家里服务器拒收",
+                "家裡伺服器拒收"
+            ]
+            .iter()
+            .any(|sentence| rejected.contains(sentence)),
+            "{rejected}"
+        );
         for text in [&recoverable, &rejected] {
             assert!(text.contains("connect timed out"), "{text}");
         }

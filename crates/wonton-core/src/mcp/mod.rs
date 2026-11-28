@@ -28,6 +28,7 @@ mod file_tools;
 mod identity;
 mod naming;
 mod notifier;
+mod panel_tools;
 mod people_tools;
 mod profile_tools;
 mod risky;
@@ -43,7 +44,7 @@ mod tools;
 pub mod upstream;
 mod windows;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -115,6 +116,8 @@ pub struct Bus {
     takeovers: Takeovers,
     /// 接手申请的冷却（#817）：主人回绝或没理之后，同一个 Bot 对同一个插件在这段时间内不再发接手卡片。
     adopt_refusals: Mutex<HashMap<(PluginId, PluginId), Instant>>,
+    /// 正在等主人同意钉页的 Bot（按插件），同一插件同一时间只有一张钉页卡片。
+    pin_cards: Mutex<HashSet<PluginId>>,
     /// 文件服务。它读插件的资源要用这里的 [`Upstreams`]，所以总线先建好，文件服务后接上（[`Bus::attach_files`]）。
     files: OnceLock<Arc<Files>>,
     /// 帮助文档。它要升级服务给的版本号，所以和文件服务一样后接上（[`Bus::attach_help`]）。
@@ -179,6 +182,8 @@ mod install_gate_tests;
 mod missing_sender_tests;
 #[cfg(test)]
 mod optional_permission_tests;
+#[cfg(test)]
+mod panel_tests;
 #[cfg(test)]
 mod people_tests;
 #[cfg(test)]

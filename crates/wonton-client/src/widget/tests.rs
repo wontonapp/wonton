@@ -166,6 +166,9 @@ fn agent(activity: Option<BotActivity>) -> BotView {
         activity,
         saving: false,
         problem: None,
+        cloud: None,
+        custom_media: false,
+        face: None,
     }
 }
 

@@ -245,8 +245,8 @@ impl App {
         let Some(id) = plugin else {
             self.core
                 .dispatch(Action::Pages {
-                    action: wonton_protocol::PageAction::OpenPage {
-                        tab: wonton_client::TabRef::Chat,
+                    action: wonton_protocol::PageAction::SelectBarItem {
+                        entry: wonton_client::BarEntry::Agent,
                     },
                 })
                 .unwrap();

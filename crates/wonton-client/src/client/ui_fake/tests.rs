@@ -8,8 +8,9 @@ use super::chat::{CALL_ROOM_ID, ROOM_ID};
 use super::tabs::{CORNER_APP, web_app_tab};
 use crate::client::ui_fake_plugin_detail;
 use wonton_protocol::{
-    Action, AppsAction, BotChatAvailability, ComposerViewModel, HomeStatus, ImageUpload,
-    OnboardingStep, PageAction, TabRef, TabState, TimelineAction, TimelineTarget,
+    Action, AppsAction, BarEntry, BotChatAvailability, ComposerViewModel, HomeStatus, ImageUpload,
+    MAX_BAR_ITEMS, MyAppRef, OnboardingStep, PageAction, TabRef, TabState, TimelineAction,
+    TimelineTarget,
 };
 
 /// 假数据塞进了各订阅、操作不落到作用域：漏填字段或写坏类型在这里就炸。
@@ -30,7 +31,7 @@ fn seeded_views_are_set_and_dispatch_is_inert() {
             .iter()
             .all(|bot| bot.availability == BotChatAvailability::Available)
     );
-    assert_eq!(core.pages().root, TabRef::Chat);
+    assert_eq!(core.pages().tab, BarEntry::Agent);
     assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
     assert_eq!(core.plugins().installed.unwrap().plugins[0].title, "Notes");
     // 作用域的首帧是后台算完才发的：等一会儿，确认它盖不掉假数据。
@@ -41,12 +42,14 @@ fn seeded_views_are_set_and_dispatch_is_inert() {
         core.plugins().actions,
         [AppsAction::Store, AppsAction::AddSource]
     );
-    assert_eq!(core.pages().root, TabRef::Chat);
+    assert_eq!(core.pages().tab, BarEntry::Agent);
     assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
     // 操作不落到作用域。
     assert!(
         core.dispatch(Action::Pages {
-            action: PageAction::OpenPage { tab: TabRef::Apps },
+            action: PageAction::SelectBarItem {
+                entry: BarEntry::Apps,
+            },
         })
         .is_ok()
     );
@@ -56,7 +59,7 @@ fn seeded_views_are_set_and_dispatch_is_inert() {
         })
         .is_ok()
     );
-    assert_eq!(core.pages().root, TabRef::Chat);
+    assert_eq!(core.pages().tab, BarEntry::Apps);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -113,7 +116,8 @@ async fn attachments_go_in_and_out_offline() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// 开页、关页照真核心的规则走：压栈、同一页只留一份并挪到栈顶、关页弹栈、根页面清栈、空栈关页被拒、应用网格的开关。
+/// 开页、关页照真核心的规则走：压栈、同一页只留一份并挪到栈顶、关页弹栈、根页切换清栈、底栏增删移。
+#[allow(clippy::too_many_lines)] // 一条用例把假页面的开关和底栏规则走完，拆开要重复同一套假核心。
 #[test]
 fn pages_open_and_close_like_the_real_stack() {
     let dir = std::env::temp_dir().join(format!("wonton-ui-fake-pages-{}", std::process::id()));
@@ -126,6 +130,11 @@ fn pages_open_and_close_like_the_real_stack() {
             },
         })
     };
+    let select = |entry: BarEntry| {
+        core.dispatch(Action::Pages {
+            action: PageAction::SelectBarItem { entry },
+        })
+    };
     let stack = || -> Vec<TabRef> {
         core.pages()
             .stack
@@ -134,6 +143,7 @@ fn pages_open_and_close_like_the_real_stack() {
             .collect()
     };
     assert!(stack().is_empty());
+    assert_eq!(core.pages().bar.items.len(), 2);
 
     open("app.example.budget").unwrap();
     open("app.example.photos").unwrap();
@@ -152,44 +162,177 @@ fn pages_open_and_close_like_the_real_stack() {
     })
     .unwrap();
     assert_eq!(stack(), [web_app_tab("app.example.photos")]);
-    core.dispatch(Action::Pages {
-        action: PageAction::OpenPage { tab: TabRef::Chat },
-    })
-    .unwrap();
+    // 根页切换一路弹回根；栈空时再关一次是安静的什么也不做。
+    select(BarEntry::Agent).unwrap();
     assert!(stack().is_empty());
-    // 栈空时再关一次是安静的什么也不做：界面上连点两下关闭不该弹问题框。
     core.dispatch(Action::Pages {
         action: PageAction::ClosePage,
     })
     .unwrap();
     assert!(stack().is_empty());
-    // 应用网格：打开记在视图里，关页关的是它；从网格开一页也收起它。
-    core.dispatch(Action::Pages {
-        action: PageAction::OpenPage { tab: TabRef::Apps },
-    })
-    .unwrap();
-    assert!(core.pages().shows_apps);
-    core.dispatch(Action::Pages {
-        action: PageAction::ClosePage,
-    })
-    .unwrap();
-    assert!(!core.pages().shows_apps);
-    core.dispatch(Action::Pages {
-        action: PageAction::OpenPage { tab: TabRef::Apps },
-    })
-    .unwrap();
+    select(BarEntry::Apps).unwrap();
+    assert_eq!(core.pages().tab, BarEntry::Apps);
     open("app.example.budget").unwrap();
-    assert!(!core.pages().shows_apps);
+    assert_eq!(core.pages().tab, BarEntry::Apps);
     assert_eq!(stack(), [web_app_tab("app.example.budget")]);
+
+    // 收件箱是压栈的一页，重复打开只留一份并挪到栈顶。
+    core.dispatch(Action::Pages {
+        action: PageAction::OpenPage { tab: TabRef::Inbox },
+    })
+    .unwrap();
+    assert_eq!(stack(), [web_app_tab("app.example.budget"), TabRef::Inbox]);
+    core.dispatch(Action::Pages {
+        action: PageAction::OpenPage { tab: TabRef::Inbox },
+    })
+    .unwrap();
+    assert_eq!(stack(), [web_app_tab("app.example.budget"), TabRef::Inbox]);
+    select(BarEntry::Apps).unwrap();
+    assert!(stack().is_empty());
+
+    // 底栏：加一项、重复拒、满了记 full、删、挪。
+    let budget = MyAppRef::Page {
+        tab: web_app_tab("app.example.budget"),
+    };
+    core.dispatch(Action::Pages {
+        action: PageAction::AddBarItem {
+            entry: BarEntry::App {
+                app: budget.clone(),
+            },
+        },
+    })
+    .unwrap();
+    assert_eq!(core.pages().bar.items.len(), 3);
+    assert!(
+        core.dispatch(Action::Pages {
+            action: PageAction::AddBarItem {
+                entry: BarEntry::App {
+                    app: budget.clone(),
+                },
+            },
+        })
+        .is_err()
+    );
+    for id in ["app.example.photos", "app.example.papers", CORNER_APP] {
+        let app = MyAppRef::Page {
+            tab: web_app_tab(id),
+        };
+        core.dispatch(Action::Pages {
+            action: PageAction::AddMyApp {
+                app: app.clone(),
+                title: None,
+                index: None,
+            },
+        })
+        .unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::AddBarItem {
+                entry: BarEntry::App { app },
+            },
+        })
+        .unwrap();
+    }
+    assert_eq!(core.pages().bar.items.len(), MAX_BAR_ITEMS as usize);
+
+    // 再加一行但不放进栏：栏已满，拒且置 full。
+    let extra = MyAppRef::Page {
+        tab: TabRef::Url {
+            url: "https://example.com/one".into(),
+        },
+    };
+    core.dispatch(Action::Pages {
+        action: PageAction::AddMyApp {
+            app: extra.clone(),
+            title: None,
+            index: None,
+        },
+    })
+    .unwrap();
+    // http 不算：和真核的 is_https_url 一样。
+    assert!(
+        core.dispatch(Action::Pages {
+            action: PageAction::AddMyApp {
+                app: MyAppRef::Page {
+                    tab: TabRef::Url {
+                        url: "http://example.com/plain".into(),
+                    },
+                },
+                title: None,
+                index: None,
+            },
+        })
+        .is_err()
+    );
+    assert!(
+        core.dispatch(Action::Pages {
+            action: PageAction::AddBarItem {
+                entry: BarEntry::App { app: extra },
+            },
+        })
+        .is_err()
+    );
+    assert!(core.pages().bar.full);
+    // 没进“我的应用”的插件：拒，full 不动。
+    assert!(
+        core.dispatch(Action::Pages {
+            action: PageAction::AddBarItem {
+                entry: BarEntry::App {
+                    app: MyAppRef::Plugin {
+                        plugin_id: "app.example.one-more".into(),
+                    },
+                },
+            },
+        })
+        .is_err()
+    );
+    assert!(core.pages().bar.full);
+    core.dispatch(Action::Pages {
+        action: PageAction::MoveBarItem { from: 0, to: 2 },
+    })
+    .unwrap();
+    assert_eq!(core.pages().bar.items[2].entry, BarEntry::Agent);
+    core.dispatch(Action::Pages {
+        action: PageAction::RemoveBarItem {
+            entry: BarEntry::Agent,
+        },
+    })
+    .unwrap();
+    assert!(!core.pages().bar.full);
+    assert_eq!(core.pages().bar.items.len(), MAX_BAR_ITEMS as usize - 1);
+    while core.pages().bar.items.len() > 1 {
+        let entry = core.pages().bar.items[0].entry.clone();
+        core.dispatch(Action::Pages {
+            action: PageAction::RemoveBarItem { entry },
+        })
+        .unwrap();
+    }
+    assert!(
+        core.dispatch(Action::Pages {
+            action: PageAction::RemoveBarItem {
+                entry: core.pages().bar.items[0].entry.clone(),
+            },
+        })
+        .is_err()
+    );
+
+    assert!(
+        core.dispatch(Action::Pages {
+            action: PageAction::RemoveMyApp {
+                app: MyAppRef::Plugin {
+                    plugin_id: "app.example.one-more".into(),
+                },
+            },
+        })
+        .is_err()
+    );
+
     // 整页打开本机网页的那个应用：压进栈的是加载得出来的那一页。
     open(CORNER_APP).unwrap();
     let top = core.pages().stack.pop().unwrap();
     assert!(matches!(top.tab, TabRef::Url { .. }));
     assert_eq!(top.page.state, TabState::Ready);
-    core.dispatch(Action::Pages {
-        action: PageAction::ClosePage,
-    })
-    .unwrap();
+    // 面板里钉着的那一页一直在，不跟着栈变。
+    assert_eq!(core.pages().panel.len(), 2);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

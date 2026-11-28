@@ -18,7 +18,7 @@ struct MainView: View {
     /// 最近关掉的插件页：最多留 4 个实例（内存考虑），重开不重载。
     @State private var recentPages: [TabRef] = []
     @State var showsSettings = false
-    var showsApps: Bool { pages.viewModel.showsApps }
+    var showsApps: Bool { pages.appsOpen }
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var onboardingGateway: TabChoice?
     @State var showsSidebar = false
@@ -62,14 +62,14 @@ struct MainView: View {
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
         .modifier(TabMediaDialogs(model: pages))
         .modifier(KeyHandoffCover(model: chat) {
-            pages.open(.chat)
+            pages.select(.agent)
             chat.path = [.chatBackup]
         })
 
         .fullScreenCover(isPresented: $showsSettings) {
             // 参数多，闭包先写成带类型的局部量，不写时整条表达式类型检查会超时。
             let openPlugin: (PluginEntry) -> Void = { showsSettings = false; open($0) }
-            let checkInstalled: () -> Void = { showsSettings = false; pages.open(.apps) }
+            let checkInstalled: () -> Void = { showsSettings = false; pages.select(.apps) }
             // 设置里的应用行进了详情后，“打开”和“查看已安装”都要先收起设置，再走主界面这一层。
             SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
                         home: home, plugins: plugins, open: openPlugin,
@@ -100,7 +100,7 @@ struct MainView: View {
             orientation.update(fullscreen: shown) { pages.rejection = $0.problem }
         }
         .onChange(of: chat.openingFailed) { _, failed in
-            if failed { chat.openingFailed = false; pages.open(.chat) }
+            if failed { chat.openingFailed = false; pages.select(.agent) }
         }
         .task { await pages.observe() }
         .task { await home.observe() }
@@ -136,7 +136,7 @@ struct MainView: View {
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
         // 根页面和“全部应用”那一层共用一条路径，配对状态一变含义就换了。
         .onChange(of: isPaired) { _, _ in closeApps() }
-        .onChange(of: pages.viewModel.showsApps, initial: true) { _, shown in
+        .onChange(of: pages.appsOpen, initial: true) { _, shown in
             if shown && isPaired && appsPath.isEmpty {
                 appsPath = NavigationPath([AppsRoute.launcher])
             } else if !shown && !appsPath.isEmpty {
@@ -144,7 +144,7 @@ struct MainView: View {
             }
         }
         .onChange(of: appsPath.count) { _, count in
-            if isPaired && count == 0 && pages.viewModel.showsApps {
+            if isPaired && count == 0 && pages.appsOpen {
                 pages.closeCurrent()
             }
         }

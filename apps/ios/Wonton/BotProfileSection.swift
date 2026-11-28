@@ -215,7 +215,7 @@ private extension BotProfileSection {
     // MARK: 状态头像
 
     private func stateGrid(_ bot: BotView, isBusy: Bool) -> some View {
-        let states = [BotActivity.idle, .working, .waiting, .offline]
+        let states: [BotActivity] = [.idle, .thinking, .working, .waiting, .error, .offline]
         return HStack(alignment: .top, spacing: WontonTheme.spacing.s12) {
             ForEach(Array(states.enumerated()), id: \.offset) { _, state in
                 stateCell(bot, state, isBusy: isBusy)

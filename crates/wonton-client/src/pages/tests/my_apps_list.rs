@@ -97,6 +97,18 @@ async fn sidebar_rows_open_plugins_and_badges_follow_updates() {
 async fn uninstalling_a_plugin_takes_its_rows_and_reports_once() {
     let rig = Rig::new();
     rig.add_app(plugin_app("app.shared"));
+    rig.tabs
+        .dispatch(PageAction::AddPanelPage {
+            scope: main_scope(),
+            tab: page_tab(),
+        })
+        .unwrap();
+    rig.tabs
+        .dispatch(PageAction::AddPanelPage {
+            scope: main_scope(),
+            tab: url_tab("https://example.com/keep"),
+        })
+        .unwrap();
     rig.open(page_tab());
 
     rig.plugins.send_replace(PluginsViewModel {
@@ -108,6 +120,7 @@ async fn uninstalling_a_plugin_takes_its_rows_and_reports_once() {
     });
     rig.tabs.recompute();
     let view = rig.view();
+    assert_eq!(panel_tabs(&rig), vec![url_tab("https://example.com/keep")]);
     assert!(view.stack.is_empty(), "打开着的页面跟着插件走");
     assert_eq!(rig.my_app_titles(), Vec::<String>::new());
     assert_eq!(view.uninstalled, vec!["old-content".to_owned()]);

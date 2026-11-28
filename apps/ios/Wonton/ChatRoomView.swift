@@ -198,7 +198,7 @@ private extension ChatRoomView {
                 } else if !isContentRoot {
                     model.path = []
                     model.visiting = nil
-                    pages.open(.chat)
+                    pages.select(.agent)
                 }
             }
         }

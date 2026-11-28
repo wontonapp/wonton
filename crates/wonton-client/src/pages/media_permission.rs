@@ -2,7 +2,7 @@
 
 use url::Url;
 use wonton_l10n::l10n;
-use wonton_protocol::{CoreError, PlacedTab, TabRef};
+use wonton_protocol::{CoreError, PanelScope, PlacedTab, TabRef};
 
 use super::bridge::page_of;
 use super::{PagesLink, lock, make_view, placed_tab_ref};
@@ -114,7 +114,7 @@ impl PagesLink {
         });
         let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         tracing::info!(
@@ -157,7 +157,7 @@ impl PagesLink {
             })?;
         let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         tracing::info!(
@@ -212,6 +212,13 @@ fn page_open(state: &super::PagesState, place: &PlacedTab) -> bool {
     match place {
         PlacedTab::Content { tab } => state.content.contains_key(tab),
         PlacedTab::Page { tab } => state.stack.iter().any(|item| &item.tab == tab),
+        PlacedTab::Panel { scope, tab } => match scope {
+            PanelScope::Main => state.config.panel.iter().any(|entry| &entry.tab == tab),
+            PanelScope::Room { room_id } => state
+                .rooms
+                .get(room_id)
+                .is_some_and(|room| room.panel.pages.iter().any(|entry| &entry.tab == tab)),
+        },
     }
 }
 
@@ -229,6 +236,13 @@ fn page_id(page: &PlacedTab) -> String {
     let (placement, tab) = match page {
         PlacedTab::Page { tab } => ("page", tab),
         PlacedTab::Content { tab } => ("content", tab),
+        PlacedTab::Panel { scope, tab } => (
+            match scope {
+                PanelScope::Main => "panel/main",
+                PanelScope::Room { .. } => "panel/room",
+            },
+            tab,
+        ),
     };
     let name = match tab {
         TabRef::Plugin { page, .. } | TabRef::Bot { path: page, .. } => match page.as_deref() {
@@ -241,8 +255,8 @@ fn page_id(page: &PlacedTab) -> String {
         TabRef::SharedApp { .. } => "shared-app",
         // widget 页的房间 ID 不进日志，插件 ID 走单独的 plugin_id 字段。
         TabRef::Widget { .. } => "widget",
-        TabRef::Chat => "chat",
-        TabRef::Apps => "apps",
+        TabRef::Rooms => "rooms",
+        TabRef::Inbox => "inbox",
     };
     format!("{placement}/{name}")
 }

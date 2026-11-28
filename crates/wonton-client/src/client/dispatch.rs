@@ -292,6 +292,12 @@ impl ClientCore {
                 scope.chat.dismiss_bot_profile_problem(&plugin_id);
                 Ok(())
             }
+            // 云朵的合成和写入不在这个核心里：如实报没就绪，不静默当成功。
+            BotAction::SetBotCloud { .. } | BotAction::SetBotCloudPart { .. } => {
+                Err(CoreError::NotReady {
+                    reason: "bot cloud avatars are not wired yet".into(),
+                })
+            }
         }
     }
 
@@ -451,8 +457,18 @@ impl ClientCore {
             | PageAction::SetAutoAddApps { .. }
             | PageAction::RetryMyAppSync
             | PageAction::AddMyAppUrl { .. }
+            | PageAction::AddPanelPage { .. }
+            | PageAction::RemovePanelPage { .. }
+            | PageAction::MovePanelPage { .. }
+            | PageAction::SelectPanelPage { .. }
+            | PageAction::SetBotPinConsent { .. }
+            | PageAction::PinCurrentPage { .. }
             | PageAction::ReloadTab { .. }
-            | PageAction::DismissUninstalledTabs) => scope.pages.dispatch(action),
+            | PageAction::DismissUninstalledTabs
+            | PageAction::SelectBarItem { .. }
+            | PageAction::AddBarItem { .. }
+            | PageAction::RemoveBarItem { .. }
+            | PageAction::MoveBarItem { .. }) => scope.pages.dispatch(action),
         }
     }
 

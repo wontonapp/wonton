@@ -4,6 +4,8 @@ import Foundation
 enum TabText {
     static var chat: String { String(localized: .Tab2.tabChat) }
     static var apps: String { String(localized: .Launcher.launcherTitle) }
+    static var rooms: String { String(localized: .Tab0.tabRooms) }
+    static var inbox: String { String(localized: .Tab0.tabInbox) }
     static var settings: String { String(localized: .Tab2.tabSettings) }
     static var addMore: String { String(localized: .Tab1.tabAddMore) }
     static var back: String { String(localized: .Design.designBack) }

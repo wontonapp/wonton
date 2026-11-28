@@ -31,4 +31,5 @@
     <!-- 关掉这条引导、以后不再出现的按钮。无参数;短标签。 -->
     <string name="tab_exit_hint_got_it">知道了</string>
     <string name="tab_browser_return_hint">想回到云吞，可以试试系统返回，或关掉浏览器里的页面。</string>
+    <string name="tab_inbox">收件箱</string>
 </resources>

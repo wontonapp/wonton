@@ -131,6 +131,8 @@ fn request(
             let text = draft_text(params)?;
             Ok((json!({}), Some(TabBridgeAction::DraftMessage { text })))
         }
+        // Wonton 自己的扩展：面板里的页要求关注（红点），ADR-0052。
+        Some("ui/wonton-attention") => set_attention(tabs, page, params),
         _ => Err((-32601, "Method not found".to_owned())),
     }
 }
@@ -143,6 +145,16 @@ fn display_mode(tabs: &PagesLink, page: &PlacedTab, params: &Value) -> RpcResult
     // 整页就是全屏：两个取值都收，页面照样铺满，状态只回报 "fullscreen"。
     let _ = page_of(tabs, page).map_err(core_error)?;
     Ok((json!({"mode": "fullscreen"}), None))
+}
+
+/// 页面要求关注（面板那一页画红点）。栈里的页面没有红点可挂，返回输入非法。
+fn set_attention(tabs: &PagesLink, page: &PlacedTab, params: &Value) -> RpcResult {
+    let Some(attention) = params["attention"].as_bool() else {
+        return Err(invalid_params());
+    };
+    tabs.set_attention(page.clone(), attention)
+        .map_err(core_error)?;
+    Ok((json!({}), None))
 }
 
 fn draft_text(params: &Value) -> Result<String, RpcError> {

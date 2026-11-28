@@ -20,4 +20,5 @@
     <string name="tab_menu_details">アプリ詳細</string>
     <!-- アプリを全画面で初めて開いたときの案内:戻り方。引数なし。 -->
     <string name="tab_exit_hint">画面の端から内側にスワイプするか「戻る」を押すと、Wontonに戻ります</string>
+    <string name="tab_rooms">すべての会話</string>
 </resources>

@@ -136,3 +136,53 @@ async fn page_problem_rechecks_a_temporarily_unreadable_local_file() {
     let recovered = wait_pages(&rig, |view| view.problem.is_none()).await;
     assert!(!recovered.auto_add);
 }
+
+#[tokio::test]
+async fn page_problem_uses_the_tunnel_error_category_and_recovers() {
+    let rig = Rig::new().await.without_periodic_checks();
+    rig.connected().await;
+    for (code, expected) in [
+        ("upstream-unavailable", PagesFailure::Upstream),
+        ("unauthorized", PagesFailure::Unauthorized),
+        ("transport-unavailable", PagesFailure::TransportUnavailable),
+        ("protocol", PagesFailure::Protocol),
+    ] {
+        rig.core.answer_always_headered(
+            Method::GET,
+            BOT_PANEL_PINS_PATH,
+            Headered(
+                502,
+                vec![("x-wonton-tunnel-error".into(), code.into())],
+                String::new(),
+            ),
+        );
+        wait_pages(&rig, |view| {
+            view.problem.as_ref().and_then(|problem| problem.reason) == Some(expected)
+        })
+        .await;
+    }
+    for (status, kind, expected) in [
+        (403, "cross_site", PagesFailure::Forbidden),
+        (401, "unauthenticated", PagesFailure::Unauthorized),
+        (400, "invalid_input", PagesFailure::InvalidInput),
+        (404, "not_found", PagesFailure::NotFound),
+        (500, "storage", PagesFailure::Upstream),
+    ] {
+        rig.core.answer_always_headered(
+            Method::GET,
+            BOT_PANEL_PINS_PATH,
+            Headered(
+                status,
+                vec![("x-wonton-error".into(), kind.into())],
+                serde_json::json!({"error": {"kind": kind, "message": "test"}}).to_string(),
+            ),
+        );
+        wait_pages(&rig, |view| {
+            view.problem.as_ref().and_then(|problem| problem.reason) == Some(expected)
+        })
+        .await;
+    }
+    rig.core
+        .stop_answering_headered(Method::GET, BOT_PANEL_PINS_PATH);
+    wait_pages(&rig, |view| view.problem.is_none()).await;
+}

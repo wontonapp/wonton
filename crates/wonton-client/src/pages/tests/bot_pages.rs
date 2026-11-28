@@ -26,6 +26,9 @@ fn bot(name: &str, url: &str) -> BotView {
         saving: false,
         problem: None,
         chat: Default::default(),
+        cloud: None,
+        custom_media: false,
+        face: None,
     }
 }
 
@@ -46,7 +49,7 @@ fn publish(rig: &Rig, bots: Vec<BotView>) {
 }
 
 #[tokio::test]
-async fn exact_bot_ready_metadata_drives_stack_and_bridge() {
+async fn exact_bot_ready_metadata_drives_stack_panel_and_bridge() {
     let rig = Rig::new();
     let family = bot(
         "family",
@@ -67,21 +70,31 @@ async fn exact_bot_ready_metadata_drives_stack_and_bridge() {
         open.page.url.as_deref(),
         Some("https://bot--family-app-shared-12345678.example/start")
     );
-    let placed = PlacedTab::Page {
+    rig.tabs
+        .dispatch(PageAction::AddPanelPage {
+            scope: PanelScope::Main,
+            tab: identity.clone(),
+        })
+        .unwrap();
+    let view = rig.tabs.view();
+    assert_eq!(view.panel[0].tab, identity);
+    assert_eq!(view.panel[0].page.url, view.stack.last().unwrap().page.url);
+    let placed = PlacedTab::Panel {
+        scope: PanelScope::Main,
         tab: identity.clone(),
     };
     assert_eq!(
         bridge::page_of(&rig.tabs, &placed).unwrap().url,
-        open.page.url
+        view.panel[0].page.url
     );
-    let reload = open.page.reload;
+    let reload = view.panel[0].page.reload;
     publish(&rig, Vec::new());
     let revoked = rig.tabs.view();
-    let open = revoked.stack.last().unwrap();
-    assert_eq!(open.tab, identity);
-    assert_eq!(open.page.url, None);
-    assert!(open.page.reload > reload);
+    assert_eq!(revoked.panel[0].tab, identity);
+    assert_eq!(revoked.panel[0].page.url, None);
     assert_eq!(bridge::page_of(&rig.tabs, &placed).unwrap().url, None);
+    assert!(revoked.panel[0].page.reload > reload);
+    assert_eq!(revoked.stack.last().unwrap().page.url, None);
     // 已核实的页面身份之外的路径不收：绝对网址不能当 Bot 页的路径。
     assert!(
         rig.tabs
@@ -90,6 +103,63 @@ async fn exact_bot_ready_metadata_drives_stack_and_bridge() {
             })
             .is_err()
     );
+}
+
+#[tokio::test]
+async fn pin_current_page_keeps_default_and_nondefault_bot_identity_and_paths() {
+    let rig = Rig::new();
+    let default = bot("default", "http://app.shared.wonton.localhost/");
+    let family = bot("family", "https://bot--family-app-shared-12345678.example/");
+    publish(&rig, vec![default.clone(), family.clone()]);
+    for (bot, url) in [
+        (
+            &default,
+            "http://app.shared.wonton.localhost/report?q=1#now",
+        ),
+        (
+            &family,
+            "https://bot--family-app-shared-12345678.example/report?q=1#now",
+        ),
+    ] {
+        rig.tabs
+            .dispatch(PageAction::PinCurrentPage {
+                url: url.into(),
+                title: None,
+                to: PinTarget::Panel {
+                    scope: PanelScope::Main,
+                },
+            })
+            .unwrap();
+        assert_eq!(
+            rig.tabs.view().panel.last().unwrap().tab,
+            tab(bot, Some("/report?q=1#now"))
+        );
+    }
+    rig.tabs
+        .dispatch(PageAction::OpenPage {
+            tab: tab(&default, None),
+        })
+        .unwrap();
+    let mut revoked = default.clone();
+    revoked.web = None;
+    publish(&rig, vec![revoked, family]);
+    // 资料撤回后，同一网址不再钉成 Bot 页（也没有普通插件页可退）。
+    assert!(
+        rig.tabs
+            .dispatch(PageAction::PinCurrentPage {
+                url: "http://app.shared.wonton.localhost/new".into(),
+                title: None,
+                to: PinTarget::Panel {
+                    scope: PanelScope::Main,
+                },
+            })
+            .is_err()
+    );
+    assert_eq!(
+        rig.tabs.view().panel[0].tab,
+        tab(&default, Some("/report?q=1#now"))
+    );
+    assert_eq!(rig.tabs.view().panel[0].page.url, None);
 }
 
 #[tokio::test]
@@ -124,7 +194,7 @@ async fn mismatched_page_identity_unknown_and_disconnected_bot_never_borrow_plug
 }
 
 #[tokio::test]
-async fn bot_pages_reject_outside_or_absolute_paths() {
+async fn bot_room_panels_keep_identity_but_reject_outside_or_absolute_paths() {
     let rig = Rig::new();
     let family = bot(
         "family",
@@ -143,10 +213,27 @@ async fn bot_pages_reject_outside_or_absolute_paths() {
                 .is_err()
         );
     }
+    let room: OwnedRoomId = "!bot:home".parse().unwrap();
+    rig.open_room(
+        &room,
+        RoomPanel {
+            pages: vec![PanelEntry {
+                tab: tab(&family, Some("/report?q=1#now")),
+                title: None,
+            }],
+        },
+    );
+    rig.tabs.recompute();
+    let view = rig.tabs.room_view(room.as_str()).unwrap();
+    assert_eq!(view.panel[0].tab, tab(&family, Some("/report?q=1#now")));
+    assert_eq!(
+        view.panel[0].page.url.as_deref(),
+        Some("https://bot--family-app-shared-12345678.example/report?q=1#now")
+    );
 }
 
 #[tokio::test]
-async fn explicit_no_bot_webui_keeps_plugin_addresses_addable() {
+async fn explicit_no_bot_webui_preserves_ordinary_plugin_current_page_pinning() {
     let rig = Rig::new();
     let mut default = bot("default", "http://app.shared.wonton.localhost/");
     default.web = Some(BotWebView::Unavailable {
@@ -154,48 +241,19 @@ async fn explicit_no_bot_webui_keeps_plugin_addresses_addable() {
     });
     publish(&rig, vec![default]);
     rig.tabs
-        .dispatch(PageAction::AddMyAppUrl {
+        .dispatch(PageAction::PinCurrentPage {
             url: "http://app.shared.wonton.localhost/report".into(),
             title: None,
+            to: PinTarget::Panel {
+                scope: PanelScope::Main,
+            },
         })
         .unwrap();
     assert_eq!(
-        rig.last_app_tab(),
-        Some(TabRef::PluginPath {
+        rig.tabs.view().panel[0].tab,
+        TabRef::PluginPath {
             plugin_id: "app.shared".into(),
             path: "/report".into(),
-        })
+        }
     );
-}
-
-#[tokio::test]
-async fn bot_web_page_addresses_are_not_added_to_my_apps() {
-    let rig = Rig::new();
-    let family = bot("family", "https://family.example/");
-    let default = bot("default", "http://app.shared.wonton.localhost/");
-    publish(&rig, vec![family, default]);
-    // 已核实的 Bot 网页同源、Bot 网页专用域名、默认 Bot 共用的插件网站：都不当成别的页加进去。
-    for url in [
-        "https://family.example/report?q=1",
-        "https://bot--other-app-shared-87654321.example/",
-        "http://app.shared.wonton.localhost/report",
-    ] {
-        let refused = rig.tabs.dispatch(PageAction::AddMyAppUrl {
-            url: url.into(),
-            title: None,
-        });
-        assert!(
-            matches!(refused, Err(CoreError::InvalidInput { .. })),
-            "{url}: {refused:?}"
-        );
-    }
-    assert_eq!(rig.last_app_tab(), None);
-
-    rig.tabs
-        .dispatch(PageAction::AddMyAppUrl {
-            url: "https://example.com/".into(),
-            title: None,
-        })
-        .unwrap();
-    assert_eq!(rig.last_app_tab(), Some(url_tab("https://example.com/")));
 }

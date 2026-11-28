@@ -79,7 +79,7 @@ struct ChatListView: View {
             .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
             .task { await model.confirmations.observe() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
-            .environment(\.goToInstalledApps, { pages.open(.apps) })
+            .environment(\.goToInstalledApps, { pages.select(.apps) })
             .onChange(of: model.viewModel.encryption.backupReminder?.text, initial: true) { _, _ in
                 // 换一类提醒（保存↔输入）时重新看关没关过；核心清掉提醒后也落回未关。
                 locallyDismissed = false
@@ -88,7 +88,7 @@ struct ChatListView: View {
 
     private func select(_ route: ChatRoute) {
         if listOnly {
-            pages.open(.chat)
+            pages.select(.agent)
             model.path = [route]
         } else {
             model.path.append(route)

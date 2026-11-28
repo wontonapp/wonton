@@ -183,6 +183,10 @@ impl OnboardingLink {
                 self.close();
                 Ok(())
             }
+            // 出场的见过标记不在这个核心里：如实报没就绪，不静默当成功。
+            OnboardingAction::FinishAgentIntro => Err(CoreError::NotReady {
+                reason: "the agent intro is not wired yet".into(),
+            }),
         }
     }
 

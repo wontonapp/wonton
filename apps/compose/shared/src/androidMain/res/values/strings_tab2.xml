@@ -49,4 +49,5 @@
     <string name="tab_exit_hint_got_it">Got it</string>
     <!-- Guidance shown when handing the page to a browser. -->
     <string name="tab_browser_return_hint">To return to Wonton, try system Back or close the browser page.</string>
+    <string name="tab_inbox">Inbox</string>
 </resources>

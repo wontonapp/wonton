@@ -92,7 +92,7 @@ function installWindow(platform, url) {
     MessageEvent: WindowMessageEvent, CustomEvent: WindowCustomEvent,
     MutationObserver: RootObserver,
   });
-  for (const type of ["wonton:connection"]) {
+  for (const type of ["wonton:tab-reselected", "wonton:connection"]) {
     window.addEventListener(type, (event) => events.push({ type, detail: event.detail ?? null }));
   }
 }

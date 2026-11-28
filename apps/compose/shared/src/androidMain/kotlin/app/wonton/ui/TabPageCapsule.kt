@@ -37,12 +37,13 @@ import app.wonton.ui.icons.Leave
 import app.wonton.ui.icons.More
 import app.wonton.ui.icons.WontonIcon
 
-/** 公网网页右上角的 Material 导航胶囊（应用整页没有，见 [pageKeepsCapsule]）；菜单和退出常驻，不随网页滚动隐藏。 */
+/** 面板页和公网网页右上角的 Material 导航胶囊（应用整页没有，见 [pageKeepsCapsule]）；菜单和退出常驻，不随网页滚动隐藏。 */
 @Composable
 internal fun PluginPageCapsule(
     tab: TabRef, tabs: PagesState, state: PageCapsuleState,
     controller: PluginWebViewController, takeover: PageTakeover?,
     onClosePage: () -> Unit, onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
+    onEditPanel: (() -> Unit)? = null,
 ) {
     val configuration = LocalViewConfiguration.current
     // Compose expands small click targets by default; the page owns every pixel outside the visible capsule.
@@ -68,7 +69,7 @@ internal fun PluginPageCapsule(
                     CapsuleHitTarget(stringResource(R.string.tab_page_close), onClose)
                 }
                 Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton)) {
-                    CapsuleMenu(tab, tabs, state, controller, takeover, onClosePage, onReload, onDetails)
+                    CapsuleMenu(tab, tabs, state, controller, takeover, onClosePage, onReload, onDetails, onEditPanel)
                 }
             }
         }
@@ -103,7 +104,7 @@ private fun CapsuleHitTarget(label: String, onClick: () -> Unit) {
 private fun CapsuleMenu(
     tab: TabRef, tabs: PagesState, state: PageCapsuleState,
     controller: PluginWebViewController, takeover: PageTakeover?,
-    onClosePage: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
+    onClosePage: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit, onEditPanel: (() -> Unit)?,
 ) {
     val close = { state.menuOpen = false }
     DropdownMenu(state.menuOpen, close, containerColor = WontonTheme.colors.surface.toColor()) {
@@ -119,6 +120,10 @@ private fun CapsuleMenu(
                 })
             DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_details)) },
                 onClick = { close(); onDetails(tab.pluginId) })
+        }
+        if (onEditPanel != null) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.panel_edit)) },
+                onClick = { close(); onEditPanel() })
         }
     }
 }

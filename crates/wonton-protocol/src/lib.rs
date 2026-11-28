@@ -18,6 +18,7 @@ mod agent_run;
 mod agent_stop;
 mod app_lock;
 mod appearance;
+mod bar;
 mod bot_commands;
 mod bot_contacts;
 mod bot_profile;
@@ -26,6 +27,7 @@ mod bot_web_registration;
 mod chat;
 mod chat_layout;
 mod clients;
+mod cloud;
 mod composer;
 mod confirmation;
 mod confirmation_origin;
@@ -40,7 +42,6 @@ pub mod inbox;
 pub mod inbox_request;
 pub mod inbox_validate;
 mod lan;
-mod layout;
 mod link;
 mod link_preview;
 pub mod manifest;
@@ -52,6 +53,7 @@ pub mod music;
 mod onboarding;
 mod owner;
 mod pages;
+mod panel;
 mod peers;
 mod personal_data;
 mod plugin;
@@ -111,6 +113,10 @@ pub use app_lock::{AppLockTimeout, AppLockViewModel};
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
 };
+pub use bar::{
+    BarEntry, BarIcon, BarItem, BarProblem, BarViewModel, InboxBadge, MAX_BAR_ITEMS, check_bar,
+    default_bar,
+};
 pub use bot_commands::{
     BOT_COMMANDS_EVENT, BotCommand, BotCommands, MAX_BOT_COMMANDS, MAX_BOT_COMMANDS_BYTES,
     MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS, RoomCommand,
@@ -162,6 +168,14 @@ pub use clients::{
     clients_domain_path, clients_entry_path, clients_guest_path, clients_guests_path,
     clients_ingress_path, clients_password_path, clients_passwords_path, clients_path,
     clients_public_access_path, clients_status_path, dns_providers_path, suffix_problem,
+};
+pub use cloud::{
+    ADD_AVATAR_ASSET_TOOL, BotCloud, CLOUD_ASSET_EDGE, CLOUD_ASSET_EDGE_TOLERANCE,
+    CLOUD_ASSETS_PATH, CLOUD_AVATAR_EDGE, CLOUD_FIELD, CloudAsset, CloudAssetAuthor,
+    CloudAssetInfo, CloudAssetKind, CloudAssetNameProblem, CloudAssetRef, CloudAssets, CloudLayer,
+    CloudPart, CloudProblem, MAX_CLOUD_ASSET_BYTES, MAX_CLOUD_ASSET_FILES_PER_IMPORT,
+    MAX_CLOUD_ASSET_IMPORTS_PER_HOUR, MAX_CLOUD_ASSET_NAME_CHARS, MAX_USER_CLOUD_ASSETS,
+    check_cloud_asset_name, cloud_asset_path, cloud_color, parse_cloud_asset_id, parse_cloud_color,
 };
 pub use composer::{
     AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerMention,
@@ -231,10 +245,6 @@ pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,
     LanProblem, LanProtocol, LanSettings,
 };
-pub use layout::{
-    LAYOUT_EVENT, LayoutSettings, MCP_APP_CALLS_PATH, MCP_APP_MESSAGE_PATH, MCP_APP_READ_PATH,
-    MCP_APP_TOOLS_PATH, PlacedTab, mcp_app_call_path, mcp_app_host_path,
-};
 pub use link::AppLink;
 pub use link_preview::{
     LINK_PREVIEW_PATH, LinkPreview, LinkPreviewCard, LinkPreviewCardImage, LinkPreviewFailure,
@@ -247,12 +257,13 @@ pub use matrix_login::{
 pub use message_choice::{ChoiceSend, ChoicesState, MessageChoice, MessageChoices};
 pub use message_layout::{MessageRun, MessageStatus};
 pub use onboarding::{
-    DefaultBotPlugin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure, ModelSettingsPage,
-    ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingCommit, OnboardingItemProblem,
-    OnboardingItemState, OnboardingModelChoice, OnboardingModelStep, OnboardingNeed,
-    OnboardingNeedRow, OnboardingProfileStep, OnboardingReview, OnboardingReviewDetail,
-    OnboardingReviewItem, OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips,
-    OnboardingTooOld, OnboardingUpdate, OnboardingViewModel, StepNav,
+    AgentIntroView, DefaultBotPlugin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure,
+    ModelSettingsPage, ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingCommit,
+    OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice, OnboardingModelStep,
+    OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep, OnboardingReview,
+    OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind, OnboardingStep,
+    OnboardingTip, OnboardingTips, OnboardingTooOld, OnboardingUpdate, OnboardingViewModel,
+    StepNav,
 };
 pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
@@ -262,6 +273,13 @@ pub use pages::{
     CandidatePlugin, KEEP_ALIVE_PAGES, MyAppEntry, MyAppRef, NativePage, OpenPage, PagesFailure,
     PagesProblem, PagesViewModel, PluginTab, TabCandidate, TabIcon, TabLayout, TabLoadFailure,
     TabMediaPrompt, TabPage, TabRef, TabState,
+};
+pub use panel::{
+    BOT_PANEL_PINS_PATH, BotPanelPin, BotPanelPins, BotPinConsent, BotPinOwner, LAYOUT_EVENT,
+    LayoutSettings, MAX_PANEL_PAGES, MCP_APP_CALLS_PATH, MCP_APP_MESSAGE_PATH, MCP_APP_READ_PATH,
+    MCP_APP_TOOLS_PATH, PanelEntry, PanelItem, PanelScope, PanelSource, PinTarget, PlacedTab,
+    ROOM_PANEL_EVENT, RoomPanel, bot_panel_consent_path, bot_panel_pin_path,
+    bot_panel_pin_seen_path, mcp_app_call_path, mcp_app_host_path,
 };
 pub use peers::{
     PEER_ERROR_HEADER, PEERS_PATH, PeerCode, PeerError, PeerErrorBody, PeerProblem, PeerRequestRow,

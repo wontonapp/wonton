@@ -75,10 +75,11 @@ async fn periodic_change(rig: &Rig, pinned: &TabRef, plugin: &mut InstalledPlugi
 #[tokio::test]
 async fn chat_is_idle_open_page_polls_and_background_pauses_until_foreground() {
     let (rig, pinned, mut plugin) = connected_page_rig("app.poll-pinned", "home").await;
-    // 回到根页面（栈空）：不活跃。
     rig.app
         .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::OpenPage { tab: TabRef::Chat },
+            action: wonton_protocol::PageAction::SelectBarItem {
+                entry: wonton_client::BarEntry::Agent,
+            },
         })
         .unwrap();
     quiet(&rig, false).await;
@@ -114,7 +115,7 @@ async fn chat_is_idle_open_page_polls_and_background_pauses_until_foreground() {
 }
 
 #[tokio::test]
-async fn an_open_page_polls_but_a_disconnected_page_does_not_request_or_redial() {
+async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redial() {
     crate::chat::support::init_test_logging();
     let rig = Rig::new().await;
     let home = FakeHome::start(vec![rig.device()]).await;
@@ -138,12 +139,21 @@ async fn an_open_page_polls_but_a_disconnected_page_does_not_request_or_redial()
     .await;
     let pinned = tab(&plugin.id, Some("home"));
     wait_my_app(&rig, &pinned).await;
-    let root = tab(&plugin.id, None);
+    // 面板里再放一份入口（网址入口那一页）：栈里的和面板里的各自计数。
+    let panel = tab(&plugin.id, None);
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::AddPanelPage {
+                scope: PanelScope::Main,
+                tab: panel.clone(),
+            },
+        })
+        .unwrap();
     enter(
         &rig,
         &pinned,
         &mut plugin,
-        "entered",
+        "panel-entered",
         Action::Pages {
             action: wonton_protocol::PageAction::OpenPage {
                 tab: pinned.clone(),
@@ -173,7 +183,7 @@ async fn an_open_page_polls_but_a_disconnected_page_does_not_request_or_redial()
     home.allowed.allow(rig.device());
     rig.app
         .dispatch(Action::Pages {
-            action: wonton_protocol::PageAction::OpenPage { tab: root },
+            action: wonton_protocol::PageAction::OpenPage { tab: panel },
         })
         .unwrap();
     quiet(&rig, true).await;

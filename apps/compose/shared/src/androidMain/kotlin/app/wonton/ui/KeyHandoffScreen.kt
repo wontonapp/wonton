@@ -30,6 +30,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.wonton.client.ClientCore
 import app.wonton.protocol.ChatAction
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.ChatViewModel
@@ -67,7 +68,7 @@ internal fun KeyHandoffHost(chat: ChatViewModel, navigation: AppNavigation, core
             core,
             onLater = { navigation.chat.keyHandoffDeferred = true },
             onNoOtherDevice = {
-                navigation.pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
+                navigation.pages.select(BarEntry.Agent)
                 navigation.chat.showingBackup = true
             },
         )

@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,18 +27,36 @@ import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
+import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.design.wontonContentPadding
+import app.wonton.ui.icons.Home
+import app.wonton.ui.icons.WontonIcon
 
 @Composable
 internal fun BotProfileScreen(
     identity: BotRef, bot: BotView?, plugins: PluginsState, onAction: (Action) -> Unit, onClose: () -> Unit,
 ) {
+    val panel = LocalChatPanel.current
     WontonScreen(
-        bar = { WontonPushedBar(stringResource(R.string.bot_profile_title), onClose) },
+        bar = {
+            WontonPushedBar(
+                stringResource(R.string.bot_profile_title), onClose,
+                actions = {
+                    if (panel != null) {
+                        Box(Modifier.testTag("bot-profile-panel-open")) {
+                            WontonIconButton(
+                                WontonIcon.Home, stringResource(R.string.panel_open),
+                                { panel.move(PanelLevel.FULL) },
+                            )
+                        }
+                    }
+                },
+            )
+        },
     ) {
         Column(
             Modifier.fillMaxSize().testTag("bot-profile").verticalScroll(rememberScrollState())
@@ -71,7 +90,7 @@ internal fun ReadOnlyBotProfile(bot: BotView, plugins: PluginsState) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
-            listOf(BotActivity.IDLE, BotActivity.WORKING, BotActivity.WAITING, BotActivity.OFFLINE).forEach { state ->
+            BotActivity.entries.forEach { state ->
                 Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
                     bot.stateAvatars.firstOrNull { it.state == state }?.image?.let { image ->
                         BotAvatarMedia(image, plugins, WontonTheme.size.previewIcon,

@@ -8,6 +8,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.PageAction
+import app.wonton.protocol.PanelScope
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.SidebarApp
 import app.wonton.protocol.SidebarOpen
@@ -34,6 +35,7 @@ internal fun MyAppMenuItems(menu: MyAppMenu, onDismiss: () -> Unit) {
     menu.tab?.let { tab ->
         ReloadItem(menu, tab, onDismiss)
         if (menu.plugin?.declaresTools == true) TakeoverItem(menu, menu.plugin, tab, onDismiss)
+        PinToPanelItem(menu.pages, tab, onDismiss)
     }
     menu.plugin?.let { plugin ->
         MembershipItems(plugin, menu.pages, onDismiss)
@@ -80,6 +82,16 @@ private fun TakeoverItem(menu: MyAppMenu, plugin: InstalledPlugin, tab: TabRef, 
             onClick = { onDismiss(); menu.open(tab); takeover.start() },
         )
     }
+}
+
+/** 钉到主聊天页的面板（ADR-0052）。核心给的候选里有它才显示：已经在面板里的、不能放的都不在候选里。 */
+@Composable
+private fun PinToPanelItem(pages: PagesState, tab: TabRef, onDismiss: () -> Unit) {
+    if (pages.viewModel.panelCandidates.none { it.tab == tab }) return
+    DropdownMenuItem(
+        text = { Text(stringResource(R.string.panel_pin)) },
+        onClick = { onDismiss(); pages.send(Action.Pages(PageAction.AddPanelPage(PanelScope.Main, tab))) },
+    )
 }
 
 /** 每个页面一项，没加进的加进“我的应用”，加进了的移出。 */

@@ -116,6 +116,7 @@ tabs-storage-problem = 我的應用存不下，下次啟動可能恢復舊狀態
 
 tabs-view-plugin-no-page = 這個應用程式沒有可開啟的網頁。
 
+tabs-page-not-placed = 這個頁面不在面板裡。
 
 # 底部導覽列設定檔（tabs.json）的錯誤，作為 CoreError 的 reason 顯示。
 # $path 是設定檔的路徑，$reason 是原始的剖析或讀寫錯誤。
@@ -193,21 +194,34 @@ tabs-page-cannot-reload = 這個頁面不能重新載入。
 
 tabs-bar-not-pinned = 這個頁面沒有固定到底欄。
 
-tabs-bar-already-pinned = 這個頁面已經在我的應用程式裡。
+tabs-bar-already-pinned = 這個頁面已經在底欄裡。
 
 tabs-bar-replace-required = 底欄已滿，必須指定要替換的頁面。
 
 tabs-bar-replacing-missing = 要替換的頁面不在底欄。
 
-tabs-bar-fixed = 聊天和應用不能被替換。
+tabs-bar-fixed = Agent 和應用程式項可以直接換掉。
 
 tabs-bar-not-full = 底欄未滿時不能指定替換頁面。
 
-tabs-bar-remove-fixed = 聊天和應用不能拿掉。
+tabs-bar-remove-fixed = Agent 和應用程式項也可以拿掉。
 
 tabs-bar-page-missing = 這個頁面不在我的應用程式。
 
-tabs-bar-index-out-of-range = 位置超出我的應用程式的範圍。
+tabs-bar-index-out-of-range = 位置超出底欄的範圍。
+
+# 底欄 Agent 那一項的名字（只畫圖示，這是讀屏標籤）。
+tabs-bar-agent = Agent
+tabs-bar-apps = 應用程式
+tabs-bar-full = 底欄滿了。
+tabs-bar-empty = 底欄至少留一項。
+tabs-bar-not-in-bar = 這一項不在底欄。
+tabs-rooms-title = 所有會話
+tabs-inbox-title = 收件匣
+tabs-config-empty-bar = 存下的底欄是空的。
+tabs-config-bar-too-many = 存下的底欄太多了。
+tabs-config-bar-duplicate = 存下的底欄有重複項。
+tabs-config-bar-invalid = 存下的底欄有一段讀不了。
 
 tabs-open-only-plugins = 只有外掛頁面可以設定開啟方式。
 

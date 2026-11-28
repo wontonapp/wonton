@@ -62,6 +62,66 @@
         }
       }
     },
+    "bot.state.thinking": {
+      "comment": "Status name shown under the state-avatar cells and read by VoiceOver with the Bot's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thinking"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考中"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "思考中"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "考え中"
+          }
+        }
+      }
+    },
+    "bot.state.error": {
+      "comment": "Status name shown under the state-avatar cells and read by VoiceOver with the Bot's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Error"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出错"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "出錯"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エラー"
+          }
+        }
+      }
+    },
     "bot.state.offline": {
       "comment": "Status name shown under the state-avatar cells and read by VoiceOver with the Bot's name.",
       "extractionState": "manual",

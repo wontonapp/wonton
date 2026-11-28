@@ -1,24 +1,54 @@
 //! 每次刷新的状态推导：换服务器、新装自动加入、卸载清理、重载计数和栈的有效性。
 //! 只经由 [`super`] 的输入和 [`PagesState`] 改状态，不碰发布和持久化。
 
+use wonton_protocol::{BarEntry, BarIcon, BarItem, BarViewModel, MAX_BAR_ITEMS, default_bar};
+
 use super::*;
 use wonton_l10n::l10n;
 
 pub(super) fn empty_view() -> PagesViewModel {
     PagesViewModel {
-        root: TabRef::Apps,
-        shows_apps: false,
+        tab: BarEntry::Agent,
+        bar: default_bar_view(),
         stack: Vec::new(),
         uninstalled: Vec::new(),
         problem: None,
         sync_stale: false,
+        bot_pin_consents: Vec::new(),
         my_app_candidates: Vec::new(),
         auto_add: true,
+        panel: Vec::new(),
+        panel_candidates: Vec::new(),
+        panel_selected: None,
         media_prompt: None,
     }
 }
 
-/// 每次刷新：换服务器、卸载、元数据和栈里失效的页面。
+/// 还没拿到任何数据时的底栏：默认两项，没有角标。
+fn default_bar_view() -> BarViewModel {
+    let items = default_bar()
+        .into_iter()
+        .map(|entry| {
+            let (label, icon) = match entry {
+                BarEntry::Agent => (l10n!(CATALOG, language(), "tabs-bar-agent"), BarIcon::Agent),
+                BarEntry::Apps => (l10n!(CATALOG, language(), "tabs-bar-apps"), BarIcon::Apps),
+                BarEntry::App { .. } => unreachable!("the default bar has no app items"),
+            };
+            BarItem {
+                entry,
+                label,
+                icon,
+                badge: 0,
+            }
+        })
+        .collect();
+    BarViewModel {
+        items,
+        max_items: MAX_BAR_ITEMS,
+        full: false,
+    }
+}
+/// 每次刷新：换服务器、卸载、元数据、栈里失效的页面和面板的选择。
 pub(super) fn refresh_state(
     state: &mut PagesState,
     plugins: &PluginsViewModel,
@@ -27,7 +57,10 @@ pub(super) fn refresh_state(
     let mut config_changed = false;
     let server_changed = home.server_id.is_some() && state.config.server_id != home.server_id;
     if server_changed || state.paired != home.server_id.is_some() {
-        state.shows_apps = false;
+        sanitize_bar(&mut state.config.bar);
+        state.settle_tab();
+        // 换服务器和配对状态变了都先回 Agent 根页，别把上一台的选择带过去。
+        state.tab = BarEntry::Agent;
     }
     if server_changed {
         if state.config.server_id.is_some() && state.config.server_id != home.server_id {
@@ -156,6 +189,7 @@ pub(super) fn update_reload_counters(
     state.connected = connected;
 }
 
+#[allow(clippy::too_many_lines)] // 一次把我的应用、栏、打开页和提示都清干净，拆开要来回传同一份状态。
 pub(super) fn remove_uninstalled(
     state: &mut PagesState,
     installed: &wonton_protocol::InstalledPlugins,
@@ -178,6 +212,16 @@ pub(super) fn remove_uninstalled(
         }
         keep
     });
+    let bar_before = state.config.bar.len();
+    state
+        .config
+        .bar
+        .retain(|entry| !bar_plugin_id(entry).is_some_and(gone));
+    if state.config.bar.len() < bar_before {
+        state.bar_full = false;
+    }
+    // 插件卸了只拿掉那一项；用户删掉的根页不复活，栏可以暂时是空的。
+    state.settle_tab();
     state.stack.retain(|item| {
         let missing = tab_plugin_id(&item.tab).is_some_and(gone);
         if missing && !removed.iter().any(|(tab, _)| *tab == item.tab) {
@@ -185,14 +229,97 @@ pub(super) fn remove_uninstalled(
         }
         !missing
     });
+    // 主面板里的页面一起拿掉，提示一次（和我的应用一样）。
+    state.config.panel.retain(|entry| {
+        let keep = match &entry.tab {
+            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
+                !gone(plugin_id)
+            }
+            _ => true,
+        };
+        if !keep
+            && let Some(title) = panel_entry_title(entry, installed)
+            && !state.uninstalled.contains(&title)
+        {
+            state.uninstalled.push(title);
+        }
+        keep
+    });
+    // Bot 钉的页指向没了的插件：钉页清掉，标题进提示，键和红点也清。
+    let gone_bots: Vec<wonton_protocol::BotPanelPin> = state
+        .bot_pins
+        .iter()
+        .filter(|pin| pin_tab_plugin_id(pin).is_some_and(gone))
+        .cloned()
+        .collect();
+    state
+        .bot_pins
+        .retain(|pin| !pin_tab_plugin_id(pin).is_some_and(gone));
+    for pin in &gone_bots {
+        if !state.uninstalled.contains(&pin.title) {
+            state.uninstalled.push(pin.title.clone());
+        }
+        let placed = PlacedTab::Panel {
+            scope: pin.scope.clone(),
+            tab: pin.tab.clone(),
+        };
+        state.failures.remove(&placed);
+        state.attention.remove(&placed);
+        if pin.scope == PanelScope::Main && state.panel_selected.as_ref() == Some(&pin.tab) {
+            state.panel_selected = None;
+        }
+    }
+    // 打开的房间的面板也拿掉；写回房间账号数据的活儿交给 recompute 收尾（记下是哪几个插件）。
+    for room in state.rooms.values_mut() {
+        room.panel.pages.retain(|entry| match &entry.tab {
+            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
+                let removed = gone(plugin_id);
+                if removed && !room.removed.contains(plugin_id) {
+                    room.removed.push(plugin_id.clone());
+                }
+                !removed
+            }
+            _ => true,
+        });
+    }
     for (tab, title) in &removed {
         let key = |place: fn(TabRef) -> PlacedTab| place(tab.clone());
         state.failures.remove(&key(|tab| PlacedTab::Page { tab }));
+        state.failures.remove(&key(|tab| PlacedTab::Panel {
+            scope: PanelScope::Main,
+            tab,
+        }));
+        state.attention.remove(&key(|tab| PlacedTab::Page { tab }));
+        state.attention.remove(&key(|tab| PlacedTab::Panel {
+            scope: PanelScope::Main,
+            tab,
+        }));
         if !state.uninstalled.contains(title) && tab_plugin_id(tab).is_some() {
             state.uninstalled.push(title.clone());
         }
+        if state.panel_selected.as_ref() == Some(tab) {
+            state.panel_selected = None;
+        }
     }
-    !removed.is_empty()
+    !removed.is_empty() || state.rooms.values().any(|room| !room.removed.is_empty())
+}
+
+/// 面板条目的提示名：用户起的名字，没有时按插件补。
+pub(super) fn panel_entry_title(
+    entry: &PanelEntry,
+    installed: &wonton_protocol::InstalledPlugins,
+) -> Option<String> {
+    if let Some(title) = &entry.title {
+        return Some(title.clone());
+    }
+    match &entry.tab {
+        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => installed
+            .plugins
+            .iter()
+            .find(|plugin| plugin.id == *plugin_id)
+            .map(|plugin| plugin.title.clone()),
+        _ => None,
+    }
 }
 
 pub(super) fn update_metadata(
@@ -240,10 +367,23 @@ pub(super) fn update_metadata(
 
 pub(super) fn clear_plugin_config(state: &mut PagesState) {
     state.config.my_apps.retain(|entry| !is_plugin_page(entry));
+    let bar_before = state.config.bar.len();
+    state
+        .config
+        .bar
+        .retain(|entry| bar_plugin_id(entry).is_none());
+    if state.config.bar.len() < bar_before {
+        state.bar_full = false;
+    }
+    // 换服务器只拿掉绑在插件上的项；用户删掉的根页不复活。
+    state.settle_tab();
+    state.config.panel.clear();
     state.stack.clear();
+    state.attention.clear();
+    state.panel_selected = None;
 }
 
-/// 栈里的页面失效了就弹出去。
+/// 栈里的页面失效了就弹出去；面板上次看的那页被拿掉就回到第一页。
 pub(super) fn ensure_stack(state: &mut PagesState, plugins: &PluginsViewModel) {
     let stack = std::mem::take(&mut state.stack);
     state.stack = stack
@@ -261,6 +401,22 @@ pub(super) fn ensure_stack(state: &mut PagesState, plugins: &PluginsViewModel) {
             other => page_available(other, plugins),
         })
         .collect();
+    if let Some(selected) = &state.panel_selected
+        && !state
+            .config
+            .panel
+            .iter()
+            .any(|entry| entry.tab == *selected)
+    {
+        state.panel_selected = None;
+    }
+    for room in state.rooms.values_mut() {
+        if let Some(selected) = &room.selected
+            && !room.panel.pages.iter().any(|entry| entry.tab == *selected)
+        {
+            room.selected = None;
+        }
+    }
 }
 
 pub(super) fn tab_plugin_id(tab: &TabRef) -> Option<&str> {
@@ -345,5 +501,14 @@ pub(super) fn storage_problem(error: &CoreError) -> PagesProblem {
             "pages-storage-problem",
             error = error.to_string()
         ),
+    }
+}
+
+pub(super) fn pin_tab_plugin_id(pin: &wonton_protocol::BotPanelPin) -> Option<&str> {
+    match &pin.tab {
+        TabRef::Plugin { plugin_id, .. }
+        | TabRef::PluginPath { plugin_id, .. }
+        | TabRef::UiResource { plugin_id, .. } => Some(plugin_id),
+        _ => None,
     }
 }

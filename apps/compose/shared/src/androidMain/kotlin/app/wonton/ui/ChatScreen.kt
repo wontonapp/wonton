@@ -79,6 +79,7 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Connection
+import app.wonton.ui.icons.Home
 import app.wonton.ui.icons.LockFill
 import app.wonton.ui.icons.VoiceCallFill
 import app.wonton.ui.icons.WontonIcon
@@ -153,7 +154,11 @@ fun ChatRoute(
             )
         }
         room != null -> {
-            BackHandler { navigation.closeRoom() }
+            // 面板开着时返回键先关面板，不关房间。
+            val panel = LocalChatPanel.current
+            BackHandler {
+                if (panel != null && panel.level != PanelLevel.CLOSED) panel.back() else navigation.closeRoom()
+            }
             val row = viewModel.rooms.firstOrNull { it.roomId == room }
             val context = LocalContext.current
             val opener = remember(core, navigation, context, scope, onAppLink) {
@@ -222,9 +227,20 @@ internal fun ChatListScreen(
     onReviewInstall: () -> Unit = {},
 ) {
     val installing = viewModel.installingBots
+    val panel = LocalChatPanel.current
     val listState = rememberLazyListState()
     WontonScreen(
-        bar = { WontonRootBar(stringResource(R.string.tab_chat)) },
+        bar = {
+            WontonRootBar(stringResource(R.string.tab_chat), actions = if (panel != null) {
+                {
+                    WontonIconButton(
+                        WontonIcon.Home,
+                        stringResource(R.string.panel_open),
+                        { panel.move(PanelLevel.FULL) },
+                    )
+                }
+            } else null)
+        },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(

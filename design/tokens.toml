@@ -147,6 +147,7 @@ dragSlop = 8
 edgeWidth = 24
 # 左滑整列消息露出时间时，最多挪开这么远。
 timeReveal = 64
+pageEdgeZone = 48
 # 左滑回复：过这么远算回复，最多拖这么远（ADR-0109，估计值）。
 replyTrigger = 64
 replyMax = 88

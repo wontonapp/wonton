@@ -161,14 +161,14 @@ class ChatNavigation(
                     val roomId = receipt.roomId
                     if (roomId != null) {
                         if (viewModel.rooms.any { it.roomId == roomId && it.membership == RoomMembership.JOINED }) {
-                            show(roomId, TabRef.Chat)
+                            show(roomId, TabRef.Rooms)
                         } else {
                             awaitedPeer = null
                             awaitedRoom = roomId
                             awaitedSideChat = null
                             openRoom = null
                             returnTab = null
-                            selectTab(TabRef.Chat)
+                            selectTab(TabRef.Rooms)
                         }
                     }
                 }
@@ -188,7 +188,7 @@ class ChatNavigation(
     fun openConfirmations() {
         reset()
         showingConfirmations = true
-        selectTab(TabRef.Chat)
+        selectTab(TabRef.Rooms)
     }
 
     /** 主人在交接页点了“稍后”（ADR-0087）：只在这台 App 里先收起，聊天列表顶上的提醒再打开。 */
@@ -196,7 +196,7 @@ class ChatNavigation(
 
     /** 刚发起了和这个用户的私聊，房间出现后打开。 */
     private var awaitedPeer by mutableStateOf<String?>(null)
-    private var awaitedFrom: TabRef = TabRef.Chat
+    private var awaitedFrom: TabRef = TabRef.Rooms
 
     /** 要打开的房间，同步到了再打开：点通知冷启动时，会话还没恢复。 */
     private var awaitedRoom: String? = null
@@ -236,7 +236,7 @@ class ChatNavigation(
         awaitedRoom = roomId
         awaitedSideChat = sideChatRoot
         onUpdate(core.chat())
-        selectTab(TabRef.Chat)
+        selectTab(TabRef.Rooms)
     }
 
     /** 进 [roomId] 里的旁聊 [root]；房间已经开着时只换上旁聊，主对话不重新订阅。 */
@@ -255,7 +255,7 @@ class ChatNavigation(
         if (sideChatRoom != null) {
             awaitedPeer = null
             awaitedRoom = null
-            show(sideChatRoom, TabRef.Chat)
+            show(sideChatRoom, TabRef.Rooms)
             composingSideChat = true
             return null
         }
@@ -271,7 +271,7 @@ class ChatNavigation(
      * 邀请默认留在列表由主人接受；[acceptInvite] 用于主人主动打开默认 Agent 的系统入口。
      */
     fun openDirectChat(
-        core: ClientCore, peer: String, from: TabRef = TabRef.Chat, acceptInvite: Boolean = false,
+        core: ClientCore, peer: String, from: TabRef = TabRef.Rooms, acceptInvite: Boolean = false,
     ): Problem? {
         awaitedPeer = null
         awaitedRoom = null
@@ -302,16 +302,16 @@ class ChatNavigation(
                 awaitedFrom = from
             }
         } else {
-            selectTab(TabRef.Chat)
+            selectTab(TabRef.Rooms)
         }
         return rejection
     }
 
     private fun show(roomId: String, from: TabRef) {
         botProfile = null
-        returnTab = from.takeIf { it != TabRef.Chat }
+        returnTab = from.takeIf { it != TabRef.Rooms }
         openRoom = roomId
-        selectTab(TabRef.Chat)
+            selectTab(TabRef.Rooms)
     }
 
     fun onUpdate(viewModel: ChatViewModel) {
@@ -331,7 +331,7 @@ class ChatNavigation(
         } else if (viewModel.problem != null) {
             // 发起失败的原因显示在聊天页。
             awaitedPeer = null
-            selectTab(TabRef.Chat)
+            selectTab(TabRef.Rooms)
         }
     }
 }

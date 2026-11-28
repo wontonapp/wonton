@@ -231,6 +231,17 @@ pub enum BotAction {
     },
     /// 清掉这个 Bot 的 `BotView::problem`。
     DismissBotProfileProblem { plugin_id: String },
+    /// 头像换成云朵（ADR-0126），整套一起设：核心过 [`BotCloud::check`](crate::BotCloud::check)、合成、以 Bot 的身份
+    /// 写进资料，并清掉主人传的那组图。不行时返回 `InvalidInput`。[`Self::SetBotAvatar`] 是另一个来源“自己的图”。
+    SetBotCloud {
+        plugin_id: String,
+        cloud: crate::BotCloud,
+    },
+    /// 只改云朵的一项，其余两项不变。
+    SetBotCloudPart {
+        plugin_id: String,
+        part: crate::CloudPart,
+    },
 }
 
 /// 系统推送操作。
@@ -397,6 +408,8 @@ pub enum OnboardingAction {
     DismissOnboardingTip { tip: OnboardingTip },
     /// 退出从设置重看的引导并丢弃未保存的选择；未在重看时无效果。
     CloseOnboarding,
+    /// Agent 的出场点过或播完了：记下见过（[`Onboarding::agent_intro`](crate::Onboarding::agent_intro)）。幂等。
+    FinishAgentIntro,
 }
 
 /// 文件传输操作。
@@ -437,7 +450,7 @@ pub enum FileAction {
     DismissFileProblem,
 }
 
-/// 页面栈和我的应用的操作。
+/// 页面栈、我的应用和面板操作。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -465,7 +478,44 @@ pub enum PageAction {
     /// 按网址把一页加进我的应用：插件网站下的地址作为插件页面，其他网址必须是 `https://`，
     /// Bot 的网页不收。`title` 为空时核心按插件或域名补全。
     AddMyAppUrl { url: String, title: Option<String> },
-    /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份实例。
+    /// 把插件页面或 `https://` 公网页面放进面板末尾；重复、已满或不允许放入时返回 `InvalidInput`。
+    /// 写入账号数据成功才生效，连接失败时不改变面板。
+    AddPanelPage {
+        scope: crate::PanelScope,
+        tab: TabRef,
+    },
+    /// 从面板拿掉。不在面板里时返回 `InvalidInput`。
+    RemovePanelPage {
+        scope: crate::PanelScope,
+        tab: TabRef,
+    },
+    /// 把面板里的一项移到 `index`（移动后的下标，从 0 开始）。不在面板里或下标越界时返回 `InvalidInput`。
+    MovePanelPage {
+        scope: crate::PanelScope,
+        tab: TabRef,
+        index: u32,
+    },
+    /// 壳报告正在看面板的哪一页：核心记住它（本机，下次拉开还是它），并清掉这一页的红点。
+    /// 拉开面板和翻页时都发。
+    SelectPanelPage {
+        scope: crate::PanelScope,
+        tab: TabRef,
+    },
+    /// 收回或给回一个 Bot 往主面板钉页的同意（设置里）；只改以后还问不问，已经钉上的页面不动。
+    SetBotPinConsent {
+        plugin_id: String,
+        bot: String,
+        allowed: bool,
+    },
+    /// 按当前 `url` 把页面钉到面板或我的应用：插件入口下的路径作为插件页面，其他网址必须是 `https://`。
+    /// `title` 为空时核心按插件或域名补全。
+    PinCurrentPage {
+        url: String,
+        title: Option<String>,
+        to: crate::PinTarget,
+    },
+    /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份：栈里的和面板里的同一页面
+    /// 各自加载，互不影响（ADR-0052）。
     ReloadTab { page: crate::PlacedTab },
     /// 壳报告网页加载失败。`status` 是 HTTP 状态码，没拿到响应时为空；原因由核心判断。
     /// `page` 指是哪一份实例。
@@ -475,8 +525,20 @@ pub enum PageAction {
     },
     /// 壳报告网页加载成功（如按返回回到成功的历史页），核心清掉这个页面的加载失败显示。
     TabLoadSucceeded { page: crate::PlacedTab },
+    /// 点底栏的一项（ADR-0126）：两个根页之间切换；应用项打开它的整页。
+    SelectBarItem { entry: crate::BarEntry },
     /// 主人看过了“已卸载，已从我的应用移除”的提示。
     DismissUninstalledTabs,
+    /// 往底栏末尾放一项：根页可以删出栏再加回来，应用项要在“我的应用”里。
+    ///
+    /// 已在栏上、`App` 的行不在我的应用里、或满了 [`MAX_BAR_ITEMS`](crate::MAX_BAR_ITEMS) 时返回 `InvalidInput`
+    /// 并说明原因（[`BarProblem`](crate::BarProblem)）；写成功后清掉 [`BarViewModel::full`](crate::BarViewModel::full)。
+    AddBarItem { entry: crate::BarEntry },
+    /// 从底栏拿掉一项，内置的两项也能拿掉；栏上只剩一项时返回 `InvalidInput`（[`BarProblem::Empty`](crate::BarProblem::Empty)）。
+    /// 不在栏上时也返回 `InvalidInput`。
+    RemoveBarItem { entry: crate::BarEntry },
+    /// 把底栏第 `from` 项移到 `to`（移动后的下标，从 0 开始）。越界时返回 `InvalidInput`。
+    MoveBarItem { from: u32, to: u32 },
 }
 
 /// 跨服务器配对操作。

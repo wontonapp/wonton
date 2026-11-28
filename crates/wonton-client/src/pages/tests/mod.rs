@@ -5,6 +5,7 @@ use wonton_protocol::{
 };
 
 mod bot_pages;
+mod bot_pins;
 mod bridge_rejection;
 mod content;
 mod media_permission;
@@ -12,7 +13,10 @@ mod my_apps;
 mod my_apps_list;
 mod native;
 mod page_rules;
+mod panel_attention;
+mod panel_pages;
 mod pinning;
+mod room_panel;
 mod stack;
 mod sync_status;
 mod tab_failure;
@@ -22,7 +26,7 @@ pub(super) struct Rig {
     home: watch::Sender<HomeViewModel>,
     plugins: PluginSnapshots,
     chat: watch::Sender<ChatViewModel>,
-    home_link: Arc<HomeLink>,
+    rooms: Mutex<HashMap<String, watch::Receiver<Option<Arc<RoomPanelView>>>>>,
     _dir: tempfile::TempDir,
 }
 
@@ -115,6 +119,7 @@ impl Rig {
         let tabs = PagesLink {
             runtime,
             home: home.subscribe(),
+            home_link,
             plugins_view: plugins_link.subscribe(),
             plugins: plugins_link,
             chat: chat.subscribe(),
@@ -124,16 +129,24 @@ impl Rig {
                 config,
                 problem: None,
                 read_problem: None,
+                action_problem: None,
                 stack: Vec::new(),
+                failures: HashMap::new(),
                 content: HashMap::new(),
                 paired: true,
-                shows_apps: false,
-                failures: HashMap::new(),
+                tab: BarEntry::Agent,
+                bar_full: false,
                 reloads: HashMap::new(),
                 uninstalled: Vec::new(),
                 previous_plugins: None,
                 connected: true,
+                attention: HashSet::new(),
+                panel_selected: None,
                 rooms: HashMap::new(),
+                bot_pins: Vec::new(),
+                core_url: None,
+                bot_pin_consents: Vec::new(),
+                pins_problem: None,
                 media_prompt: None,
                 widget: None,
                 bots: Vec::new(),
@@ -154,8 +167,48 @@ impl Rig {
             home,
             plugins,
             chat,
-            home_link,
+            rooms: Mutex::default(),
             _dir: dir,
+        }
+    }
+
+    pub(super) fn open_room(&self, room: &OwnedRoomId, panel: RoomPanel) {
+        let mut receivers = lock(&self.rooms);
+        self.tabs
+            .runtime_change(|state, _| {
+                match state.rooms.get_mut(room.as_str()) {
+                    Some(current) => current.panel = panel,
+                    None => {
+                        let current = room_panels::RoomPanelState::new(panel);
+                        receivers.insert(room.to_string(), current.view.subscribe());
+                        state.rooms.insert(room.to_string(), current);
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    pub(super) fn close_room(&self, room: &OwnedRoomId) {
+        lock(&self.rooms).remove(room.as_str());
+        self.tabs
+            .runtime_change(|state, _| {
+                room_panels::forget_room(state, room.as_str());
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    fn switch_room(&self, room: Option<(&OwnedRoomId, RoomPanel)>) {
+        let open: Vec<OwnedRoomId> = lock(&self.rooms)
+            .keys()
+            .map(|id| id.parse().unwrap())
+            .collect();
+        for id in open {
+            self.close_room(&id);
+        }
+        if let Some((id, panel)) = room {
+            self.open_room(id, panel);
         }
     }
 
@@ -173,6 +226,12 @@ impl Rig {
         self.tabs.dispatch(PageAction::OpenPage { tab }).unwrap();
     }
 
+    fn select(&self, entry: BarEntry) {
+        self.tabs
+            .dispatch(PageAction::SelectBarItem { entry })
+            .unwrap();
+    }
+
     fn view(&self) -> PagesViewModel {
         self.tabs.view()
     }
@@ -185,18 +244,6 @@ impl Rig {
             .find(|open| open.tab == *tab)
             .unwrap()
             .page
-    }
-
-    /// 我的应用最后一行存的页面（插件行按插件的首页）。
-    fn last_app_tab(&self) -> Option<TabRef> {
-        let state = lock(&self.tabs.state);
-        Some(match &state.config.my_apps.last()?.app {
-            MyAppRef::Page { tab } => tab.clone(),
-            MyAppRef::Plugin { plugin_id } => TabRef::Plugin {
-                plugin_id: plugin_id.clone(),
-                page: None,
-            },
-        })
     }
 
     /// 我的应用一行的标题：插件行按插件，页面行按缓存。
@@ -300,4 +347,12 @@ fn url_tab(url: &str) -> TabRef {
     TabRef::Url {
         url: url.to_owned(),
     }
+}
+
+fn main_scope() -> PanelScope {
+    PanelScope::Main
+}
+
+fn panel_tabs(rig: &Rig) -> Vec<TabRef> {
+    rig.view().panel.into_iter().map(|item| item.tab).collect()
 }

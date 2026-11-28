@@ -141,6 +141,13 @@ pub(super) fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
             saving: false,
             problem: None,
             chat: Default::default(),
+            cloud: Some(wonton_protocol::BotCloud {
+                body: "#C8DBE9".into(),
+                face: "builtin:face/smile".into(),
+                headdress: Some("builtin:headdress/spiral".into()),
+            }),
+            face: Some("builtin:face/smile".into()),
+            custom_media: false,
         },
         BotView {
             shared: false,
@@ -160,6 +167,9 @@ pub(super) fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
             saving: false,
             problem: None,
             chat: Default::default(),
+            cloud: None,
+            face: None,
+            custom_media: false,
         },
     ];
     chat.chat_layout_default = ChatLayoutChoice::default();

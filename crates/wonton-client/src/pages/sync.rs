@@ -1,4 +1,4 @@
-//! 我的应用配置往 Matrix 账号数据的同步（ADR-0095）：登录取会话、推送本机改动、
+//! 我的应用和面板配置往 Matrix 账号数据的同步(ADR-0052):登录取会话、推送本机改动、
 //! 跟着别的设备写的变化走。断线重连的会话变了就重来。
 use super::*;
 
@@ -34,6 +34,10 @@ impl PagesLink {
                 let read_failed = lock(&link.state).read_problem.is_some();
                 if read_failed {
                     link.recompute();
+                }
+                let connected = matches!(link.home.borrow().status, HomeStatus::Connected);
+                if connected && link.home.borrow().proxy.is_some() {
+                    link.refresh_bot_pins().await;
                 }
             }
         });
@@ -78,7 +82,7 @@ impl PagesLink {
                 sync_problem.send_replace(Some(l10n!(
                     CATALOG,
                     language(),
-                    "my-apps-sync-failed-read"
+                    "panel-sync-failed-read"
                 )));
                 if let Some(link) = recompute_link.upgrade() {
                     link.recompute();
@@ -89,7 +93,7 @@ impl PagesLink {
                 link.sync_problem.send_replace(Some(l10n!(
                     CATALOG,
                     language(),
-                    "my-apps-sync-failed-read"
+                    "panel-sync-failed-read"
                 )));
                 return;
             };
@@ -143,7 +147,7 @@ impl PagesLink {
         let settings =
             serde_json::from_value::<LayoutSettings>(content.0.into()).map_err(|_| {
                 CoreError::Upstream {
-                    reason: l10n!(CATALOG, language(), "my-apps-sync-unreadable"),
+                    reason: l10n!(CATALOG, language(), "panel-sync-unreadable"),
                 }
             })?;
         let (plugins, _, _) = self.inputs();
@@ -156,7 +160,7 @@ impl PagesLink {
         state.read_problem = None;
         self.sync_problem.send_replace(None);
         let sync_stale = self.sync_problem.borrow().is_some();
-        let view = make_view(&state, &plugins, sync_stale);
+        let view = make_view(&state, &plugins, &self.chat.borrow(), sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         Ok(())

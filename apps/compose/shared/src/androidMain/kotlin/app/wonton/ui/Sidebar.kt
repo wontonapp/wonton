@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
+import app.wonton.protocol.BarEntry
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.Rgb
@@ -371,12 +372,12 @@ internal fun SidebarPanel(
         ) {
             SidebarRow(
                 title = stringResource(R.string.sidebar_chats),
-                selected = current == TabRef.Chat,
+                selected = tabs.viewModel.tab == BarEntry.Agent && current == TabRef.Rooms,
                 interactive = interactive,
                 onClick = { onGo(SidebarDestination.Chat) },
                 icon = {
                     Icon(
-                        if (current == TabRef.Chat) WontonIcon.ChatFill else WontonIcon.Chat,
+                        if (tabs.viewModel.tab == BarEntry.Agent) WontonIcon.ChatFill else WontonIcon.Chat,
                         // 装饰：行的文字在右边。
                         contentDescription = null,
                         Modifier.size(ROW_ICON),
@@ -479,7 +480,7 @@ internal fun SidebarApps(
     if (plugins.viewModel.sidebar.moreApps) {
         SidebarRow(
             title = stringResource(R.string.sidebar_all_apps),
-            selected = current == TabRef.Apps,
+            selected = tabs.viewModel.tab == BarEntry.Apps,
             interactive = interactive,
             onClick = { onGo(SidebarDestination.AllApps) },
             icon = {
