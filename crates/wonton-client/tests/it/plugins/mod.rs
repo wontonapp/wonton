@@ -32,6 +32,7 @@ mod store_load;
 mod store_sources;
 mod takeover;
 mod tool_policy;
+mod uninstall;
 
 use axum::http::Method;
 use wonton_client::{Action, PluginFailure, PluginOperation, PluginState};
