@@ -4,4 +4,28 @@
     <string name="photo_failed_at">第 %1$d 張沒能發出去</string>
     <!-- Next step under a photo problem when the core gave no reason: pick a different photo. -->
     <string name="photo_try_another">換一張試試。</string>
+    <!-- Photo library: action and confirm button for sharing with family members. -->
+    <string name="photo_library_share">共享</string>
+    <!-- Photo library: title of the sheet that picks which family members to share with. -->
+    <string name="photo_library_share_title">與家人共享</string>
+    <!-- Photo library: button on the notice after moving items to the trash; restores them. -->
+    <string name="photo_library_undo">還原</string>
+    <!-- Photo library: button that reloads the library. -->
+    <string name="photo_library_refresh">重新整理</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_unavailable_next_step">到應用程式商店安裝相簿應用程式（例如 Immich）；已經安裝的話，到「應用程式」查看它的狀態。</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_source_required_next_step">還沒決定用哪一個。請擁有者指定預設的相簿應用程式後再試。</string>
+    <!-- Photo library: notice after sharing an album with family members. -->
+    <string name="photo_library_done_shared">已與家人共享</string>
+    <!-- Photo library: placeholder of the place field. -->
+    <string name="photo_library_filter_place_hint">城市、地區或國家</string>
+    <!-- Photo library: search filter chip that keeps only videos. -->
+    <string name="photo_library_filter_videos">影片</string>
+    <!-- Photo library: play button on a video. -->
+    <string name="photo_library_play">播放</string>
+    <!-- Photo library: notice after favoriting. Argument: how many items. -->
+    <plurals name="photo_library_done_favorite">
+        <item quantity="other">已收藏 %1$d 項</item>
+    </plurals>
 </resources>

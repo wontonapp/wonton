@@ -2,4 +2,56 @@
 <resources>
     <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
     <string name="photo_unreadable">Can\'t read this photo</string>
+    <!-- Photo library: screen-reader name of a video in the grid. Argument: when it was taken. -->
+    <string name="photo_library_video_from">Video, %1$s</string>
+    <!-- Photo library: action that moves the selected items to the trash (not a permanent delete). -->
+    <string name="photo_library_trash">Move to trash</string>
+    <!-- Photo library: heading of the albums the user owns. -->
+    <string name="photo_library_albums_mine">Mine</string>
+    <!-- Photo library: heading of the albums other family members shared with the user. -->
+    <string name="photo_library_albums_shared">Shared with me</string>
+    <!-- Photo library: error title when no photo app is installed or it is not running. -->
+    <string name="photo_library_unavailable_title">Your photo app isn\'t installed or isn\'t running</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_denied_next_step">Ask the owner to share the photo app with you.</string>
+    <!-- Photo library: error title when the photo app is rate limiting requests. -->
+    <string name="photo_library_busy_title">Too many requests</string>
+    <!-- Photo library: error title when the photo app itself returned an error. -->
+    <string name="photo_library_upstream_title">The photo app ran into a problem</string>
+    <!-- Photo library: generic error title. -->
+    <string name="photo_library_failed_title">Couldn\'t load this</string>
+    <!-- Photo library: error title when a video or live photo can't be played. -->
+    <string name="photo_library_video_failed_title">Can\'t play this</string>
+    <!-- Photo library: first line of the notice when a change (favorite, add to album, trash…) did not go through at all. -->
+    <string name="photo_library_edit_failed">That didn\'t go through</string>
+    <!-- Photo library: notice after creating an album. -->
+    <string name="photo_library_done_album_created">Album created</string>
+    <!-- Photo library: placeholder of the search field; the user describes what is in the picture. -->
+    <string name="photo_library_search_prompt">Describe the picture, like \"sunset at the beach\"</string>
+    <!-- Photo library: button on the full-screen photo that opens its details. -->
+    <string name="photo_library_info">Info</string>
+    <!-- Photo library: row in the photo details saying whose photo it is. Argument: that family member's username. -->
+    <string name="photo_library_owned_by">From %1$s</string>
+    <!-- Photo library: row in the photo details when the photo belongs to someone who is not a member of this home. -->
+    <string name="photo_library_owned_by_unknown">Someone else\'s photo</string>
+    <!-- Photo library: title of the selection bar. Argument: how many items are selected. -->
+    <plurals name="photo_library_selected">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <!-- Photo library: item count of an album. Argument: the count. -->
+    <plurals name="photo_library_items">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <!-- Photo library: notice after moving to the trash. Argument: how many items. -->
+    <plurals name="photo_library_done_trashed">
+        <item quantity="one">Moved %1$d item to the trash</item>
+        <item quantity="other">Moved %1$d items to the trash</item>
+    </plurals>
+    <!-- Photo library: second line of the notice when some items could not be changed. Arguments: how many failed, and the reason for the first one. -->
+    <plurals name="photo_library_failed_items">
+        <item quantity="one">%1$d item didn\'t go through: %2$s</item>
+        <item quantity="other">%1$d items didn\'t go through: %2$s</item>
+    </plurals>
 </resources>

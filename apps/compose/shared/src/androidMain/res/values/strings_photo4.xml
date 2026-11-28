@@ -2,4 +2,44 @@
 <resources>
     <!-- Title of the photo problem on iOS, detail on Android: the photo was decoded but couldn't be re-encoded for sending. -->
     <string name="photo_unencodable">Can\'t convert this photo</string>
+    <!-- Photo library: title and bottom-bar item of the timeline of all photos. -->
+    <string name="photo_library_tab_photos">Photos</string>
+    <!-- Photo library: screen-reader name of a video shown full screen. -->
+    <string name="photo_library_video">Video</string>
+    <!-- Photo library: action and sheet title for adding the selected items to an album. -->
+    <string name="photo_library_add_to_album">Add to album</string>
+    <!-- Photo library: shown when there are no albums at all. -->
+    <string name="photo_library_no_albums">No albums yet</string>
+    <!-- Photo library: shown inside an album that has no items. -->
+    <string name="photo_library_album_empty">This album is empty</string>
+    <!-- Photo library: shown when no photo app is installed or none is open to this person. Not an error. -->
+    <string name="photo_library_not_installed_title">No photo app is installed</string>
+    <!-- Photo library: heading of the list shown when more than one photo app is installed and none is the default; the user picks one. -->
+    <string name="photo_library_choose_source">Which photo app?</string>
+    <!-- Photo library: error title when this person is not allowed to use the photo app, or to change this item. -->
+    <string name="photo_library_denied_title">You don\'t have access to this</string>
+    <!-- Photo library: error title when the photo app rejected the sign-in made on the user's behalf. -->
+    <string name="photo_library_unrecognized_title">The photo app didn\'t recognize you</string>
+    <!-- Photo library: error title when the photo or album no longer exists. -->
+    <string name="photo_library_gone_title">This is no longer there</string>
+    <!-- Photo library: shown in the share sheet when the household has no other members. -->
+    <string name="photo_library_family_empty">There\'s no one else in your home yet.</string>
+    <!-- Photo library: search filter chip that keeps only favorites. -->
+    <string name="photo_library_filter_favorites">Favorites</string>
+    <!-- Photo library: time range option. -->
+    <string name="photo_library_time_recent">Last 30 days</string>
+    <!-- Photo library: time range option. -->
+    <string name="photo_library_time_last_year">Last year</string>
+    <!-- Photo library: pixel size in the photo details. Arguments: width, height. -->
+    <string name="photo_library_dimensions">%1$d × %2$d</string>
+    <!-- Photo library: notice after unfavoriting. Argument: how many items. -->
+    <plurals name="photo_library_done_unfavorite">
+        <item quantity="one">Removed %1$d item from favorites</item>
+        <item quantity="other">Removed %1$d items from favorites</item>
+    </plurals>
+    <!-- Photo library: notice after removing from an album. Argument: how many items. -->
+    <plurals name="photo_library_done_removed">
+        <item quantity="one">Removed %1$d item from the album</item>
+        <item quantity="other">Removed %1$d items from the album</item>
+    </plurals>
 </resources>

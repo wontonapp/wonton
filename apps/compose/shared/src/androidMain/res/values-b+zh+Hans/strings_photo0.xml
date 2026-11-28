@@ -2,4 +2,32 @@
 <resources>
     <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
     <string name="photo_gif_unreadable">认不出这张 GIF</string>
+    <!-- Photo library: title and bottom-bar item of the album list. -->
+    <string name="photo_library_tab_albums">相册</string>
+    <!-- Photo library: title and bottom-bar item of the search page. -->
+    <string name="photo_library_tab_search">搜索</string>
+    <!-- Photo library: screen-reader name of a photo shown full screen. -->
+    <string name="photo_library_photo">照片</string>
+    <!-- Photo library: screen-reader action on a grid item that selects or deselects it. -->
+    <string name="photo_library_select">选择</string>
+    <!-- Photo library: action that marks the selected items as favorites. -->
+    <string name="photo_library_favorite">收藏</string>
+    <!-- Photo library: heading of the albums that belong to the whole household. -->
+    <string name="photo_library_albums_household">家庭</string>
+    <!-- Photo library: next step under the empty-library title. -->
+    <string name="photo_library_empty_hint">在相册应用里上传的照片会出现在这里。</string>
+    <!-- Photo library: error title when more than one installed app can serve photos and the owner has not picked a default. -->
+    <string name="photo_library_source_required_title">家里装了不止一个相册应用</string>
+    <!-- Photo library: shown in the share sheet when the home server says this person is not allowed to share with family members (for example they have not joined yet). -->
+    <string name="photo_library_share_denied">你现在没法共享给家人</string>
+    <!-- Photo library: shown when a search has no results. -->
+    <string name="photo_library_search_none">没搜到</string>
+    <!-- Photo library: search filter chip and sheet title for the time range. -->
+    <string name="photo_library_filter_time">时间</string>
+    <!-- Photo library: time range option. -->
+    <string name="photo_library_time_this_year">今年</string>
+    <!-- Photo library: button on the full-screen photo that opens more actions. -->
+    <string name="photo_library_more">更多</string>
+    <!-- Photo library: badge on a grid item that belongs to someone who is not a member of this home, so there is no name to show. Keep it very short. -->
+    <string name="photo_library_owner_unknown">别人的</string>
 </resources>

@@ -2,4 +2,52 @@
 <resources>
     <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
     <string name="photo_unreadable">この写真を読み込めません</string>
+    <!-- Photo library: screen-reader name of a video in the grid. Argument: when it was taken. -->
+    <string name="photo_library_video_from">動画、%1$s</string>
+    <!-- Photo library: action that moves the selected items to the trash (not a permanent delete). -->
+    <string name="photo_library_trash">ゴミ箱に移動</string>
+    <!-- Photo library: heading of the albums the user owns. -->
+    <string name="photo_library_albums_mine">自分</string>
+    <!-- Photo library: heading of the albums other family members shared with the user. -->
+    <string name="photo_library_albums_shared">共有された項目</string>
+    <!-- Photo library: error title when no photo app is installed or it is not running. -->
+    <string name="photo_library_unavailable_title">写真アプリが未インストールか、動いていません</string>
+    <!-- Photo library: next step under that title. -->
+    <string name="photo_library_denied_next_step">オーナーに写真アプリの共有を頼んでください。</string>
+    <!-- Photo library: error title when the photo app is rate limiting requests. -->
+    <string name="photo_library_busy_title">リクエストが多すぎます</string>
+    <!-- Photo library: error title when the photo app itself returned an error. -->
+    <string name="photo_library_upstream_title">写真アプリでエラーが起きました</string>
+    <!-- Photo library: generic error title. -->
+    <string name="photo_library_failed_title">読み込めませんでした</string>
+    <!-- Photo library: error title when a video or live photo can't be played. -->
+    <string name="photo_library_video_failed_title">再生できません</string>
+    <!-- Photo library: first line of the notice when a change (favorite, add to album, trash…) did not go through at all. -->
+    <string name="photo_library_edit_failed">完了できませんでした</string>
+    <!-- Photo library: notice after creating an album. -->
+    <string name="photo_library_done_album_created">アルバムを作成しました</string>
+    <!-- Photo library: placeholder of the search field; the user describes what is in the picture. -->
+    <string name="photo_library_search_prompt">写っているもので検索（例：海辺の夕日）</string>
+    <!-- Photo library: button on the full-screen photo that opens its details. -->
+    <string name="photo_library_info">情報</string>
+    <!-- Photo library: row in the photo details saying whose photo it is. Argument: that family member's username. -->
+    <string name="photo_library_owned_by">%1$s の写真</string>
+    <!-- Photo library: row in the photo details when the photo belongs to someone who is not a member of this home. -->
+    <string name="photo_library_owned_by_unknown">他の人の写真</string>
+    <!-- Photo library: title of the selection bar. Argument: how many items are selected. -->
+    <plurals name="photo_library_selected">
+        <item quantity="other">%1$d 件を選択中</item>
+    </plurals>
+    <!-- Photo library: item count of an album. Argument: the count. -->
+    <plurals name="photo_library_items">
+        <item quantity="other">%1$d 件</item>
+    </plurals>
+    <!-- Photo library: notice after moving to the trash. Argument: how many items. -->
+    <plurals name="photo_library_done_trashed">
+        <item quantity="other">%1$d 件をゴミ箱に移動しました</item>
+    </plurals>
+    <!-- Photo library: second line of the notice when some items could not be changed. Arguments: how many failed, and the reason for the first one. -->
+    <plurals name="photo_library_failed_items">
+        <item quantity="other">%1$d 件は完了できませんでした：%2$s</item>
+    </plurals>
 </resources>

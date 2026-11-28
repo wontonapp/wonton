@@ -2,4 +2,32 @@
 <resources>
     <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
     <string name="photo_gif_unreadable">このGIFを読み込めません</string>
+    <!-- Photo library: title and bottom-bar item of the album list. -->
+    <string name="photo_library_tab_albums">アルバム</string>
+    <!-- Photo library: title and bottom-bar item of the search page. -->
+    <string name="photo_library_tab_search">検索</string>
+    <!-- Photo library: screen-reader name of a photo shown full screen. -->
+    <string name="photo_library_photo">写真</string>
+    <!-- Photo library: screen-reader action on a grid item that selects or deselects it. -->
+    <string name="photo_library_select">選択</string>
+    <!-- Photo library: action that marks the selected items as favorites. -->
+    <string name="photo_library_favorite">お気に入り</string>
+    <!-- Photo library: heading of the albums that belong to the whole household. -->
+    <string name="photo_library_albums_household">家族</string>
+    <!-- Photo library: next step under the empty-library title. -->
+    <string name="photo_library_empty_hint">写真アプリにアップロードした写真がここに表示されます。</string>
+    <!-- Photo library: error title when more than one installed app can serve photos and the owner has not picked a default. -->
+    <string name="photo_library_source_required_title">写真アプリが複数インストールされています</string>
+    <!-- Photo library: shown in the share sheet when the home server says this person is not allowed to share with family members (for example they have not joined yet). -->
+    <string name="photo_library_share_denied">いまは家族と共有できません</string>
+    <!-- Photo library: shown when a search has no results. -->
+    <string name="photo_library_search_none">見つかりませんでした</string>
+    <!-- Photo library: search filter chip and sheet title for the time range. -->
+    <string name="photo_library_filter_time">期間</string>
+    <!-- Photo library: time range option. -->
+    <string name="photo_library_time_this_year">今年</string>
+    <!-- Photo library: button on the full-screen photo that opens more actions. -->
+    <string name="photo_library_more">その他</string>
+    <!-- Photo library: badge on a grid item that belongs to someone who is not a member of this home, so there is no name to show. Keep it very short. -->
+    <string name="photo_library_owner_unknown">他の人</string>
 </resources>

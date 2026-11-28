@@ -148,6 +148,30 @@ adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<�
 `TabPage.opensInBrowser`，App 里不加载，交给系统浏览器（Custom Tabs）打开，页内说明并给回聊天和重新打开。交接时提示
 可尝试系统返回或关闭浏览器页面；面板页只在点击打开时交接。实际返回方式取决于浏览器和系统。
 
+## 原生相册页
+
+点开声明了相册库的插件（`TabPage.native` 是相册）进原生相册页（[ADR-0113](../../docs/adr/0113-media-transport.md) 第 9 节），
+代替它的网页；代码在 `shared/…/ui/photos/`。
+页面只画核心的 `PhotosViewModel`、把操作经 `Action.Photos` 发回去：游标、按日分组、选择集和写操作的结果都在核心。
+
+- 图片用 Coil 加载。字节由自己的取数器向核心要这次启动的本机回环地址再读；缓存键是“服务器 + 相册应用 + 条目 id + 档位”，
+  不是回环地址（每次启动换端口和令牌）。磁盘缓存在 App 的缓存目录 `photo-library/`，上限 512 MB。
+- 视频（`playback` 档）和实况照片的动态部分（`live` 档）在大图页里用系统的 `VideoView` 直接放回环地址，不开播放会话。
+- 底栏、日期范围选择器用 Material 3 的组件，颜色取主题令牌（ADR-0029）。
+- 用哪个相册应用由核心定（`PhotosViewModel.sources`）：没装时直说没装；有几家、没定默认时列出来让人挑一个，
+  核心记成这台服务器上的默认；没问成时说原因，带重试和详情。
+
+不连服务器看界面：Debug 构建的假数据入口里有一个假的相册应用（Immich），在“应用”里点开它就是相册页；
+`--es wonton_ui_fake_photos <开场>` 换开场（`choose_source`、`not_installed`、`source_required`、`unavailable`、`denied`、
+`empty`、`share_denied`，见 `crates/wonton-client/src/client/ui_fake_photos.rs`）：
+
+```bash
+adb shell am start -n app.wonton.android/.UiFakeMainActivity \
+  --es wonton_open_web http://app-immich-immich.wonton.localhost/ --es wonton_ui_fake_photos choose_source
+```
+
+假数据没有字节，格子只有 ThumbHash 占位，大图页如实显示取不到。
+
 ## App 链接和桌面快捷方式
 
 链接格式遵循 [ADR-0041](../../docs/adr/0041-app-links-and-shortcuts.md)，只由核心 `appLinkUrl` / `parseAppLink`

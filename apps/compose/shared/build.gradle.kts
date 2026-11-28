@@ -170,6 +170,8 @@ kotlin {
                 implementation(libs.media3.exoplayer)
                 implementation(libs.media3.transformer)
                 implementation(libs.media3.effect)
+                // Apache-2.0。原生相册页的图片加载和缓存（Coil）；字节由自己的取数器从核心的本机回环读，不带它的网络模块。
+                implementation(libs.coil.compose)
                 // Apache-2.0。桌面小组件（ADR-0100）。
                 implementation(libs.androidx.glance.appwidget)
                 implementation("net.java.dev.jna:jna:${libs.versions.jna.get()}@aar")

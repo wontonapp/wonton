@@ -2,4 +2,42 @@
 <resources>
     <!-- Title of the photo problem on iOS, detail on Android: the photo was decoded but couldn't be re-encoded for sending. -->
     <string name="photo_unencodable">照片轉換失敗</string>
+    <!-- Photo library: title and bottom-bar item of the timeline of all photos. -->
+    <string name="photo_library_tab_photos">照片</string>
+    <!-- Photo library: screen-reader name of a video shown full screen. -->
+    <string name="photo_library_video">影片</string>
+    <!-- Photo library: action and sheet title for adding the selected items to an album. -->
+    <string name="photo_library_add_to_album">加入相簿</string>
+    <!-- Photo library: shown when there are no albums at all. -->
+    <string name="photo_library_no_albums">還沒有相簿</string>
+    <!-- Photo library: shown inside an album that has no items. -->
+    <string name="photo_library_album_empty">相簿裡還沒有照片</string>
+    <!-- Photo library: shown when no photo app is installed or none is open to this person. Not an error. -->
+    <string name="photo_library_not_installed_title">還沒有可用的相簿應用程式</string>
+    <!-- Photo library: heading of the list shown when more than one photo app is installed and none is the default; the user picks one. -->
+    <string name="photo_library_choose_source">要用哪個相簿應用程式？</string>
+    <!-- Photo library: error title when this person is not allowed to use the photo app, or to change this item. -->
+    <string name="photo_library_denied_title">你沒有權限</string>
+    <!-- Photo library: error title when the photo app rejected the sign-in made on the user's behalf. -->
+    <string name="photo_library_unrecognized_title">相簿應用程式沒認出你</string>
+    <!-- Photo library: error title when the photo or album no longer exists. -->
+    <string name="photo_library_gone_title">它已經不在了</string>
+    <!-- Photo library: shown in the share sheet when the household has no other members. -->
+    <string name="photo_library_family_empty">家裡還沒有其他成員。</string>
+    <!-- Photo library: search filter chip that keeps only favorites. -->
+    <string name="photo_library_filter_favorites">收藏</string>
+    <!-- Photo library: time range option. -->
+    <string name="photo_library_time_recent">最近 30 天</string>
+    <!-- Photo library: time range option. -->
+    <string name="photo_library_time_last_year">去年</string>
+    <!-- Photo library: pixel size in the photo details. Arguments: width, height. -->
+    <string name="photo_library_dimensions">%1$d × %2$d</string>
+    <!-- Photo library: notice after unfavoriting. Argument: how many items. -->
+    <plurals name="photo_library_done_unfavorite">
+        <item quantity="other">已取消收藏 %1$d 項</item>
+    </plurals>
+    <!-- Photo library: notice after removing from an album. Argument: how many items. -->
+    <plurals name="photo_library_done_removed">
+        <item quantity="other">已將 %1$d 項移出相簿</item>
+    </plurals>
 </resources>
