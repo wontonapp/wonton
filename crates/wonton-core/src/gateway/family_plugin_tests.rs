@@ -19,6 +19,7 @@ mod app_access;
 mod confirmations;
 mod identity_recheck;
 mod install_grant;
+mod oidc_claims;
 mod private_bots;
 
 pub(super) async fn app_with_contact_facts(h: &Harness) -> (axum::Router, tempfile::TempDir) {
