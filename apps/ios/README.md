@@ -17,6 +17,13 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
   默认名由壳按核心给的固定编号和 App 语言显示，自定义名字原样显示；改名预填显示名，只在主人保存时写回（ADR-0043）。
   配对页和服务器列表的“添加服务器”下面是“用 Matrix 账号登录”（`MatrixLoginView`，ADR-0051），没有服务器的人从配对页进：按核心发现的方式给浏览器登录或密码表单，浏览器登录用
   `ASWebAuthenticationSession`，回调地址取核心的 `oidcRedirectUri`。`project.yml` 也注册了它的 scheme，回调从面板以外的路径回来时同样交给核心核对。
+- `Wonton/Gallery/`：原生相册页（[ADR-0113](../../docs/adr/0113-media-transport.md) 第 9 节）。点开相册插件、页面的
+  `TabPage.native` 是相册时进（`GalleryLibraryRoot`，和音乐页同一处分流）；相册里的一个相册是页面层上推进去的一页，
+  两页共用一份 `GallerySession`。`GalleryModel` 持有核心的 `PhotosViewModel`，时间线、相册、搜索、大图页和多选都只画它、
+  把操作发回核心（`Action.photos`）；用哪个相册插件、选中了哪些、翻到哪一页、能共享给谁、写操作的结果都在核心。
+  图片经客户端核的本机回环取，`GalleryImagePipeline` 用系统的 `URLCache` 存字节，键是“服务器/相册插件/条目 id/档位”，
+  不用回环地址（每次启动换端口和令牌）；网格按格子大小缩着解码。视频和实况照片的动态部分交给 AVKit 直接播，不开
+  播放会话。长按后不抬手拖动连选用系统的长按识别器（iOS 18 起能接进 SwiftUI，iOS 17 只认长按、进入选择后逐格点）。
 - `ShareExtension/`：系统分享面板里的“云吞”（ADR-0097）。只把分享的东西复制进收件目录、打开 App，不链接 Rust 核心；
   App 收到 `wonton://share/<令牌>` 后认领，分享页在 `ShareInSheet`。`Shared/` 是 App 和扩展共用的 App Group 位置：
   核心的数据目录在组容器的 `wonton/` 里，扩展才放得进去。

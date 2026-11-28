@@ -18,6 +18,10 @@ extension MainView {
                         }
                     case let .music(music):
                         MusicPageScreen(route: music, context: musicContext(music.pluginId))
+                    case let .photoAlbum(album):
+                        GalleryAlbumScreen(
+                            session: GallerySession.of(core: pages.core, source: album.pluginId), id: album.albumId
+                        )
                     }
                 }
         }
@@ -30,6 +34,15 @@ extension MainView {
             MusicLibraryRoot(
                 tab: entry.tab, pluginId: pluginId, title: entry.page.title, context: musicContext(pluginId),
                 pages: pages, plugins: plugins, chat: chat, open: open
+            )
+            .id(entry.tab)
+        } else if entry.page.native == .photos, case .ready = entry.page.state,
+                  case let .plugin(pluginId, _) = entry.tab {
+            // 原生的相册页同样只接就绪的入口页（ADR-0113 第 9 节）。
+            GalleryLibraryRoot(
+                tab: entry.tab, pluginId: pluginId, title: entry.page.title,
+                pages: pages, plugins: plugins, chat: chat, open: open,
+                openStore: { navigate(.store) }, push: { pagePath.append(.photoAlbum($0)) }
             )
             .id(entry.tab)
         } else {

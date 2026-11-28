@@ -23,7 +23,7 @@ extension SideChatState {
 /// 上面用 `fullScreenCover` 单开一张全屏页：不能塞进房间自己的布局，房间被压进的栈里再套一层栈、
 /// 内层在 ZStack 里量不出高度，整页会变空（iOS 26 模拟器实测）。
 /// 盖子看起来和二级页一样（`EdgeDismiss`）：从右边推进来，左边缘右滑跟手滑走、露出下面的主对话，关掉也是往右滑走；
-/// 所以盖上、收起都不带 SwiftUI 的动画。盖着时外面房间的边缘返回按住不动（`keepsRoomOnSideChat`），
+/// 所以盖上、收起都不带 SwiftUI 的动画。盖着时外面房间的边缘返回按住不动（`suppressesEdgePop`），
 /// 免得关旁聊的同一下把整个房间也退掉。
 struct SideChatCover<Main: View>: View {
     let model: ChatModel
@@ -64,7 +64,7 @@ struct SideChatCover<Main: View>: View {
                 blockOuterPop()
             }
             .onChange(of: shown?.id) { blockOuterPop() }
-            .onDisappear { UINavigationController.keepsRoomOnSideChat = false }
+            .onDisappear { UINavigationController.suppressesEdgePop = false }
             .fullScreenCover(
                 item: $shown,
                 onDismiss: {
@@ -106,7 +106,7 @@ struct SideChatCover<Main: View>: View {
     }
 
     private func blockOuterPop() {
-        UINavigationController.keepsRoomOnSideChat = model.sideChats[roomId] != nil || shown != nil
+        UINavigationController.suppressesEdgePop = model.sideChats[roomId] != nil || shown != nil
     }
 }
 

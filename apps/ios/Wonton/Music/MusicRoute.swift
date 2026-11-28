@@ -7,10 +7,12 @@ struct MusicRoute: Hashable {
     let page: MusicPage
 }
 
-/// 插件页层路径上的一项：核心页面栈里的页，或者某页里推进去的音乐页。音乐页只在壳里，跟着它前面那一页走。
+/// 插件页层路径上的一项：核心页面栈里的页，或者某页里推进去的原生页（音乐页、相册里的一个相册）。
+/// 推进去的页只在壳里，跟着它前面那一页走。
 enum PageRoute: Hashable {
     case tab(TabRef)
     case music(MusicRoute)
+    case photoAlbum(GalleryAlbumRoute)
 }
 
 extension [PageRoute] {
@@ -30,7 +32,7 @@ extension [PageRoute] {
             case let .tab(tab):
                 owner = tab
                 followers[tab] = []
-            case .music:
+            case .music, .photoAlbum:
                 if let owner { followers[owner, default: []].append(route) }
             }
         }
