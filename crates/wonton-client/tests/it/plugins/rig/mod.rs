@@ -22,7 +22,6 @@ use wonton_client::{
 };
 use wonton_tunnel::{Allowlist, TunnelServer};
 
-#[path = "bot_activity_support.rs"]
 mod bot_activity;
 
 pub const WAIT: Duration = Duration::from_secs(20);
