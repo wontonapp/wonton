@@ -402,29 +402,6 @@ impl Home {
     pub fn installed_requests(&self) -> usize {
         self.core.installed_requests.load(Ordering::SeqCst)
     }
-
-    /// 配一个网址的预览应答：`status` 和核心会回的 `body`（成功是预览 JSON，失败是错误 JSON）。
-    pub fn set_link_preview(&self, url: &str, status: u16, body: Value) {
-        self.core
-            .link_previews
-            .lock()
-            .unwrap()
-            .insert(url.to_owned(), (status, body.to_string()));
-    }
-
-    /// 配一张预览图片：按 id 给回类型和字节。
-    pub fn set_link_preview_image(&self, id: &str, mime_type: &str, bytes: &[u8]) {
-        self.core
-            .link_preview_images
-            .lock()
-            .unwrap()
-            .insert(id.to_owned(), (mime_type.to_owned(), bytes.to_vec()));
-    }
-
-    /// 取预览的请求到了几次；图片的请求不算，断言“没向核心请求”用它。
-    pub fn link_preview_requests(&self) -> usize {
-        self.core.link_preview_requests.load(Ordering::SeqCst)
-    }
 }
 
 pub use super::timeline::Timeline;
