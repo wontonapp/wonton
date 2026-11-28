@@ -62,11 +62,11 @@ impl Home {
 /// 模拟的核心记下的东西。
 /// 假核心记着的确认卡片。测试直接塞核心的卡片 JSON，字段同 `ConfirmationCard`。
 #[derive(Default, Clone)]
-pub(super) struct FakeConfirmations {
-    pub(super) pending: Vec<Value>,
-    pub(super) finished: Vec<Value>,
-    pub(super) contact_requests: Vec<Value>,
-    pub(super) revision: u64,
+pub(in crate::chat) struct FakeConfirmations {
+    pub(in crate::chat) pending: Vec<Value>,
+    pub(in crate::chat) finished: Vec<Value>,
+    pub(in crate::chat) contact_requests: Vec<Value>,
+    pub(in crate::chat) revision: u64,
 }
 impl Home {
     /// 确认卡片收到的回答：卡片 ID 和请求体。

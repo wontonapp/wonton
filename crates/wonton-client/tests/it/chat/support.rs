@@ -38,9 +38,9 @@ mod plugins;
 mod sync;
 mod wait;
 
-use confirmations::FakeConfirmations;
+pub(in crate::chat) use confirmations::FakeConfirmations;
 
-pub use diagnostics::{is_room_list, request_arrived, request_done};
+pub use diagnostics::{is_room_list, pending_requests, request_arrived, request_done};
 use endpoint::loopback_endpoint;
 use fake_core::fake_core;
 pub(super) use home::BASE_DOMAIN;
