@@ -37,7 +37,7 @@ pub(super) const TOKEN: &str = "test-owner-token";
 pub(super) const CORE: &str = "wonton.localhost";
 pub(super) const PLUGIN: &str = "app-whoami.wonton.localhost";
 pub(super) const WHOAMI: &str =
-    include_str!("../../../../plugins/examples/whoami/docker-compose.yml");
+    include_str!("../../../../../plugins/examples/whoami/docker-compose.yml");
 
 pub(super) struct Reply {
     pub status: StatusCode,
