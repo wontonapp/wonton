@@ -260,6 +260,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             get(super::shared_bots::get).post(bots::create_shared),
         )
         .merge(super::bot_contacts::routes())
+        .merge(super::agent_models::routes())
         .route(
             "/_wonton/api/lan",
             get(settings_api::lan).put(settings_api::set_lan),
