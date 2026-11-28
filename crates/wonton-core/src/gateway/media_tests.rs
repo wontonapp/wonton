@@ -307,7 +307,7 @@ pub(super) async fn fixture_with(extra: Vec<(Candidate, Router)>) -> Fixture {
 }
 
 impl Fixture {
-    fn device(&self) -> String {
+    pub(super) fn device(&self) -> String {
         crate::files::device_label(&self.peer.0)
     }
 

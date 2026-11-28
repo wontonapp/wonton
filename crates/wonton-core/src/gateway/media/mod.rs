@@ -9,6 +9,7 @@
 
 mod browse;
 mod bytes;
+mod commands;
 mod queue;
 mod quota;
 mod sessions;
@@ -66,7 +67,7 @@ impl Caller {
         }
         Err(failure(
             MediaFailureCode::PermissionDenied,
-            "只能替发请求的这台设备建任务、开播",
+            "只能替发请求的这台设备建任务、开播、取命令",
         ))
     }
 }
@@ -107,6 +108,8 @@ pub(super) fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
         .route(&at("/queue"), get(queue::read).post(queue::change))
         .route(&at("/offline"), put(quota::report_offline))
         .route(&at("/quota"), get(quota::read))
+        .route(&at("/commands"), get(commands::poll))
+        .route(&at("/commands/{id}/ack"), post(commands::ack))
         .route(&at("/items"), get(bytes::items))
         .route(&at("/items/{id}/artwork"), get(bytes::artwork))
         // 根路径（这家接哪些写操作）带不带结尾的 `/` 都认；`{*rest}` 不匹配空串。
@@ -257,6 +260,17 @@ impl ServiceError for crate::media::TaskServiceError {
             E::ItemNotFound { .. } => MediaFailureCode::MediaGone,
             E::ConcurrentChange { .. } => MediaFailureCode::UpstreamError,
             E::Refused(failure) => failure.code.clone(),
+        }
+    }
+}
+
+impl ServiceError for crate::media::commands::CommandError {
+    fn code(&self) -> MediaFailureCode {
+        use crate::media::commands::CommandError as E;
+        match self {
+            E::Store(store) => store.code(),
+            E::NotThisDevice(_) => MediaFailureCode::PermissionDenied,
+            E::SeqMismatch { .. } => MediaFailureCode::Protocol,
         }
     }
 }

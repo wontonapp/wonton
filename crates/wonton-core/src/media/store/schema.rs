@@ -1,7 +1,6 @@
 //! 媒体库的建表与升级语句、行到结构体的搬运。
 //!
-//! 结构版本记在 `PRAGMA user_version`：`MIGRATIONS` 从旧到新一版一条，`open` 时按库里记的版本往后补，
-//! 每条迁移连同版本号写在一个事务里。加迁移时同时把 `CURRENT_VERSION` 加一。
+//! 结构版本记在 `PRAGMA user_version`。改结构时改 [`SCHEMA`] 并把 `CURRENT_VERSION` 加一，不写迁移。
 
 use std::path::Path;
 
@@ -9,10 +8,10 @@ use rusqlite::Row;
 
 use super::MediaStoreError;
 
-pub(super) const CURRENT_VERSION: i64 = 5;
+pub(crate) const CURRENT_VERSION: i64 = 2;
 
-/// 第 1 版：最初的五张表。逐项条目单独成表，偏移一次只改一行。
-pub(crate) const SCHEMA_V1: &str = "
+/// 建表。有外部用户之前结构直接改、不写迁移（AGENTS.md“兼容”）：改了结构的库按版本号拒开，删掉重建。
+pub(super) const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     person TEXT NOT NULL,
@@ -25,9 +24,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     retry_count INTEGER NOT NULL,
     retry_of TEXT,
     created_at INTEGER NOT NULL,
-    partial_failures TEXT NOT NULL
+    partial_failures TEXT NOT NULL,
+    -- 下一次自动重试的时间；等网络的任务按它找
+    next_attempt_at INTEGER,
+    provider TEXT
 );
 CREATE INDEX IF NOT EXISTS tasks_by_person ON tasks(person, created_at);
+CREATE INDEX IF NOT EXISTS tasks_due ON tasks(state_tag, next_attempt_at);
+-- 逐项条目单独成表，偏移一次只改一行。
 CREATE TABLE IF NOT EXISTS task_items (
     person TEXT NOT NULL,
     task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -48,12 +52,20 @@ CREATE TABLE IF NOT EXISTS sessions (
     device TEXT NOT NULL,
     item TEXT NOT NULL,
     state TEXT NOT NULL,
-    -- 和 state 一起写；M9 靠它找这个人的活动会话
+    -- 和 state 一起写；找这个人的活动会话用
     state_tag TEXT NOT NULL,
     position_ms INTEGER NOT NULL,
-    plan TEXT
+    plan TEXT,
+    stop_reason TEXT,
+    -- 每次写加一，按读到的版本比较再写
+    version INTEGER NOT NULL DEFAULT 0,
+    provider TEXT,
+    -- 起播时的设备档
+    profile TEXT
 );
 CREATE INDEX IF NOT EXISTS sessions_by_person ON sessions(person);
+-- 一人同时只能有一条活动会话（停因为空的）。
+CREATE UNIQUE INDEX IF NOT EXISTS sessions_one_active ON sessions(person) WHERE stop_reason IS NULL;
 CREATE TABLE IF NOT EXISTS queue (
     person TEXT PRIMARY KEY,
     revision INTEGER NOT NULL,
@@ -62,23 +74,8 @@ CREATE TABLE IF NOT EXISTS queue (
     mode TEXT NOT NULL,
     sleep_at_ms INTEGER
 );
+-- 上传按提供方记（device 存空串），离线按设备记（provider 存空串）。
 CREATE TABLE IF NOT EXISTS quota (
-    person TEXT NOT NULL,
-    ledger TEXT NOT NULL,
-    device TEXT NOT NULL,
-    used INTEGER NOT NULL,
-    cap INTEGER,
-    PRIMARY KEY (person, ledger, device)
-);
-";
-
-/// 第 2 版：上传配额按提供方分开记（ADR-0113 第 3 节），加 `provider` 列。主键变了，只能重建表。
-///
-/// 第 1 版的账没有提供方。离线的账本来就按设备分，原样搬（provider 留空串）；上传的账每人并成
-/// provider 与 device 都是空串的一行，等这个人的第一笔上传落到具体提供方时接手它（`store.rs`
-/// 的 `record_usage`）。并成一行是为了让接手的查询只有一个落点。
-pub(super) const MIGRATE_V2: &str = "
-CREATE TABLE quota_v2 (
     person TEXT NOT NULL,
     ledger TEXT NOT NULL,
     provider TEXT NOT NULL,
@@ -87,41 +84,8 @@ CREATE TABLE quota_v2 (
     cap INTEGER,
     PRIMARY KEY (person, ledger, provider, device)
 );
-INSERT INTO quota_v2 (person, ledger, provider, device, used, cap)
-    SELECT person, ledger, '', device, used, cap FROM quota WHERE ledger = 'device_offline';
-INSERT INTO quota_v2 (person, ledger, provider, device, used, cap)
-    SELECT person, ledger, '', '', SUM(used),
-           CASE WHEN COUNT(cap) < COUNT(*) THEN NULL ELSE SUM(cap) END
-    FROM quota WHERE ledger = 'provider_upload' GROUP BY person, ledger;
-DROP TABLE quota;
-ALTER TABLE quota_v2 RENAME TO quota;
-";
-
-/// 第 3 版：任务的下一次自动重试时间（M8）；等待网络的任务按它找。
-pub(super) const MIGRATE_V3: &str = "
-ALTER TABLE tasks ADD COLUMN next_attempt_at INTEGER;
-CREATE INDEX IF NOT EXISTS tasks_due ON tasks(state_tag, next_attempt_at);
-";
-
-/// 第 4 版：会话记停因，写每次加版本号；一人同时只能有一条活动会话（停因为空的）。
-/// 建索引前把同一个人多出来的活动会话按旧到新置成接管终态，留 rowid 最大的一条。
-pub(super) const MIGRATE_V4: &str = "
-ALTER TABLE sessions ADD COLUMN stop_reason TEXT;
-ALTER TABLE sessions ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
-UPDATE sessions
-SET state = '\"cancelled\"', state_tag = 'cancelled', stop_reason = 'taken_over'
-WHERE stop_reason IS NULL
-  AND rowid NOT IN (SELECT max(rowid) FROM sessions WHERE stop_reason IS NULL GROUP BY person);
-CREATE UNIQUE INDEX sessions_one_active ON sessions(person) WHERE stop_reason IS NULL;
-";
-
-/// 第 5 版：任务和会话记下提供方，会话记下起播时的设备档；上传项在提供方那边的号单独一张表
-/// （ADR-0113 第 2 节“字节路径”）。
-pub(super) const MIGRATE_V5: &str = "
-ALTER TABLE tasks ADD COLUMN provider TEXT;
-ALTER TABLE sessions ADD COLUMN provider TEXT;
-ALTER TABLE sessions ADD COLUMN profile TEXT;
-CREATE TABLE uploads (
+-- 上传项在提供方那边的号（ADR-0113 第 2 节“字节路径”），只在核心。
+CREATE TABLE IF NOT EXISTS uploads (
     person TEXT NOT NULL,
     task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     item_id TEXT NOT NULL,
@@ -129,38 +93,45 @@ CREATE TABLE uploads (
     upload_id TEXT NOT NULL,
     PRIMARY KEY (task_id, item_id)
 );
+-- 发给设备的命令（ADR-0113 第 5 节）；回执了的等设备下次拉时清。
+CREATE TABLE IF NOT EXISTS commands (
+    command_id TEXT PRIMARY KEY,
+    device TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    body TEXT NOT NULL,
+    acked INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS commands_by_device ON commands(device, seq);
+-- 每台设备发到第几条；命令清掉了也不回退。
+CREATE TABLE IF NOT EXISTS command_seq (
+    device TEXT PRIMARY KEY,
+    last INTEGER NOT NULL
+);
 ";
 
-pub(super) const MIGRATIONS: &[(i64, &str)] = &[
-    (1, SCHEMA_V1),
-    (2, MIGRATE_V2),
-    (3, MIGRATE_V3),
-    (4, MIGRATE_V4),
-    (5, MIGRATE_V5),
-];
-
-/// 把库补到 [`CURRENT_VERSION`]；比核心新的库拒绝打开，免得更新的核心写坏后被旧版改。
+/// 新库建表；版本不是 [`CURRENT_VERSION`] 的库拒绝打开，不替它补。
 pub(super) fn migrate(conn: &rusqlite::Connection, path: &Path) -> Result<(), MediaStoreError> {
     let found: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|source| classify(path, source))?;
-    if found > CURRENT_VERSION {
-        return Err(MediaStoreError::TooNew {
+    if found != 0 && found != CURRENT_VERSION {
+        return Err(MediaStoreError::UnsupportedVersion {
             path: path.to_owned(),
             found,
             supported: CURRENT_VERSION,
         });
     }
-    for (version, sql) in MIGRATIONS.iter().filter(|(version, _)| *version > found) {
-        let tx = conn
-            .unchecked_transaction()
-            .map_err(|source| classify(path, source))?;
-        tx.execute_batch(sql)
-            .map_err(|source| classify(path, source))?;
-        tx.pragma_update(None, "user_version", version)
-            .map_err(|source| classify(path, source))?;
-        tx.commit().map_err(|source| classify(path, source))?;
+    if found == CURRENT_VERSION {
+        return Ok(());
     }
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|source| classify(path, source))?;
+    tx.execute_batch(SCHEMA)
+        .map_err(|source| classify(path, source))?;
+    tx.pragma_update(None, "user_version", CURRENT_VERSION)
+        .map_err(|source| classify(path, source))?;
+    tx.commit().map_err(|source| classify(path, source))?;
     Ok(())
 }
 

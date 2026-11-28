@@ -10,9 +10,10 @@ use wonton_protocol::media::{
     StopReason, TaskId, TaskKind, TaskState, TaskTarget, UploadItem,
 };
 
-use super::store::{DEFAULT_PROVIDER_UPLOAD_LIMIT, Ledger, MediaStoreError, SCHEMA_V1, Store};
+use super::store::{
+    CURRENT_VERSION, DEFAULT_PROVIDER_UPLOAD_LIMIT, Ledger, MediaStoreError, Store,
+};
 
-mod migrations;
 mod open;
 mod queue;
 mod quota;

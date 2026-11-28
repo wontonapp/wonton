@@ -218,7 +218,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 
 **到设备的命令通道。** 核心不直连手机，设备拉：
 
-1. 设备前台或刚有活动时跑 `GET /_wonton/api/media/commands?after=<seq>` 长轮询，最长挂 25 秒；有命令就回，带 `seq`。
+1. 设备前台或刚有活动时跑 `GET /_wonton/api/media/commands?device=<设备>&after=<seq>` 长轮询，最长挂 25 秒；有命令就回，带 `seq`。
 2. 睡着的设备按 ADR-0098 第 2 节的写法用推送唤醒（iOS 静默推送，Android 隧道或高优 FCM），推里只有 `seq`，不带内容。
 3. 设备收到后重新拉命令；30 秒没回应，工具结果报 `device_no_response`，原因照 ADR-0098 第 6 节列全（关机、没网、被划掉、被系统限流），不挑一个。
 

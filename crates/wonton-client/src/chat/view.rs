@@ -235,7 +235,7 @@ fn timeline_message(
     bots: &BotsView,
 ) -> TimelineMessage {
     let side_chat = bots.side_chats().card_of(&message);
-    let choices = super::choices::choices(&message);
+    let choices = super::choices::choices(&message, language());
     let sender_avatar = message.sender_avatar.as_deref().and_then(avatar_handle);
     // 卡片不再是时间线里的消息（ADR-0016）：旧的核心发的卡片和别的消息一样按正文显示，这里没有特殊处理。
     // 预览只给文字消息：事件里带的直接用，没有的用核心取回的缓存（还在取的下一批带上）。
