@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
@@ -52,12 +52,6 @@ mod scanning;
 mod view;
 
 mod forwarder;
-/// 待处理的请求最多几条（ADR-0050：超出回“对方暂时收不了请求”）。
-const MAX_PENDING: usize = 20;
-
-/// 一小时最多收几条新请求（ADR-0050）。
-const MAX_PER_HOUR: usize = 10;
-
 /// 一小时的毫秒数。
 const HOUR_MS: u64 = 60 * 60 * 1000;
 
@@ -334,6 +328,3 @@ fn read_store(path: &Path) -> Result<Stored, PeerStoreError> {
         }),
     }
 }
-
-/// 后台轮询的间隔（ADR-0050：扫码后先问一次，之后每 10 分钟一次；没问到时更快重问，见 `spawn_poll`）。
-pub(crate) const OUTCOME_POLL: Duration = Duration::from_secs(600);

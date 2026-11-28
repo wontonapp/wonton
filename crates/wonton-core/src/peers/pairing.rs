@@ -19,10 +19,14 @@ use wonton_tunnel::peer_pair::{
 };
 
 use super::{
-    HOUR_MS, MAX_PENDING, MAX_PER_HOUR, PeerRecord, PeerRequest, Peers, Phase, PinState,
-    RejectedRequest, code, now_ms,
+    HOUR_MS, PeerRecord, PeerRequest, Peers, Phase, PinState, RejectedRequest, code, now_ms,
 };
 use crate::secret::random_token;
+/// 待处理的请求最多几条（ADR-0050：超出回“对方暂时收不了请求”）。
+const MAX_PENDING: usize = 20;
+
+/// 一小时最多收几条新请求（ADR-0050）。
+const MAX_PER_HOUR: usize = 10;
 
 /// 配对结果重试送几次：对方暂时忙或刚好在重启时还能送到。
 const DECISION_TRIES: u32 = 3;

@@ -9,11 +9,14 @@ use wonton_protocol::PeerError;
 use wonton_tunnel::peer_pair::{PeerIdentity, PeerRejectReason, PeerReply, ask_outcome};
 
 use super::pairing::{FollowUp, reject_to_peer_error, storage_failed};
-use super::{OUTCOME_POLL, PeerRecord, Peers, Phase};
+use super::{PeerRecord, Peers, Phase};
 
 /// 扫码之后第一次问结果之前等多久：扫码的回应刚才已经说过“等对方同意”，马上再问一遍没有新信息；
 /// 太早的话核心刚启动、配对的协议还没挂上。
 const OUTCOME_FIRST: Duration = Duration::from_secs(5);
+
+/// 后台轮询的间隔（ADR-0050：扫码后先问一次，之后每 10 分钟一次；没问到时更快重问，见 `spawn_poll`）。
+pub(crate) const OUTCOME_POLL: Duration = Duration::from_secs(600);
 
 impl Peers {
     /// 主人的设备扫来一个码：连出码方，记成“等对方同意”，然后自己问结果。
