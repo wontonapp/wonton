@@ -2,9 +2,13 @@
 //! （网页、模型网关、MCP 服务）。普通网络里连 [`names::service_host`] 的稳定域名（上游看到的 Host 就是它），
 //! 宿主网络里的服务经 [`super::host_relay`] 的 unix 套接字访问。
 
+mod endpoint;
+
+pub use endpoint::{Endpoint, McpTarget};
+
 use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use std::time::Duration;
 
@@ -18,7 +22,6 @@ use super::manifest::{Manifest, Permission, Sso};
 use super::models::ModelsRoute;
 use super::names;
 use super::package::PluginPackage;
-use super::proxy_auth::McpHeaders;
 use super::secrets::Secrets;
 use super::store::StoreError;
 use crate::config::{
@@ -36,42 +39,6 @@ const DEFAULT_MCP_PATH: &str = "/mcp";
 /// 网页探测一次的时限，和装完时的探测（[`super::health::wait_webui`]）、`plugins.health` 的详情接口
 /// （[`super::health_probe`]）一样。
 pub(super) const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// 核心访问插件服务的地址：普通网络里是 `host:port`，宿主网络里是插件数据目录里的 unix 套接字。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Endpoint {
-    Tcp(String),
-    Unix(PathBuf),
-}
-
-impl Endpoint {
-    pub fn unix(path: impl Into<PathBuf>) -> Self {
-        Self::Unix(path.into())
-    }
-
-    /// 给 HTTP 客户端用的 URL。unix 套接字的主机名不参与解析，用 `localhost` 占位。
-    pub fn url(&self, path: &str) -> String {
-        match self {
-            Self::Tcp(authority) => format!("http://{authority}{path}"),
-            Self::Unix(_) => format!("http://localhost{path}"),
-        }
-    }
-
-    pub fn socket(&self) -> Option<&Path> {
-        match self {
-            Self::Tcp(_) => None,
-            Self::Unix(path) => Some(path),
-        }
-    }
-}
-
-/// 总线连一个插件的 MCP 服务要的东西：地址、解析好的请求头，宿主网络里还有套接字。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct McpTarget {
-    pub url: String,
-    pub socket: Option<PathBuf>,
-    pub headers: McpHeaders,
-}
 
 /// 请求一次网页入口，返回状态码。unix 套接字走 reqwest，普通网络走共享的 HTTP 客户端。
 pub(super) async fn status(
