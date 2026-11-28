@@ -11,7 +11,7 @@ use tokio::net::TcpStream;
 use tracing::debug;
 
 use super::super::stale_join::forward_one;
-use super::{Core, read_body};
+use super::{Core, Home, read_body};
 
 pub(super) async fn serve_matrix(
     mut tcp: TcpStream,
@@ -420,4 +420,58 @@ async fn record_sync_request(core: &Core, text: &str, body: &[u8]) -> Option<Val
     }
     core.sync_requests.lock().unwrap().push(request.clone());
     Some(request)
+}
+
+impl Home {
+    /// 取房间成员的请求断开或恢复。
+    pub fn set_members_down(&self, down: bool) {
+        self.core.members_down.store(down, Ordering::SeqCst);
+    }
+
+    /// 取聊天显示方式账号数据的请求断开或恢复，别的请求不受影响。
+    pub fn set_layout_down(&self, down: bool) {
+        self.core.layout_down.store(down, Ordering::SeqCst);
+    }
+
+    /// 被 [`Self::set_members_down`] 断开过多少次取房间成员的请求。
+    pub fn members_requests_dropped(&self) -> usize {
+        self.core.members_requests_dropped.load(Ordering::SeqCst)
+    }
+}
+
+impl Home {
+    /// Tuwunel 挂了或恢复了，隧道不受影响。
+    pub fn set_matrix_down(&self, down: bool) {
+        self.core.matrix_down.send_replace(down);
+    }
+
+    /// 发消息的请求回 502：核心连不上 Tuwunel。matrix-sdk 会自己重试很久，客户端这边不设期限就一直挂着。
+    pub fn fail_sends(&self, fail: bool) {
+        self.core.fail_sends.send_replace(fail);
+    }
+
+    /// 请求行（小写，如 `post /_matrix/client/v3/createroom`）含 `request` 的 Matrix 请求回 `status` 和 Matrix 错误码
+    /// `errcode`，像 Tuwunel 拒绝了它。
+    pub fn refuse_matrix(&self, request: &str, status: u16, errcode: &str) {
+        self.core.refusals.lock().unwrap().push(Refusal {
+            request: request.to_owned(),
+            status,
+            errcode: errcode.to_owned(),
+        });
+    }
+
+    /// 清掉 [`Self::refuse_matrix`] 设下的拒绝。
+    pub fn clear_refusals(&self) {
+        self.core.refusals.lock().unwrap().clear();
+    }
+
+    /// 服务器丢了房间列表那条 Sliding Sync 连接的位置：下一个请求回 `M_UNKNOWN_POS`，SDK 从头同步。
+    pub fn expire_room_list_sync(&self) {
+        self.core.expire_room_list.store(true, Ordering::SeqCst);
+    }
+
+    /// 上一次 [`Self::expire_room_list_sync`] 已经用掉。
+    pub fn room_list_sync_expired(&self) -> bool {
+        !self.core.expire_room_list.load(Ordering::SeqCst)
+    }
 }
