@@ -16,12 +16,11 @@ use serde::de::Error as _;
 use serde_json::{Map, Value};
 
 use super::compose::{
-    NetworkMode, Service, forbidden_config_key_reason, forbidden_service_key_reason,
-    forbidden_top_key_reason, network_mode_refusal, strip_extensions,
+    NetworkMode, forbidden_service_key_reason, forbidden_top_key_reason, network_mode_refusal,
+    strip_extensions,
 };
 use super::github_source::Origin;
 use super::images::IconFormat;
-use super::interpolate::{UsedVars, Vars, interpolate, interpolate_value};
 use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, ManifestExt};
 use super::manifest_static::StaticWebManifestExt;
@@ -34,28 +33,22 @@ use crate::l10n::text;
 mod bot_service;
 #[path = "package_capability_services.rs"]
 mod capability_services;
+mod configs;
 mod gpu_images;
 mod references;
 mod runtime;
+mod services;
 pub mod static_files;
+mod static_web;
 
 pub(super) mod errors;
 
+pub use configs::ConfigSource;
 pub use errors::PackageError;
 use errors::{
-    archive_error, compose_file_error, config_error, config_interpolate_error, file_error,
-    interpolate_error, reference_error, service_error, static_error, too_big_error,
-    top_level_error, yaml_error,
+    archive_error, compose_file_error, file_error, interpolate_error, reference_error,
+    service_error, static_error, too_big_error, top_level_error, yaml_error,
 };
-
-/// 顶层 `configs` 的一项。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConfigSource {
-    /// 插件包里的文件（规范化后的相对路径），原样写进容器。
-    File(String),
-    /// 内联内容，安装时按注入的变量插值。
-    Content(String),
-}
 
 /// 解析好的插件包。
 #[derive(Debug, Clone)]
@@ -75,20 +68,7 @@ pub struct PluginPackage {
     pub origin: Option<Origin>,
 }
 
-pub(super) type ServiceDependencies<'a> =
-    BTreeMap<&'a str, Vec<(String, super::compose::DependCondition)>>;
-
 impl PluginPackage {
-    /// compose 里有没有这个服务。
-    pub fn has_service(&self, name: &str) -> bool {
-        self.services.contains_key(name)
-    }
-
-    /// 有服务引用了 `WONTON_EXTERNAL_URL`：入口开关变了要重建它们（ADR-0089 第 5 节）。
-    pub(super) fn references_external_url(&self) -> bool {
-        super::manifest_clients::references_external_url(&self.services)
-    }
-
     /// 只有 compose 文本的插件包：引用了包里的文件时失败。
     pub fn parse(source: &str, langs: &Languages) -> Result<Self, PackageError> {
         Self::with_files(source, PackageFiles::new(), langs)
@@ -167,50 +147,6 @@ impl PluginPackage {
         }
     }
 
-    /// `runtime: static_web` 时包里静态文件的目录（`static_web.root`），其他形态为空。
-    pub fn static_root(&self) -> Option<String> {
-        (self.manifest.runtime == super::manifest::Runtime::StaticWeb)
-            .then(|| self.manifest.static_web.clone().unwrap_or_default().root)
-    }
-
-    /// 配上静态文件（相对 `static_web.root`），按目录规则核对（ADR-0080 第 3 节）。
-    pub fn with_static(
-        mut self,
-        files: static_files::StaticFiles,
-        langs: &Languages,
-    ) -> Result<Self, PackageError> {
-        let root = self.static_root().unwrap_or_default();
-        let spec = self.manifest.static_web.clone().unwrap_or_default();
-        static_files::check(&files, &spec).map_err(|p| static_error(langs, &root, &p))?;
-        self.static_hashes = static_files::hashes(&files);
-        self.static_files = Some(files);
-        Ok(self)
-    }
-
-    /// 从安装记录恢复的静态网页：只有每个文件的 sha256，文件在托管目录里。
-    pub fn with_static_hashes(mut self, hashes: static_files::StaticHashes) -> Self {
-        self.static_hashes = hashes;
-        self
-    }
-
-    /// 带着的静态文件；从安装记录恢复的、不是静态网页的为空。
-    pub fn static_files(&self) -> Option<&static_files::StaticFiles> {
-        self.static_files.as_ref()
-    }
-
-    pub fn static_hashes(&self) -> &static_files::StaticHashes {
-        &self.static_hashes
-    }
-
-    /// 静态文件按包里的路径（`<static_web.root>/<相对路径>`）列出内容。
-    pub fn static_blobs(&self) -> impl Iterator<Item = (String, &[u8])> {
-        let root = self.static_root().unwrap_or_default();
-        self.static_files
-            .iter()
-            .flatten()
-            .map(move |(path, data)| (format!("{root}/{path}"), data.as_slice()))
-    }
-
     /// compose 文本里的清单，不管它引用的文件：商店列表只要清单。
     pub fn manifest_of(source: &str, langs: &Languages) -> Result<Manifest, PackageError> {
         Ok(Self::structure(source, langs)?.manifest)
@@ -274,7 +210,7 @@ impl PluginPackage {
             check_service_keys(name, service, langs)?;
         }
         let volumes = parse_named_volumes(top.remove("volumes"), langs)?;
-        let configs = parse_configs(top.remove("configs"), langs)?;
+        let configs = configs::parse_configs(top.remove("configs"), langs)?;
         let package = Self {
             manifest,
             source: source.to_owned(),
@@ -431,78 +367,6 @@ impl PluginPackage {
         package_files::digest_with(self.source.as_bytes(), &self.files, hashes)
     }
 
-    /// 服务的 `environment` 的原文（没插值）：引用了哪些变量、写了什么字面值。
-    pub fn raw_environment(&self, service: &str) -> String {
-        let environment = self.services.get(service).map(|raw| &raw["environment"]);
-        environment.map(ToString::to_string).unwrap_or_default()
-    }
-
-    pub fn service_names(&self) -> impl Iterator<Item = &str> {
-        self.services.keys().map(String::as_str)
-    }
-
-    /// 启动现存容器只需要依赖条件，不重新插值环境或改写容器配置。
-    pub(super) fn service_dependencies(
-        &self,
-        langs: &Languages,
-    ) -> Result<ServiceDependencies<'_>, PackageError> {
-        self.services
-            .iter()
-            .map(|(name, service)| {
-                let dependencies = service
-                    .get("depends_on")
-                    .map(|value| {
-                        serde_path_to_error::deserialize::<_, super::compose::DependsOn>(
-                            value.clone(),
-                        )
-                    })
-                    .transpose()
-                    .map_err(|e| service_error(langs, name, pathed(&e)))?;
-                let mut dependencies = dependencies.map(|deps| deps.entries()).unwrap_or_default();
-                if let Some(target) = service
-                    .get("network_mode")
-                    .and_then(Value::as_str)
-                    .and_then(|mode| mode.strip_prefix("service:"))
-                {
-                    super::network_mode::add_dependency(&mut dependencies, target);
-                }
-                Ok((name.as_str(), dependencies))
-            })
-            .collect()
-    }
-
-    pub fn named_volumes(&self) -> &BTreeSet<String> {
-        &self.volumes
-    }
-
-    /// 一次性服务：写了 `restart: "no"` 的服务，和被其他服务以 `condition: service_completed_successfully`
-    /// 依赖的服务（后者没写 `restart: "no"` 时渲染报错）。
-    pub fn one_shot_services(&self) -> BTreeSet<&str> {
-        let completed = Value::String("service_completed_successfully".to_owned());
-        let no_restart = Value::String("no".to_owned());
-        let depended_on = self
-            .services
-            .values()
-            .filter_map(|service| service.get("depends_on")?.as_object())
-            .flat_map(|deps| deps.iter())
-            .filter(|(_, spec)| spec.get("condition") == Some(&completed))
-            .filter_map(|(dep, _)| self.services.get_key_value(dep).map(|(k, _)| k.as_str()));
-        self.services
-            .iter()
-            .filter(|(_, service)| service.get("restart") == Some(&no_restart))
-            .map(|(name, _)| name.as_str())
-            .chain(depended_on)
-            .collect()
-    }
-
-    /// 长期运行的服务，也就是部署完成时全部能用的那些（[`Self::one_shot_services`] 之外）。
-    pub fn resident_services(&self) -> BTreeSet<&str> {
-        let one_shot = self.one_shot_services();
-        self.service_names()
-            .filter(|service| !one_shot.contains(service))
-            .collect()
-    }
-
     /// 被引用的文件，安装时随记录保存。
     pub fn files(&self) -> &PackageFiles {
         &self.files
@@ -512,79 +376,6 @@ impl PluginPackage {
     pub fn settings(&self) -> Option<&[u8]> {
         let path = self.manifest.settings.as_deref()?;
         self.files.get(path).map(Vec::as_slice)
-    }
-
-    pub fn has_config(&self, name: &str) -> bool {
-        self.configs.contains_key(name)
-    }
-
-    /// 配置写进容器的内容：`file` 是包里的文件原样，`content` 按变量表插值。
-    pub fn config_data(
-        &self,
-        name: &str,
-        vars: &Vars,
-        used: &mut UsedVars,
-        langs: &Languages,
-    ) -> Result<Vec<u8>, PackageError> {
-        match self.configs.get(name) {
-            None => Err(config_error(
-                langs,
-                name,
-                text(langs, "plugin-install-pkg-config-undeclared", &[]),
-            )),
-            Some(ConfigSource::File(path)) => self.files.get(path).cloned().ok_or_else(|| {
-                config_error(
-                    langs,
-                    name,
-                    text(
-                        langs,
-                        "plugin-install-pkg-config-missing",
-                        &[("path", path.as_str().into())],
-                    ),
-                )
-            }),
-            Some(ConfigSource::Content(text)) => interpolate(text, vars, used)
-                .map(String::into_bytes)
-                .map_err(|source| config_interpolate_error(langs, name.to_owned(), source)),
-        }
-    }
-
-    /// 插值后按 Compose 子集解析所有服务。`vars` 给出每个服务用的变量表：Bot 服务比全插件一份的服务
-    /// 多几个变量。
-    pub fn services<'v>(
-        &self,
-        vars: impl Fn(&str) -> &'v Vars,
-        used: &mut BTreeMap<String, UsedVars>,
-        langs: &Languages,
-    ) -> Result<BTreeMap<String, Service>, PackageError> {
-        let services: BTreeMap<String, Service> = self
-            .services
-            .iter()
-            .map(|(name, _)| {
-                let mut variables = UsedVars::new();
-                let service = self.service(name, vars(name), &mut variables, langs)?;
-                if !variables.is_empty() {
-                    used.insert(name.clone(), variables);
-                }
-                Ok((name.clone(), service))
-            })
-            .collect::<Result<_, PackageError>>()?;
-        super::network_mode::validate(&self.manifest, &services)?;
-        Ok(services)
-    }
-
-    pub(in crate::plugin) fn service(
-        &self,
-        name: &str,
-        vars: &Vars,
-        used: &mut UsedVars,
-        langs: &Languages,
-    ) -> Result<Service, PackageError> {
-        let mut value = self.services[name].clone();
-        strip_extensions(&mut value);
-        interpolate_value(&mut value, vars, used)
-            .map_err(|source| interpolate_error(langs, name.to_owned(), source))?;
-        serde_path_to_error::deserialize(value).map_err(|e| service_error(langs, name, pathed(&e)))
     }
 }
 
@@ -737,63 +528,6 @@ fn parse_named_volumes(
                     &[("name", name.as_str().into())],
                 )))
             }
-        })
-        .collect()
-}
-
-/// 顶层 `configs`：每项恰好有 `file`（插件包里的文件）或 `content`（内联内容）之一。
-fn parse_configs(
-    value: Option<Value>,
-    langs: &Languages,
-) -> Result<BTreeMap<String, ConfigSource>, PackageError> {
-    let Some(value) = value else {
-        return Ok(BTreeMap::new());
-    };
-    let Value::Object(map) = value else {
-        return Err(top_level_error(
-            langs,
-            "configs",
-            "must be a mapping".to_owned(),
-        ));
-    };
-    map.into_iter()
-        .map(|(name, mut definition)| {
-            let config_err = |message: String| config_error(langs, &name, message);
-            let name_ok = name.starts_with(|c: char| c.is_ascii_alphanumeric())
-                && name
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
-            if !name_ok {
-                return Err(config_err(
-                    "config names allow only letters, digits, -, _, and .".to_owned(),
-                ));
-            }
-            strip_extensions(&mut definition);
-            let Value::Object(fields) = definition else {
-                return Err(config_err(
-                    "must be a mapping with either file or content".to_owned(),
-                ));
-            };
-            for key in fields.keys() {
-                if let Some(reason) = forbidden_config_key_reason(key, langs) {
-                    return Err(config_err(format!("unsupported key `{key}`: {reason}")));
-                }
-                if !matches!(key.as_str(), "file" | "content") {
-                    return Err(config_err(format!("unsupported key `{key}`")));
-                }
-            }
-            let source = match (fields.get("file"), fields.get("content")) {
-                (Some(Value::String(path)), None) => {
-                    ConfigSource::File(package_files::normalize(path).map_err(config_err)?)
-                }
-                (None, Some(Value::String(text))) => ConfigSource::Content(text.clone()),
-                (Some(_), Some(_)) => {
-                    return Err(config_err("write either file or content, not both".into()));
-                }
-                (None, None) => return Err(config_err("write either file or content".to_owned())),
-                _ => return Err(config_err("file and content must be strings".to_owned())),
-            };
-            Ok((name, source))
         })
         .collect()
 }
