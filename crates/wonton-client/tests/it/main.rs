@@ -24,6 +24,7 @@ mod pairing;
 mod peers;
 mod photos;
 mod photos_edits;
+mod photos_sources;
 mod photos_support;
 mod plugins;
 mod port_mapping;

@@ -34,6 +34,7 @@ pub(in crate::client) fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsV
     ));
     installed.extend(super::super::ui_fake_failed_install::plugin());
     installed.push(super::music::plugin());
+    installed.push(super::photos::plugin());
     plugins.installed = Some(InstalledPlugins {
         plugins: installed,
         upgrade_check: None,

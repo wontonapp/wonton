@@ -4,18 +4,23 @@
 use wonton_protocol::media::library::{ActionFailure, Album, AlbumOwner, LibraryActionResult};
 use wonton_protocol::media::library_view::{
     PhotoAlbumOwner, PhotoAlbumRow, PhotoAlbumView, PhotoDay, PhotoDetailView, PhotoEdit,
-    PhotoInfo, PhotoLocation, PhotoPage, PhotoPerson, PhotoSearch, PhotoSearchView, PhotoTile,
-    PhotosAction, PhotosViewModel,
+    PhotoInfo, PhotoLocation, PhotoPage, PhotoPerson, PhotoSearch, PhotoSearchView,
+    PhotoSourceState, PhotoTile, PhotoTileOwner, PhotosAction, PhotosViewModel,
 };
 use wonton_protocol::media::{MediaFailure, MediaFailureCode, MediaKind};
 
 use super::{BASE_MS, DAY_MS, FakeMode, GRANDMA, NOTHING, PLACE, tile};
-use crate::photos::{apply_edit, find_album, find_tile, select};
+use crate::photos::{apply_edit, find_album, find_tile, name_people, select};
 
 /// 一个月先给的条数，剩下的翻页再给。
 const FIRST_PAGE: u32 = 48;
 
 pub(super) fn apply(view: &mut PhotosViewModel, action: PhotosAction, mode: FakeMode) {
+    change(view, action, mode);
+    name_people(view);
+}
+
+fn change(view: &mut PhotosViewModel, action: PhotosAction, mode: FakeMode) {
     match action {
         PhotosAction::Open { source, .. } => {
             // “要先选相册插件”的开场：带上插件再来才有库。
@@ -25,6 +30,13 @@ pub(super) fn apply(view: &mut PhotosViewModel, action: PhotosAction, mode: Fake
             {
                 *view = super::opening(FakeMode::Library);
             }
+        }
+        // 两家里挑了一家：照真核心，记下来再取库。
+        PhotosAction::ChooseSource { id } => {
+            if view.sources.state == PhotoSourceState::Choose {
+                *view = super::opening(FakeMode::Library);
+            }
+            view.sources = super::ready(Some(id));
         }
         PhotosAction::Refresh | PhotosAction::LoadMoreAlbum | PhotosAction::LoadMoreSearch => {}
         PhotosAction::OpenMonth { month } => open_month(view, &month, false),
@@ -217,13 +229,13 @@ fn wire_album(row: PhotoAlbumRow) -> Album {
         owner: match row.owner {
             PhotoAlbumOwner::Me => AlbumOwner::Me,
             PhotoAlbumOwner::Household => AlbumOwner::Household,
-            PhotoAlbumOwner::Person { username } => AlbumOwner::Person(username),
+            PhotoAlbumOwner::Person { user } => AlbumOwner::Person(user.user_id),
             PhotoAlbumOwner::Unknown => AlbumOwner::Unknown,
             PhotoAlbumOwner::Other { raw } => AlbumOwner::Other(raw),
         },
         shared: row.shared,
         cover: row.cover,
-        members: row.members,
+        members: row.members.into_iter().map(|user| user.user_id).collect(),
         updated_at: row.updated_at,
     }
 }
@@ -232,7 +244,7 @@ fn edit_library(view: &mut PhotosViewModel, edit: &PhotoEdit) {
     let failed: Vec<ActionFailure> = edit
         .ids()
         .iter()
-        .filter(|id| find_tile(view, id).is_some_and(|tile| tile.owner.is_some()))
+        .filter(|id| find_tile(view, id).is_some_and(|tile| tile.owner != PhotoTileOwner::Me))
         .map(|id| ActionFailure {
             id: id.clone(),
             failure: MediaFailure {

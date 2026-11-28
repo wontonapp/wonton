@@ -1,0 +1,245 @@
+//! 用哪个相册插件、能共享给谁：只经导出给原生壳的接口驱动，假核心回 `/sources`、`/share-targets` 的名单，
+//! 断言看 ViewModel 和假核心收到的请求。
+
+use std::time::Duration;
+
+use axum::http::Method;
+use wonton_protocol::MEMBERS_PATH;
+use wonton_protocol::media::MediaFailureCode;
+use wonton_protocol::media::choices::SHARE_TARGETS_PATH;
+use wonton_protocol::media::library::AlbumOwner;
+use wonton_protocol::media::library_view::{
+    PhotoAlbumOwner, PhotoSourceState, PhotoTileOwner, PhotoUser, PhotosAction, PhotosViewModel,
+};
+
+use crate::photos::{november, november_open, open, photos, send};
+use crate::photos_support::{PHOTOS_SOURCE, album, asset, envelope, source, target};
+use crate::plugins::rig::{Canned, Rig};
+
+const LIBRARY: &str = "/_wonton/api/media/library";
+const TIMELINE: &str = "/_wonton/api/media/library/timeline";
+
+fn has_months(view: &PhotosViewModel) -> bool {
+    view.sources.state == PhotoSourceState::Ready
+        && !view.timeline.loading
+        && !view.timeline.months.is_empty()
+}
+
+/// 取时间线时带没带 `source`：(不带的次数, 带的次数)。
+fn timeline_requests(rig: &Rig) -> (usize, usize) {
+    let all = rig.core.all_seen();
+    let timeline: Vec<_> = all
+        .iter()
+        .filter(|seen| seen.method == Method::GET && seen.path.starts_with(TIMELINE))
+        .collect();
+    let plain = timeline.iter().filter(|seen| seen.path == TIMELINE).count();
+    (plain, timeline.len() - plain)
+}
+
+fn library_requests(rig: &Rig) -> usize {
+    rig.core
+        .all_seen()
+        .iter()
+        .filter(|seen| seen.path.starts_with(LIBRARY))
+        .count()
+}
+
+#[tokio::test]
+async fn a_single_photo_app_is_used_without_asking() {
+    let rig = Rig::new().await;
+    november(&rig);
+    rig.connected().await;
+    open(&rig);
+    let view = photos(&rig, "时间线", has_months).await;
+    let ids: Vec<_> = view
+        .sources
+        .candidates
+        .iter()
+        .map(|c| c.id.as_str())
+        .collect();
+    assert_eq!(ids, [PHOTOS_SOURCE]);
+    // 不点名：核心照规则用唯一那家。
+    assert_eq!(view.sources.chosen, None);
+    let (plain, named) = timeline_requests(&rig);
+    assert!(plain >= 1 && named == 0, "{plain} {named}");
+}
+
+#[tokio::test]
+async fn no_photo_app_is_reported_as_not_installed_not_as_a_failure() {
+    let rig = Rig::new().await;
+    rig.core.photos.sources(Vec::new());
+    rig.connected().await;
+    open(&rig);
+    let view = photos(&rig, "没装", |view| {
+        view.sources.state != PhotoSourceState::Checking
+    })
+    .await;
+    assert_eq!(view.sources.state, PhotoSourceState::NotInstalled);
+    assert_eq!(view.sources.problem, None);
+    assert_eq!(view.timeline.problem, None);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(library_requests(&rig), 0);
+}
+
+#[tokio::test]
+async fn several_photo_apps_wait_for_a_choice_that_outlives_a_restart() {
+    let mut rig = Rig::new().await;
+    rig.core
+        .photos
+        .sources(vec![source("app.a", false), source("app.b", false)]);
+    november(&rig);
+    rig.connected().await;
+    open(&rig);
+    let view = photos(&rig, "要挑一家", |view| {
+        view.sources.state == PhotoSourceState::Choose
+    })
+    .await;
+    assert_eq!(view.sources.candidates.len(), 2);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(library_requests(&rig), 0);
+
+    send(&rig, PhotosAction::ChooseSource { id: "app.b".into() }).unwrap();
+    let view = photos(&rig, "挑好以后的时间线", has_months).await;
+    assert_eq!(view.sources.chosen.as_deref(), Some("app.b"));
+    let picked = format!("{TIMELINE}?source=app.b");
+    let before = rig.core.seen(&Method::GET, &picked).len();
+    assert!(before >= 1);
+    assert_eq!(timeline_requests(&rig).0, 0);
+
+    // 关掉 App 再打开：不再问，直接用挑过的那家。
+    rig.reopen();
+    rig.connected().await;
+    open(&rig);
+    let view = photos(&rig, "重开后的时间线", has_months).await;
+    assert_eq!(view.sources.chosen.as_deref(), Some("app.b"));
+    assert!(rig.core.seen(&Method::GET, &picked).len() > before);
+    assert_eq!(timeline_requests(&rig).0, 0);
+}
+
+#[tokio::test]
+async fn the_owners_default_is_used_without_asking() {
+    let rig = Rig::new().await;
+    rig.core
+        .photos
+        .sources(vec![source("app.a", false), source("app.b", true)]);
+    november(&rig);
+    rig.connected().await;
+    open(&rig);
+    let view = photos(&rig, "时间线", has_months).await;
+    assert_eq!(view.sources.chosen, None);
+    let (plain, named) = timeline_requests(&rig);
+    assert!(plain >= 1 && named == 0, "{plain} {named}");
+}
+
+#[tokio::test]
+async fn a_member_who_cannot_manage_members_still_gets_the_share_list() {
+    let rig = Rig::new().await;
+    rig.core.family.member_without_managing();
+    rig.core
+        .photos
+        .share_targets(vec![target("owner"), target("mom")]);
+    rig.connected().await;
+    open(&rig);
+    let view = photos(&rig, "能共享给的人", |view| {
+        !view.share_targets.loading && !view.share_targets.people.is_empty()
+    })
+    .await;
+    let people: Vec<_> = view
+        .share_targets
+        .people
+        .iter()
+        .map(|person| person.user_id.as_str())
+        .collect();
+    assert_eq!(people, ["@owner:example.com", "@mom:example.com"]);
+    assert_eq!(view.share_targets.problem, None);
+    assert!(rig.core.seen(&Method::GET, MEMBERS_PATH).is_empty());
+
+    // 核心答不上：如实说，不留旧名单。
+    rig.core.answer(
+        Method::GET,
+        SHARE_TARGETS_PATH,
+        Canned(
+            503,
+            envelope(MediaFailureCode::TransportUnavailable, "down"),
+        ),
+    );
+    send(&rig, PhotosAction::Refresh).unwrap();
+    let view = photos(&rig, "名单没取成", |view| {
+        !view.share_targets.loading && view.share_targets.problem.is_some()
+    })
+    .await;
+    assert_eq!(
+        view.share_targets.problem.unwrap().code,
+        MediaFailureCode::TransportUnavailable
+    );
+    assert!(view.share_targets.people.is_empty());
+}
+
+fn album_people(
+    view: &PhotosViewModel,
+) -> (Option<PhotoUser>, Vec<PhotoUser>, Option<PhotoTileOwner>) {
+    let row = &view.albums.shared_with_me[0];
+    let owner = match &row.owner {
+        PhotoAlbumOwner::Person { user } => Some(user.clone()),
+        _ => None,
+    };
+    let tile = view
+        .timeline
+        .months
+        .first()
+        .and_then(|month| month.days.first())
+        .and_then(|day| day.tiles.first())
+        .map(|tile| tile.owner.clone());
+    (owner, row.members.clone(), tile)
+}
+
+fn user(user_id: &str, name: &str) -> PhotoUser {
+    PhotoUser {
+        user_id: user_id.into(),
+        name: name.into(),
+    }
+}
+
+#[tokio::test]
+async fn owners_and_members_are_named_from_the_share_list_or_by_their_id() {
+    let rig = Rig::new().await;
+    rig.core.photos.share_targets(vec![target("mom")]);
+    let mut from_dad = asset("a", 1_795_147_200_000);
+    from_dad.owner = Some("@dad:example.com".into());
+    rig.core.photos.month("2026-11", vec![from_dad]);
+    let mut garden = album("al1", "院子", AlbumOwner::Person("@mom:example.com".into()));
+    garden.members = vec!["@dad:example.com".into()];
+    rig.core.photos.album(garden, &[]);
+    november_open(&rig).await;
+    let view = photos(&rig, "名单和相册都到了", |view| {
+        !view.share_targets.people.is_empty() && !view.albums.shared_with_me.is_empty()
+    })
+    .await;
+    // 名单上的妈妈用她的显示名；不在名单上的爸爸用 Matrix ID 的本地部分，不留空。
+    let mom = user("@mom:example.com", "MOM");
+    let dad = user("@dad:example.com", "dad");
+    assert_eq!(
+        album_people(&view),
+        (
+            Some(mom),
+            vec![dad.clone()],
+            Some(PhotoTileOwner::Person { user: dad })
+        )
+    );
+
+    // 名单取不成：显示名不再可信，退回本地部分。
+    rig.core.answer(
+        Method::GET,
+        SHARE_TARGETS_PATH,
+        Canned(
+            503,
+            envelope(MediaFailureCode::TransportUnavailable, "down"),
+        ),
+    );
+    send(&rig, PhotosAction::Refresh).unwrap();
+    let view = photos(&rig, "名单没取成", |view| {
+        view.share_targets.problem.is_some() && !view.albums.shared_with_me.is_empty()
+    })
+    .await;
+    assert_eq!(album_people(&view).0, Some(user("@mom:example.com", "mom")));
+}

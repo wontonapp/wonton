@@ -68,6 +68,27 @@ fn a_library_that_needs_a_source_opens_once_one_is_picked() {
 }
 
 #[test]
+fn two_photo_apps_ask_first_and_open_the_one_picked() {
+    use wonton_protocol::media::library_view::PhotoSourceState;
+
+    let mode = FakeMode::ChooseSource;
+    let mut view = opening(mode);
+    assert_eq!(view.sources.state, PhotoSourceState::Choose);
+    assert_eq!(view.sources.candidates.len(), 2);
+    assert!(view.timeline.months.is_empty());
+
+    let picked = view.sources.candidates[1].id.clone();
+    apply(
+        &mut view,
+        PhotosAction::ChooseSource { id: picked.clone() },
+        mode,
+    );
+    assert_eq!(view.sources.state, PhotoSourceState::Ready);
+    assert_eq!(view.sources.chosen, Some(picked));
+    assert!(!timeline_ids(&view).is_empty());
+}
+
+#[test]
 fn a_month_loads_in_two_pages_and_stops_at_its_count() {
     let mut view = opening(FakeMode::Library);
     let month = || "2026-10".to_owned();

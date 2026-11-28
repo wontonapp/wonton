@@ -4,17 +4,20 @@
 //! 请求和失败归类用媒体那一套（[`MediaApi`]），字节走媒体的本机回环（[`MediaLink::loopback`]）：这里只出地址，
 //! 字节不经绑定层，`Range` 由回环原样转。
 //!
-//! 游标、按日分组和选择集在这里，壳只画。每一块（时间线、某个月、相册、搜索……）各有自己的票号：后发的请求
+//! 用哪个相册插件先问核心再定（[`sources`]）。游标、按日分组和选择集在这里，壳只画。每一块（时间线、某个月、相册、搜索……）各有自己的票号：后发的请求
 //! 作废先发的，关掉的那块在路上的请求回来也不写；换了相册插件（`source`），之前发出的一律作废。换服务器整个
 //! 作用域重建，旧作用域的任务等停下了才换（[`crate::scope`]），旧服务器的回包落不进新服务器的视图。
 
 mod api;
 mod loads;
+mod names;
 mod share;
+mod sources;
 mod subscription;
 mod view;
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 use serde::de::DeserializeOwned;
@@ -31,6 +34,7 @@ use crate::scope::reuse;
 
 pub use subscription::PhotosSubscription;
 
+pub(crate) use names::name_people;
 /// 假数据入口照真核心的规则改视图：选中、写操作的结果、找格子和相册。
 #[cfg(feature = "ui-fake")]
 pub(crate) use view::{apply_edit, find_album, find_tile, select};
@@ -41,6 +45,7 @@ pub(crate) struct PhotosLink {
     media: Arc<MediaLink>,
     view: watch::Sender<PhotosViewModel>,
     state: Mutex<State>,
+    picked: sources::Picked,
 }
 
 /// 视图里不给壳看的那部分：游标、票号、是不是开着。和视图一起改，锁着它再写视图。
@@ -48,8 +53,10 @@ pub(crate) struct PhotosLink {
 struct State {
     /// 换相册插件加一：之前发出的请求都作废。
     generation: u64,
-    /// 壳选的相册插件；空着由核心按默认挑。
+    /// 请求带的相册插件；空着由核心按默认挑。
     source: Option<String>,
+    /// `Open` 这一次点名的相册插件，不记成默认。
+    asked: Option<String>,
     /// 相册页开过：重连后自己补取。
     open: bool,
     utc_offset_minutes: i32,
@@ -64,6 +71,7 @@ struct State {
 /// 各自作废的一块。
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Section {
+    Sources,
     Features,
     Timeline,
     Albums,
@@ -90,6 +98,7 @@ impl PhotosLink {
         runtime: Handle,
         home: Arc<HomeLink>,
         media: Arc<MediaLink>,
+        dir: &Path,
         view: Option<watch::Sender<PhotosViewModel>>,
     ) -> Arc<Self> {
         let link = Arc::new(Self {
@@ -98,6 +107,7 @@ impl PhotosLink {
             media,
             view: reuse(view, PhotosViewModel::default()),
             state: Mutex::default(),
+            picked: sources::Picked::open(dir),
         });
         let receiver = link.home.subscribe();
         link.runtime
@@ -122,9 +132,10 @@ impl PhotosLink {
                 source,
             } => {
                 self.open(utc_offset_minutes, source);
-                self.refresh_lists();
+                self.check_sources(sources::After::Open);
             }
-            PhotosAction::Refresh => self.refresh_all(),
+            PhotosAction::ChooseSource { id } => self.choose_source(id),
+            PhotosAction::Refresh => self.check_sources(sources::After::Refresh),
             PhotosAction::OpenMonth { month } => self.month(month, loads::Page::First)?,
             PhotosAction::LoadMoreMonth { month } => self.month(month, loads::Page::More)?,
             PhotosAction::OpenAlbum { id } => self.album(Some(id), loads::Page::First),
@@ -145,23 +156,16 @@ impl PhotosLink {
         Ok(())
     }
 
-    /// 记下时差和相册插件；插件换了，已取的、在路上的都作废，视图从头来。
+    /// 记下时差和这一次点名的相册插件。点名换了一家就当场作废已取的；没点名的等问过核心再定（[`sources`]）。
     fn open(&self, utc_offset_minutes: i32, source: Option<String>) {
         let mut state = self.lock();
         state.open = true;
         state.utc_offset_minutes = utc_offset_minutes;
-        if state.source == source {
-            return;
+        state.asked = source.clone();
+        if source.is_some() && state.source != source {
+            self.view
+                .send_modify(|view| sources::switch(&mut state, view, source));
         }
-        *state = State {
-            generation: state.generation + 1,
-            source,
-            open: true,
-            utc_offset_minutes,
-            next_ticket: state.next_ticket,
-            ..State::default()
-        };
-        self.view.send_replace(PhotosViewModel::default());
     }
 
     /// 在锁里开一块的请求：`begin` 回假就不发（比如没有下一页、正在取），回真就发一张新票，旧票作废。
@@ -197,14 +201,20 @@ impl PhotosLink {
             && (ticket.section == Section::Edit
                 || state.tickets.get(&ticket.section) == Some(&ticket.seq));
         if current {
-            self.view.send_modify(|view| f(&mut state, view));
+            self.view.send_modify(|view| {
+                f(&mut state, view);
+                name_people(view);
+            });
         }
         current
     }
 
     fn modify(&self, f: impl FnOnce(&mut PhotosViewModel)) {
         let _state = self.lock();
-        self.view.send_modify(f);
+        self.view.send_modify(|view| {
+            f(view);
+            name_people(view);
+        });
     }
 
     /// 关掉一块：在路上的请求作废，回来也不写。
@@ -255,10 +265,10 @@ impl PhotosLink {
         Ok(format!("{prefix}{path}"))
     }
 
-    /// 重新连上：开过相册页就补取。
+    /// 重新连上：开过相册页就再问一遍用哪家，再补取。
     fn reconnected(self: &Arc<Self>) {
         if self.lock().open {
-            self.recover();
+            self.check_sources(sources::After::Recover);
         }
     }
 }

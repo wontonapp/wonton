@@ -3,7 +3,8 @@
 //!
 //! 游标、按日分组、选择集都在客户端核；字节不进视图，壳按条目 id 和档位向客户端核要本机回环地址，
 //! 交给系统的图片加载器和播放器。失败照搬核心回的 [`MediaFailure`]：壳按 `code` 出字，`message` 收进“详情”；
-//! 装了不止一个相册插件又没定默认时是 `source_required`，壳让用户挑一个，带进 [`PhotosAction::Open`] 再来。
+//! 用哪个相册插件先问核心（[`PhotoSources`]）：一家都没有如实说没装，几家又没定默认时让用户挑一个（[`PhotosAction::ChooseSource`]），
+//! 挑的记成这台服务器上的默认；核心仍回 `source_required` 时（挑过之后又多装了一家）照常是失败。
 //! 服务端发来的取值认不出时落 `Other`（相册归属、媒体种类、失败码）；提供方新加的写操作这一版做不了，不进 `actions`。
 
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,8 @@ use super::{MediaFailure, MediaKind, Timestamp};
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PhotosViewModel {
+    /// 用哪个相册插件；不是 [`PhotoSourceState::Ready`] 时其余几块都不取
+    pub sources: PhotoSources,
     pub timeline: PhotoTimeline,
     pub albums: PhotoAlbums,
     pub people: PhotoPeople,
@@ -90,8 +93,8 @@ pub struct PhotoTile {
     /// 实况/动态照片，动态部分按 [`PhotoRendition::Live`] 取
     pub live: bool,
     pub favorite: bool,
-    /// 别人的条目写主人的本机用户名，壳据此标来源
-    pub owner: Option<String>,
+    /// 谁的：不是 `Me` 就不是本人的，壳据此标来源
+    pub owner: PhotoTileOwner,
     /// ThumbHash 的 base64，缩略图到之前的占位
     pub thumbhash: Option<String>,
 }
@@ -131,8 +134,8 @@ pub struct PhotoAlbumRow {
     pub shared: bool,
     /// 封面那一条的 id，按 [`PhotoRendition::Thumbnail`] 取
     pub cover: Option<String>,
-    /// 共享给的本机用户名，不含库主
-    pub members: Vec<String>,
+    /// 共享给的人，不含库主
+    pub members: Vec<PhotoUser>,
     pub updated_at: Option<Timestamp>,
 }
 
@@ -144,7 +147,7 @@ pub enum PhotoAlbumOwner {
     Me,
     Household,
     Person {
-        username: String,
+        user: PhotoUser,
     },
     /// 别人的，但库主不是这台服务器上的哪位家人；没有名字可写
     Unknown,
@@ -152,6 +155,43 @@ pub enum PhotoAlbumOwner {
     Other {
         raw: String,
     },
+}
+
+/// 条目是谁的。
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PhotoTileOwner {
+    Me,
+    Person {
+        user: PhotoUser,
+    },
+    /// 别人的，但主人不是这台服务器上的哪位家人；没有名字可写
+    Unknown,
+}
+
+/// 条目的主人、相册的成员：本机的人（不是提供方认出的人物）。
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PhotoUser {
+    /// Matrix ID
+    pub user_id: String,
+    /// 共享名单里有这个人就是他的显示名，没有就是 Matrix ID 的本地部分（`@mom:example.com` 的 `mom`）
+    pub name: String,
+}
+
+impl PhotoUser {
+    /// 还不知道显示名：先用 Matrix ID 的本地部分。
+    pub fn unnamed(user_id: &str) -> Self {
+        let local = user_id
+            .strip_prefix('@')
+            .and_then(|rest| rest.split_once(':'))
+            .map_or(user_id, |(local, _)| local);
+        Self {
+            user_id: user_id.to_owned(),
+            name: local.to_owned(),
+        }
+    }
 }
 
 /// 打开着的相册：列表里有这一行就先带上，回包到了换成回包里的。
@@ -240,8 +280,8 @@ pub struct PhotoPeople {
     pub people: Vec<PhotoPerson>,
 }
 
-/// 能共享给的本机家人：已加入的、不含自己。名单要“管理成员”权限才读得到，没有时 `problem` 是
-/// `permission_denied`、名单为空，壳不出选人的地方。
+/// 能共享给的人：主人和已加入的家人，不含自己，由核心给（任何家人都能取）。没取成时 `problem` 有值、
+/// 名单为空，壳不出选人的地方。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PhotoShareTargets {
@@ -250,12 +290,52 @@ pub struct PhotoShareTargets {
     pub people: Vec<PhotoShareTarget>,
 }
 
-/// 一个能共享给的家人；`username` 填进 `CreateAlbum.share_with`、`ShareAlbum.people`。
+/// 一个能共享给的人；`user_id`（Matrix ID）填进 `CreateAlbum.share_with`、`ShareAlbum.people`。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PhotoShareTarget {
-    pub username: String,
-    pub display_name: String,
+    pub user_id: String,
+    /// 没填时为空，壳显示 `user_id`
+    pub display_name: Option<String>,
+}
+
+/// 这个人能用的相册插件，和用的是哪一家。
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PhotoSources {
+    pub state: PhotoSourceState,
+    /// 没取成的原因，`state` 这时是 [`PhotoSourceState::Failed`]
+    pub problem: Option<MediaFailure>,
+    pub candidates: Vec<PhotoSource>,
+    /// 用户挑的那家（插件 id）；为空时由核心按主人定的默认或唯一的那家挑
+    pub chosen: Option<String>,
+}
+
+/// 用哪个相册插件定下来没有。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PhotoSourceState {
+    /// 还没问过，或正在问
+    #[default]
+    Checking,
+    /// 这个人能用的相册插件一个都没有：没装或没给他开，不是出错
+    NotInstalled,
+    /// 有几家、主人没定默认、用户也没挑过：壳列出 `candidates` 让用户挑
+    Choose,
+    /// 定下来了，其余几块照常取
+    Ready,
+    Failed,
+}
+
+/// 一个相册插件。
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PhotoSource {
+    pub id: String,
+    pub title: String,
+    /// 主人定的默认
+    pub is_default: bool,
 }
 
 /// 提供方认出的一个有名字的人（不是本机家人）。
@@ -343,7 +423,7 @@ pub enum PhotoEdit {
     CreateAlbum {
         title: String,
         ids: Vec<String>,
-        /// 建好就共享给的本机用户名
+        /// 建好就共享给的人，[`PhotoShareTarget::user_id`]
         share_with: Vec<String>,
     },
     AddToAlbum {
@@ -354,7 +434,7 @@ pub enum PhotoEdit {
         album: String,
         ids: Vec<String>,
     },
-    /// 共享给家人（本机用户名）
+    /// 共享给家人，[`PhotoShareTarget::user_id`]
     ShareAlbum {
         album: String,
         people: Vec<String>,
@@ -464,13 +544,20 @@ pub struct PhotoItemFailure {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PhotosAction {
-    /// 进相册页：取写操作表、时间线、相册和人物，源接建相册或共享相册时再取能共享给的家人。`utc_offset_minutes` 是手机此刻的时差（东八区为 480），按日分组
-    /// 用它。`source` 是用哪个相册插件（插件 id），空着由核心按主人定的默认挑；换了插件，已取的都清掉重取。
+    /// 进相册页：先问能用哪几家相册插件，定下来再取写操作表、时间线、相册和人物，源接建相册或共享相册时再取
+    /// 能共享给的家人。`utc_offset_minutes` 是手机此刻的时差（东八区为 480），按日分组用它。`source` 是这一次
+    /// 用哪个相册插件（插件 id），不记成默认；空着用挑过的那家，没挑过由核心按主人定的默认或唯一的那家挑。
+    /// 换了插件，已取的都清掉重取。
     Open {
         utc_offset_minutes: i32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         source: Option<String>,
+    },
+    /// 用户在几家相册插件里挑了一家：记成这台服务器上的默认，下次 `Open` 不带 `source` 也用它；换了插件，
+    /// 已取的都清掉重取
+    ChooseSource {
+        id: String,
     },
     /// 重取写操作表、时间线、相册、人物和能共享给的家人；打开着的月、相册、搜索和大图页一起重取第一页
     Refresh,
@@ -507,6 +594,25 @@ pub enum PhotosAction {
     DismissEditOutcome,
 }
 
+impl From<super::choices::MediaSource> for PhotoSource {
+    fn from(source: super::choices::MediaSource) -> Self {
+        Self {
+            id: source.id,
+            title: source.title,
+            is_default: source.is_default,
+        }
+    }
+}
+
+impl From<super::choices::ShareTarget> for PhotoShareTarget {
+    fn from(target: super::choices::ShareTarget) -> Self {
+        Self {
+            user_id: target.user_id,
+            display_name: target.display_name,
+        }
+    }
+}
+
 impl From<&PhotoAsset> for PhotoTile {
     fn from(asset: &PhotoAsset) -> Self {
         Self {
@@ -517,7 +623,13 @@ impl From<&PhotoAsset> for PhotoTile {
             duration_ms: asset.duration_ms,
             live: asset.live,
             favorite: asset.favorite,
-            owner: asset.owner.clone(),
+            owner: match (&asset.owner, asset.owner_unknown) {
+                (Some(user_id), _) => PhotoTileOwner::Person {
+                    user: PhotoUser::unnamed(user_id),
+                },
+                (None, true) => PhotoTileOwner::Unknown,
+                (None, false) => PhotoTileOwner::Me,
+            },
             thumbhash: asset.thumbhash.clone(),
         }
     }
@@ -528,8 +640,8 @@ impl From<&AlbumOwner> for PhotoAlbumOwner {
         match owner {
             AlbumOwner::Me => Self::Me,
             AlbumOwner::Household => Self::Household,
-            AlbumOwner::Person(username) => Self::Person {
-                username: username.clone(),
+            AlbumOwner::Person(user_id) => Self::Person {
+                user: PhotoUser::unnamed(user_id),
             },
             AlbumOwner::Unknown => Self::Unknown,
             AlbumOwner::Other(raw) => Self::Other { raw: raw.clone() },
@@ -546,7 +658,11 @@ impl From<&Album> for PhotoAlbumRow {
             owner: (&album.owner).into(),
             shared: album.shared,
             cover: album.cover.clone(),
-            members: album.members.clone(),
+            members: album
+                .members
+                .iter()
+                .map(|id| PhotoUser::unnamed(id))
+                .collect(),
             updated_at: album.updated_at,
         }
     }
@@ -620,6 +736,51 @@ mod tests {
             people: vec!["mom".into()],
         };
         assert!(share.ids().is_empty());
+    }
+
+    #[test]
+    fn people_on_albums_start_with_the_matrix_id_local_part() {
+        let owner: AlbumOwner = serde_json::from_str("\"person:@mom:example.com\"").unwrap();
+        assert_eq!(
+            PhotoAlbumOwner::from(&owner),
+            PhotoAlbumOwner::Person {
+                user: PhotoUser {
+                    user_id: "@mom:example.com".into(),
+                    name: "mom".into(),
+                }
+            }
+        );
+        assert_eq!(
+            PhotoUser::unnamed("not-a-matrix-id").name,
+            "not-a-matrix-id"
+        );
+        assert_eq!(
+            PhotoAlbumOwner::from(&AlbumOwner::Unknown),
+            PhotoAlbumOwner::Unknown
+        );
+    }
+
+    #[test]
+    fn tiles_are_mine_only_without_an_owner_of_either_kind() {
+        let wire = |owner: serde_json::Value| -> PhotoAsset {
+            let mut raw = serde_json::json!({"id": "a", "kind": "photo", "taken_at": 1});
+            raw.as_object_mut()
+                .unwrap()
+                .extend(owner.as_object().unwrap().clone());
+            serde_json::from_value(raw).unwrap()
+        };
+        let owner = |raw| PhotoTile::from(&wire(raw)).owner;
+        assert_eq!(owner(serde_json::json!({})), PhotoTileOwner::Me);
+        assert_eq!(
+            owner(serde_json::json!({"owner_unknown": true})),
+            PhotoTileOwner::Unknown
+        );
+        assert_eq!(
+            owner(serde_json::json!({"owner": "@mom:example.com"})),
+            PhotoTileOwner::Person {
+                user: PhotoUser::unnamed("@mom:example.com")
+            }
+        );
     }
 
     #[test]

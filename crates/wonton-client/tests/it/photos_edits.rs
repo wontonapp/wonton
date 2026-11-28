@@ -4,10 +4,10 @@
 use std::time::Duration;
 
 use axum::http::Method;
-use wonton_protocol::MEMBERS_PATH;
 use wonton_protocol::media::MediaFailureCode;
+use wonton_protocol::media::choices::SHARE_TARGETS_PATH;
 use wonton_protocol::media::library::AlbumOwner;
-use wonton_protocol::media::library_view::{PhotoEdit, PhotoEditKind, PhotosAction};
+use wonton_protocol::media::library_view::{PhotoAlbumRow, PhotoEdit, PhotoEditKind, PhotosAction};
 
 use crate::photos::{ALBUMS, november, november_open, open, photos, send};
 use crate::photos_support::{album, envelope};
@@ -27,8 +27,6 @@ async fn until_seen(rig: &Rig, path: &str, before: usize) {
 #[tokio::test]
 async fn edit_buttons_follow_what_the_plugin_accepts_and_say_why_when_unknown() {
     let rig = Rig::new().await;
-    rig.core.family.owner();
-    rig.core.family.add_member("mom", "child");
     rig.connected().await;
     open(&rig);
     let view = photos(&rig, "写操作表", |view| view.actions.is_some()).await;
@@ -54,20 +52,20 @@ async fn edit_buttons_follow_what_the_plugin_accepts_and_say_why_when_unknown() 
     assert_eq!(view.timeline.problem, None);
 
     // 重试取成：原因清掉，接着重取能共享给的家人（等它回来，后面好数请求）。
-    let before = rig.core.seen(&Method::GET, MEMBERS_PATH).len();
+    let before = rig.core.seen(&Method::GET, SHARE_TARGETS_PATH).len();
     send(&rig, PhotosAction::Refresh).unwrap();
     photos(&rig, "重试取成", |view| {
         view.actions.is_some() && view.actions_problem.is_none()
     })
     .await;
-    until_seen(&rig, MEMBERS_PATH, before).await;
+    until_seen(&rig, SHARE_TARGETS_PATH, before).await;
     photos(&rig, "能共享给的家人", |view| {
         !view.share_targets.loading && !view.share_targets.people.is_empty()
     })
     .await;
 
     // 只读的源：空表，不是“不确定”；没有建相册和共享，家人名单也不留、不再去读。
-    let members = rig.core.seen(&Method::GET, MEMBERS_PATH).len();
+    let asked = rig.core.seen(&Method::GET, SHARE_TARGETS_PATH).len();
     rig.core.answer(
         Method::GET,
         LIBRARY,
@@ -77,7 +75,7 @@ async fn edit_buttons_follow_what_the_plugin_accepts_and_say_why_when_unknown() 
     let view = photos(&rig, "只读", |view| view.actions == Some(Vec::new())).await;
     assert!(view.share_targets.people.is_empty());
     tokio::time::sleep(Duration::from_millis(300)).await;
-    assert_eq!(rig.core.seen(&Method::GET, MEMBERS_PATH).len(), members);
+    assert_eq!(rig.core.seen(&Method::GET, SHARE_TARGETS_PATH).len(), asked);
 }
 
 #[tokio::test]
@@ -102,7 +100,7 @@ async fn a_new_album_from_a_mixed_selection_lists_what_failed() {
             edit: PhotoEdit::CreateAlbum {
                 title: "海边".into(),
                 ids: vec!["a".into(), "b".into()],
-                share_with: vec!["mom".into()],
+                share_with: vec!["@mom:example.com".into()],
             },
         },
     )
@@ -128,7 +126,7 @@ async fn a_new_album_from_a_mixed_selection_lists_what_failed() {
     assert_eq!(row.title, "海边");
     assert_eq!(row.count, 1);
     assert!(row.shared);
-    assert_eq!(row.members, ["mom"]);
+    assert_eq!(member_ids(row), ["@mom:example.com"]);
 }
 
 #[tokio::test]
@@ -159,7 +157,7 @@ async fn sharing_or_removing_from_the_open_album_refetches_it() {
         PhotosAction::Edit {
             edit: PhotoEdit::ShareAlbum {
                 album: "al1".into(),
-                people: vec!["mom".into()],
+                people: vec!["@mom:example.com".into()],
             },
         },
     )
@@ -172,7 +170,7 @@ async fn sharing_or_removing_from_the_open_album_refetches_it() {
     .await;
     let row = view.album.unwrap().album.unwrap();
     assert!(row.shared);
-    assert_eq!(row.members, ["mom"]);
+    assert_eq!(member_ids(&row), ["@mom:example.com"]);
     until_seen(&rig, ALBUMS, list).await;
     until_seen(&rig, &one, page).await;
 
@@ -199,4 +197,11 @@ async fn sharing_or_removing_from_the_open_album_refetches_it() {
         .map(|tile| tile.id)
         .collect();
     assert_eq!(tiles, ["b"]);
+}
+
+fn member_ids(row: &PhotoAlbumRow) -> Vec<&str> {
+    row.members
+        .iter()
+        .map(|user| user.user_id.as_str())
+        .collect()
 }
