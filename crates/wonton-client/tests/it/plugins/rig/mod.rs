@@ -22,35 +22,17 @@ use wonton_client::{
 };
 use wonton_tunnel::{Allowlist, TunnelServer};
 
+mod answers;
 mod bot_activity;
 
+pub use answers::{Canned, Headered, core_error};
+
+use answers::{core_error_response, json_value};
 pub const WAIT: Duration = Duration::from_secs(20);
 /// 兜底预算，不是节奏：繁忙时建连实测 16s+（登录令牌两次超时重连），单次建连限时 12s，
 /// 失败后按退避重试；取 60s，超过就是真的连不上。
 pub const CONNECT_BACKSTOP: Duration = Duration::from_secs(60);
 pub const IMAGE: &str = "/_wonton/api/images/abc/icon-192.png";
-
-/// 核心对一个请求的预设回应，排在队列里，用完后回默认的。
-#[derive(Clone)]
-pub struct Canned(pub u16, pub String);
-
-/// 带响应头的预设回应：状态码、响应头（按顺序）、响应体。
-#[derive(Clone)]
-pub struct Headered(pub u16, pub Vec<(String, String)>, pub String);
-
-pub fn core_error(status: u16, kind: &str, message: &str) -> Canned {
-    let body = serde_json::json!({"error": {"kind": kind, "message": message}});
-    Canned(status, body.to_string())
-}
-
-fn json_value(value: serde_json::Value) -> Response {
-    (StatusCode::OK, value.to_string()).into_response()
-}
-
-fn core_error_response(status: u16) -> Response {
-    let Canned(status, body) = core_error(status, "not_found", "没有这个");
-    (StatusCode::from_u16(status).unwrap(), body).into_response()
-}
 
 /// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
 type Holds = Mutex<HashMap<(Method, String), Arc<watch::Sender<bool>>>>;
