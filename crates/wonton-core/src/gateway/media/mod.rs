@@ -1,5 +1,5 @@
 //! 媒体接口 `/_wonton/api/media/*`（ADR-0113 第 2、3、4 节）：任务、播放会话、队列、条目、三条字节路由，
-//! 和相册、影视原生浏览的转发（第 9、10 节）。
+//! 和相册、影视原生浏览的转发（第 9、10 节），以及给壳挑的媒体源与共享对象。
 //!
 //! 只接经隧道的已配对设备，还要带 `X-Wonton-Device`，值是这台设备的隧道身份：带自定义请求头的跨站
 //! 请求要先过预检，这里不回 CORS 头，插件网页因此碰不到这些接口（同文件接口）。人由核心按设备记录认，
@@ -9,6 +9,7 @@
 
 mod browse;
 mod bytes;
+mod choices;
 mod queue;
 mod sessions;
 mod streams;
@@ -104,6 +105,8 @@ pub(super) fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
             get(streams::queued_stream_part),
         )
         .route(&at("/queue"), get(queue::read).post(queue::change))
+        .route(&at("/sources"), get(choices::sources))
+        .route(&at("/share-targets"), get(choices::share_targets))
         .route(&at("/items"), get(bytes::items))
         .route(&at("/items/{id}/artwork"), get(bytes::artwork))
         // 根路径（这家接哪些写操作）带不带结尾的 `/` 都认；`{*rest}` 不匹配空串。

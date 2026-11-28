@@ -136,6 +136,7 @@ pub(crate) fn caps(operations: &[&str], kinds: &[&str]) -> Router {
 pub(crate) fn candidate(id: &str, operations: &[MediaOperation], kinds: &[MediaKind]) -> Candidate {
     Candidate {
         id: id.into(),
+        title: [("en".to_owned(), id.to_uppercase())].into(),
         operations: operations.to_vec(),
         kinds: kinds.to_vec(),
         default: false,
