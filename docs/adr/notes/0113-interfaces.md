@@ -409,7 +409,7 @@ impl SessionService {
 ```
 
 - 第二个返回值是被接管的旧会话号，调用方拿它发 `media.session.taken_over`；旧会话的位置保留它最后一次上报的值，不被新请求的起点覆盖。新会话的起播位置夹到 `plan.duration_ms`。
-- 起播、控制、位置、停止都按 `sessions.version` 比较落库，落不上重读；库里`(person) WHERE stop_reason IS NULL`的唯一索引兜住并发起播，后到的接管先到的。只把唯一约束的失败认作“已有活动会话”，主键撞等其他约束错原样报 `Database`；迁移 v4 建索引前会把同一个人多余的活动会话置成 `taken_over` 终态、只留最新一条。
+- 起播、控制、位置、停止都按 `sessions.version` 比较落库，落不上重读；库里`(person) WHERE stop_reason IS NULL`的唯一索引兜住并发起播，后到的接管先到的。只把唯一约束的失败认作“已有活动会话”，主键撞等其他约束错原样报 `Database`。
 - `progress` 同一会话两次落库至少隔 5 秒（`wall_clock` 与服务的钟同源，都是 Unix 毫秒），`pause`/`seek`/`stop` 立即落并把节流基准推到现在；已停的会话上报回 `false` 不落。被别处改掉时重读一次再判，仍落不上也回 `false`，不报 `ConcurrentChange`。
 - `stop` 幂等：再停只把位置往后推，位置变小保留旧值；原因与终态保留第一次的。`Finished` 落 `Done`、`Error` 落 `Failed{upstream_error}`、其余落 `Cancelled`。
 - `Next`/`Prev` 按该人的队列移动 `cursor` 并换 `session.item`、位置归零：核心先算出换到哪一项、向它的来源要到计划，再把会话、队列指针、计划和会话记的提供方一起比较写，中间有别的改动就重读重来；要不到计划就什么都不写，会话还在原来那一项、按旧计划放；到头不回绕，`repeat_all` 往后回第一首，队列为空不动。`SetAudio`/`SetSubtitle` 只改计划里的 `selected`，重取计划归 M11。`Volume` 当前没有字段，只接受不改。
