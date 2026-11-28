@@ -6,6 +6,7 @@
 mod access;
 mod failures;
 mod invites;
+mod members;
 mod requests;
 mod roles;
 
@@ -78,48 +79,6 @@ fn storage_failure() -> Headered {
 }
 
 #[tokio::test]
-async fn removal_drops_the_member_from_the_list() {
-    let rig = Rig::new().await;
-    owner_ready(&rig).await;
-    rig.core.family.add_member("bob", "friend");
-    refresh(&rig);
-    family(&rig, "看到 bob", |view| {
-        view.members
-            .members
-            .iter()
-            .any(|member| member.username == "bob")
-    })
-    .await;
-
-    rig.app
-        .dispatch(Action::Family {
-            action: FamilyAction::RemoveMember {
-                username: "bob".to_owned(),
-                delete_home: true,
-                keep_bot_data: false,
-            },
-        })
-        .unwrap();
-    family(&rig, "移除后消失", |view| {
-        !view
-            .members
-            .members
-            .iter()
-            .any(|member| member.username == "bob")
-    })
-    .await;
-    assert_eq!(
-        rig.core.family.member("bob").unwrap().status,
-        MemberStatus::Removed
-    );
-    let seen = rig
-        .core
-        .seen(&Method::POST, "/_wonton/api/members/bob/remove");
-    let body = &seen.last().expect("移除要发给核心").body;
-    assert!(body.contains("\"delete_home\":true"));
-}
-
-#[tokio::test]
 async fn leaving_the_page_stops_the_refresh() {
     let rig = Rig::new().await;
     owner_ready(&rig).await;
@@ -153,38 +112,4 @@ async fn coming_back_to_the_page_resumes_the_polling() {
     tokio::time::sleep(std::time::Duration::from_secs(6)).await;
     let after = rig.core.seen(&Method::GET, "/_wonton/api/members").len();
     assert!(after > before, "回到页面后定时重取要恢复");
-}
-
-#[tokio::test]
-async fn assigning_a_member_role_updates_the_row() {
-    let rig = Rig::new().await;
-    owner_ready(&rig).await;
-    rig.core.family.add_member("bob", "friend");
-    refresh(&rig);
-    family(&rig, "看到 bob", |view| {
-        view.members
-            .members
-            .iter()
-            .any(|member| member.username == "bob")
-    })
-    .await;
-
-    send(
-        &rig,
-        FamilyAction::AssignMemberRole {
-            username: "bob".to_owned(),
-            role_id: "child".to_owned(),
-        },
-    );
-    family(&rig, "换角色", |view| {
-        view.members
-            .members
-            .iter()
-            .any(|member| member.username == "bob" && member.role_id == "child")
-    })
-    .await;
-    let seen = rig.core.seen(&Method::PUT, "/_wonton/api/members/bob/role");
-    let body: serde_json::Value =
-        serde_json::from_str(&seen.last().expect("换角色要发给核心").body).unwrap();
-    assert_eq!(body["role_id"], "child");
 }
