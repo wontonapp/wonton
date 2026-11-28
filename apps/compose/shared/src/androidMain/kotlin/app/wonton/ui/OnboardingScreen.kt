@@ -21,6 +21,7 @@ import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.OnboardingCommit
 import app.wonton.protocol.OnboardingStep
 import app.wonton.protocol.OnboardingViewModel
+import app.wonton.protocol.StepNav
 import app.wonton.ui.design.StepCardFrame
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
@@ -29,7 +30,6 @@ import app.wonton.ui.design.toColor
 internal fun OnboardingScreen(
     view: OnboardingViewModel,
     plugins: PluginsState,
-    openGateway: (String) -> Unit,
 ) {
     val nav = requireNotNull(view.nav)
     val send = plugins::send
@@ -43,14 +43,23 @@ internal fun OnboardingScreen(
     }
     val modifier = Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor())
         .statusBarsPadding().navigationBarsPadding().imePadding()
-    if (view.step == OnboardingStep.PROFILE) {
-        OnboardingProfileStep(view, nav, send, modifier)
-        return
+    // 前三步各有自己的输入或子页，自己画卡片。
+    when (view.step) {
+        OnboardingStep.PROFILE -> OnboardingProfileStep(view, nav, send, modifier)
+        OnboardingStep.ASSISTANT -> OnboardingAssistantStep(view, nav, send, onboarding.close, modifier)
+        OnboardingStep.MODEL -> OnboardingModelStep(view, nav, plugins, onboarding.close, modifier)
+        else -> OnboardingStepCard(view, nav, plugins, modifier)
     }
+}
+
+@Composable
+private fun OnboardingStepCard(view: OnboardingViewModel, nav: StepNav, plugins: PluginsState, modifier: Modifier) {
+    val send = plugins::send
+    val onboarding = LocalOnboarding.current
     val scroll = rememberScrollState()
     LaunchedEffect(view.step) { scroll.scrollTo(0) }
-    LaunchedEffect(view.problem, view.model.problem) {
-        if (view.problem != null || view.model.problem != null) scroll.scrollTo(0)
+    LaunchedEffect(view.problem) {
+        if (view.problem != null) scroll.scrollTo(0)
     }
     StepCardFrame(
         nav = nav,
@@ -75,7 +84,6 @@ internal fun OnboardingScreen(
                     }
                 } else {
                     when (view.step) {
-                        OnboardingStep.MODEL -> OnboardingModelStep(view.model, send, openGateway)
                         OnboardingStep.APPS -> OnboardingAppsStep(view, plugins, send)
                         OnboardingStep.REVIEW -> OnboardingReviewStep(view.review, plugins, send)
                         else -> Unit
@@ -91,6 +99,7 @@ internal fun OnboardingScreen(
 internal fun OnboardingViewModel.title(): String = when (step) {
     null -> ""
     OnboardingStep.PROFILE -> stringResource(R.string.onboarding_step_profile)
+    OnboardingStep.ASSISTANT -> stringResource(R.string.onboarding_step_assistant)
     OnboardingStep.MODEL -> stringResource(R.string.onboarding_step_model)
     OnboardingStep.APPS -> stringResource(R.string.onboarding_step_apps)
     OnboardingStep.REVIEW -> stringResource(R.string.onboarding_step_review)

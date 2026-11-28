@@ -4,8 +4,6 @@
     <string name="onboarding_default_agent_title">默认助手</string>
     <!-- Loading spinner shown while setup data loads. -->
     <string name="onboarding_loading">正在加载</string>
-    <!-- Row title: keep the models already configured in the model gateway. -->
-    <string name="onboarding_model_use_current">用现在的模型</string>
     <!-- Banner when one approval card is waiting. Argument: the card's title. -->
     <string name="onboarding_pending_card_one">%1$s，等你确认</string>
     <!-- Problem title while installing: the device the app needs is unavailable. -->
@@ -23,4 +21,8 @@
     <string name="onboarding_review_preparing">正在准备</string>
     <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
     <string name="onboarding_tip_app_installed">装好的应用在侧边栏的“我的应用”里。</string>
+    <!-- Card title of the setup step where the owner names their assistant. -->
+    <string name="onboarding_step_assistant">你的助手</string>
+    <!-- Second line of the model row in the review step: the last test got a real reply. -->
+    <string name="onboarding_review_model_ok">测过了，能用</string>
 </resources>

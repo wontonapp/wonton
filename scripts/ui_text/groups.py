@@ -34,6 +34,7 @@ PREFIXES: Dict[str, str] = {
     "side": "chat",
     "agent": "agent_run",
     "agentrun": "agentRun",
+    "agentmodels": "agentModels",
     # onboarding
     "onboarding": "onboarding",
     "pairing": "pairing",
@@ -121,6 +122,7 @@ PREFIXES: Dict[str, str] = {
 # 装不下的大前缀拆成几份。没有条目的是整段放一个文件。
 # 份数是按下表当时的键数定的（每份约 14 个键），键多到某份超过 800 行时把它调大。
 PARTS: Dict[str, int] = {
+    "agentmodels": 3,
     "appearance": 2,
     "botprofile": 2,
     "chat": 2,
@@ -147,7 +149,7 @@ PARTS: Dict[str, int] = {
 GROUP_OF: Dict[str, str] = {
     prefix: group
     for group, prefixes in {
-        "chat": "chat chatbackup chatstatus timeline message room bot botprofile transfer composer confirmation confirmationcard confirmations side agent agentrun",
+        "chat": "chat chatbackup chatstatus timeline message room bot botprofile transfer composer panel confirmation confirmationcard confirmations side agent agentrun agentmodels",
         "onboarding": "onboarding pairing joining install home homestatus launcher",
         "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo music preview secret sidebar sessions scope takeover port mapping portmapping",
         "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff matrixlogin",

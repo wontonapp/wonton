@@ -1,13 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Button that opens the model gateway's settings page. -->
-    <string name="onboarding_model_open_settings">モデル設定を開く</string>
     <!-- Problem title in setup: the provider rejected the API key. -->
     <string name="onboarding_problem_model_key_rejected">プロバイダーがこのAPIキーを拒否しました。修正して再テストしてください。</string>
     <!-- Problem title in setup: the provider's address can't be reached. -->
     <string name="onboarding_problem_model_provider_unreachable">プロバイダーに接続できません。アドレスかネットワークを確認して再試行してください。</string>
-    <!-- Problem title in setup: the home server hit an error answering the request. -->
-    <string name="onboarding_problem_model_upstream">自宅サーバーがリクエストを完了できませんでした。しばらくしてから再試行してください。</string>
     <!-- Problem title while installing: the app changed after it was confirmed. -->
     <string name="onboarding_problem_plugin_changed">アプリが確認後に変更されました。もう一度確認してください。</string>
     <!-- Problem title while installing: the home server is updating itself right now. -->

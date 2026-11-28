@@ -2,36 +2,6 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "onboarding.model.expanded": {
-      "comment": "Accessibility value of the provider-list toggle while the list is expanded.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expanded"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已展开"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已展開"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "展開済み"
-          }
-        }
-      }
-    },
     "onboarding.pendingCard.one": {
       "comment": "Banner when one approval card is waiting. The argument is the card's title.",
       "extractionState": "manual",
@@ -58,36 +28,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@の確認待ちです"
-          }
-        }
-      }
-    },
-    "onboarding.problem.model.upstream": {
-      "comment": "Problem title in setup: the home server hit an error answering the request.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your home server hit an error"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "家里的服务器出错了"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "家用伺服器出錯了"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自宅サーバでエラーが発生しました"
           }
         }
       }
@@ -148,36 +88,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "確認が必要なときは、チャットのカードで確認してください。"
-          }
-        }
-      }
-    },
-    "onboarding.gatewayMissing.title": {
-      "comment": "Problem title when the model gateway's web page can't be found among the installed apps.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can't find the model gateway's page"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "找不到模型网关的网页"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "找不到模型閘道的網頁"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "モデルゲートウェイのページが見つかりません"
           }
         }
       }

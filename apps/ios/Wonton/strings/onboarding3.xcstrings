@@ -32,96 +32,6 @@
         }
       }
     },
-    "onboarding.gatewayMissing.nextStep": {
-      "comment": "Next step under the gateway problem.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Try again, then open it."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重试后再打开。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重試後再開啟。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再試行してから開いてください。"
-          }
-        }
-      }
-    },
-    "onboarding.problem.model.providerUnreachable.next": {
-      "comment": "Line under the problem title: check the provider before retrying.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Check the provider's address and your network, then try again."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "检查服务商地址和网络后再试。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "檢查供應商位址和網路後再試。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロバイダのアドレスとネットワークを確認してから再試行してください。"
-          }
-        }
-      }
-    },
-    "onboarding.problem.model.unauthorized.next": {
-      "comment": "Line under the problem title: pair the device again.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan the QR code to pair again."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请重新扫码配对。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "請重新掃描 QR 碼配對。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "QRコードをスキャンしてもう一度ペアリングしてください。"
-          }
-        }
-      }
-    },
     "onboarding.problem.store.invalidIndex": {
       "comment": "Problem title in setup: the recommendation list can't be read.",
       "extractionState": "manual",
@@ -272,36 +182,6 @@
         }
       }
     },
-    "onboarding.review.unreachable": {
-      "comment": "Row description in the review step: the model couldn't be reached during the test.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unreachable when tested"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "测试时没连上"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "測試時沒連上"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テスト時に接続できませんでした"
-          }
-        }
-      }
-    },
     "onboarding.step.review": {
       "comment": "Card title at the top of the review step in setup: check everything before finishing.",
       "extractionState": "manual",
@@ -328,6 +208,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "あと少し"
+          }
+        }
+      }
+    },
+    "onboarding.step.assistant": {
+      "comment": "Setup step title: name the default Bot.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your Assistant"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的助手"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのアシスタント"
+          }
+        }
+      }
+    },
+    "onboarding.assistant.name": {
+      "comment": "Label of the assistant's name field.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Name"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名字"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名字"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "名前"
           }
         }
       }

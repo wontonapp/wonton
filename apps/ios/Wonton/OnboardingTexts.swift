@@ -1,30 +1,5 @@
 import WontonClient
 
-extension ModelSettingsProblem {
-    var onboardingProblem: Problem {
-        let title: String
-        let nextStep: String
-        switch reason {
-        case .gatewayNotReady:
-            title = String(localized: .Onboarding0.onboardingProblemModelGatewayNotReady)
-            nextStep = String(localized: .Onboarding0.onboardingProblemModelGatewayNotReadyNext)
-        case .transportUnavailable:
-            title = String(localized: .Onboarding5.onboardingProblemModelTransportUnavailable)
-            nextStep = String(localized: .Onboarding2.onboardingProblemModelTransportUnavailableNext)
-        case .unauthorized:
-            title = String(localized: .Onboarding2.onboardingProblemModelUnauthorized)
-            nextStep = String(localized: .Onboarding3.onboardingProblemModelUnauthorizedNext)
-        case .upstream:
-            title = String(localized: .Onboarding1.onboardingProblemModelUpstream)
-            nextStep = String(localized: .Onboarding0.onboardingProblemModelUpstreamNext)
-        case .protocol:
-            title = String(localized: .Onboarding4.onboardingProblemModelProtocol)
-            nextStep = String(localized: .Onboarding5.onboardingProblemModelProtocolNext)
-        }
-        return Problem(title: title, nextStep: nextStep, detail: message)
-    }
-}
-
 extension StoreProblem {
     var onboardingProblem: Problem {
         let title: String

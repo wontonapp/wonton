@@ -125,8 +125,9 @@ agent:
    - **登录**（`device_login`）：点了先在 App 里打开登录网址，码在网址里带着时自动填好，没带时页面上大字显示码、可一键复制；
      客户端核心按 `interval` 轮询，`approved` 时自动关掉浏览器、回到这一页，接着进选模型。`denied`、`expired`、`failed`
      如实说，给“重新登录”。
-   - **一键登录**（`browser_login`）：iOS 用 `ASWebAuthenticationSession`、Android 用 Auth Tab（不支持时退到 Custom Tabs 加
-     回跳的 intent filter），回跳后壳把网址交回核心，核心调 `login_finish`；用户关掉授权页算取消，不报错。
+   - **一键登录**（`browser_login`）：iOS 用 `ASWebAuthenticationSession`，Android 现在只有 Custom Tabs 加回跳的 intent
+     filter（Auth Tab 要另接一套结果回调，等有服务商真走回跳再评估），回跳后壳把网址交回核心，核心调 `login_finish`；
+     用户关掉授权页算取消，不报错。
    - **填 key**（`api_key`）：一个密码框、一个“去拿 key”按钮（有 `key_url` 时）。按钮在 App 里打开网址，回到 App 后输入框旁边
      是粘贴按钮：iOS 用系统的 `PasteButton`，点它不弹读剪贴板的询问；Android 回到前台时读剪贴板，内容以 `key_prefix` 开头就直接
      提示“粘贴刚复制的 key”。iOS 不主动读剪贴板，主动读会弹询问。保存时插件先试 key：`rejected` 停在这一页说 key 不对，`unverified` 照存并说明“这家没法提前验证”。
@@ -138,10 +139,12 @@ agent:
 | 场景 | iOS | Android |
 | --- | --- | --- |
 | 去拿 key、设备码登录（没有回跳） | `SFSafariViewController`，批准后 App 自己关 | Custom Tabs，批准后 App 把自己的页面拉回前台 |
-| 有回跳的授权（`browser_login`） | `ASWebAuthenticationSession`，回跳地址用 App 的 `wonton://` 链接 | Auth Tab；没有时 Custom Tabs + intent filter |
+| 有回跳的授权（`browser_login`） | `ASWebAuthenticationSession`，回跳地址用 App 的 `wonton://` 链接 | Custom Tabs + 回跳的 intent filter（Auth Tab 未接） |
 
 不用 `ASWebAuthenticationSession` 打开没有回跳的网页：它会弹“要使用某网站登录”的系统询问，对“拿 key”是误导，而且等不到回跳只能
 让用户自己点取消。
+
+Android 只接了 Custom Tabs，没接 Auth Tab：回跳经 intent filter 已经够用，Auth Tab 是另一套结果回调，等有服务商真走回跳再评估。
 
 已接好的服务商可以断开（`disconnect`），断开当前在用的那家时顶上变回“还没接模型”，不偷偷换到别家。
 

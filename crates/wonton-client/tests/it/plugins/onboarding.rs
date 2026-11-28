@@ -2,11 +2,11 @@ use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use wonton_client::{
-    Action, CoreError, OnboardingReviewDetail, OnboardingReviewKind, OnboardingStep,
-    OnboardingViewModel, StepNav,
+    Action, AgentModelsAction, CoreError, OnboardingReviewDetail, OnboardingReviewKind,
+    OnboardingStep, OnboardingViewModel, StepNav,
 };
 
-use super::rig::{Rig, WAIT, item};
+use super::rig::{Canned, Rig, WAIT, item};
 
 mod commit;
 mod loading;
@@ -20,7 +20,7 @@ mod revisit;
 
 const ONBOARDING: &str = "/_wonton/api/onboarding";
 const PROFILE: &str = wonton_protocol::ME_PATH;
-const MODEL_SETTINGS: &str = "/_wonton/api/models/settings";
+const BOT_PROFILE: &str = "/_wonton/api/bots/agent.one/profile";
 const PREVIEW: &str = "/_wonton/api/plugins/preview";
 const INSTALL: &str = "/_wonton/api/plugins";
 
@@ -45,11 +45,14 @@ fn with_photos(mut state: serde_json::Value) -> serde_json::Value {
     state
 }
 
-fn model_settings(configured: bool) -> serde_json::Value {
+/// 默认 Bot 的模型页：接好了 OpenRouter、选了一个模型。
+fn models_catalog() -> serde_json::Value {
     serde_json::json!({
-        "plugin_id": "system.models",
-        "web_url": "https://example.invalid/models",
-        "has_configured_models": configured
+        "providers": [{
+            "id": "openrouter", "name": "OpenRouter", "recommended": true,
+            "auth": [{"type": "api_key"}], "connected": true, "account": null,
+        }],
+        "current": {"provider": "openrouter", "model": "openai/gpt"},
     })
 }
 
@@ -73,10 +76,9 @@ async fn at(rig: &Rig, step: OnboardingStep) -> OnboardingViewModel {
 async fn flow_rig(state: serde_json::Value) -> Rig {
     let rig = Rig::new().await;
     rig.core.set_onboarding(state);
-    rig.core.set_model_settings(model_settings(false));
     rig.connected().await;
     rig.wait_onboarding(|view| {
-        view.step == Some(OnboardingStep::Profile) && !view.loading && view.model.settings.is_some()
+        view.step == Some(OnboardingStep::Profile) && !view.loading && view.model.bot.is_some()
     })
     .await;
     rig
@@ -94,30 +96,55 @@ fn edit(rig: &Rig, name: &str, email: &str) {
     );
 }
 
-async fn configure_gateway(rig: &Rig) {
-    rig.core.set_model_settings(model_settings(true));
+/// 在默认 Bot 的模型页上选好模型：模型页当场存进 Bot，不经引导。
+async fn choose_model(rig: &Rig) {
+    let bot = rig
+        .wait_onboarding(|view| view.model.bot.is_some())
+        .await
+        .model
+        .bot
+        .unwrap();
+    rig.core.answer_always(
+        Method::GET,
+        &wonton_protocol::agent_models_path(&bot.plugin_id, &bot.bot),
+        Canned(200, models_catalog().to_string()),
+    );
+    act(
+        rig,
+        Action::AgentModels {
+            action: AgentModelsAction::OpenAgentModels { bot },
+        },
+    );
+    let deadline = Instant::now() + WAIT;
+    while rig.app.agent_models().current.is_none() {
+        assert!(Instant::now() < deadline, "{:?}", rig.app.agent_models());
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+/// 从你的助手这一步不改名字往下走，停在接模型。
+async fn pass_assistant(rig: &Rig) {
+    at(rig, OnboardingStep::Assistant).await;
     act(
         rig,
         Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::RefreshOnboarding,
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    rig.wait_onboarding(|view| !view.loading && view.model.has_configured_models)
-        .await;
+    at(rig, OnboardingStep::Model).await;
 }
 
 /// 点完成之前，引导只取状态和安装预览，不发任何保存模型的请求。
 fn assert_nothing_saved(rig: &Rig) {
     for seen in rig.core.all_seen() {
         let path = seen.path.as_str();
-        let watched = [ONBOARDING, PROFILE, INSTALL].contains(&path)
-            || path.starts_with("/_wonton/api/models/");
+        let watched = [ONBOARDING, PROFILE, INSTALL, BOT_PROFILE].contains(&path);
         let allowed = seen.method == Method::GET || path == PREVIEW;
         assert!(!watched || allowed, "{} {path}：{}", seen.method, seen.body);
     }
 }
 
-/// 名字、网页已保存的模型配置、选上照片，走到最后一页且预览都取到。
+/// 名字、模型页上选好的模型、选上照片，走到最后一页且预览都取到。
 async fn walk_to_review(rig: &Rig) -> OnboardingViewModel {
     edit(rig, " 云吞 ", "");
     act(
@@ -126,8 +153,8 @@ async fn walk_to_review(rig: &Rig) -> OnboardingViewModel {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    at(rig, OnboardingStep::Model).await;
-    configure_gateway(rig).await;
+    pass_assistant(rig).await;
+    choose_model(rig).await;
     act(
         rig,
         Action::Onboarding {
@@ -182,6 +209,7 @@ async fn every_step_only_records_its_choice_until_finish() {
         kinds,
         [
             OnboardingReviewKind::Profile,
+            OnboardingReviewKind::Assistant,
             OnboardingReviewKind::Model,
             OnboardingReviewKind::App
         ]
@@ -189,14 +217,19 @@ async fn every_step_only_records_its_choice_until_finish() {
     assert_eq!(review.review.items[0].titles, ["云吞"]);
     assert_eq!(
         review.review.items[1].detail,
-        Some(OnboardingReviewDetail::KeepCurrent)
+        Some(OnboardingReviewDetail::Unchanged)
     );
-    assert!(!review.review.items[2].permissions.is_empty());
+    assert_eq!(review.review.items[2].titles, ["OpenRouter", "openai/gpt"]);
+    assert_eq!(
+        review.review.items[2].detail,
+        Some(OnboardingReviewDetail::Model { test: None })
+    );
+    assert!(!review.review.items[3].permissions.is_empty());
     assert_eq!(
         review.nav,
         Some(StepNav {
-            position: 4,
-            total: 4,
+            position: 5,
+            total: 5,
             can_back: true,
             can_skip: false,
             can_next: true,

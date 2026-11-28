@@ -14,35 +14,19 @@ impl PluginManager {
         }
     }
 
-    /// 模型设置页需要的网关网页和已知配置状态；配置状态来自核心曾成功接上的使用方。
-    ///
-    /// 没有模型网关插件时退回默认 Bot 插件的网页：Hermes 自带的供应商接入就在它的设置页里（ADR-0108 第 4 节）。
+    /// 模型设置页需要的网关网页和已知配置状态；配置状态来自核心曾成功接上的使用方。没有模型网关插件时如实报，
+    /// 不退回 Agent 自己的网页：Agent 的模型在 App 里原生地接（ADR-0129）。
     pub(crate) async fn model_settings(
         &self,
         langs: &Languages,
     ) -> Result<ModelSettings, InstallError> {
         let has_configured_models = self.store.model_keys().has_connected_consumer()?;
-        if let Some(route) = self.models_route() {
-            return Ok(ModelSettings {
-                plugin_id: route.id.to_string(),
-                web_url: self.model_web_url(&route.id),
-                has_configured_models,
-            });
-        }
-        let fallback = self
-            .default_bot_plugin()
-            .filter(|id| self.model_web_url(id).is_some());
-        match (fallback, self.models_provider()) {
-            (Some(id), _) => Ok(ModelSettings {
-                web_url: self.model_web_url(&id),
-                plugin_id: id.to_string(),
-                has_configured_models,
-            }),
-            (None, ProviderState::NotReady(id)) => {
-                Err(unavailable(gateway_not_running(langs, id.as_str())))
-            }
-            (None, _) => Err(unavailable(gateway_absent(langs))),
-        }
+        let route = self.provider(langs)?;
+        Ok(ModelSettings {
+            plugin_id: route.id.to_string(),
+            web_url: self.model_web_url(&route.id),
+            has_configured_models,
+        })
     }
 
     /// 网关插件的网页地址，没有网页时为空。

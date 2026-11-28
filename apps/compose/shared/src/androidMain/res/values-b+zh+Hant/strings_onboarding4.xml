@@ -4,8 +4,6 @@
     <plurals name="onboarding_pending_card_many">
         <item quantity="other">%1$d 張卡片等你確認</item>
     </plurals>
-    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
-    <string name="onboarding_problem_model_gateway_not_ready">模型閘道還沒就緒，請重試或跳過這一步。</string>
     <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
     <string name="onboarding_problem_plugin_egress_proxy_unavailable">伺服器的代理有問題，請檢查後重試。</string>
     <!-- Problem title while installing: no local network address is available for the app. -->
@@ -16,4 +14,8 @@
     <string name="onboarding_problem_store_disabled">推薦清單的來源已關閉，可以跳過。</string>
     <!-- Kind label above a review row: the apps that will be installed. -->
     <string name="onboarding_review_section_apps">要安裝的應用程式</string>
+    <!-- Label over the assistant's name in the review step of setup. -->
+    <string name="onboarding_review_section_assistant">你的助理</string>
+    <!-- Second line of the model row in the review step: the model was never tested. -->
+    <string name="onboarding_review_model_untested">還沒測過</string>
 </resources>

@@ -19,3 +19,5 @@ onboarding-profile-name-empty = Enter a name.
 onboarding-profile-name-control = The name can't contain line breaks or control characters.
 
 onboarding-profile-email-cleared = Once set, an email address can be changed but not removed: apps that need it use it when they're rebuilt.
+
+onboarding-steps-not-assistant-step = Setup isn't on the assistant step.

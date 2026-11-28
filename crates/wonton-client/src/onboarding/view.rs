@@ -4,16 +4,17 @@ use std::collections::HashSet;
 
 use wonton_matrix::UserId;
 use wonton_protocol::{
-    ChatViewModel, DefaultBotPlugin, DefaultBotVisibility, ModelSettingsPage, Onboarding,
+    AgentModelsViewModel, ChatViewModel, DefaultBotPlugin, DefaultBotVisibility, Onboarding,
     OnboardingCommit, OnboardingModelStep, OnboardingNeedRow, OnboardingReview, OnboardingStep,
     OnboardingViewModel, StepNav,
 };
 
-use super::{LocalState, review, storage};
+use super::{LocalState, assistant, review, storage};
 
 /// 引导的步骤，按走的顺序。服务器太旧显不出来的步记在 `LocalState::unavailable` 里。
-pub(super) const STEPS: [OnboardingStep; 4] = [
+pub(super) const STEPS: [OnboardingStep; 5] = [
     OnboardingStep::Profile,
+    OnboardingStep::Assistant,
     OnboardingStep::Model,
     OnboardingStep::Apps,
     OnboardingStep::Review,
@@ -49,6 +50,8 @@ pub(super) fn prompt_done(
 pub(super) fn render(
     state: &LocalState,
     records: &storage::Records,
+    chat: &ChatViewModel,
+    models: &AgentModelsViewModel,
 ) -> (OnboardingViewModel, Option<String>) {
     let Some(onboarding) = state.onboarding.as_ref() else {
         return (
@@ -76,23 +79,6 @@ pub(super) fn render(
     } else {
         Vec::new()
     };
-    let model = OnboardingModelStep {
-        settings: state.model_settings.as_ref().and_then(|settings| {
-            settings.web_url.as_ref().map(|web_url| ModelSettingsPage {
-                plugin_id: settings.plugin_id.clone(),
-                web_url: web_url.clone(),
-            })
-        }),
-        has_configured_models: state
-            .model_settings
-            .as_ref()
-            .is_some_and(|settings| settings.has_configured_models),
-        choice: state
-            .draft
-            .model(state.model_settings.as_ref())
-            .and_then(|model| model.choice()),
-        problem: state.model_problem.clone(),
-    };
     let needs = need_rows(state, onboarding);
     // 服务器太旧的步跳过：正在显示的那步刚变不可用时换到下一个，一步都不剩时整段不显示。
     // 整段都打不开（服务器比引导接口还旧）时一步都不显示，只留升级提示。
@@ -108,13 +94,18 @@ pub(super) fn render(
         .flatten();
     let view = OnboardingViewModel {
         step,
-        nav: step.and_then(|step| navigation(state, step)),
+        nav: step.and_then(|step| navigation(state, step, models)),
         too_old: state.too_old.clone(),
         loading: state.loading,
         problem: state.problem.clone().or_else(|| state.bot_problem.clone()),
         catalog_problem: onboarding.catalog_problem.clone(),
         profile: state.draft.profile_step(state.owner.as_ref()),
-        model,
+        assistant: state
+            .draft
+            .assistant_step(assistant::current_name(state, chat).as_deref()),
+        model: OnboardingModelStep {
+            bot: assistant::default_bot(state),
+        },
         needs,
         review: OnboardingReview {
             items: state.review.iter().map(review::ReviewEntry::item).collect(),
@@ -165,7 +156,11 @@ fn need_rows(state: &LocalState, onboarding: &Onboarding) -> Vec<OnboardingNeedR
         .collect()
 }
 
-fn navigation(state: &LocalState, step: OnboardingStep) -> Option<StepNav> {
+fn navigation(
+    state: &LocalState,
+    step: OnboardingStep,
+    models: &AgentModelsViewModel,
+) -> Option<StepNav> {
     let not_started = state.commit == OnboardingCommit::NotStarted;
     // 第几步按还显示得出来的步算：踢掉的步不占号。
     let mut visible = STEPS
@@ -174,8 +169,8 @@ fn navigation(state: &LocalState, step: OnboardingStep) -> Option<StepNav> {
     let position = visible.position(|candidate| *candidate == step)? as u32 + 1;
     let total = u32::try_from(visible.count()).unwrap_or(u32::MAX) + position;
     let can_next = match step {
-        OnboardingStep::Profile | OnboardingStep::Apps => true,
-        OnboardingStep::Model => state.draft.model(state.model_settings.as_ref()).is_some(),
+        OnboardingStep::Profile | OnboardingStep::Assistant | OnboardingStep::Apps => true,
+        OnboardingStep::Model => assistant::chosen_model(state, models).is_some(),
         OnboardingStep::Review => match state.commit {
             OnboardingCommit::NotStarted => review::can_commit(&state.review),
             OnboardingCommit::Running => false,
@@ -275,12 +270,22 @@ mod tests {
         }
     }
 
+    fn render_plain(state: &LocalState, records: &storage::Records) -> OnboardingViewModel {
+        render(
+            state,
+            records,
+            &chat("!room", None),
+            &AgentModelsViewModel::default(),
+        )
+        .0
+    }
+
     fn render_with(records: &storage::Records) -> OnboardingViewModel {
         let state = LocalState {
             onboarding: Some(onboarding()),
             ..LocalState::default()
         };
-        render(&state, records).0
+        render_plain(&state, records)
     }
 
     #[test]
@@ -346,7 +351,7 @@ mod tests {
             bot_refreshing: true,
             ..LocalState::default()
         };
-        let pending = render(&state, &storage::Records::default()).0;
+        let pending = render_plain(&state, &storage::Records::default());
         assert_eq!(
             pending.default_bot_visibility,
             Some(DefaultBotVisibility::Unknown)
@@ -355,7 +360,7 @@ mod tests {
         assert!(pending.chat_prompts.is_empty());
 
         state.bot_refreshing = false;
-        let verified = render(&state, &storage::Records::default()).0;
+        let verified = render_plain(&state, &storage::Records::default());
         assert_eq!(
             verified.default_bot_user_id.as_deref(),
             Some("@hermes:home")
@@ -378,7 +383,7 @@ mod tests {
                 onboarding: Some(data),
                 ..LocalState::default()
             };
-            let view = render(&state, &storage::Records::default()).0;
+            let view = render_plain(&state, &storage::Records::default());
             assert_eq!(
                 view.default_bot_visibility,
                 Some(DefaultBotVisibility::Unknown)
@@ -398,7 +403,7 @@ mod tests {
             onboarding: Some(data),
             ..LocalState::default()
         };
-        let view = render(&state, &storage::Records::default()).0;
+        let view = render_plain(&state, &storage::Records::default());
         assert_eq!(
             view.default_bot_visibility,
             Some(DefaultBotVisibility::Absent)

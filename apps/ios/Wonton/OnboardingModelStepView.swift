@@ -1,35 +1,22 @@
 import SwiftUI
 import WontonClient
 
+/// 接模型这一步就是默认 Bot 的模型页（ADR-0129 第 4 节）：页里的操作当场存进 Bot，不进引导草稿；
+/// 下一步能不能点由核心的 `StepNav` 说了算。
 struct OnboardingModelStepView: View {
     let step: OnboardingModelStep
-    let send: (Action) -> Void
-    let openGateway: (ModelSettingsPage) -> Void
-    let revealProblem: (String) -> Void
+    @State private var models: AgentModelsModel
+
+    init(step: OnboardingModelStep, core: ClientCore) {
+        self.step = step
+        _models = State(initialValue: AgentModelsModel(core: core))
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: WontonTheme.spacing.s16) {
-            if let problem = step.problem {
-                ProblemNotice(problem: problem.onboardingProblem)
-                    .id("onboarding-model-problem")
-                Button(String(localized: .Common.commonRetry)) { send(.onboarding(action: .refreshOnboarding)) }
-                    .buttonStyle(WontonButtonStyle(kind: .secondary))
+        AgentModelsPage(view: models.viewModel, rejection: models.rejection, send: models.send)
+            .task { await models.observe() }
+            .task(id: step.bot) {
+                if let bot = step.bot { models.send(.openAgentModels(bot: bot)) }
             }
-            if let settings = step.settings {
-                Button(String(localized: .Onboarding5.onboardingModelOpenSettings)) { openGateway(settings) }
-                    .buttonStyle(WontonButtonStyle(kind: .secondary))
-            } else if step.settings == nil, step.problem == nil {
-                LoadingView().frame(maxWidth: .infinity)
-            }
-            if step.hasConfiguredModels {
-                StepOptionRow(title: String(localized: .Onboarding4.onboardingModelUseCurrent),
-                              isSelected: step.choice == .current, neutralSelection: true) {
-                    send(.onboarding(action: .useCurrentModel))
-                }
-            }
-        }
-        .onChange(of: step.problem) { _, problem in
-            if problem != nil { revealProblem("onboarding-model-problem") }
-        }
     }
 }

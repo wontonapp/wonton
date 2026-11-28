@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Problem title in setup: the app and the home server versions don't work together. -->
-    <string name="onboarding_problem_model_protocol">Wontonと自宅サーバーのバージョンに互換性がありません。更新して再試行してください。</string>
-    <!-- Problem title in setup: the home server doesn't recognize this device. -->
-    <string name="onboarding_problem_model_unauthorized">自宅サーバーがこのデバイスを未認証です。アクセス権限を確認して再試行してください。</string>
     <!-- Problem title while installing: the app wasn't found. -->
     <string name="onboarding_problem_plugin_not_found">このアプリが見つかりません。一覧を更新してから再試行してください。</string>
     <!-- Problem title while installing: the home server doesn't recognize this device. -->

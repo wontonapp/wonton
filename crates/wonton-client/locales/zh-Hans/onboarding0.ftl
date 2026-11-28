@@ -19,3 +19,5 @@ onboarding-profile-name-empty = 名字不能为空
 onboarding-profile-name-control = 名字里不能有换行和控制字符
 
 onboarding-profile-email-cleared = 邮箱填过以后只能改，不能清空：要邮箱的应用重建时会用到它
+
+onboarding-steps-not-assistant-step = 不在你的助手这一步

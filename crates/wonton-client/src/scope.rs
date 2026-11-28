@@ -9,13 +9,14 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ClientsDomainViewModel,
-    ConfirmationsViewModel, CoreError, FamilyViewModel, FriendsViewModel, HomeViewModel,
-    MyAvatarProblem, OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel,
-    ServersViewModel, SettingsViewModel, TransfersViewModel,
+    AgentChainsViewModel, AgentModelsViewModel, BotContactsViewModel, ChatViewModel,
+    ClientsDomainViewModel, ConfirmationsViewModel, CoreError, FamilyViewModel, FriendsViewModel,
+    HomeViewModel, MyAvatarProblem, OnboardingViewModel, PagesViewModel, PeersViewModel,
+    PluginsViewModel, ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
+use crate::agent_models::AgentModelsLink;
 use crate::app_lock::AppLockLink;
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
@@ -59,6 +60,7 @@ pub(crate) struct Scope {
     pub(crate) family: Arc<FamilyLink>,
     pub(crate) bot_contacts: Arc<BotContactsLink>,
     pub(crate) clients_domain: Arc<ClientsDomainLink>,
+    pub(crate) agent_models: Arc<AgentModelsLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
     /// 要跨源隔离的插件网页交给系统浏览器时用的回环入口（ADR-0033）。
@@ -92,6 +94,7 @@ pub(crate) struct Views {
     pub(crate) family: watch::Sender<FamilyViewModel>,
     pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
     pub(crate) clients_domain: watch::Sender<ClientsDomainViewModel>,
+    pub(crate) agent_models: watch::Sender<AgentModelsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -113,6 +116,7 @@ impl Views {
             family: scope.family.sender(),
             bot_contacts: scope.bot_contacts.sender(),
             clients_domain: scope.clients_domain.sender(),
+            agent_models: scope.agent_models.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -148,6 +152,7 @@ struct ChatLinks {
     push: Arc<PushLink>,
     pages: Arc<PagesLink>,
     files: Arc<FilesLink>,
+    agent_models: Arc<AgentModelsLink>,
     onboarding: Arc<OnboardingLink>,
 }
 
@@ -203,11 +208,17 @@ fn chat_links(
         dir,
         views.map(|v| v.transfers.clone()),
     );
+    let agent_models = AgentModelsLink::new(
+        handle.clone(),
+        home.clone(),
+        views.map(|v| v.agent_models.clone()),
+    );
     let onboarding = OnboardingLink::new(
         handle.clone(),
         home.clone(),
         chat.clone(),
         plugins.clone(),
+        agent_models.subscribe(),
         dir,
         views.map(|v| v.onboarding.clone()),
     );
@@ -216,6 +227,7 @@ fn chat_links(
         push,
         pages: tabs,
         files,
+        agent_models,
         onboarding,
     })
 }
@@ -421,6 +433,7 @@ impl Scope {
             family: people.2,
             clients_domain: people.3,
             bot_contacts,
+            agent_models: links.agent_models,
             settings: people.4,
             shared_apps,
             browser,
@@ -448,6 +461,7 @@ impl Scope {
         self.peers.set_languages(languages.to_vec());
         self.bot_contacts.set_languages(languages.to_vec());
         self.clients_domain.set_languages(languages.to_vec());
+        self.agent_models.set_languages(languages.to_vec());
     }
 
     pub(crate) fn backgrounded(&self) {

@@ -19,3 +19,5 @@ onboarding-profile-name-empty = 名前を入力してください
 onboarding-profile-name-control = 名前に改行や制御文字は使えません
 
 onboarding-profile-email-cleared = 一度設定したメールアドレスは変更できますが、削除はできません。メールアドレスが必要なアプリの再構築に使われます
+
+onboarding-steps-not-assistant-step = セットアップはアシスタントのステップではありません
