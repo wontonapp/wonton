@@ -442,7 +442,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `protocol` | 上游回了看不懂的东西 | “对不上”，带重试 | 同上 |
 | `authentication_required` | 上游凭据失效或被收回 | “需要重新登录”，带跳转入口 | 不退避 |
 | `permission_denied` | 上游拒了这个人的权限 | “没有权限” | 不退避 |
-| `unsupported_by_device` | 格式或 `DeviceProfile` 不被接受 | “这台设备放不了”，给转码按钮 | 不退避 |
+| `unsupported_by_device` | 格式或 `DeviceProfile` 不被接受；或这台设备这一版做不了核心发来的命令（命令回执里） | “这台设备放不了”，给转码按钮；命令回执的写成“这台设备这一版还做不了，升级 App 后再试” | 不退避 |
 | `rate_limited` | 提供方回 429 | “限速中，N 秒后重试” | 按 `retry_after`，不计入七次 |
 | `media_gone` | 文件被删或移走 | “已不在库里”，该项标 `Failed` | 不退避 |
 | `plugin_unavailable` | 插件没装/没起来 | “插件没在跑”，带重试 | 1/2/4 秒，最多三次 |

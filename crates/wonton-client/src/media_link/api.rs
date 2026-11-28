@@ -80,6 +80,11 @@ impl MediaApi {
         }
     }
 
+    /// 这台设备的标识：`X-Wonton-Device` 和取命令的 `device` 都用它。
+    pub(crate) fn device(&self) -> &str {
+        &self.device
+    }
+
     /// 带媒体接口要的请求头，没有总期限：传字节的请求用。
     pub(crate) fn request(&self, method: Method, path: &str) -> RequestBuilder {
         let url = self
@@ -198,7 +203,7 @@ pub(crate) fn classify(status: u16, tunnel: Option<&str>, body: &[u8]) -> MediaF
     })
 }
 
-async fn read<T: DeserializeOwned>(response: Response) -> Result<T, MediaFailure> {
+pub(crate) async fn read<T: DeserializeOwned>(response: Response) -> Result<T, MediaFailure> {
     let body = response.bytes().await.map_err(|e| unreachable(&e))?;
     serde_json::from_slice(&body).map_err(|e| {
         failure(
