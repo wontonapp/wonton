@@ -22,9 +22,11 @@ use iroh_relay::server::{
 };
 use tokio::net::{TcpListener, TcpStream};
 use wonton_tunnel::relays::{RelayTable, relay_map, spawn_tier_fallback};
-use wonton_tunnel::{Allowlist, PathKind, ProxyAccess, TunnelServer, TunnelStatus};
+use wonton_tunnel::{Allowlist, ProxyAccess, TunnelServer, TunnelStatus};
 
 use crate::support::{Phone, Upstream, WAIT, capture_logs, init_tracing, isolated_log_test};
+
+mod shared_token;
 
 /// 测试里的回退阈值。iroh 第一次连上家中继多半在几百毫秒内，2 秒的阈值足够它先连上第一档。
 const FALLBACK_AFTER: Duration = Duration::from_secs(2);
@@ -286,68 +288,6 @@ async fn a_refusing_relay_bounds_main_and_probe_reconnects() -> anyhow::Result<(
     );
     assert!(main_total >= 1, "观察窗口内主 endpoint 没有连接");
     assert!(probe_total >= 1, "观察窗口内探针侧没有连接");
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_relay_with_a_shared_token_admits_endpoints_that_carry_it() -> anyhow::Result<()> {
-    let (url, _relay) = spawn_relay(Arc::new(SharedToken::new("tok"))).await?;
-    let table = RelayTable::parse(&format!("https://tok@{}", url.authority())).unwrap();
-    let device = SecretKey::generate();
-    let upstream = Upstream::spawn().await;
-    let server = TunnelServer::spawn(
-        relay_endpoint(SecretKey::generate(), relay_map(&table.views(), 1)).await,
-        Allowlist::new([device.public()]),
-        upstream.addr,
-    );
-    let address = EndpointAddr::new(server.endpoint().id()).with_relay_url(url.clone());
-    let endpoint = relay_endpoint(device, relay_map(&table.views(), 1)).await;
-    let phone = Phone::on(endpoint.clone(), address, ProxyAccess::Open).await;
-    let response = timeout_get(&phone, "/with-token").await;
-    assert_eq!(response.status, 200);
-    let path = phone.client.path().expect("请求应有选中路径");
-    assert_eq!(path.kind, PathKind::Relay);
-    assert_eq!(path.remote, TransportAddr::Relay(url.clone()));
-    phone.client.close();
-    endpoint.close().await;
-    server.shutdown().await;
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_relay_with_a_shared_token_rejects_endpoints_without_it() -> anyhow::Result<()> {
-    let (url, _relay) = spawn_relay(Arc::new(SharedToken::new("tok"))).await?;
-    let table = RelayTable::parse(&url.to_string()).unwrap();
-    let device = SecretKey::generate();
-    let upstream = Upstream::spawn().await;
-    let server = TunnelServer::spawn(
-        relay_endpoint(SecretKey::generate(), relay_map(&table.views(), 1)).await,
-        Allowlist::new([device.public()]),
-        upstream.addr,
-    );
-    let address = EndpointAddr::new(server.endpoint().id()).with_relay_url(url.clone());
-    let endpoint = relay_endpoint(device, relay_map(&table.views(), 1)).await;
-    let phone = Phone::on(endpoint.clone(), address, ProxyAccess::Open).await;
-    // 没带令牌：中继拒绝，请求到不了服务端。
-    let response = timeout_get(&phone, "/without-token").await;
-    assert_ne!(response.status, 200, "{}", response.body);
-    let mut status = phone.client.watch_status();
-    tokio::time::timeout(
-        WAIT,
-        status.wait_for(|status| matches!(status, TunnelStatus::Disconnected(_))),
-    )
-    .await
-    .expect("隧道应停在断开状态")
-    .unwrap();
-    // 中继连接也没建起来。
-    let statuses = endpoint.home_relay_status().get();
-    assert!(
-        statuses.iter().all(|relay| !relay.is_connected()),
-        "{statuses:?}"
-    );
-    phone.client.close();
-    endpoint.close().await;
-    server.shutdown().await;
     Ok(())
 }
 
