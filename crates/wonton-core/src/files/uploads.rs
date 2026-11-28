@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 pub(super) use pending::{Pending, Placing};
-pub(super) use room::{has_room, out_of_inodes, quota};
+pub(super) use room::has_room;
 pub use turns::UploadTurn;
 use wonton_protocol::{FileFailure, FileId};
 
@@ -125,48 +125,6 @@ impl Uploads {
             }
         }
         removed
-    }
-
-    /// 传到一半 tusd 出错时，磁盘是不是真的放不下剩下的字节。
-    fn out_of_space(&self, id: &FileId, langs: &Languages) -> Option<Failure> {
-        let pending = self.load_pending(id).ok()??;
-        let written = fs::symlink_metadata(self.dir.join(id.as_str())).map_or(0, |meta| meta.len());
-        self.cannot_hold(pending.size.saturating_sub(written), langs)
-    }
-
-    fn cannot_hold(&self, left: u64, langs: &Languages) -> Option<Failure> {
-        let storage_full = |key: &str| {
-            Some(Failure::new(
-                FileFailure::StorageFull,
-                l10n::text(langs, key, &[]),
-            ))
-        };
-        if let Some(quota) = quota(&self.dir, self.owner.uid) {
-            if quota.space_left.is_some_and(|room| room < left) {
-                return storage_full("files-upload-quota-full");
-            }
-            if quota.inodes_left == Some(0) {
-                return storage_full("files-upload-inodes-full");
-            }
-        }
-        let stats = rustix::fs::statvfs(&self.dir).ok()?;
-        if out_of_inodes(stats.f_files, stats.f_favail) {
-            return storage_full("files-upload-inodes-full");
-        }
-        let free = stats.f_bavail.saturating_mul(stats.f_frsize.max(1));
-        (free < left).then(|| {
-            Some(Failure::new(
-                FileFailure::StorageFull,
-                l10n::text(
-                    langs,
-                    "files-upload-leftover",
-                    &[
-                        ("free", wonton_l10n::Arg::from(free)),
-                        ("left", wonton_l10n::Arg::from(left)),
-                    ],
-                ),
-            ))
-        })?
     }
 }
 

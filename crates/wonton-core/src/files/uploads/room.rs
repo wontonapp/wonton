@@ -4,8 +4,10 @@ use std::fs;
 use std::os::fd::AsRawFd;
 use std::path::Path;
 
-use super::KEEP_FREE_PERCENT;
-use crate::files::Failure;
+use super::{Failure, KEEP_FREE_PERCENT, Uploads};
+use crate::l10n;
+use crate::plugin::languages::Languages;
+use wonton_protocol::{FileFailure, FileId};
 
 /// 文件系统给 `uid` 留的配额。`None` 表示没有用户配额，或者内核、文件系统不支持按目录查（内核早于 5.16）；这时只能看 `statvfs`。
 /// 配额满时 `statvfs` 的剩余空间还是很大，看不出 `EDQUOT`，tusd 写字节也只回 500。
@@ -109,4 +111,48 @@ pub(in crate::files) fn has_room(dir: &Path, size: u64, uid: u32) -> Result<bool
 /// inode 用完了也放不下。总数是 0 表示这个文件系统没有这个限制（btrfs）。
 pub(in crate::files) fn out_of_inodes(total: u64, free: u64) -> bool {
     total > 0 && free == 0
+}
+
+impl Uploads {
+    /// 传到一半 tusd 出错时，磁盘是不是真的放不下剩下的字节。
+    pub(super) fn out_of_space(&self, id: &FileId, langs: &Languages) -> Option<Failure> {
+        let pending = self.load_pending(id).ok()??;
+        let written = fs::symlink_metadata(self.dir.join(id.as_str())).map_or(0, |meta| meta.len());
+        self.cannot_hold(pending.size.saturating_sub(written), langs)
+    }
+
+    fn cannot_hold(&self, left: u64, langs: &Languages) -> Option<Failure> {
+        let storage_full = |key: &str| {
+            Some(Failure::new(
+                FileFailure::StorageFull,
+                l10n::text(langs, key, &[]),
+            ))
+        };
+        if let Some(quota) = quota(&self.dir, self.owner.uid) {
+            if quota.space_left.is_some_and(|room| room < left) {
+                return storage_full("files-upload-quota-full");
+            }
+            if quota.inodes_left == Some(0) {
+                return storage_full("files-upload-inodes-full");
+            }
+        }
+        let stats = rustix::fs::statvfs(&self.dir).ok()?;
+        if out_of_inodes(stats.f_files, stats.f_favail) {
+            return storage_full("files-upload-inodes-full");
+        }
+        let free = stats.f_bavail.saturating_mul(stats.f_frsize.max(1));
+        (free < left).then(|| {
+            Some(Failure::new(
+                FileFailure::StorageFull,
+                l10n::text(
+                    langs,
+                    "files-upload-leftover",
+                    &[
+                        ("free", wonton_l10n::Arg::from(free)),
+                        ("left", wonton_l10n::Arg::from(left)),
+                    ],
+                ),
+            ))
+        })?
+    }
 }

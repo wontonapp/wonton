@@ -4,6 +4,7 @@ use super::super::share_fs::{Names, ShareRef, Snapshot};
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 
+use super::room::out_of_inodes;
 use super::*;
 use crate::files::new_upload_id as new_id;
 use crate::files::test_support::Fixture;
