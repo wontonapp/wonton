@@ -2,7 +2,7 @@
 
 use std::time::SystemTime;
 
-use super::{CANCELLED, Chosen, Confirmations, SUPERSEDED, Ticket, now_ms};
+use super::{CANCELLED, Chosen, Confirmations, Refusal, SUPERSEDED, Ticket, now_ms};
 use crate::l10n;
 use crate::plugin::PluginId;
 use crate::plugin::languages::Languages;
