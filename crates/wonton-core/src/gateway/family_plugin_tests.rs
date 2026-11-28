@@ -15,6 +15,7 @@ mod family_bot_projection_race_tests;
 #[path = "family_bot_projection_tests.rs"]
 mod family_bot_projection_tests;
 
+mod app_access;
 mod identity_recheck;
 mod private_bots;
 
