@@ -3,6 +3,7 @@
 //! 真 Pebble、`pebble-challtestsrv` 和一个只在测试里存在的 HTTP 写入器充当 DNS 服务商；入口是一条真的
 //! HAProxy，热加载用正在下载的连接验证。要 Docker，标 `#[ignore]`。
 
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -10,27 +11,77 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
-use crate::entry_certificate::{CertificateConfig, CertificateManager, LEGO_IMAGE};
+use crate::entry_certificate::{
+    AcmeDnsCredentials, CertificateConfig, CertificateManager, LEGO_IMAGE,
+};
 use crate::entry_compose::HAPROXY_IMAGE;
-use crate::entry_haproxy::{Model, render};
+use crate::entry_haproxy::{Model, Rendered, render};
 use crate::entry_settings::EntrySettings;
 use crate::plugin::docker::Engine;
 use crate::plugin::names::LABEL_INSTANCE;
 use crate::test_docker::{Names, ensure_image};
 
-const PEBBLE: &str = "ghcr.io/letsencrypt/pebble:2.8.0@sha256:d9080f68f6cb6af8d82134ab26de0aaaf312ac9cba42aecc6d3aede6cb63007b";
-const CHALLTESTSRV: &str = "ghcr.io/letsencrypt/pebble-challtestsrv:latest@sha256:c390a96cc878a7d5bf5e27aaf99af532c46c4b38416d72f7219ab9ded51bb79f";
-const ACME_DNS: &str =
-    "joohoi/acme-dns:v1.0@sha256:08435bf0c6cfe7c29816ff48beabcc333743b5bb060cae3867777d9b0d956517";
 const ZONE: &str = "example.test";
-/// 按 amd64 的镜像摘要固定（不是 manifest list 的摘要：编译机对 list 摘要的 HEAD 不稳）。
-const PYTHON: &str =
-    "python:3.12-alpine@sha256:e6dae589c1c05976188fd3bd019afd091445fc533ed2ea29001beddc7368a9c8";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Provider {
     HttpReq,
     AcmeDns,
+}
+
+/// 一次用例里跨阶段要用的容器、镜像和地址。
+struct Case {
+    names: Names,
+    dir: tempfile::TempDir,
+    engine: Engine,
+    haproxy: String,
+    pebble: String,
+    python: String,
+    base: String,
+    network: String,
+    challenge_ip: String,
+    helper_ip: String,
+    pebble_ip: String,
+    entry_ip: String,
+    connector_ip: String,
+    chall: String,
+    helper: String,
+    entry: String,
+    connector: String,
+    install: PathBuf,
+    dns_zone_servers: Vec<String>,
+    acme_dns_ip: Option<String>,
+    acme_dns_container: Option<String>,
+    acme_dns: Option<(String, AcmeDnsCredentials, AcmeDnsCredentials)>,
+}
+
+impl Case {
+    fn new() -> Self {
+        Self {
+            names: Names::new(),
+            dir: tempfile::tempdir().unwrap(),
+            engine: Engine::connect().expect("基础设施失败：连不上 Docker"),
+            haproxy: String::new(),
+            pebble: String::new(),
+            python: String::new(),
+            base: String::new(),
+            network: String::new(),
+            challenge_ip: String::new(),
+            helper_ip: String::new(),
+            pebble_ip: String::new(),
+            entry_ip: String::new(),
+            connector_ip: String::new(),
+            chall: String::new(),
+            helper: String::new(),
+            entry: String::new(),
+            connector: String::new(),
+            install: PathBuf::new(),
+            dns_zone_servers: Vec::new(),
+            acme_dns_ip: None,
+            acme_dns_container: None,
+            acme_dns: None,
+        }
+    }
 }
 
 fn docker(args: &[&str]) -> (bool, String) {
@@ -44,13 +95,6 @@ fn must_docker(args: &[&str]) -> String {
     let (ok, text) = docker(args);
     assert!(ok, "docker {args:?} 失败：{text}");
     text
-}
-
-/// 本次运行专属的子网，和周围的任务不撞。
-fn subnet() -> (String, String) {
-    let hash = getrandom::u32().unwrap();
-    let v4 = format!("10.{}.{}.0/24", 30 + (hash % 150), (hash >> 8) & 0xff);
-    (v4.trim_end_matches(".0/24").to_owned(), v4)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -106,27 +150,6 @@ fn write(path: &Path, content: &str) {
     std::fs::write(path, content).unwrap();
 }
 
-/// 证书叶子里的 DNS 名字。
-fn subject_names(pem: &[u8]) -> Vec<String> {
-    let mut names = Vec::new();
-    if let Some(Ok(der)) = rustls_pemfile::certs(&mut std::io::Cursor::new(pem)).next() {
-        let (_, certificate) = x509_parser::parse_x509_certificate(&der).unwrap();
-        for name in certificate
-            .subject_alternative_name()
-            .unwrap()
-            .unwrap()
-            .value
-            .general_names
-            .iter()
-        {
-            if let x509_parser::extensions::GeneralName::DNSName(name) = name {
-                names.push((*name).to_owned());
-            }
-        }
-    }
-    names
-}
-
 async fn wait_http(url: &str, root: Option<&Path>) -> Result<()> {
     let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(2));
     if let Some(root) = root {
@@ -148,20 +171,135 @@ async fn wait_http(url: &str, root: Option<&Path>) -> Result<()> {
     }
 }
 
+// 底座：镜像、本次运行专属的子网和 challtestsrv。
+const PEBBLE: &str = "ghcr.io/letsencrypt/pebble:2.8.0@sha256:d9080f68f6cb6af8d82134ab26de0aaaf312ac9cba42aecc6d3aede6cb63007b";
+const CHALLTESTSRV: &str = "ghcr.io/letsencrypt/pebble-challtestsrv:latest@sha256:c390a96cc878a7d5bf5e27aaf99af532c46c4b38416d72f7219ab9ded51bb79f";
+/// 按 amd64 的镜像摘要固定（不是 manifest list 的摘要：编译机对 list 摘要的 HEAD 不稳）。
+const PYTHON: &str =
+    "python:3.12-alpine@sha256:e6dae589c1c05976188fd3bd019afd091445fc533ed2ea29001beddc7368a9c8";
+
+/// 本次运行专属的子网，和周围的任务不撞。
+fn subnet() -> (String, String) {
+    let hash = getrandom::u32().unwrap();
+    let v4 = format!("10.{}.{}.0/24", 30 + (hash % 150), (hash >> 8) & 0xff);
+    (v4.trim_end_matches(".0/24").to_owned(), v4)
+}
+
+async fn infra_up(case: &mut Case) {
+    case.haproxy = ensure_image(&case.engine, &wonton_test_images::image(HAPROXY_IMAGE)).await;
+    case.pebble = ensure_image(&case.engine, &wonton_test_images::image(PEBBLE)).await;
+    let challtestsrv = ensure_image(&case.engine, &wonton_test_images::image(CHALLTESTSRV)).await;
+    let _lego = ensure_image(&case.engine, &wonton_test_images::image(LEGO_IMAGE)).await;
+    case.python = ensure_image(&case.engine, &wonton_test_images::image(PYTHON)).await;
+
+    let (base, cidr) = subnet();
+    case.base = base;
+    let network = case.names.oneshot_network("cert");
+    must_docker(&[
+        "network",
+        "create",
+        "--label",
+        &format!("{LABEL_INSTANCE}={}", case.names.name()),
+        "--subnet",
+        &cidr,
+        &network,
+    ]);
+    case.network = network;
+    case.challenge_ip = format!("{}.5", case.base);
+    case.pebble_ip = format!("{}.6", case.base);
+    case.entry_ip = format!("{}.11", case.base);
+    case.connector_ip = format!("{}.21", case.base);
+
+    case.chall = case.names.oneshot_container("challtestsrv");
+    start(
+        &case.names,
+        &case.network,
+        &case.chall,
+        None,
+        &case.challenge_ip,
+        &[],
+        &[],
+        &challtestsrv,
+        "/app",
+        &[
+            "-dnsserver",
+            ":53",
+            "-http01",
+            "",
+            "-https01",
+            "",
+            "-tlsalpn01",
+            "",
+        ],
+    );
+}
+
+// `acme-dns` 服务商：注册两个子域，凭据分别当 apex 和 LAN 的。
+const ACME_DNS: &str =
+    "joohoi/acme-dns:v1.0@sha256:08435bf0c6cfe7c29816ff48beabcc333743b5bb060cae3867777d9b0d956517";
+
+async fn acme_dns_up(case: &mut Case) {
+    let acme_dns_image = ensure_image(&case.engine, &wonton_test_images::image(ACME_DNS)).await;
+    let container = case.names.oneshot_container("acme-dns");
+    let config = case.dir.path().join("acme-dns/config.cfg");
+    let pebble_ip = case.pebble_ip.clone();
+    write(
+        &config,
+        &format!(
+            "[general]\nlisten = \"0.0.0.0:53\"\nprotocol = \"both4\"\ndomain = \"auth.{ZONE}\"\nnsname = \"auth.{ZONE}\"\nnsadmin = \"admin.{ZONE}\"\nrecords = [\"auth.{ZONE}. A {pebble_ip}\", \"auth.{ZONE}. NS auth.{ZONE}.\"]\ndebug = false\n[database]\nengine = \"sqlite3\"\nconnection = \"/var/lib/acme-dns/acme-dns.db\"\n[api]\nip = \"0.0.0.0\"\nport = \"8080\"\ntls = \"none\"\ndisable_registration = false\ncorsorigins = []\nuse_header = false\n[logconfig]\nloglevel = \"info\"\nlogtype = \"stdout\"\nlogformat = \"text\"\n"
+        ),
+    );
+    let address = format!("{}.8", case.base);
+    start(
+        &case.names,
+        &case.network,
+        &container,
+        None,
+        &address,
+        &[],
+        &[(config, "/etc/acme-dns/config.cfg".into())],
+        &acme_dns_image,
+        "/root/acme-dns",
+        &[],
+    );
+    wait_http(&format!("http://{address}:8080/health"), None)
+        .await
+        .unwrap();
+    let client = reqwest::Client::new();
+    let first: Value = client
+        .post(format!("http://{address}:8080/register"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let second: Value = client
+        .post(format!("http://{address}:8080/register"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let credentials = |value: &Value| crate::entry_certificate::AcmeDnsCredentials {
+        username: value["username"].as_str().unwrap().to_owned(),
+        password: value["password"].as_str().unwrap().to_owned(),
+        subdomain: value["subdomain"].as_str().unwrap().to_owned(),
+        fulldomain: value["fulldomain"].as_str().unwrap().to_owned(),
+    };
+    case.acme_dns_ip = Some(address.clone());
+    case.acme_dns_container = Some(container);
+    case.acme_dns = Some((
+        format!("http://{address}:8080"),
+        credentials(&first),
+        credentials(&second),
+    ));
+}
+
+// 辅助容器：lego 的 httpreq 写入器、DNS 转发（`*.auth.<zone>` 给 acme-dns）和慢下载后端。
 /// 辅助容器里的脚本：RAW 模式的 httpreq 写入 challtestsrv、按后缀转发 DNS、慢下载。
 const HELPER: &str = r#"
-import base64, hashlib, http.client, json, socket, struct, sys, threading, time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-chall, acme, zone, apex, lan = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
-if not chall.startswith("http"):
-    chall = "http://" + chall
-chall_host, chall_port = chall.split("://", 1)[1].rsplit(":", 1)
-chall_addr = chall.split("://", 1)[1]
-
-txts = {}
-lock = threading.Lock()
-
 def name_bytes(name):
     return b"".join(bytes([len(p)]) + p.encode() for p in name.rstrip(".").split(".")) + b"\x00"
 
@@ -316,171 +454,74 @@ ThreadingHTTPServer(("0.0.0.0", 8484), Handler).serve_forever()
 
 "#;
 
-#[allow(clippy::too_many_lines)]
-async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
-    let mut names = Names::new();
-    let dir = tempfile::tempdir().unwrap();
-    let engine = Engine::connect().expect("基础设施失败：连不上 Docker");
-    let haproxy = ensure_image(&engine, &wonton_test_images::image(HAPROXY_IMAGE)).await;
-    let pebble = ensure_image(&engine, &wonton_test_images::image(PEBBLE)).await;
-    let challtestsrv = ensure_image(&engine, &wonton_test_images::image(CHALLTESTSRV)).await;
-    let _lego = ensure_image(&engine, &wonton_test_images::image(LEGO_IMAGE)).await;
-    let acme_dns_image = ensure_image(&engine, &wonton_test_images::image(ACME_DNS)).await;
-    let python = ensure_image(&engine, &wonton_test_images::image(PYTHON)).await;
-
-    let (base, cidr) = subnet();
-    let network = names.oneshot_network("cert");
-    must_docker(&[
-        "network",
-        "create",
-        "--label",
-        &format!("{LABEL_INSTANCE}={}", names.name()),
-        "--subnet",
-        &cidr,
-        &network,
-    ]);
-    let challenge_ip = format!("{base}.5");
-    let pebble_ip = format!("{base}.6");
-    let entry_ip = format!("{base}.11");
-    let connector_ip = format!("{base}.21");
-
-    let chall = names.oneshot_container("challtestsrv");
-    start(
-        &names,
-        &network,
-        &chall,
-        None,
-        &challenge_ip,
-        &[],
-        &[],
-        &challtestsrv,
-        "/app",
-        &[
-            "-dnsserver",
-            ":53",
-            "-http01",
-            "",
-            "-https01",
-            "",
-            "-tlsalpn01",
-            "",
-        ],
-    );
-
-    let mut acme_dns_ip = None;
-    let mut acme_dns_container = None;
-    let mut acme_dns = None;
-    if provider == Provider::AcmeDns {
-        let container = names.oneshot_container("acme-dns");
-        let config = dir.path().join("acme-dns/config.cfg");
-        write(
-            &config,
-            &format!(
-                "[general]\nlisten = \"0.0.0.0:53\"\nprotocol = \"both4\"\ndomain = \"auth.{ZONE}\"\nnsname = \"auth.{ZONE}\"\nnsadmin = \"admin.{ZONE}\"\nrecords = [\"auth.{ZONE}. A {pebble_ip}\", \"auth.{ZONE}. NS auth.{ZONE}.\"]\ndebug = false\n[database]\nengine = \"sqlite3\"\nconnection = \"/var/lib/acme-dns/acme-dns.db\"\n[api]\nip = \"0.0.0.0\"\nport = \"8080\"\ntls = \"none\"\ndisable_registration = false\ncorsorigins = []\nuse_header = false\n[logconfig]\nloglevel = \"info\"\nlogtype = \"stdout\"\nlogformat = \"text\"\n"
-            ),
-        );
-        let address = format!("{base}.8");
-        start(
-            &names,
-            &network,
-            &container,
-            None,
-            &address,
-            &[],
-            &[(config, "/etc/acme-dns/config.cfg".into())],
-            &acme_dns_image,
-            "/root/acme-dns",
-            &[],
-        );
-        wait_http(&format!("http://{address}:8080/health"), None)
-            .await
-            .unwrap();
-        let client = reqwest::Client::new();
-        let first: Value = client
-            .post(format!("http://{address}:8080/register"))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let second: Value = client
-            .post(format!("http://{address}:8080/register"))
-            .send()
-            .await
-            .unwrap()
-            .json()
-            .await
-            .unwrap();
-        let credentials = |value: &Value| crate::entry_certificate::AcmeDnsCredentials {
-            username: value["username"].as_str().unwrap().to_owned(),
-            password: value["password"].as_str().unwrap().to_owned(),
-            subdomain: value["subdomain"].as_str().unwrap().to_owned(),
-            fulldomain: value["fulldomain"].as_str().unwrap().to_owned(),
-        };
-        acme_dns_ip = Some(address.clone());
-        acme_dns_container = Some(container.clone());
-        acme_dns = Some((
-            format!("http://{address}:8080"),
-            credentials(&first),
-            credentials(&second),
-        ));
-    }
-
-    // 辅助容器：lego 的 httpreq 写入器、DNS 转发（`*.auth.<zone>` 给 acme-dns）和慢下载后端。
+fn helper_up(case: &mut Case) {
     // 容器到宿主绑的端口不通，所以这些都放进容器。
-    let helper_ip = format!("{base}.7");
-    let helper_script = dir.path().join("helper.py");
+    let helper_ip = format!("{}.7", case.base);
+    let helper_script = case.dir.path().join("helper.py");
     write(&helper_script, HELPER);
-    let helper = names.oneshot_container("helper");
+    let helper = case.names.oneshot_container("helper");
     start(
-        &names,
-        &network,
+        &case.names,
+        &case.network,
         &helper,
         None,
         &helper_ip,
         &["entry-gateway.wonton.internal"],
         &[(helper_script, "/helper.py".into())],
-        &python,
+        &case.python,
         "python3",
         &[
             "/helper.py",
-            &format!("{challenge_ip}:8055"),
-            &acme_dns_ip.clone().unwrap_or_else(|| "-".into()),
+            &format!("{}:8055", case.challenge_ip),
+            case.acme_dns_ip
+                .clone()
+                .unwrap_or_else(|| "-".into())
+                .as_str(),
             ZONE,
-            &acme_dns
+            case.acme_dns
                 .as_ref()
                 .map(|(_, apex, _)| apex.fulldomain.clone())
-                .unwrap_or_else(|| "-".into()),
-            &acme_dns
+                .unwrap_or_else(|| "-".into())
+                .as_str(),
+            case.acme_dns
                 .as_ref()
                 .map(|(_, _, lan)| lan.fulldomain.clone())
-                .unwrap_or_else(|| "-".into()),
+                .unwrap_or_else(|| "-".into())
+                .as_str(),
         ],
     );
-    let dns_zone_servers = vec![format!("{helper_ip}:53")];
+    case.dns_zone_servers = vec![format!("{helper_ip}:53")];
+    case.helper_ip = helper_ip;
+    case.helper = helper;
+}
 
-    // 连接器：PROXY v2 把客户端的真实来源交给入口。
-    let connector = names.oneshot_container("connector");
-    let connector_config = dir.path().join("connector.cfg");
+// 连接器：PROXY v2 把客户端的真实来源交给入口。
+fn connector_up(case: &mut Case) {
+    let connector = case.names.oneshot_container("connector");
+    let connector_config = case.dir.path().join("connector.cfg");
     write(
         &connector_config,
         "global\ndefaults\n  mode tcp\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nresolvers docker\n  nameserver docker 127.0.0.11:53\n  resolve_retries 1\n  timeout resolve 1s\n  timeout retry 1s\n  hold valid 10s\nfrontend c\n  bind :8443\n  default_backend entry\nbackend entry\n  server entry entry-edge.wonton.internal:8443 resolvers docker init-addr libc,none send-proxy-v2\n",
     );
     start(
-        &names,
-        &network,
+        &case.names,
+        &case.network,
         &connector,
         None,
-        &connector_ip,
+        &case.connector_ip,
         &["connector.wonton.internal"],
         &[(connector_config, "/config/connector.cfg".into())],
-        &haproxy,
+        &case.haproxy,
         "haproxy",
         &["-W", "-db", "-f", "/config/connector.cfg"],
     );
+    case.connector = connector;
+}
 
-    // Pebble 自己的 HTTPS：临时 CA 签发带 IP SAN 的叶证书。
+// Pebble：临时 CA 签发带 IP SAN 的叶证书给自己的 HTTPS，DNS 指到辅助容器。
+async fn pebble_up(case: &mut Case) {
+    let pebble_ip = case.pebble_ip.clone();
+    let helper_ip = case.helper_ip.clone();
     let mut ca_params = rcgen::CertificateParams::new(Vec::new()).unwrap();
     ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
     let ca_key = rcgen::KeyPair::generate().unwrap();
@@ -490,7 +531,7 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     let leaf_key = rcgen::KeyPair::generate().unwrap();
     let issuer = rcgen::Issuer::from_params(&ca_params, &ca_key);
     let leaf = leaf_params.signed_by(&leaf_key, &issuer).unwrap();
-    let pebble_tls = dir.path().join("pebble");
+    let pebble_tls = case.dir.path().join("pebble");
     write(&pebble_tls.join("cert.pem"), &leaf.pem());
     write(&pebble_tls.join("key.pem"), &leaf_key.serialize_pem());
     write(&pebble_tls.join("ca.pem"), &ca.pem());
@@ -508,16 +549,16 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
         .unwrap(),
     );
 
-    let pebble_container = names.oneshot_container("pebble");
+    let pebble_container = case.names.oneshot_container("pebble");
     start(
-        &names,
-        &network,
+        &case.names,
+        &case.network,
         &pebble_container,
         None,
         &pebble_ip,
         &[],
         &[(pebble_tls, "/config".into())],
-        &pebble,
+        &case.pebble,
         "/app",
         &[
             "-config",
@@ -529,21 +570,25 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     );
     wait_http(
         &format!("https://{pebble_ip}:14000/dir"),
-        Some(&dir.path().join("pebble/ca.pem")),
+        Some(&case.dir.path().join("pebble/ca.pem")),
     )
     .await
     .unwrap();
+}
 
-    // 入口链路：连接器（PROXY v2）→ 入口 → 辅助容器。
-    let install = dir.path().join("install");
+// 入口链路：连接器（PROXY v2）→ 入口 → 辅助容器，签发这一环由 `CertificateManager` 走真 Pebble。
+async fn issuance_issue(case: &mut Case, provider: Provider) -> CertificateManager {
+    let install = case.dir.path().join("install");
     std::fs::create_dir_all(install.join("entry/certs")).unwrap();
-    let env_file = dir.path().join("provider.env");
+    let env_file = case.dir.path().join("provider.env");
+    let helper_ip = case.helper_ip.clone();
+    let pebble_ip = case.pebble_ip.clone();
     write(
         &env_file,
         &format!(
             "HTTPREQ_ENDPOINT=http://{helper_ip}:8484\nHTTPREQ_MODE=RAW\nHTTPREQ_USERNAME={}\nHTTPREQ_PASSWORD={}\n",
-            super::domain::dotenv_value("user$TOKEN"),
-            super::domain::dotenv_value(r#"pass\path$TOKEN "quoted""#),
+            crate::clients::domain::dotenv_value("user$TOKEN"),
+            crate::clients::domain::dotenv_value(r#"pass\path$TOKEN "quoted""#),
         ),
     );
     // 先自检辅助容器的写入器和 DNS 转发，和 lego 要走的路径一样。
@@ -563,17 +608,18 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
         .send()
         .await
         .unwrap();
+    let acme_dns = &case.acme_dns;
     let manager = CertificateManager::new(
         install.clone(),
-        engine.clone(),
+        case.engine.clone(),
         CertificateConfig {
             directory_url: format!("https://{pebble_ip}:14000/dir"),
-            ca_file: Some(dir.path().join("pebble/ca.pem")),
-            dns_resolvers: dns_zone_servers.clone(),
+            ca_file: Some(case.dir.path().join("pebble/ca.pem")),
+            dns_resolvers: case.dns_zone_servers.clone(),
             dns_propagation_disable_ans: true,
             email: None,
             accept_terms: true,
-            network: network.clone(),
+            network: case.network.clone(),
             host_install_dir: install.clone(),
             include_lan: true,
             lan_acme_dns: acme_dns.as_ref().map(|(_, _, lan)| lan.clone()),
@@ -592,10 +638,11 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
         .unwrap();
     assert!(account.starts_with("https://"), "账号 URI 不对：{account}");
     if let Err(error) = manager.issue(ZONE).await {
-        let (_, helper_logs) = docker(&["logs", "--tail", "40", &helper]);
-        let (_, chall_logs) = docker(&["logs", "--tail", "20", &chall]);
+        let (_, helper_logs) = docker(&["logs", "--tail", "40", &case.helper]);
+        let (_, chall_logs) = docker(&["logs", "--tail", "20", &case.chall]);
         let env = std::fs::read_to_string(install.join("entry/acme/dns.env")).unwrap_or_default();
-        let acme_logs = acme_dns_container
+        let acme_logs = case
+            .acme_dns_container
             .as_deref()
             .map(|name| docker(&["logs", "--tail", "30", name]).1)
             .unwrap_or_default();
@@ -603,8 +650,35 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
             "签发失败：{error:#}\ndns.env:\n{env}\nacme-dns:\n{acme_logs}\nhelper:\n{helper_logs}\nchalltestsrv:\n{chall_logs}"
         );
     }
+    case.install = install;
+    manager
+}
 
-    // 证书本身。
+// 证书本身：路径、权限、属主和 SAN。
+
+/// 证书叶子里的 DNS 名字。
+fn subject_names(pem: &[u8]) -> Vec<String> {
+    let mut names = Vec::new();
+    if let Some(Ok(der)) = rustls_pemfile::certs(&mut std::io::Cursor::new(pem)).next() {
+        let (_, certificate) = x509_parser::parse_x509_certificate(&der).unwrap();
+        for name in certificate
+            .subject_alternative_name()
+            .unwrap()
+            .unwrap()
+            .value
+            .general_names
+            .iter()
+        {
+            if let x509_parser::extensions::GeneralName::DNSName(name) = name {
+                names.push((*name).to_owned());
+            }
+        }
+    }
+    names
+}
+
+fn certificate_check(case: &Case, manager: &CertificateManager) {
+    let install = &case.install;
     let site = manager.certificate_path();
     assert_eq!(site, install.join("entry/certs/site.pem"));
     let pem = std::fs::read(&site).unwrap();
@@ -615,7 +689,7 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     );
     let metadata = std::fs::metadata(&site).unwrap();
     assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
-    assert_eq!(metadata.uid(), std::fs::metadata(&install).unwrap().uid());
+    assert_eq!(metadata.uid(), std::fs::metadata(install).unwrap().uid());
     let names_in_cert = subject_names(&pem);
     for expected in [
         ZONE.to_owned(),
@@ -638,35 +712,39 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     assert!(mounts.iter().any(|mount| {
         mount.target.as_deref() == Some("/request/site.csr") && mount.read_only == Some(true)
     }));
+}
 
-    // 热加载不新起连接也不断掉正在下载的。
-    let entry = names.oneshot_container("entry");
-    let certs = install.join("entry/certs");
+// 入口：按渲染出的配置起一条真 HAProxy，属主用证书文件的。
+
+fn entry_up(case: &mut Case, manager: &CertificateManager) -> Rendered {
+    let entry = case.names.oneshot_container("entry");
+    let certs = case.install.join("entry/certs");
     let mut model = Model::federation_only(ZONE, ZONE);
     model.public_labels = Vec::new();
-    model.connectors = vec![connector_ip.clone()];
+    model.connectors = vec![case.connector_ip.clone()];
     let rendered = render(&model).unwrap();
     write(&certs.join("public.crt-list"), &rendered.public_crt_list);
     write(&certs.join("lan.crt-list"), &rendered.lan_crt_list);
-    let entry_config = dir.path().join("entry.cfg");
+    let entry_config = case.dir.path().join("entry.cfg");
     write(&entry_config, &rendered.config);
+    let site = manager.certificate_path();
     let owner = format!(
         "{}:{}",
         std::fs::metadata(&site).unwrap().uid(),
         std::fs::metadata(&site).unwrap().gid()
     );
     start(
-        &names,
-        &network,
+        &case.names,
+        &case.network,
         &entry,
         Some(&owner),
-        &entry_ip,
+        &case.entry_ip,
         &["entry-edge.wonton.internal", "entry.wonton.internal"],
         &[
             (certs, "/certs".into()),
             (entry_config, "/config/haproxy.cfg".into()),
         ],
-        &haproxy,
+        &case.haproxy,
         "haproxy",
         // 和产品一样开主进程管理端口（-S）：热加载走它，expose-fd 靠它把监听套接字交给新进程。
         &[
@@ -675,24 +753,17 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
             "-f",
             "/config/haproxy.cfg",
             "-S",
-            &format!("{entry_ip}:8404"),
+            &format!("{}:8404", case.entry_ip),
         ],
     );
-    tokio::time::sleep(Duration::from_millis(800)).await;
-    let roots = dir.path().join("roots.pem");
-    let roots_text = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap()
-        .get(format!("https://{pebble_ip}:15000/roots/0"))
-        .send()
-        .await
-        .unwrap()
-        .text()
-        .await
-        .unwrap();
-    std::fs::write(&roots, roots_text).unwrap();
-    let output = dir.path().join("download");
+    case.entry = entry;
+    rendered
+}
+
+// 热加载不新起连接也不断掉正在下载的。
+/// 经连接器下载 `/slow`：`-Sv` 的 stderr 留给外面，返回还在下载的子进程。
+async fn hot_reload_download(case: &Case, roots: &Path, output: &Path) -> std::process::Child {
+    let connector_ip = &case.connector_ip;
     let through = |extra: &[&str]| {
         let resolve = format!("probe.{ZONE}:8443:{connector_ip}");
         let url = format!("https://probe.{ZONE}:8443/slow");
@@ -730,7 +801,7 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
-    let mut child = through(&[
+    let child = through(&[
         "-Sv",
         "-o",
         output.to_str().unwrap(),
@@ -741,28 +812,48 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     // 等第一个字节真的落盘再重载：没被 accept 的连接在监听套接字换手时不会跟着走，
     // 固定 sleep 会让“下载中”有时其实还没开始。
     for _ in 0..100 {
-        if std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0) > 0 {
+        if std::fs::metadata(output).map(|m| m.len()).unwrap_or(0) > 0 {
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    let (_, status) = docker(&["inspect", "-f", "{{.State.Status}}", &entry]);
+    child
+}
+
+async fn hot_reload_check(case: &Case) {
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    let roots = case.dir.path().join("roots.pem");
+    let roots_text = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap()
+        .get(format!("https://{}:15000/roots/0", case.pebble_ip))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    std::fs::write(&roots, roots_text).unwrap();
+    let output = case.dir.path().join("download");
+    let mut child = hot_reload_download(case, &roots, &output).await;
+    let (_, status) = docker(&["inspect", "-f", "{{.State.Status}}", &case.entry]);
     if status.trim() != "running" {
-        let (_, logs) = docker(&["logs", "--tail", "30", &entry]);
+        let (_, logs) = docker(&["logs", "--tail", "30", &case.entry]);
         panic!("入口在热加载前已退出：\n{logs}");
     }
-    crate::entry_containers::reload_haproxy(&format!("{entry_ip}:8404"))
+    crate::entry_containers::reload_haproxy(&format!("{}:8404", case.entry_ip))
         .await
         .unwrap();
     let result = child.wait().unwrap();
     if !result.success() {
-        let (_, elogs) = docker(&["logs", "--timestamps", "--tail", "40", &entry]);
-        let (_, clogs) = docker(&["logs", "--timestamps", "--tail", "20", &connector]);
+        let (_, elogs) = docker(&["logs", "--timestamps", "--tail", "40", &case.entry]);
+        let (_, clogs) = docker(&["logs", "--timestamps", "--tail", "20", &case.connector]);
         let (_, info) = docker(&[
             "inspect",
             "-f",
             "{{.State.Status}} {{.RestartCount}}",
-            &entry,
+            &case.entry,
         ]);
         panic!(
             "热加载后下载失败: {info}
@@ -774,8 +865,10 @@ connector:
     }
     let body = std::fs::read_to_string(&output).unwrap();
     assert_eq!(body.lines().count(), 10, "连接被截断：{body:?}");
+}
 
-    // 服务商换了，入口配置和插件渲染出来的 compose 都不变。
+// 服务商换了，入口配置和插件渲染出来的 compose 都不变。
+fn rendered_compare(case: &Case, rendered: Rendered) -> (Vec<u8>, Vec<u8>) {
     let settings = EntrySettings {
         domain: ZONE.into(),
         service_url: None,
@@ -793,16 +886,34 @@ connector:
         dns_env_file: None,
         external_certificate: false,
     };
+    let install = case.install.clone();
     let base_compose = "services:\n  core:\n    volumes: []\n    networks:\n      core:\n        aliases: []\n    environment: {}\n  tuwunel:\n    volumes: []\n";
     let compose = crate::entry_compose::render(base_compose, Some(&settings), &install).unwrap();
     // 每次的子网不同：把这条随机地址归一成固定值再比。
     (
         rendered
             .config
-            .replace(&connector_ip, "connector.test")
+            .replace(&case.connector_ip, "connector.test")
             .into_bytes(),
         compose.into_bytes(),
     )
+}
+
+/// 每个服务商跑一遍：起环境、签发、验证书，再验热加载和渲染结果。
+async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
+    let mut case = Case::new();
+    infra_up(&mut case).await;
+    if provider == Provider::AcmeDns {
+        acme_dns_up(&mut case).await;
+    }
+    helper_up(&mut case);
+    connector_up(&mut case);
+    pebble_up(&mut case).await;
+    let manager = issuance_issue(&mut case, provider).await;
+    certificate_check(&case, &manager);
+    let rendered = entry_up(&mut case, &manager);
+    hot_reload_check(&case).await;
+    rendered_compare(&case, rendered)
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -813,5 +924,3 @@ async fn entry_certificate_contract() {
     assert_eq!(httpreq.0, acme_dns.0, "两个服务商渲染出的入口配置不同");
     assert_eq!(httpreq.1, acme_dns.1, "两个服务商渲染出的 compose 不同");
 }
-
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
