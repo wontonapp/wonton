@@ -181,3 +181,8 @@ panel-config-duplicate = 同じページがパネルに二つあります。
 panel-sync-failed-read = サーバーからパネルの設定を読み取れませんでした。
 panel-sync-unreadable = サーバーのパネル設定をこの端末では読めないため、端末のものを使います。
 panel-pins-refresh-failed = Bot がピン留めしたページを読み込めません:{ $error }
+
+# 模型页（ADR-0129）：壳发了这一页当下做不了的动作（没点开服务商、没在登录）。
+models-invalid-action = このページではできない操作です。
+# 模型页（ADR-0129）：浏览器授权的回跳不是这次发起的（地址不对或 state 不一致），没交给插件。
+models-login-callback-mismatch = このアプリで始めたログインと戻ってきた内容が一致しないため、破棄しました。もう一度ログインしてください。

@@ -37,13 +37,13 @@ private struct OnboardingReviewRow: View {
                     Text(item.kind.section)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
-                    Text(item.titles.formatted(.list(type: .and)))
+                    Text(verbatim: item.title)
                         .wontonText(WontonTheme.typography.itemTitle)
                         .foregroundStyle(Color(colors.textPrimary))
-                    if let detail = item.detail {
-                        Text(verbatim: detail.line)
+                    if let line = item.detailLine {
+                        Text(verbatim: line.text)
                             .wontonText(WontonTheme.typography.supporting)
-                            .foregroundStyle(Color(colors.textSecondary))
+                            .foregroundStyle(Color(line.tint(colors)))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -95,12 +95,46 @@ private struct OnboardingReviewRow: View {
 }
 
 /// 第二行的文字，按类别写在这里。
-private extension OnboardingReviewDetail {
-    var line: String {
-        switch self {
-        case let .email(email): email
-        case .keepCurrent: String(localized: .Onboarding2.onboardingReviewKeepCurrent)
-        case .unchanged: String(localized: .Onboarding4.onboardingReviewUnchanged)
+private struct ReviewDetailLine {
+    enum Tone {
+        case plain
+        case good
+        case bad
+    }
+
+    let text: String
+    var tone = Tone.plain
+
+    func tint(_ colors: ThemeColors) -> Rgb {
+        switch tone {
+        case .plain: colors.textSecondary
+        case .good: colors.success
+        case .bad: colors.danger
+        }
+    }
+}
+
+private extension OnboardingReviewItem {
+    /// 模型一行是“服务商 · 模型”，没接时如实说；别的行把几个名字连起来。
+    var title: String {
+        guard kind == .model else { return titles.formatted(.list(type: .and)) }
+        if titles.isEmpty { return String(localized: .AgentModels0.agentModelsCurrentNone) }
+        return titles.joined(separator: " · ")
+    }
+
+    /// 模型的测试结果分开写：没测、测通、不通（按类别）。没接模型时标题已经说了，不再写“不改动”。
+    var detailLine: ReviewDetailLine? {
+        switch detail {
+        case let .email(email): ReviewDetailLine(text: email)
+        case .model(test: nil):
+            ReviewDetailLine(text: String(localized: .Onboarding5.onboardingReviewModelNotTested))
+        case .model(test: .ok?):
+            ReviewDetailLine(text: String(localized: .Onboarding2.onboardingReviewModelTestPassed), tone: .good)
+        case let .model(test: result?): ReviewDetailLine(text: result.failureText, tone: .bad)
+        case .unchanged:
+            kind == .model && titles.isEmpty
+                ? nil : ReviewDetailLine(text: String(localized: .Onboarding4.onboardingReviewUnchanged))
+        case nil: nil
         }
     }
 }
@@ -110,6 +144,7 @@ private extension OnboardingReviewKind {
     var section: String {
         switch self {
         case .profile: String(localized: .Onboarding0.onboardingReviewSectionProfile)
+        case .assistant: String(localized: .Onboarding5.onboardingReviewSectionAssistant)
         case .model: String(localized: .Onboarding3.onboardingReviewSectionModel)
         case .app: String(localized: .Onboarding0.onboardingReviewSectionApps)
         }

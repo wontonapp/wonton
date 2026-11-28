@@ -12,7 +12,7 @@ use wonton_client::{
 };
 
 use super::super::rig::{Rig, WAIT, running};
-use super::{MODEL_SETTINGS, ONBOARDING, model_settings, onboarding, wait_requests};
+use super::{ONBOARDING, PROFILE, onboarding, wait_requests};
 
 /// `onboarding()` 里默认 Bot 插件 agent.one 的 Bot：它出现后，引导发布把它交给聊天，聊天视图随之通知一次。
 const BOT: &str = "@agent:home";
@@ -154,18 +154,17 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     let mut without_bot = onboarding("model");
     without_bot["default_bot_plugin"] = serde_json::Value::Null;
     rig.core.set_onboarding(without_bot);
-    rig.core.set_model_settings(model_settings(false));
     rig.connected().await;
     rig.wait_onboarding(|view| view.step.is_some() && !view.loading)
         .await;
-    // 第二次取状态卡在模型设置上：onboarding 已经有了，loading 还没结束。
-    rig.core.hold(Method::GET, MODEL_SETTINGS);
+    // 第二次取状态卡在资料上：onboarding 已经有了，loading 还没结束。
+    rig.core.hold(Method::GET, PROFILE);
     rig.app
         .dispatch(Action::Onboarding {
             action: wonton_protocol::OnboardingAction::RefreshOnboarding,
         })
         .unwrap();
-    wait_requests(&rig, Method::GET, MODEL_SETTINGS, 2).await;
+    wait_requests(&rig, Method::GET, PROFILE, 2).await;
     rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
         .await;
     let chat = rig.app.subscribe_chat();
@@ -179,9 +178,9 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     .unwrap();
     let (release, gets) = pause_selecting_publish(&rig, chat).await;
 
-    rig.core.release(Method::GET, MODEL_SETTINGS);
+    rig.core.release(Method::GET, PROFILE);
     let ready = rig
-        .wait_onboarding(|view| !view.loading && view.model.settings.is_some())
+        .wait_onboarding(|view| !view.loading && view.step.is_some())
         .await;
     assert!(ready.nav.unwrap().can_skip);
     // Drain synchronously: watch may otherwise merge a stale frame with the next good frame.
@@ -216,6 +215,6 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
         "a completed load was published as loading again"
     );
     assert!(!finished.loading, "{finished:?}");
-    assert!(finished.model.settings.is_some());
+    assert!(finished.step.is_some());
     assert!(finished.nav.unwrap().can_skip);
 }

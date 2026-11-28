@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.Action
+import app.wonton.protocol.ModelTestResult
 import app.wonton.protocol.OnboardingItemProblem
 import app.wonton.protocol.OnboardingItemState
 import app.wonton.protocol.OnboardingReview
@@ -68,11 +69,12 @@ private fun ReviewItemHeading(item: OnboardingReviewItem, plugins: PluginsState)
             Text(item.kind.section(), style = WontonTheme.typography.supporting,
                 color = WontonTheme.colors.textSecondary.toColor())
             Text(
-                ListFormatter.getInstance(LocalConfiguration.current.locales[0]).format(item.titles),
+                item.title(),
                 style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor(),
             )
-            item.detail?.let {
+            // 没接模型的那一行标题已经说了，不再写“不改动”。
+            item.detail?.takeIf { !item.isMissingModel() }?.let {
                 Text(
                     it.line(),
                     style = WontonTheme.typography.supporting,
@@ -83,10 +85,21 @@ private fun ReviewItemHeading(item: OnboardingReviewItem, plugins: PluginsState)
     }
 }
 
+private fun OnboardingReviewItem.isMissingModel(): Boolean = kind == OnboardingReviewKind.MODEL && titles.isEmpty()
+
+/** 标题：模型是“服务商 · 模型”，没接时如实说；其余是名字的列表。 */
+@Composable
+private fun OnboardingReviewItem.title(): String = when {
+    isMissingModel() -> stringResource(R.string.agent_models_none)
+    kind == OnboardingReviewKind.MODEL -> titles.joinToString(" · ")
+    else -> ListFormatter.getInstance(LocalConfiguration.current.locales[0]).format(titles)
+}
+
 /** 每一行的类别，写在标题上面。 */
 @Composable
 private fun OnboardingReviewKind.section(): String = when (this) {
     OnboardingReviewKind.PROFILE -> stringResource(R.string.onboarding_review_section_profile)
+    OnboardingReviewKind.ASSISTANT -> stringResource(R.string.onboarding_review_section_assistant)
     OnboardingReviewKind.MODEL -> stringResource(R.string.onboarding_review_section_model)
     OnboardingReviewKind.APP -> stringResource(R.string.onboarding_review_section_apps)
 }
@@ -128,7 +141,14 @@ private fun ReviewItemState(state: OnboardingItemState, retry: () -> Unit) {
 @Composable
 private fun OnboardingReviewDetail.line(): String = when (this) {
     is OnboardingReviewDetail.Email -> email
-    is OnboardingReviewDetail.KeepCurrent -> stringResource(R.string.onboarding_review_keep_current)
+    // 没测、测通、不通分开写（ADR-0129 第 4 节）。
+    is OnboardingReviewDetail.Model -> stringResource(
+        when (val result = test) {
+            null -> R.string.onboarding_review_model_untested
+            ModelTestResult.OK -> R.string.onboarding_review_model_ok
+            else -> result.failureText()
+        },
+    )
     is OnboardingReviewDetail.Unchanged -> stringResource(R.string.onboarding_review_unchanged)
 }
 

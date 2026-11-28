@@ -5,7 +5,6 @@ struct OnboardingView: View {
     let model: OnboardingModel
     let plugins: PluginsModel
     let nav: StepNav
-    let openGateway: (ModelSettingsPage) -> Void
     /// 重看引导的关闭；首次引导没有。
     var close: (() -> Void)?
     @State private var isKeyboardVisible = false
@@ -75,10 +74,15 @@ struct OnboardingView: View {
                     } else {
                         OnboardingProfileStepView(profile: view.profile, send: model.send)
                     }
+                case .assistant:
+                    // 名字预填核心给的：等它取回来再摆输入框。
+                    if view.loading {
+                        LoadingView().frame(maxWidth: .infinity)
+                    } else {
+                        OnboardingAssistantStepView(assistant: view.assistant, send: model.send)
+                    }
                 case .model:
-                    OnboardingModelStepView(step: view.model, send: model.send,
-                                            openGateway: openGateway,
-                                            revealProblem: { proxy.scrollTo($0, anchor: .top) })
+                    OnboardingModelStepView(step: view.model, core: model.core)
                 case .apps:
                     OnboardingAppsStep(needs: view.needs, catalogProblem: view.catalogProblem,
                                        plugins: plugins, send: model.send)
@@ -110,6 +114,7 @@ private extension OnboardingStep {
     var title: String {
         switch self {
         case .profile: String(localized: .Onboarding4.onboardingStepProfile)
+        case .assistant: String(localized: .Onboarding3.onboardingStepAssistant)
         case .model: String(localized: .Onboarding1.onboardingStepModel)
         case .apps: String(localized: .Onboarding0.onboardingStepApps)
         case .review: String(localized: .Onboarding3.onboardingStepReview)

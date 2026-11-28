@@ -12,8 +12,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginProblem
-import app.wonton.protocol.ModelSettingsFailure
-import app.wonton.protocol.ModelSettingsProblem
 import app.wonton.protocol.StoreFailure
 import app.wonton.protocol.StoreProblem
 import app.wonton.ui.design.WontonButton
@@ -82,16 +80,5 @@ internal fun StoreProblem.onboardingTitle(): String = stringResource(
         StoreFailure.INCOMPLETE -> R.string.onboarding_problem_store_incomplete
         StoreFailure.DISABLED -> R.string.onboarding_problem_store_disabled
         StoreFailure.OTHER -> R.string.onboarding_problem_store_other
-    },
-)
-
-@Composable
-internal fun ModelSettingsProblem.onboardingTitle(): String = stringResource(
-    when (reason) {
-        ModelSettingsFailure.GATEWAY_NOT_READY -> R.string.onboarding_problem_model_gateway_not_ready
-        ModelSettingsFailure.TRANSPORT_UNAVAILABLE -> R.string.onboarding_problem_model_transport_unavailable
-        ModelSettingsFailure.UNAUTHORIZED -> R.string.onboarding_problem_model_unauthorized
-        ModelSettingsFailure.UPSTREAM -> R.string.onboarding_problem_model_upstream
-        ModelSettingsFailure.PROTOCOL -> R.string.onboarding_problem_model_protocol
     },
 )

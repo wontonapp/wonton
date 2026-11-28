@@ -6,6 +6,7 @@ use crate::action_domains::{
     SessionAction, SettingsAction, SharingAction,
 };
 use crate::agent_chain::AgentAction;
+use crate::agent_models_view::AgentModelsAction;
 
 /// 原生壳发给客户端核心的唯一用户操作入口。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +71,10 @@ pub enum Action {
     },
     Agent {
         action: AgentAction,
+    },
+    /// 一个 Bot 的模型页（ADR-0129）。
+    AgentModels {
+        action: AgentModelsAction,
     },
     /// 媒体与传输（ADR-0113）：播放控制、停止、队列改动。
     Media {

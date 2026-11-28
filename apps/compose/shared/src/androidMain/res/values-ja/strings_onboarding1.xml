@@ -4,8 +4,6 @@
     <string name="onboarding_default_agent_title">デフォルトのアシスタント</string>
     <!-- Loading spinner shown while setup data loads. -->
     <string name="onboarding_loading">読み込み中</string>
-    <!-- Row title: keep the models already configured in the model gateway. -->
-    <string name="onboarding_model_use_current">今のモデルを使う</string>
     <!-- Banner when one approval card is waiting. Argument: the card's title. -->
     <string name="onboarding_pending_card_one">%1$sの確認待ちです</string>
     <!-- Problem title while installing: the device the app needs is unavailable. -->
@@ -23,4 +21,8 @@
     <string name="onboarding_review_preparing">準備中</string>
     <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
     <string name="onboarding_tip_app_installed">インストールしたアプリはサイドバーのマイアプリに表示されます。</string>
+    <!-- Card title of the setup step where the owner names their assistant. -->
+    <string name="onboarding_step_assistant">あなたのアシスタント</string>
+    <!-- Second line of the model row in the review step: the last test got a real reply. -->
+    <string name="onboarding_review_model_ok">テスト済み、使えます</string>
 </resources>

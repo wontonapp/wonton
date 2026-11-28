@@ -669,6 +669,7 @@ const EXPECTED: &[(&str, &str)] = &[
     // 0.17
     ("0.17", "x-wonton.provides.<名字>.browse"),
     ("0.17", "x-wonton.subtitle"),
+    ("0.17", "x-wonton.agent.models"),
 ];
 
 #[test]
@@ -726,6 +727,18 @@ fn media_browse_needs_0_17() {
         found[0].contains("provides.media_source.browse"),
         "{found:?}"
     );
+    assert!(problems(&document("0.17", manifest, plain())).is_empty());
+}
+
+#[test]
+fn agent_models_needs_0_17() {
+    let manifest = json!({
+        "kind": "agent",
+        "agent": {"protocol": "matrix", "models": {"service": "web", "command": ["models"]}},
+    });
+    let found = problems(&document("0.16", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("agent.models"), "{found:?}");
     assert!(problems(&document("0.17", manifest, plain())).is_empty());
 }
 

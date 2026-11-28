@@ -1,11 +1,9 @@
 //! 重看引导：每一步都带现值进入；中途关闭丢弃全部选择、什么都不保存。
 
-use wonton_client::{
-    Action, OnboardingModelChoice, OnboardingReviewDetail, OnboardingReviewKind, OnboardingStep,
-};
+use wonton_client::{Action, OnboardingReviewDetail, OnboardingReviewKind, OnboardingStep};
 
 use super::super::rig::Rig;
-use super::{act, assert_nothing_saved, at, edit, model_settings, onboarding, with_photos};
+use super::{act, assert_nothing_saved, at, choose_model, edit, onboarding, with_photos};
 
 #[tokio::test]
 async fn reopening_shows_the_current_settings_on_every_step() {
@@ -14,9 +12,9 @@ async fn reopening_shows_the_current_settings_on_every_step() {
     state["needs"][0]["plugins"][0]["installed_version"] = serde_json::json!("1.0.0");
     rig.core.set_onboarding(state);
     rig.core.set_owner(Some("云吞"), Some("me@example.com"));
-    rig.core.set_model_settings(model_settings(true));
     rig.connected().await;
     at(&rig, OnboardingStep::Finished).await;
+    choose_model(&rig).await;
 
     act(
         &rig,
@@ -26,9 +24,7 @@ async fn reopening_shows_the_current_settings_on_every_step() {
     );
     let view = rig
         .wait_onboarding(|view| {
-            view.step == Some(OnboardingStep::Profile)
-                && !view.loading
-                && view.model.settings.is_some()
+            view.step == Some(OnboardingStep::Profile) && !view.loading && view.model.bot.is_some()
         })
         .await;
     assert_eq!(view.profile.display_name, "云吞");
@@ -39,9 +35,15 @@ async fn reopening_shows_the_current_settings_on_every_step() {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
+    at(&rig, OnboardingStep::Assistant).await;
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     let model = at(&rig, OnboardingStep::Model).await;
-    assert_eq!(model.model.choice, Some(OnboardingModelChoice::Current));
-    assert!(model.nav.unwrap().can_next);
+    assert!(model.nav.unwrap().can_next, "默认 Bot 已经选好模型");
     act(
         &rig,
         Action::Onboarding {
@@ -61,10 +63,11 @@ async fn reopening_shows_the_current_settings_on_every_step() {
         kinds,
         [
             OnboardingReviewKind::Profile,
+            OnboardingReviewKind::Assistant,
             OnboardingReviewKind::Model,
             OnboardingReviewKind::App
         ],
-        "三类各一行，装着的应用也在"
+        "每类各一行，装着的应用也在"
     );
     let details: Vec<_> = review
         .review
@@ -76,10 +79,11 @@ async fn reopening_shows_the_current_settings_on_every_step() {
         details,
         [
             Some(OnboardingReviewDetail::Unchanged),
-            Some(OnboardingReviewDetail::KeepCurrent),
+            Some(OnboardingReviewDetail::Unchanged),
+            Some(OnboardingReviewDetail::Model { test: None }),
             Some(OnboardingReviewDetail::Unchanged),
         ],
-        "没动的标不变，模型是“用现在的”"
+        "没动的标不变，模型列出选好的"
     );
     assert_eq!(review.review.items[0].titles, ["云吞"]);
     assert_nothing_saved(&rig);
@@ -90,7 +94,6 @@ async fn closing_a_revisit_discards_every_choice_and_saves_nothing() {
     let rig = Rig::new().await;
     rig.core.set_onboarding(onboarding("finished"));
     rig.core.set_owner(Some("云吞"), None);
-    rig.core.set_model_settings(model_settings(true));
     rig.connected().await;
     at(&rig, OnboardingStep::Finished).await;
 
@@ -106,12 +109,6 @@ async fn closing_a_revisit_discards_every_choice_and_saves_nothing() {
         &rig,
         Action::Onboarding {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::UseCurrentModel,
         },
     );
     act(

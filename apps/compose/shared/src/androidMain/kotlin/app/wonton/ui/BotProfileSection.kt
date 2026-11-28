@@ -307,7 +307,7 @@ private fun BotProfileProblem.profileProblem(): Problem = Problem(
     detail = detail,
 )
 
-private fun BotNameProblem.textRes() = when (this) {
+internal fun BotNameProblem.textRes() = when (this) {
     BotNameProblem.EMPTY -> R.string.bot_name_empty
     BotNameProblem.TOO_LONG -> R.string.bot_name_too_long
     BotNameProblem.CONTROL_CHARACTERS -> R.string.bot_name_control

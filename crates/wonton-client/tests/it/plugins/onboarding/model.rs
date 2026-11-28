@@ -1,15 +1,12 @@
-//! 模型设置步：网页还没配好就不算已配置；取不到时可重试或跳过。
+//! 接模型这一步：对着默认 Bot 的模型页，选好主模型才能往下走；没有默认 Bot 时这一步和你的助手都不显示。
 
-use axum::http::Method;
-use wonton_client::{Action, ModelSettingsFailure, OnboardingModelChoice, OnboardingStep};
+use wonton_client::{Action, OnboardingStep};
 
-use super::super::rig::{Canned, core_error};
-use super::{
-    MODEL_SETTINGS, act, assert_nothing_saved, at, configure_gateway, flow_rig, invalid, onboarding,
-};
+use super::super::rig::Rig;
+use super::{act, at, choose_model, flow_rig, invalid, onboarding, pass_assistant};
 
 #[tokio::test]
-async fn model_settings_page_does_not_claim_models_are_configured() {
+async fn the_model_step_waits_for_the_default_bots_model() {
     let rig = flow_rig(onboarding("profile")).await;
     act(
         &rig,
@@ -17,19 +14,15 @@ async fn model_settings_page_does_not_claim_models_are_configured() {
             action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
         },
     );
-    let before = at(&rig, OnboardingStep::Model).await;
-    let page = before.model.settings.unwrap();
-    assert_eq!(page.plugin_id, "system.models");
-    assert_eq!(page.web_url, "https://example.invalid/models");
-    assert!(!before.model.has_configured_models);
-    assert_eq!(before.model.choice, None);
-    assert!(!before.nav.unwrap().can_next);
-    invalid(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::UseCurrentModel,
-        },
+    pass_assistant(&rig).await;
+    let view = rig.app.onboarding();
+    let bot = view.model.bot.unwrap();
+    assert_eq!(
+        (bot.plugin_id.as_str(), bot.bot.as_str()),
+        ("agent.one", "default")
     );
+    let nav = view.nav.unwrap();
+    assert!(!nav.can_next && nav.can_skip);
     invalid(
         &rig,
         Action::Onboarding {
@@ -37,10 +30,9 @@ async fn model_settings_page_does_not_claim_models_are_configured() {
         },
     );
 
-    configure_gateway(&rig).await;
-    let after = at(&rig, OnboardingStep::Model).await;
-    assert_eq!(after.model.settings, Some(page));
-    assert_eq!(after.model.choice, Some(OnboardingModelChoice::Current));
+    choose_model(&rig).await;
+    rig.wait_onboarding(|view| view.nav.is_some_and(|nav| nav.can_next))
+        .await;
     act(
         &rig,
         Action::Onboarding {
@@ -48,54 +40,18 @@ async fn model_settings_page_does_not_claim_models_are_configured() {
         },
     );
     at(&rig, OnboardingStep::Apps).await;
-    assert_nothing_saved(&rig);
 }
 
 #[tokio::test]
-async fn unavailable_model_settings_can_be_retried_or_skipped() {
-    let rig = flow_rig(onboarding("profile")).await;
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
-        },
-    );
-    for (error, expected) in [
-        (
-            core_error(503, "models_unavailable", "gateway not ready"),
-            ModelSettingsFailure::GatewayNotReady,
-        ),
-        (
-            Canned(502, String::new()),
-            ModelSettingsFailure::TransportUnavailable,
-        ),
-        (
-            core_error(403, "unauthenticated", "not authorized"),
-            ModelSettingsFailure::Unauthorized,
-        ),
-    ] {
-        rig.core.answer(Method::GET, MODEL_SETTINGS, error);
-        act(
-            &rig,
-            Action::Onboarding {
-                action: wonton_protocol::OnboardingAction::RefreshOnboarding,
-            },
-        );
-        let view = rig
-            .wait_onboarding(|view| view.model.problem.is_some() && !view.loading)
-            .await;
-        assert_eq!(view.step, Some(OnboardingStep::Model));
-        assert_eq!(view.model.problem.unwrap().reason, expected);
-        assert!(view.model.settings.is_none());
-        assert!(!view.model.has_configured_models);
-        assert!(!view.nav.unwrap().can_next);
-        invalid(
-            &rig,
-            Action::Onboarding {
-                action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-            },
-        );
-    }
+async fn without_a_default_bot_the_assistant_and_model_steps_are_hidden() {
+    let rig = Rig::new().await;
+    let mut state = onboarding("profile");
+    state["default_bot_plugin"] = serde_json::Value::Null;
+    rig.core.set_onboarding(state);
+    rig.connected().await;
+    let view = at(&rig, OnboardingStep::Profile).await;
+    assert!(view.model.bot.is_none());
+    assert_eq!(view.nav.map(|nav| nav.total), Some(3));
     act(
         &rig,
         Action::Onboarding {
@@ -103,22 +59,4 @@ async fn unavailable_model_settings_can_be_retried_or_skipped() {
         },
     );
     at(&rig, OnboardingStep::Apps).await;
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::BackOnboardingStep,
-        },
-    );
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::RefreshOnboarding,
-        },
-    );
-    let recovered = rig
-        .wait_onboarding(|view| !view.loading && view.model.settings.is_some())
-        .await;
-    assert!(recovered.model.problem.is_none());
-    assert_eq!(recovered.model.choice, None);
-    assert_nothing_saved(&rig);
 }

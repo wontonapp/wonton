@@ -2,126 +2,6 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "onboarding.model.openSettings": {
-      "comment": "Button that opens the model gateway's settings page.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Model Settings"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开模型设置"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "開啟模型設定"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "モデル設定を開く"
-          }
-        }
-      }
-    },
-    "onboarding.problem.model.keyRejected.next": {
-      "comment": "Line under the problem title: the rejected key wasn't saved.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The key wasn't saved. Fix it and try again."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "key 没有保存，改好后再试。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "金鑰沒有儲存，改好後再試。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "APIキーは保存されていません。修正してから再試行してください。"
-          }
-        }
-      }
-    },
-    "onboarding.problem.model.protocol.next": {
-      "comment": "Line under the problem title: update the app or the home server.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Update Wonton or your home server."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请更新 App 或家里的服务器。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "請更新 App 或家用伺服器。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wontonか自宅サーバを更新してください。"
-          }
-        }
-      }
-    },
-    "onboarding.problem.model.transportUnavailable": {
-      "comment": "Problem title in setup: the home server can't be reached.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can't reach your home server"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "连不上家里的服务器"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "連不上家用伺服器"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自宅サーバに接続できません"
-          }
-        }
-      }
-    },
     "onboarding.problem.store.rateLimited": {
       "comment": "Problem title in setup: too many requests to the recommendation source.",
       "extractionState": "manual",
@@ -268,6 +148,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "アプリをインストールしたら、タブバーに追加できます。"
+          }
+        }
+      }
+    },
+    "onboarding.review.sectionAssistant": {
+      "comment": "Review page: category label above the assistant's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Assistant"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "助手"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アシスタント"
+          }
+        }
+      }
+    },
+    "onboarding.review.modelNotTested": {
+      "comment": "Review page, model row: the model hasn't been tested.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not tested yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没测试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒測試"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだテストしていません"
           }
         }
       }

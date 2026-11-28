@@ -4,8 +4,6 @@
     <string name="onboarding_done">これらのアプリをインストール</string>
     <!-- Primary button after setup finished: leave setup and open chat. -->
     <string name="onboarding_enter_chat">チャットへ</string>
-    <!-- Problem title in setup: the home server can't be reached. -->
-    <string name="onboarding_problem_model_transport_unavailable">自宅サーバーに接続できません。ネットワークを確認して再試行してください。</string>
     <!-- Problem title while installing: the home server is older than the app needs. -->
     <string name="onboarding_problem_plugin_server_too_old">自宅サーバーのバージョンが古すぎます。先にサーバーをアップデートしてください。</string>
     <!-- Problem title while installing: the home server can't be reached. -->
@@ -20,8 +18,6 @@
     <string name="onboarding_problem_store_unreachable">おすすめの提供元に接続できません。再試行するかスキップできます。</string>
     <!-- Fallback when the core gives no reason why an app can't be installed. -->
     <string name="onboarding_review_blocked">このアプリはインストールできません</string>
-    <!-- Row description in the review step: the already-configured models are kept. -->
-    <string name="onboarding_review_keep_current">今のものをそのまま使います</string>
     <!-- Row description in the review step: finishing will not touch this. -->
     <string name="onboarding_review_unchanged">変更しません</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->
