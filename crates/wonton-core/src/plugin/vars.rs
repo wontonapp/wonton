@@ -187,7 +187,7 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     }
     // 可选权限开着时给所有服务一个 1，关着时不定义（ADR-0057）。
     for permission in &ctx.granted {
-        if let Some(var) = super::privileges::permission_var(permission) {
+        if let Some(var) = permission.spec().env {
             set(var, "1".to_owned());
         }
     }

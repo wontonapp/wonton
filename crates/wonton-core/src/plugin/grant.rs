@@ -21,35 +21,9 @@ pub(in crate::plugin) fn recorded_grant(
         .collect()
 }
 
-/// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
+/// 核心已经兑现的权限（权限表的 `supported` 一栏）。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
 pub(in crate::plugin) fn supported(permission: &Permission) -> bool {
-    matches!(
-        permission,
-        Permission::StorageShare { .. }
-            | Permission::StorageHome { .. }
-            | Permission::NetworkClients
-            | Permission::NetworkEgress
-            | Permission::EgressProxy
-            | Permission::MatrixBot
-            | Permission::Models
-            | Permission::Tools
-            | Permission::PluginsHealth
-            | Permission::Notify
-            | Permission::OwnerIdentity
-            | Permission::DevicesGpu
-            | Permission::NetworkLan
-            | Permission::NetworkHost
-            | Permission::Capability { .. }
-            | Permission::HostPid
-            | Permission::HostIpc
-            | Permission::SecurityOpt
-            | Permission::Privileged
-            | Permission::DevicesSerial
-            | Permission::DevicesUsb
-            | Permission::DevicesDisk
-            | Permission::Device { .. }
-            | Permission::DockerSocket
-    )
+    permission.spec().supported
 }
 
 pub(in crate::plugin) fn check_permissions(

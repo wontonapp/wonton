@@ -76,8 +76,7 @@ impl PluginManager {
                             .enabled_permissions
                             .iter()
                             .filter(|item| {
-                                super::privileges::risk(&item.permission)
-                                    == Some(super::privileges::CapabilityRisk::Highest)
+                                item.permission.risk() == Some(super::manifest::RiskLevel::Highest)
                             })
                             .map(|item| item.permission.to_string())
                             .collect()

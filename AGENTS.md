@@ -47,6 +47,9 @@
   超过 800 行的警告是“该按职责拆”的信号，拆要按职责，不是挪几行凑数。
 - 确需超过 2000 行时写进 `.size-allowlist`，格式 `路径 | 原因 | 到期日 YYYY-MM-DD`；到期后 CI 重新失败。
 - 按职责拆模块。新功能放进职责清晰的小模块，不往已经很大的文件末尾追加。
+- 几张谁都要改的大清单（插件权限 `Permission`、网关目标 `HostKind`、客户端操作 `Action`、界面文字）一处定义，别处生成或查表，
+  不再另写一份 match（[ADR-0128](docs/adr/0128-single-source-vocabularies.md)）。增删变体、改写法或语义必须带 ADR；
+  新能力优先加数据行（清单字段、能力名、插件自己的工具和页面），不改这几个内核枚举。
 - 客户端遵循“厚 Rust 核心 + 薄原生壳”：状态、业务逻辑、网络、存储、ViewModel 都在 Rust；
   Swift/Kotlin 只渲染 ViewModel、把用户操作发回核心，以及调用平台能力（推送、相册、文件选择、
   后台音频等）。核心导出的 ViewModel 项只有一个壳用到时，CI 的 `scripts/check-shell-parity.py` 报警告、不挡合并；

@@ -19,8 +19,7 @@ use crate::files::share_fs::saving;
 use crate::l10n;
 use crate::plugin::check;
 use crate::plugin::languages::Languages;
-use crate::plugin::manifest::{Manifest, Permission};
-use crate::plugin::privileges::{self, CapabilityRisk};
+use crate::plugin::manifest::{Manifest, Permission, RiskLevel};
 use crate::plugin::store::InstalledRecord;
 use crate::plugin::{
     InstallError, PluginId, PluginPackage, PluginView, UpgradeSwitches, package_files,
@@ -36,7 +35,7 @@ fn highest(manifest: &Manifest) -> bool {
     manifest
         .permissions
         .iter()
-        .any(|p| privileges::risk(p) == Some(CapabilityRisk::Highest))
+        .any(|p| p.risk() == Some(RiskLevel::Highest))
 }
 
 fn device_second(
@@ -581,7 +580,7 @@ async fn update(
             .manifest
             .permissions
             .iter()
-            .any(|p| privileges::risk(p) == Some(CapabilityRisk::VeryHigh));
+            .any(|p| p.risk() == Some(RiskLevel::VeryHigh));
     let widened = cards::added_lines(&record, &package, langs);
     // 授予的就是新清单里写的：减权限时旧授予不作数，没变宽时它是子集。
     let granted = package.manifest.permissions.clone();

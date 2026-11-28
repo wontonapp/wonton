@@ -81,7 +81,6 @@ mod manifest_device;
 mod manifest_gpu_images;
 mod manifest_mcp;
 mod manifest_oidc;
-mod manifest_permission;
 mod manifest_remote;
 mod manifest_static;
 mod manifest_tabs;
@@ -168,7 +167,7 @@ pub(crate) mod fake_docker;
 pub(crate) mod tests;
 
 pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView};
-pub use manifest::{Manifest, ManifestExt, Permission, PermissionExt, PluginId};
+pub use manifest::{Manifest, ManifestExt, Permission, PluginId};
 pub(crate) use manifest_tabs::validate_path;
 pub use mcp_server::{McpServer, ToolLimits};
 pub use owner_secrets::{SecretValue, ViewableSecrets};

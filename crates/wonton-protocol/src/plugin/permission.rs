@@ -18,6 +18,16 @@ pub enum PermissionRisk {
     Other,
 }
 
+impl From<crate::manifest::RiskLevel> for PermissionRisk {
+    fn from(level: crate::manifest::RiskLevel) -> Self {
+        match level {
+            crate::manifest::RiskLevel::High => Self::High,
+            crate::manifest::RiskLevel::VeryHigh => Self::VeryHigh,
+            crate::manifest::RiskLevel::Highest => Self::Highest,
+        }
+    }
+}
+
 /// 要授予插件的一项权限。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

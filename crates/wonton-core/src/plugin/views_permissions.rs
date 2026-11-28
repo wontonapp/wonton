@@ -5,109 +5,33 @@ use wonton_protocol::{PermissionLine, PermissionOpened, PermissionRisk, PluginWr
 
 use super::languages::Languages;
 use super::manager::supported;
-use super::manifest::{Access, Manifest, ManifestExt, Permission};
+use super::manifest::{Manifest, ManifestExt, Permission};
 use super::store::{EnabledPermission, OpenedBy};
 use crate::l10n;
 
-/// 权限的说明：安装确认页、Bot 的确认卡片和插件目录的搜索结果都用它。
+/// 权限的说明：安装确认页、Bot 的确认卡片和插件目录的搜索结果都用它。键和参数来自权限表（ADR-0128）。
 pub fn permission_text(permission: &Permission, langs: &Languages) -> String {
-    let access = |access: &Access| match access {
-        Access::Read => "read",
-        Access::Write => "write",
-    };
-    match permission {
-        Permission::StorageShare { name, access: a } => l10n::text(
-            langs,
-            "permission-storage-share",
-            &[("access", access(a).into()), ("name", name.as_str().into())],
-        ),
-        Permission::StorageHome { access: a } => l10n::text(
-            langs,
-            "permission-storage-home",
-            &[("access", access(a).into())],
-        ),
-        Permission::Models => l10n::text(langs, "permission-models", &[]),
-        Permission::Tools => l10n::text(langs, "permission-tools", &[]),
-        Permission::PluginsHealth => l10n::text(langs, "permission-plugins-health", &[]),
-        Permission::MatrixBot => l10n::text(langs, "permission-matrix-bot", &[]),
-        Permission::Notify => l10n::text(langs, "permission-notify", &[]),
-        Permission::OwnerIdentity => l10n::text(langs, "permission-owner-identity", &[]),
-        Permission::NetworkEgress => l10n::text(langs, "permission-network-egress", &[]),
-        Permission::EgressProxy => l10n::text(langs, "permission-egress-proxy", &[]),
-        Permission::NetworkLan => l10n::text(langs, "permission-network-lan", &[]),
-        Permission::NetworkClients => l10n::text(langs, "permission-network-clients", &[]),
-        Permission::NetworkHost => l10n::text(langs, "permission-network-host", &[]),
-        Permission::Capability { name } => l10n::text(
-            langs,
-            "permission-capability",
-            &[("name", name.as_str().into())],
-        ),
-        Permission::HostPid => l10n::text(langs, "permission-host-pid", &[]),
-        Permission::HostIpc => l10n::text(langs, "permission-host-ipc", &[]),
-        Permission::SecurityOpt => l10n::text(langs, "permission-security-opt", &[]),
-        Permission::Privileged => l10n::text(langs, "permission-privileged", &[]),
-        Permission::DevicesGpu => l10n::text(langs, "permission-devices-gpu", &[]),
-        Permission::DevicesSerial => l10n::text(langs, "permission-devices-serial", &[]),
-        Permission::DevicesUsb => l10n::text(langs, "permission-devices-usb", &[]),
-        Permission::DevicesDisk => l10n::text(langs, "permission-devices-disk", &[]),
-        Permission::Device { path } => l10n::text(
-            langs,
-            "permission-device",
-            &[("path", path.as_str().into())],
-        ),
-        Permission::DockerSocket => l10n::text(langs, "permission-docker-socket", &[]),
-    }
+    format(permission, permission.spec().text, langs)
 }
 
 pub(super) fn permission_risk(permission: &Permission) -> Option<PermissionRisk> {
-    match permission {
-        Permission::EgressProxy
-        | Permission::NetworkLan
-        | Permission::DevicesGpu
-        | Permission::DevicesSerial
-        | Permission::DevicesUsb
-        | Permission::Device { .. } => Some(PermissionRisk::High),
-        Permission::NetworkHost | Permission::DevicesDisk => Some(PermissionRisk::VeryHigh),
-        Permission::Capability { name } => Some(match super::privileges::capability_risk(name) {
-            super::privileges::CapabilityRisk::High => PermissionRisk::High,
-            super::privileges::CapabilityRisk::VeryHigh => PermissionRisk::VeryHigh,
-            super::privileges::CapabilityRisk::Highest => PermissionRisk::Highest,
-        }),
-        Permission::HostPid
-        | Permission::HostIpc
-        | Permission::SecurityOpt
-        | Permission::Privileged
-        | Permission::DockerSocket => Some(PermissionRisk::Highest),
-        _ => None,
-    }
+    permission.risk().map(PermissionRisk::from)
 }
 
 fn permission_notice(permission: &Permission, langs: &Languages) -> Option<String> {
-    let text = match permission {
-        Permission::EgressProxy => l10n::text(langs, "permission-notice-egress-proxy", &[]),
-        Permission::NetworkHost => l10n::text(langs, "permission-notice-network-host", &[]),
-        Permission::HostPid
-        | Permission::HostIpc
-        | Permission::SecurityOpt
-        | Permission::Privileged
-        | Permission::DockerSocket
-        | Permission::Capability { .. }
-            if permission_risk(permission) == Some(PermissionRisk::Highest) =>
-        {
-            l10n::text(langs, "permission-notice-highest-risk", &[])
-        }
-        Permission::NetworkLan => l10n::text(langs, "permission-notice-network-lan", &[]),
-        Permission::Device { path } => l10n::text(
-            langs,
-            "permission-notice-device",
-            &[("path", path.as_str().into())],
-        ),
-        Permission::DevicesSerial => l10n::text(langs, "permission-notice-devices", &[]),
-        Permission::DevicesUsb => l10n::text(langs, "permission-notice-devices-usb", &[]),
-        Permission::DevicesDisk => l10n::text(langs, "permission-notice-devices-disk", &[]),
-        _ => return None,
-    };
-    Some(text)
+    permission
+        .notice()
+        .map(|key| format(permission, key, langs))
+}
+
+/// 权限表里的一个消息键，Fluent 变量就是权限的参数（`name`、`access`、`path`）。
+fn format(permission: &Permission, key: &str, langs: &Languages) -> String {
+    let params = permission.params();
+    let args: Vec<(&str, wonton_l10n::Arg<'_>)> = params
+        .iter()
+        .map(|(name, value)| (*name, value.as_str().into()))
+        .collect();
+    l10n::text(langs, key, &args)
 }
 
 pub fn permission_line(permission: &Permission, langs: &Languages) -> PermissionLine {
@@ -178,4 +102,29 @@ pub(super) fn reveals_owner_identity(m: &Manifest) -> bool {
             .as_ref()
             .is_some_and(|w| w.sso == super::manifest::Sso::Oidc)
         || super::proxy_auth::uses_identity(m)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wonton_protocol::manifest::{Notice, PERMISSIONS};
+
+    /// 表里写的消息键在四种语言里都有，参数也够：缺键时 Fluent 回的是键本身，缺参数会 panic。
+    #[test]
+    fn every_permission_row_has_its_messages() {
+        for tag in ["en", "zh-Hans", "zh-Hant", "ja"] {
+            let langs = Languages::from_header(Some(tag));
+            for row in PERMISSIONS {
+                let permission: Permission = row.example.parse().unwrap();
+                assert_ne!(permission_text(&permission, &langs), row.text, "{tag}");
+                let mut keys = vec![wonton_protocol::manifest::HIGHEST_RISK_NOTICE];
+                if let Notice::Text(key) = row.notice {
+                    keys.push(key);
+                }
+                for key in keys {
+                    assert_ne!(format(&permission, key, &langs), key, "{tag} {key}");
+                }
+            }
+        }
+    }
 }

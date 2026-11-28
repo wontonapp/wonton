@@ -184,17 +184,6 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
             if devices.is_empty() {
                 return Err(invalid(text(langs, "plugin-install-device-empty", &[])));
             }
-            if !devices.disk.is_empty()
-                && manifest
-                    .optional_permissions
-                    .contains_key(&Permission::DevicesDisk)
-            {
-                return Err(invalid(text(
-                    langs,
-                    "plugin-install-device-disk-not-optional",
-                    &[],
-                )));
-            }
             for class in DeviceClass::ALL {
                 let slots = devices.slots(class);
                 if slots.is_empty() {
@@ -223,10 +212,9 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
 
 fn has_permission(manifest: &Manifest, class: DeviceClass) -> bool {
     manifest.permissions.contains(&class.permission())
-        || (class != DeviceClass::Disk
-            && manifest
-                .optional_permissions
-                .contains_key(&class.permission()))
+        || manifest
+            .optional_permissions
+            .contains_key(&class.permission())
 }
 
 fn validate_slots(

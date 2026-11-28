@@ -199,6 +199,28 @@ fn sys_rawio_comes_with_disks_and_needs_no_cap_permission() {
     )));
 }
 
+#[test]
+fn optional_disk_is_refused_with_the_disk_sentence_even_without_slots() {
+    // 没写硬盘槽位、`off_loss` 也不全时，同样先说“硬盘不能可选”，而不是通用的那句或缺译文。
+    for optional in [
+        "devices.disk:\n      off_loss: {zh: 看不到硬盘健康, en: no disk health}",
+        "devices.disk:\n      off_loss: {en: no disk health}",
+    ] {
+        let source = super::package(
+            "  smart: {image: example/scrutiny}",
+            &format!("  permissions: []\n  optional_permissions:\n    {optional}"),
+        );
+        let error = parse(&source).unwrap_err();
+        assert!(
+            error.contains(&super::message(
+                "plugin-install-device-disk-not-optional",
+                &[]
+            )),
+            "{error}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn preview_lists_devices_with_kind_and_system_marker() {
     let host = device_host();

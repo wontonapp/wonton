@@ -345,9 +345,11 @@ impl PluginManager {
             .get(id)
             .and_then(|entry| entry.listed.as_ref())
             .is_some_and(|listed| {
-                listed.manifest.permissions.iter().any(|p| {
-                    super::privileges::risk(p) == Some(super::privileges::CapabilityRisk::Highest)
-                })
+                listed
+                    .manifest
+                    .permissions
+                    .iter()
+                    .any(|p| p.risk() == Some(super::manifest::RiskLevel::Highest))
             })
     }
 

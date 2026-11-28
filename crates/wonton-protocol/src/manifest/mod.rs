@@ -15,6 +15,7 @@ mod id;
 mod mcp;
 mod metadata;
 mod permission;
+mod permission_table;
 mod provides;
 mod remote;
 mod secret;
@@ -36,7 +37,8 @@ pub use hardware::{
 pub use id::{MAX_ID_LEN, ManifestError, PluginId, is_label};
 pub use mcp::{McpEndpoint, McpTransport};
 pub use metadata::Author;
-pub use permission::{Access, Permission};
+pub use permission::{Access, PERMISSIONS, Permission, PermissionKind, capability_risk};
+pub use permission_table::{HIGHEST_RISK_NOTICE, Notice, PermissionSpec, RiskLevel, RiskRule};
 pub use provides::{
     CredentialCommands, EgressProxyProvider, ModelApis, ModelsProvider, ProviderService, Provides,
 };
