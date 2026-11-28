@@ -65,6 +65,7 @@ fn install_previews_and_requests_carry_settings() {
         secrets: Default::default(),
         settings: request.settings.clone(),
         lan_webui: false,
+        connect_plugins: Vec::new(),
     };
     assert_eq!(round_trip(&upgrade).settings, upgrade.settings);
 }

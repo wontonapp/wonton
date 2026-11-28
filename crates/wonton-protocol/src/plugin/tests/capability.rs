@@ -289,3 +289,47 @@ fn granted_devices_preserve_unknown_kinds_and_missing_devices() {
     let old: PluginDetail = serde_json::from_value(old).unwrap();
     assert!(old.devices.is_empty());
 }
+
+/// 契约：升级请求也带 `connect_plugins`（ADR-0053 第 3 条）；旧 App 不带时按空算。预览的
+/// `upgrade_connects` 说明这个核收不收，旧核不写时升级页不给开关。
+#[test]
+fn upgrade_connect_plugins_keep_their_wire_format() {
+    let offer = InstallPreview {
+        wanting_plugins: vec![CapabilityProviderRef {
+            id: "app.seerr".into(),
+            title: "Seerr".into(),
+            high_privilege: false,
+        }],
+        upgrade_connects: true,
+        ..preview()
+    };
+    assert_eq!(
+        serde_json::to_value(&offer).unwrap()["upgrade_connects"],
+        json!(true)
+    );
+    let mut old = serde_json::to_value(preview()).unwrap();
+    old.as_object_mut().unwrap().remove("upgrade_connects");
+    let old: InstallPreview = serde_json::from_value(old).unwrap();
+    assert!(!old.upgrade_connects);
+
+    let request = UpgradeRequest {
+        digest: "sha256:00".into(),
+        grant: Vec::new(),
+        devices: Vec::new(),
+        source: None,
+        enabled_permissions: Vec::new(),
+        secrets: Default::default(),
+        settings: Default::default(),
+        lan_webui: false,
+        connect_plugins: vec!["app.seerr".into()],
+    };
+    assert_eq!(
+        serde_json::to_value(&request).unwrap()["connect_plugins"],
+        json!(["app.seerr"])
+    );
+    assert_eq!(round_trip(&request), request);
+    // 旧 App 升级时不带勾选：一个都不接。
+    let old: UpgradeRequest =
+        serde_json::from_value(json!({"digest": "sha256:00", "grant": []})).unwrap();
+    assert!(old.connect_plugins.is_empty());
+}

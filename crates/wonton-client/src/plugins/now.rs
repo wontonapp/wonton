@@ -29,6 +29,8 @@ fn needs_confirmation(preview: &InstallPreview, upgrade: bool) -> bool {
                 .as_ref()
                 .is_some_and(|view| !view.choices.is_empty() || view.notice.is_some()))
         || !preview.always_allowed.is_empty()
+        // 想用它的应用要主人勾：升级页给开关，不能静默升过去（ADR-0053 第 3 条）。旧核给不了开关。
+        || (preview.upgrade_connects && !preview.wanting_plugins.is_empty())
         || preview
             .devices
             .as_ref()
@@ -723,6 +725,7 @@ mod tests {
             missing_wants: Vec::new(),
             wanting_plugins: Vec::new(),
             connected_plugins: Vec::new(),
+            upgrade_connects: false,
             upgrade_from: None,
             release_notes: None,
             missing_profile: None,

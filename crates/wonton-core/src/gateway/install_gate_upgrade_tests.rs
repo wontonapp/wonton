@@ -240,3 +240,87 @@ async fn an_unreadable_device_list_is_device_unavailable() {
     assert_eq!(h.docker.writes(), before);
     assert_eq!(version(&h, "app.echo"), "0.1.0");
 }
+
+const AGENT_PATH: &str = "/_wonton/api/plugins/app.agent/upgrade";
+const CONSUMER: &str = "app.example.consumer";
+
+/// 高权限提供方（docker.socket）：`declares` 为假时这个版本还没有 `x-acme.agent` 能力。
+fn agent_compose(version: &str, declares: bool) -> String {
+    let capability = if declares {
+        "  provides:\n    x-acme.agent: {service: web, port: 8080}\n"
+    } else {
+        ""
+    };
+    format!(
+        "services:\n  web:\n    image: nginx\n    expose: [8080]\n    volumes:\n      \
+         - /var/run/docker.sock:/var/run/docker.sock\nx-wonton:\n  spec: '{}'\n  id: app.agent\n  \
+         version: {version}\n  kind: app\n  title: {{zh: 代理, en: Agent}}\n  \
+         description: {{zh: 代理, en: Agent}}\n  permissions: [docker.socket]\n{capability}",
+        crate::plugin::store_info::SPEC_VERSION
+    )
+}
+
+fn wanting_compose() -> String {
+    format!(
+        "services:\n  web:\n    image: nginx\nx-wonton:\n  spec: '{}'\n  id: {CONSUMER}\n  \
+         version: 1.0.0\n  kind: app\n  title: {{zh: 用代理的, en: Consumer}}\n  \
+         description: {{zh: 用代理的, en: Consumer}}\n  permissions: []\n  wants: [x-acme.agent]\n",
+        crate::plugin::store_info::SPEC_VERSION
+    )
+}
+
+/// 装着旧版本（还没有这项能力）和想用它的应用；升级到有的版本。
+async fn wanting_fixture() -> (Harness, iroh::PublicKey) {
+    let h = Harness::start(None).await;
+    let member = ask_admin_member(&h).await;
+    let first =
+        PluginPackage::parse(&agent_compose("0.1.0", false), &Languages::default()).unwrap();
+    let granted: Vec<Permission> = first.manifest.permissions.clone();
+    h.manager
+        .install_package(first, &granted, Languages::default())
+        .await
+        .unwrap();
+    h.manager
+        .install(&wanting_compose(), &[], Languages::default())
+        .await
+        .unwrap();
+    (h, member)
+}
+
+/// 勾上想用它的应用会新接一条高权限连接：要主人同意，管理员只批卡不行。
+#[tokio::test]
+async fn connecting_wanting_apps_on_an_upgrade_needs_the_owner() {
+    let (h, member) = wanting_fixture().await;
+    let newer = PluginPackage::parse(&agent_compose("0.2.0", true), &Languages::default()).unwrap();
+    let (source, digest) = staged(&h, newer).await;
+    let request = json!({"source": source, "digest": digest, "grant": ["docker.socket"],
+        "connect_plugins": [CONSUMER]});
+    assert_owner_required(&member_post(&h, member, AGENT_PATH, &request).await);
+    assert_eq!(pending_cards(&h).await, 0);
+    assert_eq!(version(&h, "app.agent"), "0.1.0");
+}
+
+/// 不勾就照常发卡、批准升级；批准了也不自动接上。
+#[tokio::test]
+async fn an_upgrade_without_checks_keeps_the_wanting_app_unconnected() {
+    let (h, member) = wanting_fixture().await;
+    let newer = PluginPackage::parse(&agent_compose("0.2.0", true), &Languages::default()).unwrap();
+    let (source, digest) = staged(&h, newer).await;
+    let request = json!({"source": source, "digest": digest, "grant": ["docker.socket"]});
+    let waiting = spawn_member_request(&h, member, AGENT_PATH, request);
+    // docker.socket 是最高级：第一张卡之外还有一张它自己的确认卡。
+    let (status, body) = approve_both(&h, waiting).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(version(&h, "app.agent"), "0.2.0");
+    assert!(matches!(
+        h.manager
+            .capability_route(
+                &PluginId::parse(CONSUMER).unwrap(),
+                "x-acme.agent",
+                &Languages::default(),
+                None
+            )
+            .await,
+        Err(crate::plugin::dependencies::CapabilityAccessError::Denied)
+    ));
+}

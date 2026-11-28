@@ -355,6 +355,7 @@ impl PluginManager {
             &super::UpgradeSwitches::Requested(installed.enabled_permissions.clone()),
             installed.lan_webui,
             &[],
+            &[],
             installed.settings.clone(),
         ))
         .await

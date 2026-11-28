@@ -275,7 +275,7 @@ impl PluginManager {
         })
     }
 
-    pub(super) fn validate_connect_plugins(
+    pub(in crate::plugin) fn validate_connect_plugins(
         &self,
         manifest: &crate::plugin::manifest::Manifest,
         selected: &[String],

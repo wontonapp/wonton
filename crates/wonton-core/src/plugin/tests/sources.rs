@@ -94,6 +94,7 @@ fn upgrade_request(preview: &InstallPreview) -> UpgradeRequest {
         secrets: Default::default(),
         settings: Default::default(),
         lan_webui: false,
+        connect_plugins: Vec::new(),
     }
 }
 

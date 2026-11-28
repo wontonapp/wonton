@@ -241,6 +241,152 @@ async fn provider_upgrade_reuses_a_previously_confirmed_high_privilege_connectio
     );
 }
 
+/// 提供方带高权限的 `x-acme.agent`（高权限看提供方的权限）；`declares` 为假时这个版本还没有这项能力。
+fn agent_provider(version: &str, declares: bool) -> String {
+    provider(version, declares)
+        .replace("x-acme.search:", "x-acme.agent:")
+        .replace("  permissions: []", "  permissions: [docker.socket]")
+        .replace(
+            "    volumes: ['data:/data']",
+            "    volumes: ['data:/data', '/var/run/docker.sock:/var/run/docker.sock']",
+        )
+}
+
+fn wants_agent() -> String {
+    consumer("  wants: [x-acme.agent]\n")
+        .replace("WONTON_X_ACME_SEARCH_URL", "WONTON_X_ACME_AGENT_URL")
+}
+
+/// 升级预览列出想用它的已装应用，并说明这个路径收勾选（ADR-0053 第 3 条）。
+#[tokio::test]
+async fn a_provider_upgrade_preview_lists_wanting_apps_and_accepts_checks() {
+    let (github, _docker, m, _dir) = with_github(false).await;
+    release(&github, &agent_provider("1.0.0", false));
+    install(&m, SOURCE).await;
+    m.install(&wants_agent(), &[], super::super::langs())
+        .await
+        .unwrap();
+    release(&github, &agent_provider("1.1.0", true));
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
+        .await
+        .unwrap();
+    assert!(preview.upgrade_connects);
+    let wanting: Vec<&str> = preview
+        .wanting_plugins
+        .iter()
+        .map(|plugin| plugin.id.as_str())
+        .collect();
+    assert_eq!(wanting, [consumer_id().to_string()]);
+}
+
+/// 勾了想用它的应用：升级完就连上，不用回详情节再点一次。没勾的不连。
+#[tokio::test]
+async fn checked_wanting_apps_connect_after_the_provider_upgrade() {
+    let (github, _docker, m, _dir) = with_github(false).await;
+    release(&github, &agent_provider("1.0.0", false));
+    install(&m, SOURCE).await;
+    m.install(&wants_agent(), &[], super::super::langs())
+        .await
+        .unwrap();
+    // 旧版本还没有这项能力：找不到提供方。
+    assert!(
+        m.capability_route(&consumer_id(), "x-acme.agent", &zh(), None)
+            .await
+            .is_err()
+    );
+    release(&github, &agent_provider("1.1.0", true));
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
+        .await
+        .unwrap();
+    let grant = preview
+        .permissions
+        .iter()
+        .filter(|permission| !permission.optional)
+        .map(|permission| permission.permission.clone())
+        .collect();
+    let request = UpgradeRequest {
+        devices: Vec::new(),
+        source: None,
+        digest: preview.digest,
+        grant,
+        enabled_permissions: Vec::new(),
+        secrets: Default::default(),
+        settings: Default::default(),
+        lan_webui: false,
+        connect_plugins: vec![consumer_id().to_string()],
+    };
+    m.upgrade_source(&id(), &request, &super::super::langs())
+        .await
+        .unwrap();
+    assert_eq!(version(&m), "1.1.0");
+    assert_eq!(
+        m.capability_route(&consumer_id(), "x-acme.agent", &zh(), None)
+            .await
+            .unwrap()
+            .provider,
+        id()
+    );
+}
+
+#[tokio::test]
+async fn unchecked_wanting_apps_stay_unconnected_after_the_provider_upgrade() {
+    let (github, _docker, m, _dir) = with_github(false).await;
+    release(&github, &agent_provider("1.0.0", false));
+    install(&m, SOURCE).await;
+    m.install(&wants_agent(), &[], super::super::langs())
+        .await
+        .unwrap();
+    release(&github, &agent_provider("1.1.0", true));
+    upgrade(&m).await.unwrap();
+    assert_eq!(version(&m), "1.1.0");
+    assert!(matches!(
+        m.capability_route(&consumer_id(), "x-acme.agent", &zh(), None)
+            .await,
+        Err(CapabilityAccessError::Denied)
+    ));
+}
+
+/// 勾了预览里没列的应用（或者重复）：拒绝，不装着连接。
+#[tokio::test]
+async fn unknown_checked_apps_are_refused() {
+    let (github, _docker, m, _dir) = with_github(false).await;
+    release(&github, &agent_provider("1.0.0", false));
+    install(&m, SOURCE).await;
+    m.install(&wants_agent(), &[], super::super::langs())
+        .await
+        .unwrap();
+    release(&github, &agent_provider("1.1.0", true));
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
+        .await
+        .unwrap();
+    let grant = preview
+        .permissions
+        .iter()
+        .filter(|permission| !permission.optional)
+        .map(|permission| permission.permission.clone())
+        .collect();
+    let request = UpgradeRequest {
+        devices: Vec::new(),
+        source: None,
+        digest: preview.digest,
+        grant,
+        enabled_permissions: Vec::new(),
+        secrets: Default::default(),
+        settings: Default::default(),
+        lan_webui: false,
+        connect_plugins: vec![consumer_id().to_string(), consumer_id().to_string()],
+    };
+    let error = m
+        .upgrade_source(&id(), &request, &super::super::langs())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), "invalid_input");
+    assert_eq!(version(&m), "1.0.0");
+}
+
 fn credential_provider(capabilities: &[&str]) -> String {
     let declarations: String = capabilities.iter().map(|capability| {
         format!("    {capability}:\n      service: api\n      port: 8080\n      credentials:\n        issue: [credentials, issue, '{{name}}']\n        revoke: [credentials, revoke, '{{name}}']\n")

@@ -421,6 +421,7 @@ mod tests {
             missing_wants: Vec::new(),
             wanting_plugins: Vec::new(),
             connected_plugins: Vec::new(),
+            upgrade_connects: false,
             upgrade_from: None,
             release_notes: None,
             blocked: None,

@@ -85,6 +85,43 @@ final class PluginDependencyUITests: XCTestCase {
         attach("install-provider-direct")
     }
 
+    func testUpgradePreviewOffersToConnectWantingApps() {
+        openUpgrade("qBittorrent")
+        XCTAssertTrue(
+            app.staticTexts["These apps want it"].firstMatch.waitForExistence(timeout: 10),
+            "升级页没有想用它的应用\n\(app.debugDescription)"
+        )
+        let toggle = app.switches["Audio Book"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "想用的应用没有开关")
+        XCTAssertEqual(toggle.value as? String, "0", "默认不该接上")
+        toggle.tap()
+        XCTAssertEqual(toggle.value as? String, "1", "点了没接上")
+        attach("upgrade-connect")
+    }
+
+    /// 旧核的升级预览列了想用的应用，但收不了勾选：整节不显示（ADR-0053 第 3 条）。
+    func testOldCoreUpgradeHasNoConnectionSection() {
+        openUpgrade("qBittorrent (old core)")
+        XCTAssertFalse(app.staticTexts["These apps want it"].firstMatch.exists, "旧核不该有连接节")
+        XCTAssertFalse(app.switches["Audio Book"].firstMatch.exists, "旧核不该有开关")
+        attach("upgrade-connect-old-core")
+    }
+
+    /// 从应用页的“更新”进升级确认页，等预览的版本行出来。
+    private func openUpgrade(_ title: String) {
+        openApps()
+        let icon = app.staticTexts[title].firstMatch
+        XCTAssertTrue(icon.waitForExistence(timeout: 10), "应用页没有 \(title)\n\(app.debugDescription)")
+        icon.tap()
+        let update = app.buttons["Update"].firstMatch
+        XCTAssertTrue(update.waitForExistence(timeout: 10), "详情页没有更新按钮\n\(app.debugDescription)")
+        update.tap()
+        XCTAssertTrue(
+            app.staticTexts["1.0.0 → 1.1.0"].firstMatch.waitForExistence(timeout: 10),
+            "没打开升级确认页\n\(app.debugDescription)"
+        )
+    }
+
     func testUninstallProviderShowsDependents() {
         openApps()
         let icon = app.staticTexts["qBittorrent"].firstMatch

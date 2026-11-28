@@ -232,6 +232,8 @@ impl PluginsLink {
             secrets,
             settings,
             lan_webui,
+            // 主人勾选的、想让它们用上新能力的已装应用（ADR-0053 第 3 条）；旧核忽略。
+            connect_plugins: preview.connected_plugins.clone(),
         };
         let link = self.clone();
         let id = preview.id;

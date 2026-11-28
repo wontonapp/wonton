@@ -113,8 +113,10 @@ private fun row(missing: MissingCapability, required: Boolean, colors: ThemeColo
 @Composable
 internal fun ConnectedSection(preview: InstallPreview, onUpdate: (InstallPreview) -> Unit) {
     val colors = WontonTheme.colors
-    // 升级请求不带上连接（UpgradeRequest 没有这个字段），开关勾了不生效，升级时只列出来。
-    val direct = preview.wantingPlugins.isNotEmpty() && preview.upgradeFrom == null
+    // 升级时只有收 connect_plugins 的核（upgradeConnects）给开关；旧核知道想用它的应用，但收下请求
+    // 也不认，升级页连这一节都不显示。安装页总是给开关，随批装的提供方内层带不了连接，只列出来。
+    if (preview.upgradeFrom != null && !preview.upgradeConnects) return
+    val direct = preview.wantingPlugins.isNotEmpty()
     val wanting = if (preview.wantingPlugins.isNotEmpty()) {
         preview.wantingPlugins.distinctBy { it.id }
     } else {

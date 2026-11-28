@@ -13,7 +13,7 @@ struct InstallProviderSections: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        if !wanting.isEmpty {
+        if !wanting.isEmpty && connectsOnUpgrade {
             InstallConnectedApps(
                 wanting: wanting,
                 connected: preview.connectedPlugins,
@@ -77,8 +77,11 @@ struct InstallProviderSections: View {
         return plugins.filter { seen.insert($0.id).inserted }
     }
 
-    /// 升级请求不带上连接（UpgradeRequest 没有这个字段），开关勾了不生效，升级时只列出来。
-    private var isDirect: Bool { !preview.wantingPlugins.isEmpty && preview.upgradeFrom == nil }
+    /// 升级时只有收 `connect_plugins` 的核（`upgradeConnects`）给开关；旧核知道想用它的应用，但收下
+    /// 请求也不认，升级页连这一节都不显示。安装页总是给开关，随批装的提供方内层带不了连接，只列出来。
+    private var connectsOnUpgrade: Bool { preview.upgradeFrom == nil || preview.upgradeConnects }
+
+    private var isDirect: Bool { !preview.wantingPlugins.isEmpty && connectsOnUpgrade }
 
     private var thirdPartyTag: some View {
         Tag(text: String(localized: .Install.installProviderThirdParty), tint: colors.textSecondary)

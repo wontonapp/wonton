@@ -39,6 +39,8 @@ pub(crate) struct UpgradeAsk {
     /// 上传的包就在请求体里，执行装的是同一份字节，没有摘要要核对。
     pub(crate) digest: Option<String>,
     pub(crate) secrets: Vec<String>,
+    /// 请求要新接上的已装使用方（ADR-0053 的高权限能力）；上传的写法带不了，为空。
+    pub(crate) connect_plugins: Vec<String>,
     pub(crate) settings: SettingValues,
 }
 
@@ -57,6 +59,7 @@ impl UpgradeAsk {
                 lan_webui: Some(request.lan_webui),
                 digest: Some(request.digest),
                 secrets: request.secrets.into_keys().collect(),
+                connect_plugins: request.connect_plugins,
                 settings: request.settings,
             });
         }
@@ -69,6 +72,7 @@ impl UpgradeAsk {
                 lan_webui: None,
                 digest: None,
                 secrets: Vec::new(),
+                connect_plugins: Vec::new(),
                 settings: SettingValues::new(),
             });
         }
@@ -85,6 +89,7 @@ impl UpgradeAsk {
             lan_webui: query.lan_webui.then_some(true),
             digest: None,
             secrets: secrets(headers)?.into_keys().collect(),
+            connect_plugins: Vec::new(),
             settings: settings(headers)?,
         })
     }
@@ -214,7 +219,12 @@ pub(super) fn upgrade_changes_permissions(
         (ask.lan_webui, &preview.lan_webui),
         (Some(wanted), Some(offer)) if wanted != offer.enabled
     );
-    toggled || forced || devices || lan || overwrites_inputs(preview, ask)
+    toggled
+        || forced
+        || devices
+        || lan
+        || !ask.connect_plugins.is_empty()
+        || overwrites_inputs(preview, ask)
 }
 
 /// 发卡时装着的插件里，请求会改到的部分。管理员批准时可能已经过了很久，这期间主人关掉的权限、

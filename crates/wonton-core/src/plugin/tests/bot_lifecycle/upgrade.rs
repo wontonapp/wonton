@@ -42,6 +42,7 @@ async fn network_mode_bot_group_upgrade_preserves_its_identity_and_removes_the_w
         &UpgradeSwitches::Requested(Vec::new()),
         false,
         &[],
+        &[],
         Default::default(),
     )
     .await

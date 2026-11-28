@@ -500,6 +500,8 @@ impl PluginManager {
             preview.blocked_category = Some(wonton_protocol::BlockedCategory::CapabilityDropped);
         }
         preview.upgrade_from = Some(record.version.clone());
+        // 这个核的升级请求收 `connect_plugins`：升级页可以对想用它的应用给开关。
+        preview.upgrade_connects = true;
         preview.secret_inputs = self.missing_secret_inputs(id, &package.manifest, langs);
         if upload {
             preview.source = Some(self.staged.stage(package.clone()));
@@ -606,6 +608,7 @@ impl PluginManager {
             )));
         }
         self.check_capability_removal(id, Some(&package.manifest), langs)?;
+        self.validate_connect_plugins(&package.manifest, &request.connect_plugins, langs)?;
         let filled = self.store.secrets().load(id).ok().flatten();
         self.store_input_values(&package.manifest, &request.secrets, filled.as_ref(), langs)?;
         let settings = upgrade_values(&package, &record, &request.settings, langs)?;
@@ -615,6 +618,7 @@ impl PluginManager {
             UpgradeSwitches::Requested(requested),
             request.lan_webui,
             request.devices.clone(),
+            request.connect_plugins.clone(),
             settings,
         )
         .await?;
@@ -645,11 +649,13 @@ impl PluginManager {
             switches.into(),
             lan_webui || record.lan_webui,
             devices.to_vec(),
+            Vec::new(),
             settings,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)] // 和 upgrade_upload 一样，几样各管各的来源。
     async fn upgrade_detached(
         self: &Arc<Self>,
         package: PluginPackage,
@@ -657,12 +663,21 @@ impl PluginManager {
         switches: UpgradeSwitches,
         lan_webui: bool,
         devices: Vec<String>,
+        connect_plugins: Vec<String>,
         settings: super::settings::Values,
     ) -> Result<(), InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.upgrade_checked(package, &granted, &switches, lan_webui, &devices, settings)
-                .await
+            this.upgrade_checked(
+                package,
+                &granted,
+                &switches,
+                lan_webui,
+                &devices,
+                &connect_plugins,
+                settings,
+            )
+            .await
         })
         .await
     }
