@@ -28,7 +28,6 @@ mod file_tools;
 mod identity;
 mod naming;
 mod notifier;
-mod panel_tools;
 mod people_tools;
 mod profile_tools;
 mod risky;
@@ -44,7 +43,7 @@ mod tools;
 pub mod upstream;
 mod windows;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -96,8 +95,7 @@ pub struct Endpoint {
     pub service: McpService,
 }
 
-/// `wonton__user_locale` 认人用的本服务器身份资料：Matrix 服务器名和家人记录。
-/// Bot 钉页的卡片需要的 Matrix 入口。
+/// 代 Bot 查房间成员要的 Matrix 入口和主人（收件人没给时按主人查）。
 pub struct Cards {
     matrix: Option<Arc<crate::matrix::Matrix>>,
     owner: String,
@@ -123,7 +121,7 @@ pub struct Bus {
     help: OnceLock<Arc<Help>>,
     /// 家人记录、角色记录和本服务器的 Matrix 服务器名：`wonton__user_locale` 认人、开卡挑人用（[`Bus::attach_people`]）。
     people: OnceLock<People>,
-    /// Matrix 和主人：Bot 钉进主面板的同意卡片要发进 Bot 的房间里（[`Bus::attach_matrix`]）。
+    /// Matrix 和主人：代 Bot 查房间成员用（[`Bus::attach_matrix`]）。
     matrix: OnceLock<Cards>,
     /// Bot 的联系人：有远端联系人的 Bot 只聊天（[`Bus::attach_contacts`]，ADR-0050）。
     contacts: OnceLock<Arc<crate::contacts::Contacts>>,
@@ -131,8 +129,6 @@ pub struct Bus {
     agent_chains: OnceLock<Arc<crate::gateway::agent_chains::AgentChains>>,
     /// 好友名单（ADR-0051）：`wonton__send_message` 认收件人用（[`Bus::attach_friends`]）。
     friends: OnceLock<Arc<crate::friends::Friends>>,
-    /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
-    pin_cards: Mutex<HashSet<PluginId>>,
     /// 收件箱（ADR-0119）。没接时收件箱工具和接口如实报不可用。
     inbox: OnceLock<Arc<crate::inbox::Inbox>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -183,8 +179,6 @@ mod install_gate_tests;
 mod missing_sender_tests;
 #[cfg(test)]
 mod optional_permission_tests;
-#[cfg(test)]
-mod panel_tests;
 #[cfg(test)]
 mod people_tests;
 #[cfg(test)]

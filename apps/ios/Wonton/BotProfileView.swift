@@ -7,8 +7,6 @@ struct BotProfileView: View {
     let plugins: PluginsModel
     let botRef: BotRef
     var willOpenWeb: () -> Void = {}
-    /// 从房间进来时：打开这个房间的面板（ADR-0052）。别处进来没有房间，为空，不画按钮。
-    var openPanel: (() -> Void)?
     @Environment(\.wontonColors) private var colors
 
     private var bot: BotView? { chat.viewModel.bots.first { $0.bot == botRef } }
@@ -33,11 +31,6 @@ struct BotProfileView: View {
                     BotWebAction(botRef: botRef, bot: bot, willOpenWeb: willOpenWeb)
                 }
                 details
-                if let openPanel {
-                    Button(TabText.openPanel, action: openPanel)
-                        .buttonStyle(WontonButtonStyle(kind: .secondary))
-                        .accessibilityIdentifier("botProfilePanelOpen")
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(WontonTheme.spacing.pageInset)

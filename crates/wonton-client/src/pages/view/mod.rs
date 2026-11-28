@@ -1,13 +1,13 @@
-//! 页面栈、我的应用和面板的 ViewModel 映射。
+//! 页面栈和我的应用的 ViewModel 映射。
 
 use url::Url;
+use wonton_protocol::media::MediaBrowse;
 use wonton_protocol::{
-    CoreError, InstalledPlugin, MyAppRef, OpenPage, PagesViewModel, PanelEntry, PanelItem,
-    PanelScope, PanelSource, PlacedTab, PluginState, PluginsViewModel, SidebarApp, SidebarBadge,
-    SidebarOpen, TabIcon, TabLayout, TabLoadFailure, TabPage, TabRef, TabState,
+    CoreError, InstalledPlugin, MyAppRef, NativePage, OpenPage, PagesViewModel, PlacedTab,
+    PluginState, PluginsViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabIcon, TabLayout,
+    TabLoadFailure, TabPage, TabRef, TabState,
 };
 
-use super::panel_view::main_panel;
 use super::{PagesState, StoredApp, StoredItem, StoredPage, bot, invalid};
 use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
@@ -16,7 +16,7 @@ mod compose;
 mod rows;
 mod url_page;
 
-pub(crate) use self::compose::{compose_page, my_app_candidates, plugin_pages};
+pub(crate) use self::compose::{compose_page, my_app_candidates};
 pub(crate) use self::rows::{
     AppRow, page_row, plugin_row, plugin_title_of, problem_badge, stored_or_placeholder,
 };
@@ -35,41 +35,14 @@ pub(super) fn make_view(
             page: build_page_item(state, item, plugins),
         })
         .collect();
-    let main = PanelScope::Main;
     PagesViewModel {
         root: state.root(),
         shows_apps: state.shows_apps,
         stack,
         uninstalled: state.uninstalled.clone(),
-        problem: state
-            .problem
-            .clone()
-            .or_else(|| state.read_problem.clone())
-            .or_else(|| {
-                state
-                    .action_problem
-                    .as_ref()
-                    .map(|(_, problem)| problem.clone())
-            })
-            .or_else(|| state.pins_problem.clone()),
+        problem: state.problem.clone().or_else(|| state.read_problem.clone()),
         my_app_candidates: my_app_candidates(state, plugins),
         auto_add: state.config.auto_add,
-        bot_pin_consents: state.bot_pin_consents.clone(),
-        panel: main_panel(state, plugins),
-        panel_candidates: plugin_pages(plugins, false)
-            .filter(|candidate| {
-                !state
-                    .config
-                    .panel
-                    .iter()
-                    .any(|entry| entry.tab == candidate.tab)
-                    && !state
-                        .bot_pins
-                        .iter()
-                        .any(|pin| pin.scope == main && pin.tab == candidate.tab)
-            })
-            .collect(),
-        panel_selected: state.panel_selected.clone(),
         sync_stale,
         // 询问跟着页面走：页面不在了就不显示（state 里的清理由改动助手做）。
         media_prompt: state
@@ -109,6 +82,7 @@ pub(super) fn build_app(
         plugin_id,
         tab,
         title,
+        subtitle,
         icon,
         open,
     } = row;
@@ -122,6 +96,7 @@ pub(super) fn build_app(
         plugin_id: plugin_id.clone(),
         tab: page_tab,
         title,
+        subtitle,
         open,
         icon,
         badge: SidebarBadge {
@@ -160,55 +135,7 @@ pub(super) fn build_page_item(
         TabRef::Plugin { page, .. } => page.as_deref(),
         _ => None,
     };
-    build_page(state, &placed, stored, plugin, page_id, plugins, None)
-}
-
-/// 面板里的一项。面板页照全屏渲染（ADR-0052：WebView 一直是第 2 级的大小）。
-pub(super) fn build_panel_item(
-    state: &PagesState,
-    entry: &PanelEntry,
-    scope: &PanelScope,
-    plugins: &PluginsViewModel,
-) -> PanelItem {
-    let placed = PlacedTab::Panel {
-        scope: scope.clone(),
-        tab: entry.tab.clone(),
-    };
-    let plugin = match &entry.tab {
-        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => plugins
-            .installed
-            .as_ref()
-            .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id)),
-        _ => None,
-    };
-    let page_id = match &entry.tab {
-        TabRef::Plugin {
-            page: Some(page), ..
-        } => Some(page.as_str()),
-        _ => None,
-    };
-    let mut page = build_page(
-        state,
-        &placed,
-        &StoredItem {
-            tab: entry.tab.clone(),
-            page: None,
-        },
-        plugin,
-        page_id,
-        plugins,
-        None,
-    );
-    if let Some(title) = &entry.title {
-        page.title = title.clone();
-    }
-    PanelItem {
-        tab: entry.tab.clone(),
-        page,
-        attention: state.attention.contains(&placed),
-        source: PanelSource::User,
-        movable: true,
-    }
+    build_page(state, &placed, stored, plugin, page_id, plugins)
 }
 
 /// 本机插件的页面要跨源隔离、这个平台的 WebView 给不了时交给系统浏览器（ADR-0033）。
@@ -219,9 +146,8 @@ pub(super) fn build_page(
     plugin: Option<&InstalledPlugin>,
     page_id: Option<&str>,
     plugins: &PluginsViewModel,
-    pin: Option<&wonton_protocol::BotPanelPin>,
 ) -> TabPage {
-    let page = compose_page(state, placed, stored, plugin, page_id, plugins, pin);
+    let page = compose_page(state, placed, stored, plugin, page_id, plugins);
     let own_page = matches!(
         stored.tab,
         TabRef::Plugin { .. } | TabRef::PluginPath { .. }
@@ -230,7 +156,19 @@ pub(super) fn build_page(
         plugin.is_some_and(|p| crate::browser::opens_in_browser(p, crate::browser::ENGINE));
     TabPage {
         opens_in_browser: own_page && browser,
+        native: plugin.and_then(|p| native_page(&stored.tab, p)),
         ..page
+    }
+}
+
+/// 插件的入口页能换成原生界面时是哪一个：只换入口（`page` 为空的 `TabRef::Plugin`），钉住的子页和“网页版”照旧开网页。
+fn native_page(tab: &TabRef, plugin: &InstalledPlugin) -> Option<NativePage> {
+    let TabRef::Plugin { page: None, .. } = tab else {
+        return None;
+    };
+    match plugin.media_browse {
+        Some(MediaBrowse::OpenSubsonic) => Some(NativePage::Music),
+        Some(MediaBrowse::Other(_)) | None => None,
     }
 }
 
@@ -261,6 +199,7 @@ pub(crate) fn page_from_metadata(
         layout: normalize_layout(metadata.layout),
         state: state_value,
         reload: state.reloads.get(placed).copied().unwrap_or_default(),
+        native: None,
         opens_in_browser: false,
     }
 }
@@ -365,11 +304,7 @@ pub(super) fn checked_plugin_path(
     if page_url(plugin.web_url.as_deref(), Some(path)).is_some() {
         return Ok(tab.clone());
     }
-    Err(invalid(&l10n!(
-        CATALOG,
-        language(),
-        "panel-pin-path-outside"
-    )))
+    Err(invalid(&l10n!(CATALOG, language(), "page-path-outside")))
 }
 
 /// 插件网页入口下的网址。路径只留在插件网站内：以 `/` 开头的路径直接接在来源后面，
@@ -387,7 +322,7 @@ pub(super) fn page_url(base: Option<&str>, page: Option<&str>) -> Option<String>
     (url.origin() == base.origin()).then(|| url.to_string())
 }
 
-/// 钉页面上来的带用户起的名字；候选页来的没有，按插件或域名补。
+/// 按网址加的带用户起的名字；候选页来的没有，按插件或域名补。
 pub(super) fn stored_item_with_title(
     state: &PagesState,
     tab: &TabRef,
@@ -440,7 +375,7 @@ pub(super) fn stored_item_with_title(
                 }),
             })
         }
-        // MCP Apps 宿主页只随 Bot 钉页出现（核心拉账号数据时建），不从这里手动打开。
+        // MCP Apps 宿主页不从这里手动打开（ADR-0050）。
         TabRef::UiResource { .. } => {
             Err(invalid(&l10n!(CATALOG, language(), "tabs-view-not-a-page")))
         }
@@ -479,10 +414,10 @@ pub(super) fn stored_item_with_title(
     }
 }
 
-/// 这个页面现在能不能打开（栈和面板共用）：插件页要清单里还有、插件网页也还在。
+/// 这个页面现在能不能打开：插件页要清单里还有、插件网页也还在。
 pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
     match tab {
-        // MCP Apps 宿主页随 Bot 钉页来：钉页拉取流程建的条目才可打开。
+        // MCP Apps 宿主页不在页面栈里打开（ADR-0050）。
         TabRef::UiResource { .. } => false,
         TabRef::Url { url } => is_https_url(url),
         TabRef::Plugin { plugin_id, page } => plugins
@@ -544,7 +479,7 @@ pub(super) fn item_title(item: &StoredItem) -> String {
 /// 这个实例指的是哪个页面。PlacedTab 在 protocol 里，这里放个取值的自由函数。
 pub(super) fn placed_tab_ref(placed: &PlacedTab) -> &TabRef {
     match placed {
-        PlacedTab::Page { tab } | PlacedTab::Content { tab } | PlacedTab::Panel { tab, .. } => tab,
+        PlacedTab::Page { tab } | PlacedTab::Content { tab } => tab,
     }
 }
 

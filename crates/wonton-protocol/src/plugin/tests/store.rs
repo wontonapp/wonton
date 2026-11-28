@@ -194,6 +194,7 @@ fn sidebar_view_model_round_trip() {
                     page: None,
                 }),
                 title: "Memos".into(),
+                subtitle: None,
                 open: crate::SidebarOpen::Page {
                     tab: TabRef::Plugin {
                         plugin_id: "app.memos".into(),

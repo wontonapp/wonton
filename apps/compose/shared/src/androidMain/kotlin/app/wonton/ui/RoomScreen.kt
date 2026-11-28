@@ -24,12 +24,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -57,13 +55,11 @@ import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.JumpState
 import app.wonton.protocol.KeyNotice
 import app.wonton.protocol.MessageContent
-import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomCommand
 import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
 import app.wonton.protocol.RoomWidget
 import app.wonton.protocol.SideChatCard
-import app.wonton.protocol.TabRef
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineFocus
@@ -121,10 +117,6 @@ internal class TimelineState {
     var handledBottomRequest by mutableIntStateOf(0)
     /** 打不开时点“重试”加一，按它重新订阅。 */
     var attempt by mutableIntStateOf(0)
-
-    /** 这个房间的面板（ADR-0052）：核心每一批带上。 */
-    var panel by mutableStateOf<List<PanelItem>>(emptyList())
-    var panelSelected by mutableStateOf<TabRef?>(null)
 
     /** 旁聊页顶上的标题和状态（ADR-0093）；主对话为空。 */
     var sideChat by mutableStateOf<SideChatCard?>(null)
@@ -216,8 +208,6 @@ internal fun RoomRoute(
                 timeline.viewport = update.viewport
                 timeline.notice = update.keyNotice
                 update.anchor?.let { timeline.anchor = it }
-                timeline.panel = update.panel
-                timeline.panelSelected = update.panelSelected
                 timeline.sideChat = update.sideChat
                 timeline.call = RoomCall(update.widgets, update.callActive)
                 timeline.confirmations = update.confirmations
@@ -256,11 +246,8 @@ internal fun RoomRoute(
     }
     val first = remember(core) { core.transfers() }
     val transfers by produceState(first, core) { core.transfersUpdates().collect { value = it } }
-    // 旁聊页没有房间的面板（ADR-0052）：面板跟着主对话。
-    val panel = if (target.threadRoot == null) LocalChatPanel.current else null
     CompositionLocalProvider(
         LocalFiles provides FilesContext(target.roomId, transfers, onAction, onReject),
-        LocalChatPanel provides panel,
     ) {
         RoomScreen(
             core,
@@ -321,7 +308,6 @@ private fun RoomScreen(
     val visible = messageMenuBounds()
     val roomId = target.roomId
     val draft = rememberRoomDraft(core, target, onAction)
-    RoomPanelEffects(timeline, draft)
     // 转发、撤回都要时间线条目的 id，菜单开着的那条。
     var forwarding by remember { mutableStateOf<String?>(null) }
     var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
@@ -468,23 +454,9 @@ private fun RoomOverlays(
     )
 }
 
-@Composable
-private fun RoomPanelEffects(timeline: TimelineState, draft: RoomDraft) {
-    val panel = LocalChatPanel.current
-    val panelPages = timeline.panel
-    val panelSelected = timeline.panelSelected
-    SideEffect {
-        panel?.feed(panelPages, panelSelected)
-    }
-    DisposableEffect(panel, draft) {
-        panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
-        onDispose { panel?.draftSink = null }
-    }
-}
-
 /**
  * 顶栏。和 Bot 的私聊显示 Bot 的状态头像和名字（ADR-0044），名字下面常空着，有人正在输入时写那一行（ADR-0109），
- * 群聊的标题居中；支持旁聊的房间带开旁聊的按钮。私聊点名字或头像进 Bot 资料页（面板也从那里进）。
+ * 群聊的标题居中；支持旁聊的房间带开旁聊的按钮。私聊点名字或头像进 Bot 资料页。
  * 旁聊页的标题是旁聊的标题（ADR-0093），状态在顶栏下面一行。
  * 房间里装着 widget（通话）时带它的入口：点了全屏打开 widget 页，关掉回到这个房间（ADR-0096）。
  */
@@ -565,8 +537,7 @@ private fun Conversation(
     var composerHeight by remember { mutableIntStateOf(0) }
     var headerHeight by remember { mutableIntStateOf(0) }
     val barInset = LocalWontonTopInset.current
-    val panelVisible = LocalChatPanel.current?.visible == true
-    val bottomInsets = if (panelVisible) WindowInsets.ime else WindowInsets.ime.union(WindowInsets.navigationBars)
+    val bottomInsets = WindowInsets.ime.union(WindowInsets.navigationBars)
     // 命令列表开没开：输入区的菜单键改它，翻时间线先收起来，好把列表让出去；“向下”钮开着时不画。
     var commandMenuShown by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {

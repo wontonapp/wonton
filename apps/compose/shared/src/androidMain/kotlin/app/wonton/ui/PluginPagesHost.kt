@@ -1,4 +1,4 @@
-@file:Suppress("TooManyFunctions") // 栈里的页和面板页共用的网页、桥、状态都集中在这里。
+@file:Suppress("TooManyFunctions") // 栈里的页共用的网页、桥、状态都集中在这里。
 package app.wonton.ui
 
 import android.content.ActivityNotFoundException
@@ -34,6 +34,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.NativePage
 import app.wonton.protocol.OpenPage
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.ProxySettings
@@ -43,6 +44,7 @@ import app.wonton.protocol.TabState
 import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.music.MusicLibraryPage
 import kotlin.math.roundToInt
 
 /** 最近关掉的页面还留着 WebView 实例，重开不重载；个数是内存考虑的折中（每个 WebView 一份独立渲染进程）。 */
@@ -63,15 +65,25 @@ internal fun PluginPagesHost(
     val openTabs = stack.mapTo(HashSet()) { it.tab }
     for (open in kept + stack) {
         key(open.tab) {
-            PluginPageContainer(
-                open, pages, home, appearance, parked = open.tab !in openTabs,
-                active = open.tab == active, onDetails, onDraft, bannerTop,
-            )
+            val music = open.musicLibrary()
+            if (music == null) {
+                PluginPageContainer(
+                    open, pages, home, appearance, parked = open.tab !in openTabs,
+                    active = open.tab == active, onDetails, onDraft, bannerTop,
+                )
+            } else if (open.tab in openTabs) {
+                // 原生页没有要保活的网页：关掉就放下，重开从首页取。
+                MusicLibraryPage(music, open.page.title, pages, active = open.tab == active, onDetails)
+            }
         }
     }
     // 没有胶囊的整页只剩系统返回一个出口，第一次打开时教一次（[PageExitHint]）。
     if (active != null && active in openTabs && !pageKeepsCapsule(active)) PageExitHint()
 }
+
+/** 原生的音乐库只接就绪的入口页；启动中、已停止这些状态照旧由网页页的状态页说明。 */
+private fun OpenPage.musicLibrary(): TabRef.Plugin? =
+    (tab as? TabRef.Plugin)?.takeIf { page.native == NativePage.Music && page.state is TabState.Ready }
 
 /** 刚关掉的页（最旧的在前）；只在栈变化时算一次，不是快照状态。 */
 private class ClosedPages {
@@ -219,12 +231,11 @@ internal fun pageTakeover(tab: TabRef, pages: PagesState, active: Boolean): Page
     return takeover
 }
 
-/** 一份网页实例的壳内状态：控制器、胶囊菜单、加载标记。[place] 区分栈里的和面板里的同一页面。 */
+/** 一份网页实例的壳内状态：控制器、胶囊菜单、加载标记。[place] 区分栈里的和内容窗口里的同一页面。 */
 internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
     val tab: TabRef get() = when (place) {
         is PlacedTab.Page -> place.tab
         is PlacedTab.Content -> place.tab
-        is PlacedTab.Panel -> place.tab
     }
     val controller = PluginWebViewController()
     /** 网页要摄像头/麦克风时的处置；接在控制器上，页面销毁跟着失效。 */

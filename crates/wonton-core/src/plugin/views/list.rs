@@ -159,6 +159,9 @@ impl PluginManager {
                 }),
             id: id.to_string(),
             title: langs.pick_owned(&entry.title),
+            subtitle: manifest
+                .and_then(|m| m.subtitle.as_ref())
+                .map(|t| langs.pick_owned(t)),
             summary: manifest.map_or_else(String::new, |m| langs.pick_owned(&m.description)),
             version: entry.version.clone(),
             revision: entry

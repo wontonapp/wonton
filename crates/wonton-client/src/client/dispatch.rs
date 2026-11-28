@@ -156,6 +156,7 @@ impl ClientCore {
                     reason: "clients module is not wired yet".into(),
                 }),
             },
+            Action::Media { action } => scope.media.dispatch(action),
         }
     }
 }
@@ -455,12 +456,7 @@ impl ClientCore {
             | PageAction::MoveMyApp { .. }
             | PageAction::SetAutoAddApps { .. }
             | PageAction::RetryMyAppSync
-            | PageAction::AddPanelPage { .. }
-            | PageAction::RemovePanelPage { .. }
-            | PageAction::MovePanelPage { .. }
-            | PageAction::SelectPanelPage { .. }
-            | PageAction::SetBotPinConsent { .. }
-            | PageAction::PinCurrentPage { .. }
+            | PageAction::AddMyAppUrl { .. }
             | PageAction::ReloadTab { .. }
             | PageAction::DismissUninstalledTabs) => scope.pages.dispatch(action),
         }

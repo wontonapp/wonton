@@ -55,6 +55,7 @@ fn plugin() -> InstalledPlugin {
         chat: Default::default(),
         id: PLUGIN.to_owned(),
         title: "看板".to_owned(),
+        subtitle: None,
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: "1.0.0".to_owned(),

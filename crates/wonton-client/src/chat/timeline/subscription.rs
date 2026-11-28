@@ -46,7 +46,7 @@ pub(crate) struct TimelineSource {
     pub(crate) thread_root: Option<wonton_matrix::OwnedEventId>,
     pub(crate) previews: Previews,
     pub(crate) menus: Arc<std::sync::Mutex<Menus>>,
-    pub(crate) room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
+    pub(crate) room_view: watch::Receiver<Option<Arc<crate::pages::RoomView>>>,
     pub(crate) chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     /// 各房间的旁聊支持声明（ADR-0093 §1）。
     pub(crate) support: Arc<Support>,
@@ -59,7 +59,7 @@ pub(crate) struct TimelineSource {
 impl TimelineSubscription {
     /// 在核心的运行时里开始转发 `room` 的时间线。订阅释放或取消后转发自动停止。
     ///
-    /// `room_view` 是 tabs 合成的房间面板视图（ADR-0052）：每一批都带上当前值，变了也发一批空的。`chat` 读加密状态，
+    /// `room_view` 是 tabs 合成的房间视图（顶栏的 widget 入口）：每一批都带上当前值，变了也发一批空的。`chat` 读加密状态，
     /// 决定解不开的消息旁给什么入口。`confirmations` 是这个房间能显示的确认卡片（ADR-0016），出口按
     /// `origin.room_id` 过滤后随每一批带上，变了也发一批空的。
     pub(crate) fn start(

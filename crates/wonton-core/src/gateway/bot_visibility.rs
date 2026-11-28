@@ -290,5 +290,5 @@ fn member_user_id(gateway: &Gateway, person: &Person) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "bot_visibility_tests.rs"]
+#[path = "bot_visibility_tests/mod.rs"]
 mod bot_visibility_tests;

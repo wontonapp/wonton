@@ -1,4 +1,7 @@
-//! MCP Apps 的 HTTP 入口（ADR-0052 的“Bot 往面板上放页面”）：宿主页、工具调用、资源读取和发消息。
+//! MCP Apps 的 HTTP 入口：宿主页、工具调用、资源读取和发消息。
+//!
+//! 宿主按 Bot 钉页的 ID 取界面（ADR-0052，钉页已去掉）；收件箱（ADR-0119）接手后改成按它自己存的页面取，
+//! 届时删掉按钉页 ID 取页的路径和 `plugin::pins`。
 //!
 //! 宿主页由核心给，App 的 WebView 直接加载；界面放在它里面带 `sandbox` 的 iframe 里，只能经
 //! postMessage 和宿主页说 MCP Apps 的话。工具调用只限提供这个界面的插件声明给界面用的工具，
@@ -15,13 +18,13 @@ use hyper::{HeaderMap, StatusCode};
 use rmcp::model::ResourceContents;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use wonton_protocol::{PanelScope, TabRef};
+use wonton_protocol::TabRef;
 
 use super::api::error_response;
 use super::{Gateway, TunnelPeer, isolation};
 use crate::l10n;
 use crate::plugin::PluginId;
-use crate::plugin::pins::PanelPin;
+use crate::plugin::pins::{PanelPin, PinScope};
 
 const HOST_PAGE: &str = include_str!("mcp_apps/host.html");
 
@@ -535,8 +538,8 @@ pub(super) async fn message(
         return error_response(StatusCode::NOT_FOUND, "not_found", "没有这个钉页");
     };
     let room = match &found.scope {
-        PanelScope::Room { room_id } => room_id.clone(),
-        PanelScope::Main => {
+        PinScope::Room { room_id } => room_id.clone(),
+        PinScope::Main => {
             let entry = gateway
                 .plugins
                 .store()

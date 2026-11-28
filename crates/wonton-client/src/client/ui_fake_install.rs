@@ -169,6 +169,7 @@ fn base(source: &str, title: &str) -> InstallPreview {
         plan: "ui-fake-plan".into(),
         id: id_of(source),
         title: title.into(),
+        subtitle: None,
         summary: String::new(),
         version: "1.0.0".into(),
         kind: wonton_protocol::PluginKind::App,

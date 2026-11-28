@@ -26,6 +26,7 @@ use crate::files::FilesLink;
 use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::lock_screen::LockScreenLink;
+use crate::media_link::{MediaLink, MediaViews};
 use crate::music_library::{LiveLibraries, MusicLink};
 use crate::onboarding::OnboardingLink;
 use crate::pages::PagesLink;
@@ -50,6 +51,7 @@ pub(crate) struct Scope {
     pub(crate) agent_chains: Arc<AgentChainsLink>,
     pub(crate) pages: Arc<PagesLink>,
     pub(crate) files: Arc<FilesLink>,
+    pub(crate) media: Arc<MediaLink>,
     pub(crate) composer: Arc<ComposerLink>,
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
@@ -83,6 +85,7 @@ pub(crate) struct Views {
     pub(crate) agent_stops: watch::Sender<crate::agent_chains::room_stop::Attempts>,
     pub(crate) pages: watch::Sender<PagesViewModel>,
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
+    pub(crate) media: MediaViews,
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
     pub(crate) friends: watch::Sender<FriendsViewModel>,
@@ -103,6 +106,7 @@ impl Views {
             agent_stops: scope.agent_chains.stops_sender(),
             pages: scope.pages.sender(),
             transfers: scope.files.sender(),
+            media: scope.media.views(),
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
             friends: scope.friends.sender(),
@@ -387,6 +391,12 @@ impl Scope {
                 .join("music-covers")
                 .join(slot),
         );
+        let media = MediaLink::new(
+            handle.clone(),
+            home.clone(),
+            dir,
+            views.map(|v| v.media.clone()),
+        );
         let bot_contacts = BotContactsLink::new(
             handle.clone(),
             home.clone(),
@@ -403,6 +413,7 @@ impl Scope {
             agent_chains,
             pages: links.pages,
             files: links.files,
+            media,
             composer,
             onboarding: links.onboarding,
             peers: people.0,

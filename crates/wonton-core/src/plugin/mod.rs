@@ -89,6 +89,7 @@ pub(crate) mod manifest_widget;
 pub mod matrix_rtc;
 pub mod matrix_rtc_ca;
 mod mcp_server;
+pub(crate) mod media_source;
 mod member_bots;
 pub(crate) mod model_health;
 pub mod models;

@@ -117,7 +117,7 @@ iPad regular 宽度与 Android expanded 宽度使用“会话列表 + 当前内�
 房间选择与导航路径属于窗口的壳内状态，尺寸变化只换布局、不替主人选择房间；插件页面栈仍由客户端核心维护。
 布局与内容窗口的边界见 [ADR-0103](adr/0103-ipad-and-large-screens.md)。
 iPad 内容窗口共享进程内的 `ClientCore`，不复制主页面栈。每份时间线订阅独立保活房间、保存滚动回执，
-最后一份订阅释放后撤销房间 watch；房间面板按房间路由。独立插件页通过 `subscribe_content_page` 保活，
+最后一份订阅释放后撤销房间 watch；房间里的 widget 入口按房间路由。独立插件页通过 `subscribe_content_page` 保活，
 `PlacedTab::Content` 复用页面解析、权限与桥，加载状态与主栈同页共享，WebView 和场景滚动位置各自独立。
 端口自动映射取主页面与内容页的可见集合，最后一个页面关闭才释放；应用前后台与网络变化由进程级监听上报。
 
@@ -265,7 +265,7 @@ Agent／插件网络来源在 `self_request` 例外前拒绝；默认与非默�
 [`bot_web` 协议](../crates/wonton-protocol/src/bot_web.rs)区分 Bot 页身份、可用性和失败原因。
 Bot 页使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 URL，不降为插件页或公网网页。
 `None` 路径打开对应 `BotView.web.Ready.page.url`，`Some(path)` 仅允许同 origin 内的路径（含查询和片段）；
-打开沿用 `PageAction::OpenPage`，加入沿用 `PageAction::AddMyApp`、`PageAction::PinCurrentPage` 和面板，`PlacedTab` 保留同一 Bot 身份及路径。
+打开沿用 `PageAction::OpenPage`，`PlacedTab` 保留同一 Bot 身份及路径；Bot 页不进“我的应用”。
 聊天已有的 `BotView` watch 通道接入 `PagesLink`，网页状态变化时重算 `PagesViewModel` 的 `TabPage`；
 URL 只来自精确匹配该 `BotRef` 的 Ready 页面，不读 `plugin.web_url`，桥和媒体以 `TabPage.url` 的精确 origin 为准。
 `BotView.web: None` 没有验证可用的 URL；未知、缺失或错误时不发页面 URL，断连或身份变化时清空，不猜 URL 或回退默认 Bot。
@@ -496,7 +496,7 @@ scripts/             CI 与开发脚本
 | 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
 | Rust 本地化 | fluent-bundle、fluent-langneg（cldr）、unic-langid、fluent-syntax | Apache-2.0 / MIT | 已定 |
 | UI | SwiftUI、Compose Multiplatform | — / Apache-2.0 | 已定 |
-| 图标 | Phosphor（白名单加生成，无运行时依赖） | MIT | 已定（ADR-0026） |
+| 图标 | iOS：Kubai Icons（彩色分层）；Android：Phosphor。白名单加生成，无运行时依赖 | MIT | 已定（ADR-0026） |
 | 相册 | Immich（插件） | AGPL-3.0，独立容器 | 已定 |
 | 文档 | Paperless-ngx（插件） | GPL-3.0，独立容器 | 已定 |
 | 音乐 | Navidrome（插件） | GPL-3.0，独立容器 | 已定 |

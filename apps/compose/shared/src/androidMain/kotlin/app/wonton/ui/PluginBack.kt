@@ -3,7 +3,7 @@ package app.wonton.ui
 /** 系统返回这一步该做什么；顺序即优先级。 */
 internal enum class PluginBackTarget { CloseCustomView, History, ClosePage }
 
-/** 返回键的所有入口（系统返回、胶囊菜单）走完 [PluginWebViewController.back] 后的收尾：要关页就交给调用方（栈页弹栈，面板页摘掉）。 */
+/** 返回键的所有入口（系统返回、胶囊菜单）走完 [PluginWebViewController.back] 后的收尾：要关页就交给调用方（弹栈）。 */
 internal fun PluginWebViewController.backOrClose(onClosePage: () -> Unit) {
     if (back() == PluginBackTarget.ClosePage) onClosePage()
 }

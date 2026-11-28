@@ -51,12 +51,34 @@ pub(super) async fn home_with(tusd: Option<String>) -> Home {
 
 /// 用调用方先建好的目录建 home：要先起 tusd（端口由它自己挑）、再把这个端口交给网关时用。
 pub(super) async fn home_at(f: Fixture, tusd: Option<String>) -> Home {
+    let paired = paired_gateway(f.dir.path()).await;
+    let gateway = paired
+        .gateway
+        .with_files(Some(f.files.clone()))
+        .with_tusd(tusd);
+    Home {
+        app: router(Arc::new(gateway)),
+        tunnel: paired.tunnel,
+        device: paired.device,
+        f,
+        members: paired.members,
+    }
+}
+
+/// 只配了一台设备（主人的）的网关，插件管理连不上 Docker；各接口的测试再接上自己的服务。
+pub(super) struct Paired {
+    pub(super) gateway: Gateway,
+    pub(super) tunnel: Tunnel,
+    pub(super) device: TunnelPeer,
+    pub(super) members: Arc<crate::members::Members>,
+}
+
+pub(super) async fn paired_gateway(dir: &std::path::Path) -> Paired {
     let public = PublicUrls {
         scheme: "http".into(),
         base_domain: CORE.into(),
         port: 18480,
     };
-    let dir = f.dir.path();
     let http = HttpClient::new();
     let profile = OwnerStore::for_test(dir, &owner());
     let lifecycle = LifecycleConfig {
@@ -96,14 +118,11 @@ pub(super) async fn home_at(f: Fixture, tusd: Option<String>) -> Home {
         None,
         http,
         tunnel.clone(),
-    )
-    .with_files(Some(f.files.clone()))
-    .with_tusd(tusd);
-    Home {
-        app: router(Arc::new(gateway)),
+    );
+    Paired {
+        gateway,
         tunnel,
         device: TunnelPeer(key.public()),
-        f,
         members,
     }
 }

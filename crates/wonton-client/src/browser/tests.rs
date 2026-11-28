@@ -20,6 +20,7 @@ fn plugin(id: &str, origin: &str, isolated: bool) -> InstalledPlugin {
         chat: None,
         id: id.to_owned(),
         title: id.to_owned(),
+        subtitle: None,
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: "1".to_owned(),

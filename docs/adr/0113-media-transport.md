@@ -1,6 +1,6 @@
 # ADR-0113 媒体与传输：长任务由核心持有，插件经媒体源能力提供内容
 
-- 状态：提议（2026-11-21），影音相册线起草，插件底座线复审后合并；2026-11-27 补充第 9 节（相册原生浏览、去重、实况照片）
+- 状态：提议（2026-11-21），影音相册线起草，插件底座线复审后合并；2026-11-27 补充第 9 节（相册原生浏览、去重、实况照片）、第 10 节（影视原生浏览）
 - 取代 [ADR-0014](0014-reserved-capabilities.md) 的“Subsonic 原生音乐页”一节（主人 2026-11-21 定回原生）；补充 [ADR-0005](0005-native-clients-thick-core.md)（跨设备长任务的事实源在服务器核）
 - 关联：[ADR-0005](0005-native-clients-thick-core.md)（厚核心薄壳）、[ADR-0015](0015-small-components-standard-interfaces.md)（小部件、标准接口）、
   [ADR-0016](0016-mcp-bus-and-confirmations.md)（MCP 总线与确认）、[ADR-0020](0020-file-service.md)（文件服务）、
@@ -90,10 +90,10 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 
 1. 客户端核在本机起回环 HTTP（照 `files/stream.rs:1-8` 的随机令牌），播放器、上传器只连 `127.0.0.1`。
 2. 客户端核把请求经设备隧道发给核心网关 `/_wonton/api/media/…`，凭证是设备隧道身份（ADR-0004、ADR-0009）；`X-Wonton-User` 由核心按设备归属的人填，能力凭据由核心从提供方签的那把取，两者都不进壳。
-3. 核心按能力别名转发给提供方，字节**流式透传、不落盘**；`Range`、`If-Range`、`Content-Range` 原样过。客户端只认三条核心路由，路径里带任务/会话和 item，核心按它查到提供方：
+3. 核心按能力别名转发给提供方，字节**流式透传、不落盘**；`Range`、`If-Range`、`Content-Range`、`If-None-Match`、`If-Modified-Since` 原样过，提供方回的 304、416 和缓存相关的响应头（`ETag`、`Last-Modified`、`Cache-Control`、`Accept-Ranges`、`Content-Range`）也原样回。客户端只认三条核心路由，路径里带任务/会话和 item，核心按它查到提供方：
    `POST|PATCH /_wonton/api/media/tasks/{id}/uploads/{item}`（`{item}` 是 `item_id`；POST 无体、核心用任务里的 `UploadItem` 补体建上传并记住 `upload_id` 映射，PATCH 按映射续写，两者都回当前 `upload_offset`）、
    `GET /_wonton/api/media/tasks/{id}/items/{item}/content`（转发 `/items/{id}/download`）、
-   `GET /_wonton/api/media/sessions/{id}/stream`（转发 plan 的流地址）。
+   `GET /_wonton/api/media/sessions/{id}/stream/{文件名}`（转发 plan 的流地址，文件名取它的最后一段；HLS 的子列表、分片按它解析成 `…/stream/{子路径}`，接在流地址的目录后面）。
 4. AirPlay/Chromecast 这类“接收端是另一台设备”的场景，核心另签发一个绑 LAN 地址的一次性绝对 URL（带短期令牌、只对被投的那一项有效）；回连不成立就退回局域网直连，外网未验证。
 
 回环（`/streams`）属于客户端核的导出，不在服务端 API 里；服务端只发“给我一个能投出去的地址”的工具/接口。
@@ -120,7 +120,7 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 
 ```
 Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPower
-                  ↘ Done | Partial | Failed{failure} | Cancelled
+   ↘ Paused / Waiting…  ↘ Done | Partial | Failed{failure} | Cancelled
 ```
 
 - `Paused{reason}` 是用户或 Agent 主动暂停，带原因（`user`、`agent`、`low_battery`…）。
@@ -142,7 +142,7 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 
 **失败分类。** 以 `wonton-protocol/src/file/mod.rs:97-142` 的 `FileFailure` 为底，**保留它的本地、传输、协议、上游四组**（`local_source_unavailable`、`local_permission_denied`、`local_storage_full`、`local_io`、`transport_unavailable`、`protocol`、`plugin_unavailable`、`upstream_error`），再加 `AuthenticationRequired`、`UnsupportedByDevice`、`RateLimited`、`MediaGone`、`ServerStorageFull`。服务端空间不足和手机空间不足分成两个码，壳才知道该去清哪边；`device_no_response` 只出现在工具结果里，不进任务失败枚举。失败即停，不藏错误：状态转 `Failed{failure}`，失败原文和类别都进视图与事件（`media.task.failed`），Agent 能看到完整原因。
 
-**配额与清理。** 服务器核记两个账本：每个提供方的上传总量上限（按人）和每台设备的离线下载占用上限（按人按设备）。超限在 `Preparing` 就拒；拒的回执和 `QuotaView` 都分两项（`provider_upload`、`device_offline`），各带自己的 `used`/`limit`，壳据此出“去清服务器”还是“去清手机”。离线文件的清理只由用户或 Agent 显式发起；App 在系统存储告急时只提示，不自行删。
+**配额与清理。** 服务器核记两个账本：每个提供方的上传总量上限（按人）和每台设备的离线下载占用上限（按人按设备）。超限在 `Preparing` 就拒（点了名来源的上传在建任务时就看，放不下不建），任务落 `Failed`，字节一个不走；上传在提供方入库时记（提供方说重复的不记），下载在写完时记。下载按还差的字节看配额、写完按整份记，所以续下的任务最多比上限多出续下前已经写了的那部分。上传账只增不减：它记的是经核心传上去的量，提供方那边删了，契约里既没有删除事件、也没有按人查用量的接口，核心看不到，要回收得先给提供方契约加接口（待定第 5 条）。记账和任务落状态不在同一个事务里，两步之间核心挂了会少记这一笔：离线账在设备下一次 `PUT /offline` 时对齐，上传账就少记了；只会少记、不会多记，所以不为它把两处写合成一个事务。拒的回执和 `QuotaView` 都分两项（`provider_upload`、`device_offline`），各带自己的 `used`/`limit`，壳据此出“去清服务器”还是“去清手机”。设备用 `GET /quota` 读这两项，只回汇总：上传是这个人在各提供方的合计，离线是他各台设备的合计，不分家分台列。离线占用以设备为准：设备删了副本、被系统清了、重装了 App 都用 `PUT /offline` 报一次现在一共占多少，核心记成它，不靠逐项扣减对账；两次上报之间下载写完时核心往上加。账按设备分开记，一台上报只覆盖它自己那份，配额看这个人所有设备之和；设备被移除或这个人退出家庭时，那台的份额清零。离线文件的清理只由用户或 Agent 显式发起；App 在系统存储告急时只提示，不自行删。
 
 **后台限制。** iOS 的传输走 `URLSession` 后台会话：它不需要声明后台模式，系统在自己事件里把 App 拉起来并交回结果；只有批量枚举相册、整理这类不跑完会被打断的活才用 `BGProcessingTask`，那才要加 `processing`（现在只有 `audio`，`apps/ios/project.yml:69`）。`PHPhotoLibrary` 给的是内存数据，后台会话只能用文件，客户端核先落临时分片文件，传完删；空间不足先算再落。Android 传输走 `WorkManager` 加 `dataSync` 前台服务，一天总时长 6 小时（[FGS 超时](https://developer.android.com/develop/background-work/services/fgs/timeout)）；超过 6 小时的任务（大库首次备份）必须分批，批与批之间落回 `WaitingPower` 或 `Queued`。
 
@@ -177,9 +177,9 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 - 起播请求带 `person`、`item`、`device`、`DeviceProfile`、从上次 `position_ms` 起的起点，以及初始音轨/字幕选择 `audio`/`subtitle`（都可省，省了就由提供方按设备档挑）；核心据此向提供方要 `PlaybackPlan`，把 plan 与 `session.id` 一起回给客户端核。plan 的 `session` 由**提供方**发（上游会话号），和核心的 `PlaybackSession.id` 是两套，映射只存在核心。
 - `plan.stream` 是给客户端的核心路由（由核心在返回前填好），提供方原址放在 `plan.origin_stream`，只给 `cast-url` 用，客户端不读它；
 - 计划里带音轨和字幕轨两份 `MediaTrack` 列表，`ControlOp` 有 `SetAudio`/`SetSubtitle`（字幕可 `None`）：这两个由核心**重新向提供方要 plan** 再下发，新 plan 到位前客户端继续用旧轨，失败保留旧轨并报错；可 seek 范围以 plan 的 `seekable` 与 `duration` 为准。
-- 队列改动（入队、插队、移除、跳转、清空、模式切换）都带本次读到的 `revision`，并在成功时把整条队列用 `PUT /queue` 推给提供方（`savePlayQueue` 的翻法），需要时带 `position` 与 `mode`；核心比对不相等就回 `409 stale_revision` 连同当前队列快照，客户端重新拉一次再重放操作。选 409 不选“服务端自动合并”：Agent 与两台手机同时改队列时自动合并会出谁也预料不到的次序，宁可让调用方重试。
+- 队列改动（入队、插队、移除、跳转、清空、模式切换、整条替换）都带本次读到的 `revision`，并在成功时把整条队列用 `PUT /queue` 推给提供方（`savePlayQueue` 的翻法），需要时带 `position` 与 `mode`；核心比对不相等就回 `409 stale_revision` 连同当前队列快照，客户端重新拉一次再重放操作。选 409 不选“服务端自动合并”：Agent 与两台手机同时改队列时自动合并会出谁也预料不到的次序，宁可让调用方重试。整条替换（`Replace`）给“从第几首起放这张专辑、这个歌单”用：逐项入队一张百首的歌单就是百来个请求，中途还可能撞上别处的改动。
 - **一人同时只有一个活动会话。** 另一台设备发 `play` 时走接管：旧设备收到 `media.session.taken_over` 事件，壳停声、上报最后位置、转入只读。选“一人多活动会话”就得回答“锁屏上显示哪一个、scrobble 记给谁”，第一版不值得。
-- 会话的终态带 `stop_reason`（`user`/`agent`/`taken_over`/`finished`/`error`），停了不再改；重复的停止只把位置往后推。库里按人建一条唯一索引，只允许一条停因为空的活动会话。
+- 会话的终态带 `stop_reason`（`user`/`agent`/`taken_over`/`finished`/`error`/`removed`，最后一个是退出家庭时核心替他停的），停了不再改；重复的停止只把位置往后推。库里按人建一条唯一索引，只允许一条停因为空的活动会话。
 - 位置上报：播放中每 5 秒一次，另外在 pause/seek/stop 各报一次；核心按会话节流后再转给提供方（Subsonic `scrobble`、Jellyfin `Sessions/Playing/Progress`）。节流放在核心不放在壳，免得每个壳各写一份、重试风暴直接打到插件。位置就是本会话的断点恢复点，恢复时以最近一次上报为准，不重头。
 - 锁屏、通知栏、耳机按键由壳接系统：Android **只保留一个** `MediaSessionService`，现有的 `PageMediaService` 被新的播放服务吸收、页面媒体降为它的一个 renderer；iOS 走 `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`，壳把按键翻成第 3 节的 `MediaAction` 回给核心。控制逻辑不在壳里重复实现。
 - 画中画（PiP）两端壳各做一份，核心只保证进 PiP、出 PiP 不会停会话。
@@ -277,6 +277,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
   `spec_floor.rs` 登记，旧核心按版本号拒装并提示升级，不是静默忽略；别去给 `Provides` 加 `deny_unknown_fields`。
 - 新 App + 旧核心：新 App 看不到 `Action::Media` 的订阅，音乐、影视原生页退到插件网页；只有壳的改动，不崩。
 - 旧 App + 新核心：新协议字段不认识，任务页照旧，原生页在旧 App 里不出现（ADR-0095 的“不认识的按钮不显示”）。
+- 原生页的入口是页面上的 `TabPage.native`（`Option<NativePage>`：`Music`、`Video`、`Photos`，认不得的落 `Other`）。核心给已装插件的整页（`TabRef::Plugin`、不带子路径）按插件声明的标准填，不认插件名（ADR-0015）：音乐看 `provides.media_source.browse`，影视看 `catalog`，相册看 `library`。壳认得就画原生页，网页留在胶囊菜单的“网页版”（同一插件的 `TabRef::PluginPath`，路径 `/`）；`None` 或 `Other` 照旧加载网页，旧 App 遇到新加的原生页因此回落到网页。不另加 `TabRef::Native`：页面栈、标签、返回和“加到我的应用”都还是这个插件的页，原生只是换一种画法。
 - #585 的网页媒体会话在收编期间保持可用，直到音乐原生页与第三方页的 renderer 都验过（见“待验证”）。
 - `FileFailure` 的码只增不改；服务端空间不足改用新码，旧壳落到通用文案。
 
@@ -304,10 +305,12 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `/library/actions` | `POST` | 体 `LibraryAction`（收藏、建相册、加进/移出相册、共享给家人、进回收站、恢复），回 `LibraryActionResult` |
 
 - 服务器核对 `library` 只转发：按设备归属的人填 `X-Wonton-User`、换上提供方签的能力凭据、`Range` 原样过，不缓存、不落盘、
-  不改写回包。客户端走 `/_wonton/api/media/library/…`，后半段就是上表的提供方路径。家里有不止一个声明了 `library` 和 `photo`
-  的提供方时用 `?source=<插件 id>` 选；只有一个就取它；多个又没选回 `protocol`，不替人挑。
+  不改写回包。客户端走 `/_wonton/api/media/library/…`，后半段就是上表的提供方路径。用哪一家照“选哪个提供方”的统一规则
+  （`notes/0113-interfaces.md`）：带 `?source=<插件 id>` 用它，没带用主人定的默认，只有一家就用它，多家又没定默认回
+  `source_required`，不替人挑；这个人用不了的那家不算在“多家”里。
 - 这个人没被授权打开这个插件（ADR-0088 的应用清单）回 `permission_denied`，和打开插件网页是同一个判断。
-- 客户端核持有浏览的状态：游标、按日分组、选择集、缩略图磁盘缓存（按条目 id 和档位，有上限、按最近使用淘汰）；壳只画网格、
+- 客户端核持有浏览的状态：游标、按日分组、选择集；缩略图的磁盘缓存交给壳的图片加载器，键是条目 id 加档位（本机回环每次
+  启动换端口和令牌，地址不能当键）。壳只画网格、
   手势和转场（ADR-0120 手写白名单里的“相册看图”）。字节经客户端核的本机回环交给原生图片加载器和播放器，不经绑定层搬。
 - 视频和实况照片的动态部分在大图页直接播（`playback`、`live` 档），不开第 4 节的播放会话：相册里的短视频不进队列、
   不跨设备接着放。
@@ -352,7 +355,46 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 - **客户端核直讲 Immich 接口**：见上，给具体插件开特例；还要把每人的 Immich key 发到手机上。
 - **只用 `GET /items` 的通用列表**：字段不够画网格，按月分桶、实况、相册、共享都得另加。
 - **原生页内嵌 Immich 网页**：主人已定原生；网页的滚动位置、手势、离线缓存都不在我们手里，进程被杀就回到入口。
-- **核心缓存缩略图**：核心只中转不缓冲（第 1 节）；缓存放客户端核，命中时连网都不用。
+- **核心缓存缩略图**：核心只中转不缓冲（第 1 节）；缓存放手机上壳的图片加载缓存，命中时连网都不用。
+
+### 10. 影视：原生浏览（2026-11-27 补充）
+
+影视的原生界面（海报墙、分类、详情、继续观看、剧集的季和集、播放前选音轨和字幕）手感对标 Infuse，Jellyfin 网页降为管理入口。
+浏览走 `media_source` 的新操作 `catalog`，理由同第 9 节：Jellyfin 不是开放标准，客户端核直讲它就是给一个插件开特例，
+还要把每人的 Jellyfin 令牌发到手机上；`GET /items` 没有片库、季集、继续观看和详情。相册的 `library` 是按月分桶和相册的形状，
+套不上剧集的层级，所以另起一个操作，两者互不依赖，一个提供方可以只声明其中一个。
+
+| 提供方路径 | 方法 | 回包（`wonton-protocol::media::catalog`） |
+| --- | --- | --- |
+| `/catalog/libraries` | `GET` | `Libraries`：这个人能看到的片库，带类型（`movies`/`shows`/`mixed`）和条数 |
+| `/catalog/shelves/{shelf}?library=` | `GET` | `EntryPage`：首页的一排，`resume`（看了一半的）、`next_up`（追的剧下一集）、`latest`（新加入的） |
+| `/catalog/entries?library=&parent=&entry_type=&genre=&q=&sort=&unplayed=&cursor=` | `GET` | `EntryPage`：海报墙、分类、搜索；`parent` 列剧、季或文件夹下面的 |
+| `/catalog/entries/{id}` | `GET` | `EntryDetail`：简介、类型、演职员、片源规格；剧带各季和播放键对应的那一集，季带各集，能放的带音轨和字幕 |
+| `/catalog/genres?library=` | `GET` | `Genres`：分类页的类型名 |
+| `/catalog/actions` | `POST` | 体 `CatalogAction`（标已看或未看、收藏），回 `CatalogActionResult` |
+
+- 海报、背景图、横幅、片名字标和演职员照片都走契约里已有的 `GET /items/{id}/artwork?type=&width=`。条目自报有哪几种图，
+  没有的壳不去取。`catalog` 的回包原样转发、里面没有图片地址，客户端核按条目和浏览的那一家自己拼核心的封面路由。
+- 服务器核对 `catalog` 只转发，做法同第 9 节：按设备归属的人填 `X-Wonton-User`、换上提供方签的能力凭据，不缓存、不改写回包；
+  客户端走 `/_wonton/api/media/catalog/…`，后半段就是上表的提供方路径。选提供方看 `catalog` 和 `video`：请求带 `source`（插件 id）
+  就用它，否则取主人定的默认，只有一家就取它，多家又没有默认回明确的失败，不替人挑。
+- 播放和下载不在 `catalog` 里：能直接放的条目（电影、单集、单个视频）由客户端核换成 `MediaItemRef`（`CatalogEntry::to_item`），
+  照第 4 节开播放会话、照第 3 节建下载任务；“继续播放”就是带条目的 `position_ms` 开会话。进度照旧由播放会话报给提供方，
+  “继续观看”和“下一集”那两排由提供方按它自己记的进度给，核心不另记一份。
+- 客户端核把回包翻成壳直接画的视图：图片地址（本机回环上的封面路由，带种类和宽度）、能不能放、从哪接着放、看到几成都算好；
+  壳只画网格、详情和转场，翻页把上一页的游标原样带回。图的字节经本机回环交给原生图片加载器，不经绑定层搬；海报缓存用加载器
+  自带的磁盘缓存（有上限、按最近使用淘汰），缓存键去掉回环的端口和令牌，App 重启后不用重取。
+- 写操作本人点的、可撤，不发确认卡片（ADR-0024）；剧和季标已看时提供方把下面各集一起标。提供方不认识的动作回 `protocol`，
+  部分成功逐条回 `failed`。
+- 每人独立：提供方按 `X-Wonton-User` 用这个人自己的上游账号，回包里的进度、已看、收藏、家长分级都是他自己的。上游账号首次用到时
+  由提供方建（Jellyfin 是一人一个用户）。
+
+没选的做法：
+
+- **客户端核直讲 Jellyfin 接口**：见上，给具体插件开特例，还要把每人的令牌发到手机上。
+- **加宽 `GET /items`**：`list` 是给 Agent 找片的扁平列表，再加片库、层级、首页几排和详情，Agent 那边也得跟着变；分开后各自稳定。
+- **和相册共用 `library`**：相册按拍摄月和相册组织，影视按片库、剧、季、集组织，硬并成一份两边都要带一堆用不上的字段。
+- **原生页内嵌 Jellyfin 网页**：滚动位置、手势、离线都不在我们手里，和原生播放器、画中画也接不顺。
 
 ## 媒体源契约
 
@@ -360,11 +402,11 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 
 | 路径 | 动作 | 语义 |
 | --- | --- | --- |
-| `GET /_wonton/capabilities` | 探测 | 返回 `operations`（`upload`/`download`/`playback`/`list`/`library`）与 `kinds`（`photo`/`video`/`audio`）；核心据它决定哪些操作可用 |
+| `GET /_wonton/capabilities` | 探测 | 返回 `operations`（`upload`/`download`/`playback`/`list`/`library`/`catalog`）与 `kinds`（`photo`/`video`/`audio`）；核心据它决定哪些操作可用 |
 | `GET /items?kind=&q=&album=&artist=&series=&from=&to=&cursor=` | 列条目 | 分页列这个人能看到的条目，给 Agent 找内容；按 `title` 排，`cursor` 在同一次查询的参数下稳定；回 `items` 与下一页 `cursor` |
-| `POST /uploads` | 开始上传 | 体带 `item`（相对路径、大小、校验和、拍摄时间）；返回 `upload_id` 与已收字节数（为 0 或断点位置） |
+| `POST /uploads` | 开始上传 | 体是 `UploadStart`（相对路径、大小、校验和、拍摄时间）；返回 `upload_id` 与已收字节数（为 0 或断点位置） |
 | `HEAD /uploads/{id}` | 查断点 | 返回 `Upload-Offset`；不存在时 404，核心从头开始 |
-| `PATCH /uploads/{id}` | 续传 | 体是从 `Upload-Offset` 起的字节，`Content-Range` 校验；冲突回 409 并给当前偏移 |
+| `PATCH /uploads/{id}` | 续传 | 体是从 `Upload-Offset` 起的字节，`Content-Range` 校验；成功回 200、冲突回 409，都带当前偏移（`UploadOffset`） |
 | `POST /uploads/{id}/finish` | 收尾 | 提供方校验后入库，返回 `item_id`；收尾时才发现重复回 `duplicate: true`（第 9 节） |
 | `POST /uploads/check` | 去重检查 | 体带校验和（一次最多 1000 个），回已在这个人库里的那些和它们的 `item_id`（第 9 节） |
 | `DELETE /uploads/{id}` | 放弃 | 幂等 |
@@ -374,10 +416,14 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `POST /playback/{session}/stopped` | 结束 | 带最终位置与原因 |
 | `GET /items/{id}/segments` | 章节/片头片尾 | 回 `segments`（类型、起点、终点）；没有就 404。plan 里带了就以 plan 为准，起播后新抓到的以新抓的为准 |
 | `GET /items/{id}/download` | 下离线 | 支持 `Range`/`If-Range`，回 206 与 `Content-Range` |
+| `GET /items/{id}/artwork?type=&width=` | 封面、海报、缩略图 | `type` 取 `primary`（不带时）、`backdrop`、`thumb`、`logo`，认不得的按 `primary`；`width` 是要的像素宽，提供方按它缩、不放大。回图片字节，带 `Content-Type`；没有就 404。原生页的浏览靠它和 `list`，手机连不到 `artwork_url` 里提供方的内部地址 |
 | `/library/…` | 相册浏览 | 声明了 `library` 操作的提供方实现，路径和回包见第 9 节的表 |
+| `/catalog/…` | 影视浏览 | 声明了 `catalog` 操作的提供方实现，路径和回包见第 10 节的表 |
 | `POST /revoke` | 收回 | 体只带 `name`；提供方只注销上游凭据、停掉上游会话（任务表在核心，核心自己取消任务、结束会话） |
 
 失败回 `MediaFailure` 信封（`code`、`message`、`retry_after?`），码即下面失败类别的名字。
+
+提供方回包里的地址（`PlaybackPlan` 的 `stream`、`origin_stream`，`MediaItemRef.artwork_url`）写相对这个提供方服务根的路径，可带查询串：提供方不知道核心怎么叫它，手机也进不了插件网段。写成绝对地址时核心也只取路径和查询串，主机名不认。
 
 契约测试照 `plugin/tests/personal_data_contract/mod.rs:1-10` 的样板：两个假提供方（一个只实现 `upload`、像相册；一个只实现 `playback`/`download`/`list`、像点播）跑同一组用例，断言核心的 ViewModel、退避次数、断点续传、换提供方时客户端壳不改。
 
@@ -402,6 +448,8 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `plugin_unavailable` | 插件没装/没起来 | “插件没在跑”，带重试 | 1/2/4 秒，最多三次 |
 | `upstream_error` | 上游 5xx | “服务器出错”，带重试 | 同传输 |
 | `server_storage_full` | 服务器空间不足 | “家里硬盘满了”，列占用 | 不退避 |
+| `source_required` | 能做这件事的媒体源不止一家，主人没定默认 | 请用户选一家，带 `source` 再来 | 不退避 |
+| `stale_revision` | 队列被别处先改了，这次按位置的改动对不上 | 换上当前队列，请用户看过再改 | 不退避 |
 | `suspended_by_system` | 平台暂停（iOS 挂起、Android 配额到） | 进 `Paused{reason}`，不报错；它只在 `Paused` 里用，不进 `Failed` | 恢复时从断点续 |
 
 退避用完标 `Failed`，不藏也不无限重试；手动重试重置计数。
@@ -443,6 +491,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 
 - `crates/wonton-protocol`：新 `media` 模块，含能力名、头、路径、`MediaViewModel`/`PlaybackViewModel`/`MediaAction`。字段级见 `notes/adr0113-interfaces.md`。
 - `crates/wonton-protocol`：`media::library`（相册浏览的线上形状）、`media::uploads`（上传开始、收尾、去重检查的线上形状），`MediaOperation` 加 `library`（第 9 节）。
+- `crates/wonton-protocol`：`media::catalog`（影视浏览的线上形状），`MediaOperation` 加 `catalog`（第 10 节）。
 - `crates/wonton-core`：能力表加 `media_source`，核心侧提供方客户端与两个契约测试假提供方；`/_wonton/api/media/{tasks,sessions,queue,streams,commands}`；MCP 工具与事件。
 - `crates/wonton-client`：`Action::Media`、`subscribe_media`/`subscribe_playback`、`player_state`、`_meta` 键；媒体页的 `#585` 会话改成 renderer。
 - `wonton-docs`：`plugin-spec.md` 补 `media_source` 契约与错误码，清单 `provides.media_source` 字段。
@@ -455,3 +504,4 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 2. **Chromecast 接收端走哪条回连通道**：公网入口、中继、只许局网三选。推荐先只局网，外网与 ADR-0003 中继一起定。
 3. **ADR-0114 冲突项**：本篇直接用 0114 的第 3 项（事件与唤醒）、第 6 项（深链）名字；若 0114 事件载荷字段与本篇 `MediaFailure` 撞，以 0114 为准、本篇改引用。底座线复审时定。
 4. **离线下载配额默认值**（每人每设备 GB）：本篇未定，交给拆卡时按真机容量实测后填，暂定不限、只显占用。
+5. **上传账的回收**：提供方契约加按人报用量（或删除事件），核心据此对账；定下来之前上传账只增，用户在提供方那边删了东西额度不回。

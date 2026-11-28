@@ -24,7 +24,7 @@ private const val PILL_MAX_FRACTION = 0.72f
 
 /**
  * 页面上的浮层:短状态、接管提示和连接提示排在状态栏下沿下面,浮在网页上;一样都没有时顶上什么都不浮。
- * [capsule] 只有面板页和公网网页给(右上角的胶囊),给了的话左边这一列让开它。
+ * [capsule] 只有公网网页给(右上角的胶囊),给了的话左边这一列让开它。
  */
 @Composable
 internal fun PluginPageChrome(

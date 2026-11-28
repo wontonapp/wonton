@@ -80,6 +80,7 @@ pub mod matrix_rtc_alias;
 mod mcp;
 mod mcp_apps;
 mod me;
+mod media;
 mod model_settings;
 mod models;
 pub(crate) mod notify;
@@ -87,7 +88,6 @@ pub(crate) mod notify_limit;
 mod onboarding;
 mod owner_secrets;
 mod pages;
-mod panel_pins;
 mod peers;
 pub mod people_limits;
 pub(crate) mod permissions;
@@ -242,6 +242,8 @@ pub struct Gateway {
     pub(crate) notify_limiter: notify_limit::Limiter,
     /// 文件服务；没启用时文件接口如实报不可用。
     pub files: Option<Arc<crate::files::Files>>,
+    /// 媒体服务（ADR-0113）；没接时媒体接口如实报不可用。
+    pub media: Option<Arc<crate::media::Media>>,
     /// 审计日志（`core/audit.jsonl`，见 [`crate::mcp::audit`]）：总线和文件服务共用一份，
     /// 主人查看插件密钥的取值审计也从这里写。
     pub(crate) audit: Option<Arc<crate::mcp::audit::Audit>>,
@@ -452,6 +454,16 @@ mod mcp_takeover_tests;
 #[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]
+mod media_browse_tests;
+#[cfg(test)]
+mod media_flow_tests;
+#[cfg(test)]
+mod media_quota_tests;
+#[cfg(test)]
+mod media_stream_tests;
+#[cfg(test)]
+mod media_tests;
+#[cfg(test)]
 mod models_tests;
 #[cfg(test)]
 mod notify_tests;
@@ -465,8 +477,6 @@ mod onboarding_tests;
 mod owner_secrets_tests;
 #[cfg(test)]
 mod pairing_tests;
-#[cfg(test)]
-mod panel_pins_tests;
 #[cfg(test)]
 mod peers_api_tests;
 #[cfg(test)]

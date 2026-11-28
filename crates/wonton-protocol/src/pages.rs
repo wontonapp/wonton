@@ -1,14 +1,13 @@
 //! 页面（ADR-0095）：引用、状态，和打开页面用的栈。
 //!
 //! 应用页只有一种打开方式：压进栈、整页铺满（壳按 [`TabPage`] 渲染），关闭弹栈。
-//! 我的应用、面板、深链都用 [`TabRef`] 指页面，壳不自己拼。
+//! 我的应用、深链都用 [`TabRef`] 指页面，壳不自己拼。
 
 use serde::{Deserialize, Serialize};
 
 use crate::{PluginIcon, PluginImage};
 
-/// 栈里最多保活几个页面的网页（栈顶往下数）。每多一个多一份整个第三方网页的内存，
-/// 和面板的 [`crate::MAX_PANEL_PAGES`] 同一个考虑。
+/// 栈里最多保活几个页面的网页（栈顶往下数）。每多一个多一份整个第三方网页的内存。
 pub const KEEP_ALIVE_PAGES: usize = 3;
 
 /// 插件声明的一个页面（清单 `tabs` 的一项）。
@@ -55,17 +54,16 @@ pub enum TabRef {
         page: Option<String>,
     },
     /// 插件网站里的某一页：网页入口下的路径（含查询和 `#` 后面的部分），只认同一个插件网站。
-    /// 从正在看的页面加进我的应用或面板的（[`PageAction::PinCurrentPage`](crate::PageAction::PinCurrentPage)），
-    /// 或者编辑器里给插件填的路径。
+    /// 按网址加进我的应用的（[`PageAction::AddMyAppUrl`](crate::PageAction::AddMyAppUrl)）。
     PluginPath {
         plugin_id: String,
         path: String,
     },
-    /// 独立 Bot 网页。选择、我的应用、面板、桥及媒体操作都保留这个身份，不借用插件默认页。
+    /// 独立 Bot 网页。选择、我的应用、桥及媒体操作都保留这个身份，不借用插件默认页。
     /// URL 来自同一 BotRef 的 BotView.web；没有已核实的 Ready 时不能用插件 web_url 代替。
     Bot {
         bot: crate::BotRef,
-        /// 空值打开清单入口；非空为同一 Bot origin 内的路径，加进我的应用时使用，不存完整 URL。
+        /// 空值打开清单入口；非空为同一 Bot origin 内的路径，不存完整 URL。
         #[serde(default)]
         path: Option<String>,
     },
@@ -74,7 +72,7 @@ pub enum TabRef {
     Url {
         url: String,
     },
-    /// 插件的 MCP Apps 界面（`ui://` 资源），Bot 钉上来的（ADR-0052）。核心另给宿主页，
+    /// 插件的 MCP Apps 界面（`ui://` 资源）。核心另给宿主页，
     /// 界面在隔离的 iframe 里，只经 MCP Apps 的 postMessage 说话。
     UiResource {
         plugin_id: String,
@@ -116,23 +114,9 @@ pub struct PagesViewModel {
     pub my_app_candidates: Vec<TabCandidate>,
     /// 新装的应用自动加到我的应用末尾，见 [`PageAction::SetAutoAddApps`](crate::PageAction::SetAutoAddApps)。
     pub auto_add: bool,
-    /// 主聊天页下拉面板里的页面，按显示顺序（ADR-0052）。空的时候壳画大加号。
-    #[serde(default)]
-    pub panel: Vec<crate::PanelItem>,
-    /// 还没放进主面板、可以放进去的页面：已装插件的页面，去掉已经在面板里的。
-    /// 插件里的某一页和公网网页不走这里：钉当前页（[`PageAction::PinCurrentPage`](crate::PageAction::PinCurrentPage)）
-    /// 或在编辑面板里填。
-    #[serde(default)]
-    pub panel_candidates: Vec<TabCandidate>,
-    /// 主面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`，壳从第一页开。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub panel_selected: Option<TabRef>,
     /// 本机改动还没同步上账号数据（多半是断网）：按不确定显示，连上后自动重试，不是错误。
     #[serde(default)]
     pub sync_stale: bool,
-    /// 每个 Bot 往主面板钉页的同意（服务器上的）；设置里按它显示和收回。
-    #[serde(default)]
-    pub bot_pin_consents: Vec<crate::BotPinOwner>,
     /// 插件页在问摄像头和麦克风：壳画成平台风格的弹窗（允许 / 不允许）。一次只有一张，
     /// 页面关掉或答完就清；决定按插件记在本机（[`PluginAction::SetPluginMediaPermission`](crate::PluginAction::SetPluginMediaPermission)）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -147,7 +131,7 @@ pub struct OpenPage {
     pub page: TabPage,
 }
 
-/// 一个可以加进我的应用、或者放进面板的页面。
+/// 一个可以加进我的应用的页面。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct TabCandidate {
@@ -184,7 +168,30 @@ pub struct TabPage {
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = false))]
     pub opens_in_browser: bool,
+    /// 壳不加载网页，画这个原生界面（ADR-0113 第 8 节）。网页还在 `url`，胶囊菜单里的“网页版”打开它
+    /// （同一插件的 `TabRef::PluginPath`，路径 `/`）。`None` 或壳不认识的 `Other` 照旧加载网页。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub native: Option<NativePage>,
 }
+
+/// 代替网页的原生界面。核心按插件声明的标准给，不认插件名：音乐看 `provides.media_source.browse`，
+/// 影视看 `catalog`，相册看 `library`。
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum NativePage {
+    Music,
+    Video,
+    Photos,
+    /// 新版本核心加的原生页，原值留着；壳不认识，照旧加载网页。
+    Other(String),
+}
+
+crate::media::known_or_other!(NativePage {
+    Music => "music",
+    Video => "video",
+    Photos => "photos",
+});
 
 /// 页面的图标。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -259,24 +266,6 @@ pub enum PagesFailure {
     StorageWrite,
     /// 本机的页面配置内容无法解析或校验。
     InvalidConfig,
-    /// 连不上家里的服务器或隧道。
-    TransportUnavailable,
-    /// 服务器不认这台设备。
-    Unauthorized,
-    /// 服务器拒绝了这次页面操作。
-    Forbidden,
-    /// 页面操作的前置条件还没满足。
-    NotReady,
-    /// 页面操作的输入不合法。
-    InvalidInput,
-    /// 要操作的页面已经不存在。
-    NotFound,
-    /// 服务器返回的页面数据无法解析。
-    InvalidResponse,
-    /// 隧道或客户端协议出错。
-    Protocol,
-    /// 家里的服务器返回了错误。
-    Upstream,
     /// 比这个 App 新的错误类别。
     #[serde(other)]
     Other,
@@ -349,6 +338,7 @@ mod tests {
 
     fn sample_page(state: TabState, icon: TabIcon) -> TabPage {
         TabPage {
+            native: None,
             title: "动态".into(),
             icon,
             url: Some("http://app-example-feed.wonton.localhost:8480/feed".into()),
@@ -396,20 +386,16 @@ mod tests {
                 page: sample_page(state, monochrome.clone()),
             });
         }
-        let panel = vec![crate::PanelItem {
+        stack.push(OpenPage {
             tab: page(),
             page: sample_page(TabState::Ready, colored),
-            attention: true,
-            source: crate::PanelSource::User,
-            movable: true,
-        }];
+        });
         round_trip(PagesViewModel {
             root: TabRef::Chat,
             shows_apps: true,
             stack,
             uninstalled: vec!["相册".into()],
             sync_stale: true,
-            bot_pin_consents: Vec::new(),
             problem: Some(PagesProblem {
                 reason: Some(PagesFailure::InvalidConfig),
                 message: "读不了 layout.json".into(),
@@ -429,9 +415,6 @@ mod tests {
                 camera: true,
                 microphone: true,
             }),
-            panel,
-            panel_candidates: vec![],
-            panel_selected: Some(page()),
         });
     }
 
@@ -480,10 +463,7 @@ mod tests {
             },
             Action::Pages {
                 action: PageAction::TabLoadFailed {
-                    page: crate::PlacedTab::Panel {
-                        scope: crate::PanelScope::Main,
-                        tab: page(),
-                    },
+                    page: crate::PlacedTab::Content { tab: page() },
                     status: Some(503),
                 },
             },
@@ -501,49 +481,13 @@ mod tests {
     }
 
     #[test]
-    fn panel_actions_round_trip_through_json() {
-        for action in [
-            Action::Pages {
-                action: PageAction::AddPanelPage {
-                    scope: crate::PanelScope::Main,
-                    tab: crate::TabRef::Url {
-                        url: "https://example.com/weather".into(),
-                    },
-                },
+    fn add_my_app_url_round_trips_through_json() {
+        round_trip(Action::Pages {
+            action: PageAction::AddMyAppUrl {
+                url: "https://app.example.wonton.localhost/stats".into(),
+                title: Some("本月统计".into()),
             },
-            Action::Pages {
-                action: PageAction::RemovePanelPage {
-                    scope: crate::PanelScope::Room {
-                        room_id: "!room:home.example".into(),
-                    },
-                    tab: page(),
-                },
-            },
-            Action::Pages {
-                action: PageAction::MovePanelPage {
-                    scope: crate::PanelScope::Main,
-                    tab: page(),
-                    index: 1,
-                },
-            },
-            Action::Pages {
-                action: PageAction::SelectPanelPage {
-                    scope: crate::PanelScope::Main,
-                    tab: page(),
-                },
-            },
-            Action::Pages {
-                action: PageAction::PinCurrentPage {
-                    url: "https://app.example.wonton.localhost/stats".into(),
-                    title: Some("本月统计".into()),
-                    to: crate::PinTarget::Panel {
-                        scope: crate::PanelScope::Main,
-                    },
-                },
-            },
-        ] {
-            round_trip(action);
-        }
+        });
     }
 
     #[test]
@@ -584,5 +528,24 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(newer.reason, Some(PagesFailure::Other));
+    }
+
+    #[test]
+    fn native_pages_this_build_does_not_know_stay_as_other() {
+        let known: NativePage = serde_json::from_value(serde_json::json!("photos")).unwrap();
+        assert_eq!(known, NativePage::Photos);
+        let unknown: NativePage = serde_json::from_value(serde_json::json!("books")).unwrap();
+        assert_eq!(unknown, NativePage::Other("books".into()));
+        assert_eq!(
+            serde_json::to_value(&unknown).unwrap(),
+            serde_json::json!("books")
+        );
+
+        let mut page =
+            serde_json::to_value(sample_page(TabState::Ready, TabIcon::Plugin { icon: None }))
+                .unwrap();
+        page.as_object_mut().unwrap().remove("native");
+        let older: TabPage = serde_json::from_value(page).unwrap();
+        assert_eq!(older.native, None);
     }
 }

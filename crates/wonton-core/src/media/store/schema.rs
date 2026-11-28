@@ -9,7 +9,7 @@ use rusqlite::Row;
 
 use super::MediaStoreError;
 
-pub(super) const CURRENT_VERSION: i64 = 4;
+pub(super) const CURRENT_VERSION: i64 = 5;
 
 /// 第 1 版：最初的五张表。逐项条目单独成表，偏移一次只改一行。
 pub(crate) const SCHEMA_V1: &str = "
@@ -115,11 +115,28 @@ WHERE stop_reason IS NULL
 CREATE UNIQUE INDEX sessions_one_active ON sessions(person) WHERE stop_reason IS NULL;
 ";
 
+/// 第 5 版：任务和会话记下提供方，会话记下起播时的设备档；上传项在提供方那边的号单独一张表
+/// （ADR-0113 第 2 节“字节路径”）。
+pub(super) const MIGRATE_V5: &str = "
+ALTER TABLE tasks ADD COLUMN provider TEXT;
+ALTER TABLE sessions ADD COLUMN provider TEXT;
+ALTER TABLE sessions ADD COLUMN profile TEXT;
+CREATE TABLE uploads (
+    person TEXT NOT NULL,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    upload_id TEXT NOT NULL,
+    PRIMARY KEY (task_id, item_id)
+);
+";
+
 pub(super) const MIGRATIONS: &[(i64, &str)] = &[
     (1, SCHEMA_V1),
     (2, MIGRATE_V2),
     (3, MIGRATE_V3),
     (4, MIGRATE_V4),
+    (5, MIGRATE_V5),
 ];
 
 /// 把库补到 [`CURRENT_VERSION`]；比核心新的库拒绝打开，免得更新的核心写坏后被旧版改。

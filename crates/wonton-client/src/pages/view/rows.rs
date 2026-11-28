@@ -12,6 +12,7 @@ pub(crate) struct AppRow {
     pub(super) plugin_id: Option<String>,
     pub(super) tab: Option<TabRef>,
     pub(super) title: String,
+    pub(super) subtitle: Option<String>,
     pub(super) icon: Option<PluginIcon>,
     pub(super) open: SidebarOpen,
 }
@@ -33,6 +34,7 @@ pub(crate) fn plugin_row(
             plugin_id: Some(plugin_id.to_owned()),
             tab: None,
             title: entry.title.clone().unwrap_or_else(|| page.title.clone()),
+            subtitle: None,
             icon: icon(page),
             open: SidebarOpen::Page {
                 tab: TabRef::Plugin {
@@ -62,6 +64,12 @@ pub(crate) fn plugin_row(
         plugin_id: Some(plugin_id.to_owned()),
         tab: None,
         title: entry.title.clone().unwrap_or_else(|| plugin.title.clone()),
+        // 主人改过名的行，原来的用途不一定还对得上，不显示。
+        subtitle: entry
+            .title
+            .is_none()
+            .then(|| plugin.subtitle.clone())
+            .flatten(),
         icon: plugin.icon.clone(),
         open,
     })
@@ -98,6 +106,7 @@ pub(crate) fn page_row(
         plugin_id: plugin_id.map(str::to_owned),
         tab: Some(tab.clone()),
         title: entry.title.clone().unwrap_or(page.title),
+        subtitle: None,
         icon,
         open,
     }

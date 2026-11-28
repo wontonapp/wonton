@@ -147,8 +147,6 @@ dragSlop = 8
 edgeWidth = 24
 # 左滑整列消息露出时间时，最多挪开这么远。
 timeReveal = 64
-# 面板网页上能拖动面板的起手区：从网页露出的那条边往里这么高（ADR-0052）。
-pageEdgeZone = 48
 # 左滑回复：过这么远算回复，最多拖这么远（ADR-0109，估计值）。
 replyTrigger = 64
 replyMax = 88

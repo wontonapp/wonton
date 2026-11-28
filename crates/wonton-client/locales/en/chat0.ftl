@@ -138,3 +138,4 @@ chat-ask-failed-upstream = Your home server had a problem.
 chat-ask-failed-other = The message couldn't be sent.
 chat-ask-target-missing = No target.
 chat-my-bot = My Bot
+chat-room-view-unknown = Can't find this chat.

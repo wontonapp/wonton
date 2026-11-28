@@ -61,6 +61,9 @@ pub(super) fn fake_open(tab: TabRef) -> Option<(TabRef, TabPage)> {
 }
 
 pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
+    if let Some(page) = super::music::page(tab) {
+        return Some(page);
+    }
     if *tab == call_widget().tab {
         return Some(TabPage {
             title: "Call".into(),
@@ -69,6 +72,7 @@ pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
             layout: TabLayout::EdgeToEdge,
             state: TabState::Ready,
             reload: 0,
+            native: None,
             opens_in_browser: false,
         });
     }
@@ -81,6 +85,7 @@ pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
                 layout: TabLayout::default(),
                 state: TabState::Ready,
                 reload: 0,
+                native: None,
                 opens_in_browser: false,
             });
         }
@@ -100,6 +105,7 @@ pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
             },
         },
         reload: 0,
+        native: None,
         opens_in_browser: false,
     })
 }

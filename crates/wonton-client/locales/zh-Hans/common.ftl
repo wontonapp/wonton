@@ -158,3 +158,10 @@ app-lock-corrupt = App 锁设置文件 { $path } 坏了：{ $reason }
 pages-storage-problem = 我的应用存不下，下次启动可能恢复旧状态：{ $error }
 # 只给主人查看生成的插件密钥；用户填写和插件收集的密钥绝不返回。
 plugins-owner-secret-not-listed = 这项密钥不在已展开的列表里：{ $name }
+# 按网址加进我的应用、同步我的应用时的报错。
+page-invalid-url = 这个网址读不出来。
+page-not-https = 只能加 https:// 的网页。
+page-path-outside = 这一页不在插件自己的网站里。
+my-apps-sync-failed-read = 从服务器读我的应用没成功。
+my-apps-sync-unreadable = 服务器上的我的应用这台设备读不懂，先用本机的。
+my-apps-bot-page = Bot 的网页从聊天里打开，不能加进我的应用。

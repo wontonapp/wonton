@@ -869,5 +869,5 @@ pub(super) fn dotenv_names(path: &Path) -> Result<std::collections::BTreeSet<Str
 }
 
 #[cfg(test)]
-#[path = "domain_tests.rs"]
+#[path = "domain_tests/mod.rs"]
 mod domain_tests;

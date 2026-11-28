@@ -189,6 +189,7 @@ impl PluginManager {
             via_index: origin.and_then(Origin::via_index),
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
+            subtitle: m.subtitle.as_ref().map(|t| langs.pick_owned(t)),
             summary: langs.pick_owned(&m.description),
             about: m.about.as_ref().map(|t| langs.pick_owned(t)),
             // 装着的版本还带步骤、商店里改成不带时，详情页别把原步骤弄丢。
@@ -284,6 +285,7 @@ impl PluginManager {
             via_index: shown.via_index.clone(),
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
+            subtitle: m.subtitle.as_ref().map(|t| langs.pick_owned(t)),
             summary: langs.pick_owned(&m.description),
             icon: shown.icon.as_ref().map(IconSource::paths),
             tags: langs.pick_tags(&m.tags),

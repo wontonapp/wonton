@@ -217,15 +217,6 @@ fn headered_response(core: &CoreState, method: &Method, path: &str) -> Option<Re
     Some(builder.body(Body::from(body)).unwrap())
 }
 
-/// 默认没有 Bot 钉页；单独要钉页的测试自己在前面拦。
-fn empty_pins() -> Response {
-    (
-        StatusCode::OK,
-        serde_json::json!({"pins": [], "consents": []}).to_string(),
-    )
-        .into_response()
-}
-
 /// 带延迟的预设回应：弹出就睡，保证这份旧回应一定是发得早的那个请求取走、晚于新回应到达。
 async fn delayed_canned_response(
     core: &CoreState,
@@ -329,7 +320,6 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
     match (&parts.method, parts.uri.path()) {
         (&Method::GET, "/_wonton/api/plugins") => installed_response(&core),
         (&Method::GET, "/_wonton/api/store") => json(serde_json::to_string(&listing()).unwrap()),
-        (&Method::GET, "/_wonton/api/panel/pins") => empty_pins(),
         (&Method::POST, "/_wonton/api/plugins/preview") => {
             // 来源 github:owner/<id> 预览出来就是 <id>。
             let id = serde_json::from_slice::<serde_json::Value>(&body)
@@ -443,6 +433,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         chat: Default::default(),
         id: id.to_owned(),
         title: format!("标题 {id}"),
+        subtitle: None,
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: "1.0.0".to_owned(),
@@ -491,6 +482,7 @@ pub fn preview(id: &str) -> InstallPreview {
         plan: "opaque-install-plan".to_owned(),
         id: id.to_owned(),
         title: format!("标题 {id}"),
+        subtitle: None,
         license: Some("AGPL-3.0-only".into()),
         license_url: None,
         summary: String::new(),
@@ -546,6 +538,7 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         source: format!("github:owner/{id}"),
         id: id.to_owned(),
         title: title.to_owned(),
+        subtitle: None,
         summary: String::new(),
         icon: None,
         tags: tags.iter().map(ToString::to_string).collect(),

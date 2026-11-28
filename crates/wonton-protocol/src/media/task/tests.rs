@@ -40,6 +40,9 @@ fn legal_transitions_pass() {
     let legal = [
         (queued(), preparing()),
         (queued(), TaskState::Cancelled),
+        (queued(), paused()),
+        (queued(), waiting_network()),
+        (queued(), waiting_power()),
         (preparing(), running()),
         (
             preparing(),
@@ -139,9 +142,11 @@ fn every_failure_code_has_its_backoff() {
         (MediaFailureCode::UpstreamError, Backoff::Standard),
         (MediaFailureCode::ServerStorageFull, Backoff::None),
         (MediaFailureCode::SuspendedBySystem, Backoff::SystemPause),
+        (MediaFailureCode::SourceRequired, Backoff::None),
+        (MediaFailureCode::StaleRevision, Backoff::None),
         (MediaFailureCode::Other("quantum".into()), Backoff::None),
     ];
-    assert_eq!(expected.len(), 16);
+    assert_eq!(expected.len(), 18);
     for (code, backoff) in expected {
         assert_eq!(code.backoff(), backoff, "{code:?}");
     }

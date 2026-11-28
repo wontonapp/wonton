@@ -128,14 +128,3 @@ private struct WontonTextModifier: ViewModifier {
             .lineSpacing(max(0, line - UIFont.systemFont(ofSize: size).lineHeight))
     }
 }
-
-extension WontonIcon {
-    /// 模板渲染，颜色跟 `foregroundStyle`，默认 24。读屏的名字由外层的控件给。
-    func view(size: CGFloat = WontonTheme.size.icon) -> some View {
-        Image(rawValue)
-            .resizable()
-            .renderingMode(.template)
-            .frame(width: size, height: size)
-            .accessibilityHidden(true)
-    }
-}

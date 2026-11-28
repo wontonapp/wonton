@@ -491,6 +491,11 @@ private struct DetailHeader: View {
                     Text(detail.title)
                         .wontonText(WontonTheme.typography.sectionTitle)
                         .foregroundStyle(Color(colors.textPrimary))
+                    if let subtitle = detail.subtitle {
+                        Text(subtitle)
+                            .wontonText(WontonTheme.typography.body)
+                            .foregroundStyle(Color(colors.textPrimary))
+                    }
                     Text(detail.summary)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
