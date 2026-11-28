@@ -16,6 +16,7 @@ use wonton_protocol::{
 };
 
 use super::avatar_files;
+use super::background::NotifyBoundary;
 use super::bots;
 use super::connect;
 use super::core_error;
@@ -136,6 +137,7 @@ impl ChatLink {
             #[cfg(all(test, feature = "ui-fake"))]
             typing_stops: Mutex::default(),
             background: AtomicBool::new(false),
+            notify_boundary: NotifyBoundary::default(),
             verification: Mutex::new(None),
             handoff_armed: AtomicBool::new(false),
             relogin: connect::Relogin::default(),
