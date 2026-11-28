@@ -29,7 +29,7 @@ App 锁要复用这套验证，并回答：什么时候锁、设置存哪谁判�
 
 **已有的地基**（都能直接用，不用新开接口）：
 
-- 前后台信号已经到核心：`HomeAction::AppForegrounded` / `HomeAction::AppBackgrounded`（`crates/wonton-protocol/src/action_domains.rs`）。
+- 前后台信号已经到核心：`HomeAction::AppForegrounded` / `HomeAction::AppBackgrounded`（`crates/wonton-protocol/src/action_domains/mod.rs`）。
   iOS 由 `apps/ios/Wonton/WontonApp.swift` 的 `scenePhase` 发出（:41-46），Android 由
   `apps/compose/androidApp/src/main/kotlin/app/wonton/android/MainActivity.kt` 的 `onResume` / `onPause` 发出：
   `onPause` 是失去可交互的那一刻，关屏和系统对话框到不了 `onStop`。
