@@ -1,6 +1,6 @@
 use super::super::record::Accessor;
-use super::super::share_fs::ShareRef;
 use super::super::share_fs::UPLOAD_TEMP_PREFIX;
+use super::super::share_fs::{Names, ShareRef, Snapshot};
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 
