@@ -36,7 +36,7 @@ plugins-api-not-paired = 先配對家裡的伺服器，再試。
 
 plugins-api-server-too-old = 家裡的伺服器 { $version } 太舊：這個功能要 { $minimum } 起。
 
-# 安裝、更新、解除安裝任務（crates/wonton-client/src/plugins/tasks.rs）。
+# 安裝、更新、解除安裝任務（crates/wonton-client/src/plugins/tasks/）。
 plugins-tasks-uncertain = 連線中斷了，等不到家用伺服器的結果，看一下已安裝清單。
 
 plugins-tasks-server-changed = 換了家用伺服器，等不到原來那台的結果。

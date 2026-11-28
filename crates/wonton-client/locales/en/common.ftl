@@ -38,7 +38,7 @@ plugins-api-not-paired = Pair this phone with your home server first, then try a
 
 plugins-api-server-too-old = Home server { $version } is too old: this needs { $minimum } or newer.
 
-# Install, upgrade and uninstall tasks (crates/wonton-client/src/plugins/tasks.rs):
+# Install, upgrade and uninstall tasks (crates/wonton-client/src/plugins/tasks/):
 # shown under a task that ended without a known result, and in the Details of a refused task.
 plugins-tasks-uncertain = The connection dropped, so the result from your home server is unknown. Check the installed list.
 

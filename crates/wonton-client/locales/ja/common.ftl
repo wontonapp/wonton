@@ -36,7 +36,7 @@ plugins-api-not-paired = 先に自宅サーバーとペアリングしてから�
 
 plugins-api-server-too-old = 自宅サーバー { $version } は古すぎます。この機能には { $minimum } 以降が必要です。
 
-# インストール・アップデート・アンインストールのタスク（crates/wonton-client/src/plugins/tasks.rs）。
+# インストール・アップデート・アンインストールのタスク（crates/wonton-client/src/plugins/tasks/）。
 plugins-tasks-uncertain = 接続が切断されたため、自宅サーバーでの結果は不明です。インストール済みリストを確認してください。
 
 plugins-tasks-server-changed = 自宅サーバーが変わったため、以前のサーバーでの結果は不明です。

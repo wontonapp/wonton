@@ -1,6 +1,7 @@
-//! 安装时一起装的提供方（ADR-0053），以及卸载时先卸依赖方、一起卸没人再用的提供方。
+//! 确认页的决定翻成对核心的请求：安装时一起装的提供方（ADR-0053），以及卸载时先卸依赖方、
+//! 一起卸没人再用的提供方。
 //!
-//! 拆出 [`tasks`](super::tasks)保持文件在门禁内；确认页的决定在这里翻成对核心的请求。
+//! 拆出 [`tasks`](super::tasks)保持文件在门禁内；操作入口在 [`tasks::run`](super::tasks::run)。
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -107,6 +108,14 @@ impl PluginsLink {
             link.finish_task(&id, Outcome::Removed, sent).await;
         });
         Ok(())
+    }
+
+    /// 记下预览：失败后重试要来源，聊天列表的安装行要知道它是不是 Bot 插件。
+    pub(in crate::plugins) fn remember_preview(&self, preview: &InstallPreview) {
+        self.previews
+            .lock()
+            .expect("the previews lock never panics")
+            .insert(preview.id.clone(), preview.clone());
     }
 }
 
