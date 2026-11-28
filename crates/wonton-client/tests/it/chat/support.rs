@@ -39,6 +39,8 @@ mod phone;
 mod plugin_start;
 mod wait;
 
+use confirmations::FakeConfirmations;
+
 pub use diagnostics::{is_room_list, request_arrived, request_done};
 use endpoint::loopback_endpoint;
 use fake_core::fake_core;
@@ -97,16 +99,6 @@ pub struct Home {
     relay: JoinHandle<()>,
     core_addr: SocketAddr,
     _core: JoinHandle<()>,
-}
-
-/// 模拟的核心记下的东西。
-/// 假核心记着的确认卡片。测试直接塞核心的卡片 JSON，字段同 `ConfirmationCard`。
-#[derive(Default, Clone)]
-pub(super) struct FakeConfirmations {
-    pub(super) pending: Vec<Value>,
-    pub(super) finished: Vec<Value>,
-    pub(super) contact_requests: Vec<Value>,
-    pub(super) revision: u64,
 }
 
 struct Core {
@@ -499,29 +491,6 @@ impl Home {
     /// 好友接口收到的请求：方法和小写路径。
     pub fn friends_calls(&self) -> Vec<(String, String)> {
         self.core.friends.lock().unwrap().calls.clone()
-    }
-
-    /// 确认卡片收到的回答：卡片 ID 和请求体。
-    pub fn confirmation_answers(&self) -> Vec<(String, Value)> {
-        self.core.answers.lock().unwrap().clone()
-    }
-
-    /// 放行时段收到的“停止”：卡片 ID。
-    pub fn window_stops(&self) -> Vec<String> {
-        self.core.window_stops.lock().unwrap().clone()
-    }
-
-    /// 下一个回答或者“停止”这样回。
-    pub fn reply_to_next_answer(&self, status: u16, body: Value) {
-        self.core
-            .answer_replies
-            .lock()
-            .unwrap()
-            .push_back((status, body));
-    }
-
-    pub fn hold_answers(&self, hold: bool) {
-        self.core.hold_answers.send_replace(hold);
     }
 }
 
