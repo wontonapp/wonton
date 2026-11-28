@@ -25,7 +25,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use futures_util::future::BoxFuture;
 use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -51,8 +50,10 @@ pub(in crate::peers) use records::endpoint_addr;
 pub use records::{PeerRecord, PeerRequest, Phase, RejectedRequest};
 mod identity;
 pub use identity::OwnIdentity;
+mod notices;
 #[cfg(test)]
 mod peers_tests;
+pub use notices::OwnerNotices;
 mod scanning;
 
 /// 待处理的请求最多几条（ADR-0050：超出回“对方暂时收不了请求”）。
@@ -63,23 +64,6 @@ const MAX_PER_HOUR: usize = 10;
 
 /// 一小时的毫秒数。
 const HOUR_MS: u64 = 60 * 60 * 1000;
-
-/// 在“Wonton”私聊里提醒主人（生产里是 `matrix::NoticeRoom`）。发不出去只记日志，不影响配对。
-pub trait OwnerNotices: Send + Sync + 'static {
-    /// 发一条消息，内容是 Matrix 的消息体（`m.text`）。
-    fn send(&self, content: serde_json::Value) -> BoxFuture<'_, Result<(), String>>;
-}
-
-impl OwnerNotices for crate::matrix::NoticeRoom {
-    fn send(&self, content: serde_json::Value) -> BoxFuture<'_, Result<(), String>> {
-        Box::pin(async move {
-            self.send(&content)
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        })
-    }
-}
 
 /// 记录写入失败。
 #[derive(Debug, thiserror::Error)]
@@ -647,38 +631,6 @@ impl Peers {
             FederationStatus::Offline { last_error, .. } => Some(last_error.to_string()),
             _ => None,
         }
-    }
-
-    /// 在“Wonton”私聊里提醒主人有一条新请求，带跳到“其他服务器”的链接。
-    fn notify(self: &Arc<Self>, request: &PeerRequest) {
-        let Some(notices) = self.notices.clone() else {
-            return;
-        };
-        let langs = (self.languages)();
-        let who = if request.owner_display_name.trim().is_empty() {
-            request.server_name.clone()
-        } else {
-            request.owner_display_name.clone()
-        };
-        let text = format!(
-            "{}\n{}",
-            crate::l10n::text(
-                &langs,
-                "peers-new-request",
-                &[
-                    ("owner", who.into()),
-                    ("server", request.server_name.as_str().into()),
-                ],
-            ),
-            wonton_protocol::AppLink::Peers.to_url()
-        );
-        let server_name = request.server_name.clone();
-        tokio::spawn(async move {
-            let content = serde_json::json!({"msgtype": "m.text", "body": text});
-            if let Err(e) = notices.send(content).await {
-                tracing::info!(server = %server_name, error = %e, "配对提醒没有发进私聊");
-            }
-        });
     }
 }
 
