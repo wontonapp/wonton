@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
@@ -47,7 +46,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawOutline
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.MeasurePolicy
@@ -88,7 +86,7 @@ class WontonDialogAction(
 /** 底部面板里的一行操作。 */
 class WontonSheetAction(
     val title: String,
-    val icon: ImageVector,
+    val icon: WontonGlyph,
     val isDanger: Boolean = false,
     val onClick: () -> Unit,
 )
@@ -101,7 +99,7 @@ fun WontonButton(
     modifier: Modifier = Modifier,
     kind: WontonButtonKind = WontonButtonKind.PRIMARY,
     enabled: Boolean = true,
-    icon: ImageVector? = null,
+    icon: WontonGlyph? = null,
 ) {
     val colors = WontonTheme.colors
     val (fill, content) = when (kind) {
@@ -135,7 +133,7 @@ fun WontonButton(
 
 /** 图标按钮：图形 24，命中区 48。 */
 @Composable
-fun WontonIconButton(icon: ImageVector, label: String, onClick: () -> Unit, tint: Color? = null) {
+fun WontonIconButton(icon: WontonGlyph, label: String, onClick: () -> Unit, tint: Color? = null) {
     Box(
         Modifier.size(WontonTheme.size.target)
             .clickable(role = Role.Button, onClick = onClick)
@@ -202,7 +200,7 @@ fun WontonTextField(
 /** 提示块：错误、权限和不能用的原因，要做的事放在 `actions`。 */
 @Composable
 fun WontonNotice(
-    icon: ImageVector,
+    icon: WontonGlyph,
     title: String,
     isError: Boolean = true,
     lines: List<String> = emptyList(),
@@ -325,7 +323,7 @@ val LocalWontonBarStatus = compositionLocalOf { WontonBarStatus() }
 fun WontonPushedBar(
     title: String,
     onBack: () -> Unit,
-    icon: ImageVector = WontonIcon.Back,
+    icon: WontonGlyph = WontonIcon.Back,
     iconLabel: String = stringResource(R.string.design_back),
     showsStatus: Boolean = false,
     showsStatusLine: Boolean = false,

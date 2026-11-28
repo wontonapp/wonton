@@ -1,23 +1,43 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+@file:Suppress("MagicNumber", "MaxLineLength", "LongMethod", "UnusedReceiverParameter")
+
 package app.wonton.ui.icons
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonGlyph
 
-@Suppress("UnusedReceiverParameter")
-val WontonIcon.Pause: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-    ImageVector.Builder(
+private const val P0 = "M4 12.5A11.5 11.5 0 1 0 27 12.5A11.5 11.5 0 1 0 4 12.5Z"
+private const val P1 = "M11 8Q11 7.2 11.8 7.2L13.4 7.2Q14.2 7.2 14.2 8L14.2 17Q14.2 17.8 13.4 17.8L11.8 17.8Q11 17.8 11 17Z"
+private const val P2 = "M16.8 8Q16.8 7.2 17.6 7.2L19.2 7.2Q20 7.2 20 8L20 17Q20 17.8 19.2 17.8L17.6 17.8Q16.8 17.8 16.8 17Z"
+
+private fun art(name: String, c: LongArray): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 30.8571f,
+    viewportHeight = 30.8571f,
+    autoMirror = false,
+).apply {
+    addGroup(translationX = -0.0714f, translationY = 2.9286f)
+    addPath(pathData = addPathNodes(P0), stroke = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 1f, endY = 24f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P0), stroke = SolidColor(Color(c[4])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P0), fill = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 1f, endY = 24f))
+    addPath(pathData = addPathNodes(P1), fill = SolidColor(Color(c[5])))
+    addPath(pathData = addPathNodes(P2), fill = SolidColor(Color(c[5])))
+    clearGroup()
+}.build()
+
+val WontonIcon.Pause: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
+    WontonGlyph(
         name = "Pause",
-        defaultWidth = 256.dp,
-        defaultHeight = 256.dp,
-        viewportWidth = 256f,
-        viewportHeight = 256f
-    ).apply {
-        addPath(
-            fill = SolidColor(Color.Black),
-            pathData = addPathNodes("M 200.0 32.0 L 160.0 32.0 a 16.0 16.0 0.0 0 0 -16.0 16.0 L 144.0 208.0 a 16.0 16.0 0.0 0 0 16.0 16.0 h 40.0 a 16.0 16.0 0.0 0 0 16.0 -16.0 L 216.0 48.0 A 16.0 16.0 0.0 0 0 200.0 32.0 Z M 200.0 208.0 L 160.0 208.0 L 160.0 48.0 h 40.0 Z M 96.0 32.0 L 56.0 32.0 A 16.0 16.0 0.0 0 0 40.0 48.0 L 40.0 208.0 a 16.0 16.0 0.0 0 0 16.0 16.0 L 96.0 224.0 a 16.0 16.0 0.0 0 0 16.0 -16.0 L 112.0 48.0 A 16.0 16.0 0.0 0 0 96.0 32.0 Z M 96.0 208.0 L 56.0 208.0 L 56.0 48.0 L 96.0 48.0 Z")
-        )
-    }.build()
+        light = longArrayOf(0xFF969FAC, 0xFF828D9D, 0xFFCDD2D8, 0xFFAFB6C0, 0xFF58667B, 0xFFFFFFFF),
+        dark = longArrayOf(0xFFA1AAB7, 0xFF99A4B3, 0xFFB8BCC2, 0xFFABB2BC, 0xFF8896AA, 0xFFFFFFFF),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000, 0xFFFFFFFF),
+        build = ::art,
+    )
 }

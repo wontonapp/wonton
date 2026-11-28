@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,7 +35,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -54,9 +52,11 @@ import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginProblem
 import app.wonton.protocol.StoreFailure
 import app.wonton.protocol.StoreProblem
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
@@ -456,7 +456,7 @@ fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) {
 
 /** 页面还能用，只是这件事没做成。 */
 @Composable
-fun ProblemNotice(problem: Problem, icon: ImageVector = WontonIcon.Warning) {
+fun ProblemNotice(problem: Problem, icon: WontonGlyph = WontonIcon.Warning) {
     WontonNotice(icon, problem.titleText, lines = listOfNotNull(problem.nextStepText)) {
         problem.detail?.let { ProblemDetail(it) }
     }

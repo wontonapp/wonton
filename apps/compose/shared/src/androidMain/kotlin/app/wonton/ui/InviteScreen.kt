@@ -18,7 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -51,6 +50,7 @@ import app.wonton.protocol.DeviceInvite
 import app.wonton.protocol.KeyHandoff
 import app.wonton.protocol.VerificationFlow
 import app.wonton.protocol.VerificationStage
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonCopyButton
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton

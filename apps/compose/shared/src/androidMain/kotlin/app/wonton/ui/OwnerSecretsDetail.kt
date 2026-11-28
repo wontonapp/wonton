@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,6 +34,7 @@ import app.wonton.protocol.OwnerSecretView
 import app.wonton.protocol.OwnerSecretsView
 import app.wonton.protocol.PluginAction
 import app.wonton.protocol.PluginFailure
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonCopyButton
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonSeparator

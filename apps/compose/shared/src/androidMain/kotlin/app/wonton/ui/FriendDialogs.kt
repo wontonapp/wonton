@@ -14,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -26,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -39,10 +37,12 @@ import app.wonton.protocol.FriendProblem
 import app.wonton.protocol.FriendRow
 import app.wonton.protocol.FriendsState
 import app.wonton.protocol.FriendsViewModel
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonSheet
@@ -148,7 +148,7 @@ internal fun MyFriendCodeDialog(link: String, onDismiss: () -> Unit) {
 
 /** 操作项：和 WontonActionSheet 的行一个样子，供自带表单的面板接着用。 */
 @Composable
-private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+private fun SheetRow(icon: WontonGlyph, label: String, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = WontonTheme.size.target)

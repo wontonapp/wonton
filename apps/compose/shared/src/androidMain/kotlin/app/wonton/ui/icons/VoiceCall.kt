@@ -1,23 +1,43 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+@file:Suppress("MagicNumber", "MaxLineLength", "LongMethod", "UnusedReceiverParameter")
+
 package app.wonton.ui.icons
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonGlyph
 
-@Suppress("UnusedReceiverParameter")
-val WontonIcon.VoiceCall: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-    ImageVector.Builder(
+private const val P0 = "M23.943 19.924Q5.912 22.088 8.076 4.057L12.404 6.653Q13.269 14.731 21.347 15.596Z"
+private const val P1 = "M25.242 22.665Q23.943 23.963 22.645 22.665L18.895 18.914Q17.596 17.616 18.895 16.318L21.058 14.154Q22.645 12.567 24.232 14.154L27.405 17.327Q28.992 18.914 27.405 20.501ZM11.682 9.105Q10.384 10.404 9.086 9.105L5.335 5.355Q4.037 4.057 5.335 2.758L7.499 0.595Q9.086 -0.992 10.673 0.595L13.846 3.768Q15.433 5.355 13.846 6.942Z"
+
+private fun art(name: String, c: LongArray): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 30.8571f,
+    viewportHeight = 30.8571f,
+    autoMirror = false,
+).apply {
+    addGroup(translationX = -0.0714f, translationY = 2.9286f)
+    addPath(pathData = addPathNodes(P0), stroke = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 4.057f, endY = 20.1495f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P0), stroke = SolidColor(Color(c[4])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P0), fill = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 4.057f, endY = 20.1495f))
+    addPath(pathData = addPathNodes(P1), stroke = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = -0.1985f, endY = 23.314f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P1), stroke = SolidColor(Color(c[4])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P1), fill = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = -0.1985f, endY = 23.314f))
+    clearGroup()
+}.build()
+
+val WontonIcon.VoiceCall: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
+    WontonGlyph(
         name = "VoiceCall",
-        defaultWidth = 256.dp,
-        defaultHeight = 256.dp,
-        viewportWidth = 256f,
-        viewportHeight = 256f
-    ).apply {
-        addPath(
-            fill = SolidColor(Color.Black),
-            pathData = addPathNodes("M 222.37 158.46 l -47.11 -21.11 l -0.13 -0.06 a 16.0 16.0 0.0 0 0 -15.17 1.4 a 8.12 8.12 0.0 0 0 -0.75 0.56 L 134.87 160.0 c -15.42 -7.49 -31.34 -23.29 -38.83 -38.51 l 20.78 -24.71 c 0.2 -0.25 0.39 -0.5 0.57 -0.77 a 16.0 16.0 0.0 0 0 1.32 -15.06 l 0.0 -0.12 L 97.54 33.64 a 16.0 16.0 0.0 0 0 -16.62 -9.52 A 56.26 56.26 0.0 0 0 32.0 80.0 c 0.0 79.4 64.6 144.0 144.0 144.0 a 56.26 56.26 0.0 0 0 55.88 -48.92 A 16.0 16.0 0.0 0 0 222.37 158.46 Z M 176.0 208.0 A 128.14 128.14 0.0 0 1 48.0 80.0 A 40.2 40.2 0.0 0 1 82.87 40.0 a 0.61 0.61 0.0 0 0 0.0 0.12 l 21.0 47.0 L 83.2 111.86 a 6.13 6.13 0.0 0 0 -0.57 0.77 a 16.0 16.0 0.0 0 0 -1.0 15.7 c 9.06 18.53 27.73 37.06 46.46 46.11 a 16.0 16.0 0.0 0 0 15.75 -1.14 a 8.44 8.44 0.0 0 0 0.74 -0.56 L 168.89 152.0 l 47.0 21.05 h 0.0 s 0.08 0.0 0.11 0.0 A 40.21 40.21 0.0 0 1 176.0 208.0 Z")
-        )
-    }.build()
+        light = longArrayOf(0xFF6CAF8B, 0xFF51A075, 0xFFBAD9C8, 0xFF8FC2A7, 0xFF158046),
+        dark = longArrayOf(0xFF5DB787, 0xFF49B37A, 0xFF98C2AB, 0xFF78BC97, 0xFF1CAB5E),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000),
+        build = ::art,
+    )
 }

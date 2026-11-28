@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
@@ -46,6 +45,7 @@ import app.wonton.protocol.TabRef
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PanelScope
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Apps

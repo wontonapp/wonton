@@ -145,6 +145,28 @@ class MonoTest(unittest.TestCase):
         self.assertIn('fill="#000000" fill-opacity=', out)
 
 
+class ComposeMonoTest(unittest.TestCase):
+    """Compose 的单色图是灰度图，壳取“1 减亮度”当不透明度：要和 iOS 的单色版一样浓。"""
+
+    def opacity(self, value: str) -> float:
+        gray = design.compose_mono_gray(value, BASE)
+        self.assertEqual(len(set(gray)), 1)
+        return 1 - gray[0] / 255
+
+    def test_white_is_fully_transparent(self):
+        self.assertEqual(self.opacity("#FFFFFF"), 0)
+
+    def test_base_deep_stroke_and_dark_badge_are_solid(self):
+        for value in ("#5393FF", "#4262CA", "#33363D"):
+            self.assertEqual(self.opacity(value), 1)
+
+    def test_tints_match_the_ios_mono_ink(self):
+        for value in ("#93BBFF", "#CCDFFF", "#D3E2FF"):
+            ink = design.kubai_ink(design.hex_rgb(value), BASE)
+            self.assertAlmostEqual(self.opacity(value), ink, delta=0.01)
+            self.assertGreaterEqual(ink, design.KUBAI_TINT_FLOOR)
+
+
 class UpstreamFilesTest(unittest.TestCase):
     def folder(self, files: dict[str, bytes]) -> Path:
         root = Path(self.enterContext(tempfile.TemporaryDirectory())) / "kubai"

@@ -5,6 +5,7 @@ import app.wonton.client.storeInstallAction
 import android.icu.text.CompactDecimalFormat
 import androidx.compose.foundation.background
 import androidx.compose.runtime.CompositionLocalProvider
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.LocalWontonTopInset
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,7 +27,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable

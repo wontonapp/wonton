@@ -27,6 +27,7 @@ enum WontonIcon: String {
     case disk
     case document
     case documentFill
+    case down
     case download
     case downloadFill
     case error
@@ -63,6 +64,7 @@ enum WontonIcon: String {
     case play
     case playFill
     case qrCode
+    case read
     case refresh
     case reply
     case search
@@ -126,6 +128,7 @@ extension WontonIcon {
         case .disk: "disk"
         case .document: "document"
         case .documentFill: "document"
+        case .down: "down"
         case .download: "download"
         case .downloadFill: "download"
         case .error: "error"
@@ -162,6 +165,7 @@ extension WontonIcon {
         case .play: "play"
         case .playFill: "play"
         case .qrCode: "qrCode"
+        case .read: "read"
         case .refresh: "refresh"
         case .reply: "reply"
         case .search: "search"

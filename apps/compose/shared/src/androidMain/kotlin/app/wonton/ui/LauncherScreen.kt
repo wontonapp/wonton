@@ -24,7 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -53,6 +52,7 @@ import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.PluginState
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind

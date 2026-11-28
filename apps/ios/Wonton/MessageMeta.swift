@@ -21,7 +21,6 @@ struct MessageMeta: View {
             status
         }
         .wontonText(WontonTheme.typography.messageMeta)
-        .imageScale(.small)
         .foregroundStyle(ink)
         .lineLimit(1)
         .fixedSize()
@@ -53,7 +52,8 @@ struct MessageMeta: View {
         if message.isOwn {
             switch message.sendState {
             case .sending:
-                Image(systemName: "clock")
+                WontonIcon.clock.view(size: WontonTheme.size.iconTiny)
+                    .accessibilityElement(children: .ignore)
                     .accessibilityLabel(Text(.Message2.messageSending))
                     .accessibilityIdentifier("messageStatusSending")
             case .failed:
@@ -61,16 +61,14 @@ struct MessageMeta: View {
             case .sent:
                 switch message.status {
                 case .sent:
-                    Image(systemName: "checkmark")
+                    WontonIcon.check.view(size: WontonTheme.size.iconTiny)
+                        .accessibilityElement(children: .ignore)
                         .accessibilityLabel(Text(.Message2.messageDelivered))
                         .accessibilityIdentifier("messageStatusSent")
                 case .read:
-                    HStack(spacing: -WontonTheme.spacing.s8 + 1) {
-                        Image(systemName: "checkmark")
-                        Image(systemName: "checkmark")
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(Text(.Message2.messageRead))
+                    WontonIcon.read.view(size: WontonTheme.size.iconTiny)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(.Message2.messageRead))
                     .accessibilityIdentifier("messageStatusRead")
                 case .other, nil:
                     EmptyView()

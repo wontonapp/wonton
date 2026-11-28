@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
@@ -24,6 +23,7 @@ import app.wonton.protocol.OnboardingReview
 import app.wonton.protocol.OnboardingReviewDetail
 import app.wonton.protocol.OnboardingReviewItem
 import app.wonton.protocol.OnboardingReviewKind
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor

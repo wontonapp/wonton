@@ -1,24 +1,46 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+@file:Suppress("MagicNumber", "MaxLineLength", "LongMethod", "UnusedReceiverParameter")
+
 package app.wonton.ui.icons
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonGlyph
 
-@Suppress("UnusedReceiverParameter")
-val WontonIcon.Forward: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-    ImageVector.Builder(
+private const val P0 = "M-2 -5.4L2.4 0L-2 5.4"
+
+private fun art(name: String, c: LongArray): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 30.8571f,
+    viewportHeight = 30.8571f,
+    autoMirror = true,
+).apply {
+    addGroup(translationX = -0.0714f, translationY = 2.9286f)
+    addGroup(translationX = 15.5f, translationY = 12.5f)
+    addGroup(scaleX = 1.5f, scaleY = 1.5f)
+    addGroup(translationX = -15.5f, translationY = -12.5f)
+    addGroup(translationX = 15.5f, translationY = 12.5f)
+    addPath(pathData = addPathNodes(P0), stroke = SolidColor(Color(c[0])), strokeLineWidth = 2.2f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round)
+    clearGroup()
+    clearGroup()
+    clearGroup()
+    clearGroup()
+    clearGroup()
+}.build()
+
+val WontonIcon.Forward: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
+    WontonGlyph(
         name = "Forward",
-        defaultWidth = 256.dp,
-        defaultHeight = 256.dp,
-        viewportWidth = 256f,
-        viewportHeight = 256f,
-        autoMirror = true
-    ).apply {
-        addPath(
-            fill = SolidColor(Color.Black),
-            pathData = addPathNodes("M 181.66 133.66 l -80.0 80.0 a 8.0 8.0 0.0 0 1 -11.32 -11.32 L 164.69 128.0 L 90.34 53.66 a 8.0 8.0 0.0 0 1 11.32 -11.32 l 80.0 80.0 A 8.0 8.0 0.0 0 1 181.66 133.66 Z")
-        )
-    }.build()
+        light = longArrayOf(0xFF58667B),
+        dark = longArrayOf(0xFF8896AA),
+        mono = longArrayOf(0xFF000000),
+        build = ::art,
+    )
 }

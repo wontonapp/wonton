@@ -1,23 +1,48 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+@file:Suppress("MagicNumber", "MaxLineLength", "LongMethod", "UnusedReceiverParameter")
+
 package app.wonton.ui.icons
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonGlyph
 
-@Suppress("UnusedReceiverParameter")
-val WontonIcon.QrCode: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-    ImageVector.Builder(
+private const val P0 = "M5.2 4.4Q5.2 2.2 7.4 2.2L23.6 2.2Q25.8 2.2 25.8 4.4L25.8 20.6Q25.8 22.8 23.6 22.8L7.4 22.8Q5.2 22.8 5.2 20.6Z"
+private const val P1 = "M7.4 5.8Q7.4 4.4 8.8 4.4L11.9 4.4Q13.3 4.4 13.3 5.8L13.3 8.9Q13.3 10.3 11.9 10.3L8.8 10.3Q7.4 10.3 7.4 8.9ZM9 6.6Q9 6 9.6 6L11.1 6Q11.7 6 11.7 6.6L11.7 8.1Q11.7 8.7 11.1 8.7L9.6 8.7Q9 8.7 9 8.1ZM17.7 5.8Q17.7 4.4 19.1 4.4L22.2 4.4Q23.6 4.4 23.6 5.8L23.6 8.9Q23.6 10.3 22.2 10.3L19.1 10.3Q17.7 10.3 17.7 8.9ZM19.3 6.6Q19.3 6 19.9 6L21.4 6Q22 6 22 6.6L22 8.1Q22 8.7 21.4 8.7L19.9 8.7Q19.3 8.7 19.3 8.1ZM7.4 16.1Q7.4 14.7 8.8 14.7L11.9 14.7Q13.3 14.7 13.3 16.1L13.3 19.2Q13.3 20.6 11.9 20.6L8.8 20.6Q7.4 20.6 7.4 19.2ZM9 16.9Q9 16.3 9.6 16.3L11.1 16.3Q11.7 16.3 11.7 16.9L11.7 18.4Q11.7 19 11.1 19L9.6 19Q9 19 9 18.4ZM17.7 15.2Q17.7 14.7 18.2 14.7L19.6 14.7Q20.1 14.7 20.1 15.2L20.1 16.6Q20.1 17.1 19.6 17.1L18.2 17.1Q17.7 17.1 17.7 16.6ZM21.2 18.7Q21.2 18.2 21.7 18.2L23.1 18.2Q23.6 18.2 23.6 18.7L23.6 20.1Q23.6 20.6 23.1 20.6L21.7 20.6Q21.2 20.6 21.2 20.1Z"
+private const val P2 = "M3.6 0Q3.6 -1.2 4.8 -1.2L26.2 -1.2Q27.4 -1.2 27.4 0L27.4 0Q27.4 1.2 26.2 1.2L4.8 1.2Q3.6 1.2 3.6 0Z"
+
+private fun art(name: String, c: LongArray): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 30.8571f,
+    viewportHeight = 30.8571f,
+    autoMirror = false,
+).apply {
+    addGroup(translationX = -0.0714f, translationY = 2.9286f)
+    addPath(pathData = addPathNodes(P0), stroke = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 2.2f, endY = 22.8f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P0), stroke = SolidColor(Color(c[4])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P0), fill = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 2.2f, endY = 22.8f))
+    addPath(pathData = addPathNodes(P1), fill = SolidColor(Color(c[5])), pathFillType = PathFillType.EvenOdd)
+    addGroup(translationX = 0f, translationY = 12.5f)
+    addPath(pathData = addPathNodes(P2), stroke = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = -1.2f, endY = 1.2f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P2), stroke = SolidColor(Color(c[4])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P2), fill = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = -1.2f, endY = 1.2f))
+    clearGroup()
+    clearGroup()
+}.build()
+
+val WontonIcon.QrCode: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
+    WontonGlyph(
         name = "QrCode",
-        defaultWidth = 256.dp,
-        defaultHeight = 256.dp,
-        viewportWidth = 256f,
-        viewportHeight = 256f
-    ).apply {
-        addPath(
-            fill = SolidColor(Color.Black),
-            pathData = addPathNodes("M 104.0 40.0 L 56.0 40.0 A 16.0 16.0 0.0 0 0 40.0 56.0 v 48.0 a 16.0 16.0 0.0 0 0 16.0 16.0 h 48.0 a 16.0 16.0 0.0 0 0 16.0 -16.0 L 120.0 56.0 A 16.0 16.0 0.0 0 0 104.0 40.0 Z M 104.0 104.0 L 56.0 104.0 L 56.0 56.0 h 48.0 v 48.0 Z M 104.0 136.0 L 56.0 136.0 a 16.0 16.0 0.0 0 0 -16.0 16.0 v 48.0 a 16.0 16.0 0.0 0 0 16.0 16.0 h 48.0 a 16.0 16.0 0.0 0 0 16.0 -16.0 L 120.0 152.0 A 16.0 16.0 0.0 0 0 104.0 136.0 Z M 104.0 200.0 L 56.0 200.0 L 56.0 152.0 h 48.0 v 48.0 Z M 200.0 40.0 L 152.0 40.0 a 16.0 16.0 0.0 0 0 -16.0 16.0 v 48.0 a 16.0 16.0 0.0 0 0 16.0 16.0 h 48.0 a 16.0 16.0 0.0 0 0 16.0 -16.0 L 216.0 56.0 A 16.0 16.0 0.0 0 0 200.0 40.0 Z M 200.0 104.0 L 152.0 104.0 L 152.0 56.0 h 48.0 v 48.0 Z M 136.0 176.0 L 136.0 144.0 a 8.0 8.0 0.0 0 1 16.0 0.0 v 32.0 a 8.0 8.0 0.0 0 1 -16.0 0.0 Z M 216.0 160.0 a 8.0 8.0 0.0 0 1 -8.0 8.0 L 184.0 168.0 v 40.0 a 8.0 8.0 0.0 0 1 -8.0 8.0 L 144.0 216.0 a 8.0 8.0 0.0 0 1 0.0 -16.0 h 24.0 L 168.0 144.0 a 8.0 8.0 0.0 0 1 16.0 0.0 v 8.0 h 24.0 A 8.0 8.0 0.0 0 1 216.0 160.0 Z M 216.0 192.0 v 16.0 a 8.0 8.0 0.0 0 1 -16.0 0.0 L 200.0 192.0 a 8.0 8.0 0.0 0 1 16.0 0.0 Z")
-        )
-    }.build()
+        light = longArrayOf(0xFF8F9CF0, 0xFF7A8AED, 0xFFCAD0F8, 0xFFAAB4F3, 0xFF4D62E7, 0xFFFFFFFF),
+        dark = longArrayOf(0xFF9CA5E1, 0xFF939EE5, 0xFFB5BAD6, 0xFFA7AEDC, 0xFF7F8EEE, 0xFFFFFFFF),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000, 0xFFFFFFFF),
+        build = ::art,
+    )
 }

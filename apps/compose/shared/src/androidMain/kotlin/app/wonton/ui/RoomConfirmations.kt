@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
@@ -26,6 +25,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.protocol.Action
 import app.wonton.protocol.ConfirmationView
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonSheet
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor

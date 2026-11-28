@@ -16,7 +16,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +37,7 @@ import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.FontStyle
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeMode
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonTheme

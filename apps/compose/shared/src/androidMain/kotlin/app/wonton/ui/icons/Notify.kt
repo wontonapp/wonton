@@ -1,23 +1,50 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+@file:Suppress("MagicNumber", "MaxLineLength", "LongMethod", "UnusedReceiverParameter")
+
 package app.wonton.ui.icons
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonGlyph
 
-@Suppress("UnusedReceiverParameter")
-val WontonIcon.Notify: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-    ImageVector.Builder(
+private const val P0 = "M4.468 8.815A11.6 11.6 0 0 1 9.013 2.783M21.987 2.783A11.6 11.6 0 0 1 26.532 8.815"
+private const val P1 = "M13.7 5.02A1.8 1.8 0 1 0 17.3 5.02A1.8 1.8 0 1 0 13.7 5.02Z"
+private const val P2 = "M13.3 21.08A2.2 2.2 0 1 0 17.7 21.08A2.2 2.2 0 1 0 13.3 21.08Z"
+private const val P3 = "M8.79 18C9.89 16.68 10.22 14.7 10.22 12.06C10.22 8.32 12.53 5.9 15.5 5.9C18.47 5.9 20.78 8.32 20.78 12.06C20.78 14.7 21.11 16.68 22.21 18Z"
+private const val P4 = "M7.03 18.99Q7.03 17.12 8.9 17.12L22.1 17.12Q23.97 17.12 23.97 18.99L23.97 18.99Q23.97 20.86 22.1 20.86L8.9 20.86Q7.03 20.86 7.03 18.99Z"
+
+private fun art(name: String, c: LongArray): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 30.8571f,
+    viewportHeight = 30.8571f,
+    autoMirror = false,
+).apply {
+    addGroup(translationX = -0.0714f, translationY = 2.9286f)
+    addPath(pathData = addPathNodes(P0), stroke = SolidColor(Color(c[4])), strokeLineWidth = 2.2f, strokeLineCap = StrokeCap.Round)
+    addPath(pathData = addPathNodes(P1), fill = SolidColor(Color(c[4])))
+    addPath(pathData = addPathNodes(P2), fill = SolidColor(Color(c[4])))
+    addPath(pathData = addPathNodes(P3), stroke = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 5.9f, endY = 18f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P3), stroke = SolidColor(Color(c[5])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P3), fill = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 5.9f, endY = 18f))
+    addPath(pathData = addPathNodes(P4), stroke = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = 17.12f, endY = 20.86f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P4), stroke = SolidColor(Color(c[5])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P4), fill = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = 17.12f, endY = 20.86f))
+    clearGroup()
+}.build()
+
+val WontonIcon.Notify: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
+    WontonGlyph(
         name = "Notify",
-        defaultWidth = 256.dp,
-        defaultHeight = 256.dp,
-        viewportWidth = 256f,
-        viewportHeight = 256f
-    ).apply {
-        addPath(
-            fill = SolidColor(Color.Black),
-            pathData = addPathNodes("M 224.0 71.1 a 8.0 8.0 0.0 0 1 -10.78 -3.42 a 94.13 94.13 0.0 0 0 -33.46 -36.91 a 8.0 8.0 0.0 1 1 8.54 -13.54 a 111.46 111.46 0.0 0 1 39.12 43.09 A 8.0 8.0 0.0 0 1 224.0 71.1 Z M 35.71 72.0 a 8.0 8.0 0.0 0 0 7.1 -4.32 A 94.13 94.13 0.0 0 1 76.27 30.77 a 8.0 8.0 0.0 1 0 -8.54 -13.54 A 111.46 111.46 0.0 0 0 28.61 60.32 A 8.0 8.0 0.0 0 0 35.71 72.0 Z M 221.81 175.94 A 16.0 16.0 0.0 0 1 208.0 200.0 L 167.2 200.0 a 40.0 40.0 0.0 0 1 -78.4 0.0 L 48.0 200.0 a 16.0 16.0 0.0 0 1 -13.79 -24.06 C 43.22 160.39 48.0 138.28 48.0 112.0 a 80.0 80.0 0.0 0 1 160.0 0.0 C 208.0 138.27 212.78 160.38 221.81 175.94 Z M 150.62 200.0 L 105.38 200.0 a 24.0 24.0 0.0 0 0 45.24 0.0 Z M 208.0 184.0 c -10.64 -18.27 -16.0 -42.49 -16.0 -72.0 a 64.0 64.0 0.0 0 0 -128.0 0.0 c 0.0 29.52 -5.38 53.74 -16.0 72.0 Z")
-        )
-    }.build()
+        light = longArrayOf(0xFFC09D64, 0xFFB48B47, 0xFFE1D1B6, 0xFFCFB489, 0xFF714600, 0xFF9B6308),
+        dark = longArrayOf(0xFFCE9F52, 0xFFCF963B, 0xFFCDB792, 0xFFCEAA6F, 0xFF995E00, 0xFFD0840A),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000, 0xFF000000),
+        build = ::art,
+    )
 }

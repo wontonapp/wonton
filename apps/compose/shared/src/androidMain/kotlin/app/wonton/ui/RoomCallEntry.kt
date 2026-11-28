@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,7 +19,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -28,6 +26,8 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.RoomWidget
 import app.wonton.protocol.WidgetEntry
+import app.wonton.ui.design.Icon
+import app.wonton.ui.design.WontonGlyph
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
@@ -80,7 +80,7 @@ internal fun RoomCallEntry(call: RoomCall, onOpen: (RoomWidget) -> Unit) {
 }
 
 @Composable
-private fun ActiveCallButton(icon: ImageVector, onClick: () -> Unit) {
+private fun ActiveCallButton(icon: WontonGlyph, onClick: () -> Unit) {
     val label = stringResource(R.string.room_call_active)
     val tint = WontonTheme.colors.success.toColor()
     Box(
@@ -104,7 +104,7 @@ private fun ActiveCallButton(icon: ImageVector, onClick: () -> Unit) {
     }
 }
 
-private fun WidgetEntry.icon(filled: Boolean): ImageVector = when (this) {
+private fun WidgetEntry.icon(filled: Boolean): WontonGlyph = when (this) {
     WidgetEntry.VIDEO_CALL -> if (filled) WontonIcon.VideoCallFill else WontonIcon.VideoCall
     WidgetEntry.VOICE_CALL -> if (filled) WontonIcon.VoiceCallFill else WontonIcon.VoiceCall
     WidgetEntry.OTHER -> if (filled) WontonIcon.AppsFill else WontonIcon.Apps

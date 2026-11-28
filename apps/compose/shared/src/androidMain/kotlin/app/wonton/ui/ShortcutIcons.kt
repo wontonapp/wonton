@@ -9,18 +9,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.drawscope.inset
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.graphics.drawable.IconCompat
+import app.wonton.ui.design.WontonGlyph
+import app.wonton.ui.design.WontonGlyphLook
 
 private const val SHORTCUT_ICON_SIZE = 192
 private const val SHORTCUT_ICON_INSET = 48f
 
 @Composable
-internal fun rememberShortcutIcon(vector: ImageVector): IconCompat {
-    val painter = rememberVectorPainter(vector)
+internal fun rememberShortcutIcon(glyph: WontonGlyph): IconCompat {
+    // 底是白的，取浅色那套。
+    val painter = rememberVectorPainter(glyph.vector(WontonGlyphLook.Light))
     val density = LocalDensity.current
     return remember(painter, density) {
         val bitmap = Bitmap.createBitmap(SHORTCUT_ICON_SIZE, SHORTCUT_ICON_SIZE, Bitmap.Config.ARGB_8888)

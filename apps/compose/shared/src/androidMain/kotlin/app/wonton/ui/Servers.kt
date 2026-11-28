@@ -9,16 +9,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
@@ -40,6 +36,7 @@ import app.wonton.protocol.PairingStatus
 import app.wonton.protocol.ServerName
 import app.wonton.protocol.ServerRow
 import app.wonton.protocol.ServersViewModel
+import app.wonton.ui.design.Icon
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
@@ -50,6 +47,8 @@ import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Add
+import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.Globe
 import app.wonton.ui.icons.WontonIcon
 
@@ -119,7 +118,7 @@ private fun ServerItem(server: ServerRow, send: (Action) -> Unit, rename: () -> 
                 color = WontonTheme.colors.textPrimary.toColor(),
             )
             if (server.current) Icon(
-                Icons.Default.Check,
+                WontonIcon.Check,
                 // 装饰：这一行有 selected 状态。
                 contentDescription = null,
                 tint = WontonTheme.colors.textPrimary.toColor(),
@@ -187,7 +186,7 @@ private fun AddServerRow(add: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.Default.Add,
+            WontonIcon.Add,
             // 装饰：右边的文字就是“添加服务器”。
             contentDescription = null,
             tint = WontonTheme.colors.textPrimary.toColor(),

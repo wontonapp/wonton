@@ -1,23 +1,51 @@
+// 由 scripts/generate-design.py 从 design/ 生成，不要手改。
+@file:Suppress("MagicNumber", "MaxLineLength", "LongMethod", "UnusedReceiverParameter")
+
 package app.wonton.ui.icons
 
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.addPathNodes
 import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonGlyph
 
-@Suppress("UnusedReceiverParameter")
-val WontonIcon.Shield: ImageVector by lazy(LazyThreadSafetyMode.NONE) {
-    ImageVector.Builder(
+private const val P0 = "M15.5 1.4L24.2 4.8V11.4C24.2 17.2 20.6 21.6 15.5 23.8C10.4 21.6 6.8 17.2 6.8 11.4V4.8Z"
+private const val P1 = "M15.5 -2h16v30h-16Z"
+private const val P2 = "M11.4 12.2L14.4 15.2L19.8 9.6"
+
+private fun art(name: String, c: LongArray): ImageVector = ImageVector.Builder(
+    name = name,
+    defaultWidth = 24.dp,
+    defaultHeight = 24.dp,
+    viewportWidth = 30.8571f,
+    viewportHeight = 30.8571f,
+    autoMirror = false,
+).apply {
+    addGroup(translationX = -0.0714f, translationY = 2.9286f)
+    addGroup(translationX = 15.5f, translationY = 12.6f)
+    addGroup(translationX = -15.5f, translationY = -12.6f)
+    addPath(pathData = addPathNodes(P0), fill = Brush.verticalGradient(0f to Color(c[0]), 1f to Color(c[1]), startY = 1.4f, endY = 23.8f))
+    addGroup(clipPathData = addPathNodes(P1))
+    addPath(pathData = addPathNodes(P0), stroke = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = 1.4f, endY = 23.8f), strokeLineWidth = 1f)
+    addPath(pathData = addPathNodes(P0), stroke = SolidColor(Color(c[4])), strokeLineWidth = 2f)
+    addPath(pathData = addPathNodes(P0), fill = Brush.verticalGradient(0f to Color(c[2]), 1f to Color(c[3]), startY = 1.4f, endY = 23.8f))
+    clearGroup()
+    addPath(pathData = addPathNodes(P2), stroke = SolidColor(Color(c[5])), strokeLineWidth = 2.2f, strokeLineCap = StrokeCap.Round, strokeLineJoin = StrokeJoin.Round)
+    clearGroup()
+    clearGroup()
+    clearGroup()
+}.build()
+
+val WontonIcon.Shield: WontonGlyph by lazy(LazyThreadSafetyMode.NONE) {
+    WontonGlyph(
         name = "Shield",
-        defaultWidth = 256.dp,
-        defaultHeight = 256.dp,
-        viewportWidth = 256f,
-        viewportHeight = 256f
-    ).apply {
-        addPath(
-            fill = SolidColor(Color.Black),
-            pathData = addPathNodes("M 208.0 40.0 L 48.0 40.0 A 16.0 16.0 0.0 0 0 32.0 56.0 v 56.0 c 0.0 52.72 25.52 84.67 46.93 102.19 c 23.06 18.86 46.0 25.26 47.0 25.53 a 8.0 8.0 0.0 0 0 4.2 0.0 c 1.0 -0.27 23.91 -6.67 47.0 -25.53 C 198.48 196.67 224.0 164.72 224.0 112.0 L 224.0 56.0 A 16.0 16.0 0.0 0 0 208.0 40.0 Z M 208.0 112.0 c 0.0 37.07 -13.66 67.16 -40.6 89.42 A 129.3 129.3 0.0 0 1 128.0 223.62 a 128.25 128.25 0.0 0 1 -38.92 -21.81 C 61.82 179.51 48.0 149.3 48.0 112.0 l 0.0 -56.0 l 160.0 0.0 Z M 82.34 141.66 a 8.0 8.0 0.0 0 1 11.32 -11.32 L 112.0 148.69 l 50.34 -50.35 a 8.0 8.0 0.0 0 1 11.32 11.32 l -56.0 56.0 a 8.0 8.0 0.0 0 1 -11.32 0.0 Z")
-        )
-    }.build()
+        light = longArrayOf(0xFF6CAF8B, 0xFF51A075, 0xFFBAD9C8, 0xFF8FC2A7, 0xFF158046, 0xFF005F34),
+        dark = longArrayOf(0xFF5DB787, 0xFF49B37A, 0xFF98C2AB, 0xFF78BC97, 0xFF1CAB5E, 0xFF008047),
+        mono = longArrayOf(0xFF808080, 0xFF737373, 0xFFA1A1A1, 0xFF8F8F8F, 0xFF000000, 0xFF000000),
+        build = ::art,
+    )
 }
