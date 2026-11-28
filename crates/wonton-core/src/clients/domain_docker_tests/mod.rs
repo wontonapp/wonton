@@ -3,7 +3,7 @@
 //! 真 Pebble、`pebble-challtestsrv` 和一个只在测试里存在的 HTTP 写入器充当 DNS 服务商；入口是一条真的
 //! HAProxy，热加载用正在下载的连接验证。要 Docker，标 `#[ignore]`。
 
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -22,6 +22,7 @@ use crate::plugin::names::LABEL_INSTANCE;
 use crate::test_docker::{Names, ensure_image};
 
 mod acme_dns;
+mod certificate;
 mod connector;
 mod helper;
 mod infra;
@@ -176,66 +177,6 @@ async fn wait_http(url: &str, root: Option<&Path>) -> Result<()> {
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
-}
-
-// 证书本身：路径、权限、属主和 SAN。
-
-/// 证书叶子里的 DNS 名字。
-fn subject_names(pem: &[u8]) -> Vec<String> {
-    let mut names = Vec::new();
-    if let Some(Ok(der)) = rustls_pemfile::certs(&mut std::io::Cursor::new(pem)).next() {
-        let (_, certificate) = x509_parser::parse_x509_certificate(&der).unwrap();
-        for name in certificate
-            .subject_alternative_name()
-            .unwrap()
-            .unwrap()
-            .value
-            .general_names
-            .iter()
-        {
-            if let x509_parser::extensions::GeneralName::DNSName(name) = name {
-                names.push((*name).to_owned());
-            }
-        }
-    }
-    names
-}
-
-fn certificate_check(case: &Case, manager: &CertificateManager) {
-    let install = &case.install;
-    let site = manager.certificate_path();
-    assert_eq!(site, install.join("entry/certs/site.pem"));
-    let pem = std::fs::read(&site).unwrap();
-    assert!(pem.starts_with(b"-----BEGIN CERTIFICATE-----"));
-    assert!(
-        pem.windows(b"-----BEGIN PRIVATE KEY-----".len())
-            .any(|part| part == b"-----BEGIN PRIVATE KEY-----")
-    );
-    let metadata = std::fs::metadata(&site).unwrap();
-    assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
-    assert_eq!(metadata.uid(), std::fs::metadata(install).unwrap().uid());
-    let names_in_cert = subject_names(&pem);
-    for expected in [
-        ZONE.to_owned(),
-        format!("*.{ZONE}"),
-        format!("*.lan.{ZONE}"),
-    ] {
-        assert!(
-            names_in_cert.contains(&expected),
-            "证书没有 {expected}：{names_in_cert:?}"
-        );
-    }
-
-    // 私钥没挂进 lego：挂载里只有 acme 目录和只读的 CSR。
-    let body = manager.container_body(vec!["run".to_owned()]).unwrap();
-    let mounts = body.host_config.unwrap().mounts.unwrap();
-    assert!(mounts.iter().all(|mount| {
-        let source = mount.source.as_deref().unwrap_or_default();
-        !source.ends_with("certs") && !source.ends_with("site.key")
-    }));
-    assert!(mounts.iter().any(|mount| {
-        mount.target.as_deref() == Some("/request/site.csr") && mount.read_only == Some(true)
-    }));
 }
 
 // 入口：按渲染出的配置起一条真 HAProxy，属主用证书文件的。
@@ -434,7 +375,7 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     connector::up(&mut case);
     pebble::up(&mut case).await;
     let manager = issuance::issue(&mut case, provider).await;
-    certificate_check(&case, &manager);
+    certificate::check(&case, &manager);
     let rendered = entry_up(&mut case, &manager);
     hot_reload_check(&case).await;
     rendered_compare(&case, rendered)
