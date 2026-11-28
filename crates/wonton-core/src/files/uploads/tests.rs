@@ -6,6 +6,7 @@ use crate::files::test_support::Fixture;
 use crate::files::test_support::any_langs;
 
 mod abandoning_tests;
+mod cleanup_tests;
 
 pub(super) fn new_upload(size: u64) -> NewUpload<'static> {
     NewUpload {
