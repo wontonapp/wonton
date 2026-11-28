@@ -16,6 +16,7 @@ mod family_bot_projection_race_tests;
 mod family_bot_projection_tests;
 
 mod app_access;
+mod confirmations;
 mod identity_recheck;
 mod install_grant;
 mod private_bots;
