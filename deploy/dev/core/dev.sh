@@ -13,6 +13,7 @@
 #   dev.sh status | logs [<服务>]      查看状态 / 跟随日志：核心栈的服务（core、hydra 等）或插件的服务名
 #   dev.sh diag                        只读诊断：插件登录用的主机名解析、出口代理设置和可达性、注入的代理变量
 #   dev.sh token                       输出主人令牌
+#   dev.sh acme-port                   输出这套栈的 challtestsrv 管理口（加局域网 A 记录用）
 #   dev.sh install <compose 文件或插件包目录> [--yes]  预览插件和权限，确认后安装（一条命令装好插件）
 #   dev.sh upgrade <compose 文件或插件包目录> [--yes]  预览后升级已装的插件：换容器不吊销 Bot 的设备，数据和密钥都留着
 #   dev.sh uninstall <插件 ID> [--purge]   卸载；--purge 同时删除插件数据
@@ -37,6 +38,7 @@
 # 实例名不是默认的（WONTON_DEV_PROJECT 不是 wonton-dev-core）时，域名是 <实例>.wonton.localhost，端口看 WONTON_DEV_PORT。
 # 环境变量：WONTON_DEV_PORT（默认 18480）、WONTON_DEV_DOMAIN（默认 wonton.localhost）、
 # WONTON_DEV_TUNNEL_PORT（隧道 UDP 端口，默认 18482）、WONTON_DEV_TUNNEL_BIND（默认只给本机 127.0.0.1）、
+# WONTON_DEV_ACME_DNS_PORT（宿主上的 challtestsrv 管理口，默认从 WONTON_DEV_PORT 往上找空口，每套栈一个）、
 # WONTON_DEV_DATA（数据目录，默认本目录下的 .data；DOCKER_HOST 指向远端时默认 /tmp/wonton-dev）、
 # WONTON_DEV_SECRETS（Hydra 和 Matrix 的密钥目录，默认 ~/.local/state/wonton-dev/<项目名>/secrets；按项目名放在
 # 检出目录外，同项目名的各份检出共用一份；DOCKER_HOST 指向远端时也生成在本机，经环境变量传给容器）、
@@ -167,6 +169,20 @@ label_managed_by=wonton.managed-by
 die() {
   echo "$*" >&2
   exit 1
+}
+
+# challtestsrv 的管理口（容器里 8055，只发布到宿主 127.0.0.1）：每套栈各用一个，同机几套栈不再都抢 18086。
+# 显式 WONTON_DEV_ACME_DNS_PORT 优先；其次沿用上次 up 记下、现在仍空着的（.data/acme-dns-port）；
+# 否则从网关端口往上找第一个空口。记录由 up 写，README 和 `dev.sh acme-port` 都按它取。
+acme_dns_port() {
+  local prev
+  [[ -n ${WONTON_DEV_ACME_DNS_PORT:-} ]] && { printf '%s' "$WONTON_DEV_ACME_DNS_PORT"; return 0; }
+  prev="$(cat "$here/.data/acme-dns-port" 2>/dev/null || true)"
+  if [[ $prev =~ ^[0-9]+$ ]] && "$here/port-preflight.sh" free "$core" "$prev" tcp >/dev/null; then
+    printf '%s' "$prev"
+    return 0
+  fi
+  "$here/port-preflight.sh" next-free "$core" "$((WONTON_DEV_PORT + 4))" 20
 }
 
 ensure_secret() {
@@ -795,12 +811,16 @@ case "${1:-}" in
       exec bash "$0" "${pending[@]}" "${@:2}"
     fi
     dev_guard_check "$core"
+    WONTON_DEV_ACME_DNS_PORT="$(acme_dns_port)" || exit 1
+    export WONTON_DEV_ACME_DNS_PORT
     # 端口冲突在构建之前查出来：compose 要到绑定时才报，那时已经构建完了。
-    "$here/port-preflight.sh" "$core" "$WONTON_DEV_PORT" "$WONTON_DEV_TUNNEL_PORT" || exit 1
+    "$here/port-preflight.sh" "$core" "$WONTON_DEV_PORT" "$WONTON_DEV_TUNNEL_PORT" "$WONTON_DEV_ACME_DNS_PORT" || exit 1
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
     mkdir -p "$WONTON_DEV_RELAY" || die "建不了中继套接字目录 $WONTON_DEV_RELAY，换一个短的（WONTON_DEV_RELAY）"
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
-    mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
+    mkdir -p "$here/.data"
+    printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
+    printf '%s' "$WONTON_DEV_ACME_DNS_PORT" > "$here/.data/acme-dns-port"
     ensure_core_network
     # 本地 ACME（走查和冒烟用）：CA 文件给核心读，lego 容器起在自己的 acme 网络上。
     # 地址段跟着名额的核心网络走（同机两套栈不会撞），没走名额时用 10.250.89.0/24。
@@ -839,6 +859,7 @@ case "${1:-}" in
     fill_dev_profile
     echo "核心已就绪：$base_url（提交 $WONTON_BUILD_COMMIT，主人令牌：$0 token）"
     echo "域名设置走查：后缀 example.test，服务商选“其他”，HTTPREQ_ENDPOINT=http://$WONTON_DEV_ACME_HTTPREQ_IP:8484"
+    echo "局域网 A 记录：curl -sS --noproxy '*' -X POST http://127.0.0.1:$WONTON_DEV_ACME_DNS_PORT/add-a -d '{\"host\":\"*.lan.example.test\",\"addresses\":[\"<局域网地址>\"]}'"
     ;;
   commit) build_commit ;;
   build) build_image "${@:2}" ;;
@@ -915,6 +936,7 @@ case "${1:-}" in
     echo
     ;;
   token) token ;;
+  acme-port) acme_dns_port; echo ;;
   install)
     source "$here/plugin-cmds.sh"
     install "${2:?用法：$0 install <compose 文件或插件包目录> [--yes] [密钥 JSON]}" "${3:-}" "${4:-}"

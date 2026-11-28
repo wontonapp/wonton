@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# dev.sh up 在构建之前查宿主端口：网关 TCP 和隧道 UDP。compose 要到绑定端口时才报冲突（“Bind for 0.0.0.0:18682
-# failed”），那时核心镜像已经构建完，排队加构建白等一轮。
+# dev.sh up 在构建之前查宿主端口：网关 TCP、隧道 UDP 和 ACME 管理 TCP（challtestsrv）。compose 要到绑定端口时才报冲突
+# （“Bind for 0.0.0.0:18682 failed”），那时核心镜像已经构建完，排队加构建白等一轮。
 # 被占 = 别的 compose 项目在跑的容器发布了这个端口，或本机任何地址（0.0.0.0、127.0.0.1、::）上已经有 socket。
 # 本项目自己的容器发布的不算：栈在跑时再 up 照常。DOCKER_HOST 指向远端时只查 Docker 发布的端口，本机 socket 和那台无关。
-# 用法：port-preflight.sh <compose 项目> <网关 TCP 端口> <隧道 UDP 端口>
+# 用法：port-preflight.sh <compose 项目> <网关 TCP 端口> <隧道 UDP 端口> <ACME 管理 TCP 端口>
 # 有冲突时逐个打印哪个端口、谁占着、往后第一个空的端口，退出 1。
+# dev.sh 分配 ACME 管理口也用这里，两套栈同起时各拿各的：
+#   port-preflight.sh free <compose 项目> <端口> <tcp|udp>   空着退出 0；被占打印谁占着、退出 1
+#   port-preflight.sh next-free <compose 项目> <起点> <个数>  打印第一个空口；全占退出 3
 set -euo pipefail
-
-project=${1:?compose 项目} gw=${2:?网关端口} tunnel=${3:?隧道端口}
 
 local_docker() {
   case "${DOCKER_HOST:-}" in
@@ -51,6 +52,25 @@ if local_docker && ! command -v ss >/dev/null && ! command -v lsof >/dev/null; t
   echo "注意：没有 ss 也没有 lsof，起栈前只查了 Docker 发布的端口，本机别的进程占着端口要到绑定时才知道" >&2
 fi
 
+# free / next-free：给 dev.sh 的 ACME 管理口用，参数顺序不同，先分出来。
+mode=${1:-}
+if [[ $mode == free || $mode == next-free ]]; then
+  project=${2:?compose 项目}
+  if [[ $mode == free ]]; then
+    p=${3:?端口} proto=${4:?tcp|udp}
+    who=$(holder "$p" "$proto") || exit 0
+    echo "$who"
+    exit 1
+  fi
+  start=${3:?起点} count=${4:?个数}
+  for ((p = start; p < start + count; p++)); do
+    holder "$p" tcp >/dev/null || { echo "$p"; exit 0; }
+  done
+  echo "$start–$((start + count - 1))/tcp 都被占" >&2
+  exit 3
+fi
+project=${1:?compose 项目} gw=${2:?网关端口} tunnel=${3:?隧道端口} acme=${4:?ACME 管理端口}
+
 status=0
 check() { # <端口> <tcp|udp> <环境变量>
   local p=$1 proto=$2 var=$3 who next hint
@@ -64,4 +84,5 @@ check() { # <端口> <tcp|udp> <环境变量>
 }
 check "$gw" tcp WONTON_DEV_PORT
 check "$tunnel" udp WONTON_DEV_TUNNEL_PORT
+check "$acme" tcp WONTON_DEV_ACME_DNS_PORT
 exit "$status"
