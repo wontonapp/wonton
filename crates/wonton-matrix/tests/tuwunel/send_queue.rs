@@ -19,40 +19,7 @@ const PNG: &[u8] = include_bytes!("fixtures/2x2.png");
 /// 当缩略图用的字节。媒体的内容对 Matrix 不透明，测试只比对取回的字节。
 const THUMBNAIL: &[u8] = b"a smaller preview of the PNG";
 
-/// 发送时连不上服务器：那条自动重发，连接恢复后，断开时发的和之后发的按顺序送到对方。
-#[tokio::test]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn messages_sent_while_offline_go_out_after_reconnecting() {
-    let chat = Chat::open(StoreConfig::InMemory).await;
-    chat.relay.cut();
-    send(&chat.alice_room, "断网时发的").await;
-    failed(&chat.alice_room, "断网时发的", true).await;
-
-    chat.relay.restore();
-    send(&chat.alice_room, "恢复后发的").await;
-    receives_in_order(&chat.bob_room, &["断网时发的", "恢复后发的"]).await;
-}
-
-/// 连接恢复时调用方说一声：不等退避的间隔（这时已经涨到十几秒），马上发出去。
-#[tokio::test]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn resuming_sends_at_once_instead_of_waiting_out_the_backoff() {
-    let chat = Chat::open(StoreConfig::InMemory).await;
-    chat.relay.cut();
-    send(&chat.alice_room, "断网时发的").await;
-    failed(&chat.alice_room, "断网时发的", true).await;
-    tokio::time::sleep(Duration::from_secs(10)).await;
-
-    chat.relay.restore();
-    chat.alice.resume();
-
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        receives_in_order(&chat.bob_room, &["断网时发的"]),
-    )
-    .await
-    .expect("恢复后还在等退避的间隔");
-}
+mod offline;
 
 /// 同步因网络错误停下后自己重启，还在同一个会话上：打开着的房间收到断开期间别人发的消息。
 #[tokio::test]
