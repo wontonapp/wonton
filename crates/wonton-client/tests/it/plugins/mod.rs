@@ -15,6 +15,7 @@ mod detail;
 mod dropped_results;
 mod egress;
 mod failure_categories;
+mod install;
 mod list;
 mod now;
 mod offline_tasks;
