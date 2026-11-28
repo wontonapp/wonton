@@ -13,6 +13,7 @@ use wonton_matrix::testkit::Received;
 use super::accept_the_bots_invite;
 use super::support::{Home, Phone, WAIT};
 
+mod direct;
 mod fetch;
 
 /// RFC 8291 附录 A 里设备的公钥和认证密钥。家里的推送代理在这个测试里是替身，不加密，只看登记的内容。
@@ -161,35 +162,6 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
         }
     );
     wait_for_unregistered(&home).await;
-}
-
-/// 推送只带房间和事件 ID，用不着读预览：主人自己建的私聊和 Bot 的主房间一样不加密。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn direct_chats_the_owner_starts_are_not_encrypted() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[phone.device_id()]).await;
-    phone.connect(&home);
-    phone.signed_in().await;
-    let bot = home.bot("hermes", "Hermes").await;
-
-    phone
-        .dispatch(Action::Chat {
-            action: wonton_protocol::ChatAction::StartDirectChat {
-                user_id: bot.user_id().to_string(),
-            },
-        })
-        .unwrap();
-    let room = phone
-        .wait_chat("建好私聊", |view| {
-            view.rooms
-                .iter()
-                .find(|row| row.is_direct && row.membership == RoomMembership::Joined)
-                .cloned()
-        })
-        .await;
-    assert!(!room.is_encrypted, "{room:?}");
 }
 
 async fn wait_for_unregistered(home: &Home) {
