@@ -18,6 +18,9 @@ pub(in crate::client) const CALL_ROOM_ID: &str = "!ui-fake-call:home.example";
 /// 没人说话的群，转发时多一个去处。
 const NOTES_ROOM_ID: &str = "!ui-fake-notes:home.example";
 
+// 中文假数据放数据文件里（同 `ui_fake_room/layout.rs`）：它是测试输入，不是界面文字。
+const ECHO_DEGRADED_REASON: &str = include_str!("../ui_fake_text/echo_degraded_reason.txt");
+
 /// 假聊天列表：私聊、通话中的群、没人说话只给转发用的群。
 pub(super) fn fake_rooms() -> Vec<RoomRow> {
     vec![
@@ -27,7 +30,14 @@ pub(super) fn fake_rooms() -> Vec<RoomRow> {
             name: "Echo".into(),
             is_direct: true,
             direct_user_id: Some("@echo:home.example".into()),
-            plugin: None,
+            plugin: Some(RoomPlugin {
+                plugin_id: "app.example.echo".into(),
+                status: PluginState::Degraded {
+                    reason: ECHO_DEGRADED_REASON.into(),
+                },
+                start: None,
+                can_start: false,
+            }),
             bot_chat: None,
             bot: None,
             is_encrypted: true,

@@ -21,8 +21,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -386,6 +388,8 @@ fun ProblemDetail(
     modifier: Modifier = Modifier,
     /** 展开按钮的测试标识，UI 测试按它定位，不按文案。 */
     toggleTag: String? = null,
+    /** 展开后的文字最多这么高，超出的在这段里滚；不传就跟着内容长。 */
+    expandedMaxHeight: Dp? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val colors = WontonTheme.colors
@@ -409,7 +413,13 @@ fun ProblemDetail(
             )
         }
         if (expanded) {
-            SelectionContainer { Text(text, style = style, color = tint) }
+            // 限高只作用在这段文字上：展开按钮不跟着滚走，收起随时点得到。
+            val scrolled = if (expandedMaxHeight != null) {
+                Modifier.heightIn(max = expandedMaxHeight).verticalScroll(rememberScrollState())
+            } else {
+                Modifier
+            }
+            SelectionContainer { Text(text, scrolled, style = style, color = tint) }
         }
     }
 }
