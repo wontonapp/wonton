@@ -60,7 +60,7 @@ App 的“HTTPS 和域名”设置页列出服务商，**默认推 deSEC**，其
   设置页只能换 DNS 服务商和凭据。
 - **装机时选了“不要名字”的**（`WONTON_MATRIX_NAME_MODE=none`）：设置页能另填一个后缀，只给入口用，不开联邦，Matrix 服务器名不变。
   后缀能改；改了以后第三方 App 都要重填，App 改前写明。这样 M1 的用户不用重装就能打开 HTTPS。
-  这种装法没有 `entry/settings.json`，ACME 目录只能从环境读（`clients/domain.rs` 的 `acme()`），所以装机脚本给它一个默认值：
+  这种装法没有 `entry/settings.json`，ACME 目录只能从环境读（`crates/wonton-core/src/clients/domain/acme.rs:26` 的 `acme()`），所以装机脚本给它一个默认值：
   Let's Encrypt 正式地址 `https://acme-v02.api.letsencrypt.org/directory`，换测试或内部 CA 才需要 `WONTON_ACME_DIRECTORY`。
   默认值不会在主人同意条款之前联系 CA：入口和续期都不看设置文件，主人在 App 里存了后缀、证书签出来，入口容器就在
   （看 `entry/domain.json` 和已发布的 `site.pem`）；续期循环每小时醒一次、每 24 小时整点排一次签发，`Domain::ready` 查条款、后缀和服务商，
