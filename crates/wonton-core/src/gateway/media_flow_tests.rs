@@ -414,3 +414,24 @@ async fn a_next_whose_new_source_fails_keeps_playing_the_old_plan() {
         .await;
     assert_eq!(session["item"]["id"], "v1");
 }
+
+#[tokio::test]
+async fn retrying_the_same_task_twice_opens_one_new_task() {
+    let f = fixture().await;
+    let (_, task) = create(&f, download()).await;
+    let id = task["id"].as_str().unwrap();
+    act(&f, id, "progress", json!({"done": 1, "total": 10})).await;
+    let gone = json!({"code": "media_gone", "message": "gone upstream"});
+    let (_, failed) = act(&f, id, "failure", gone).await;
+    assert_eq!(failed["state"]["failed"]["code"], "media_gone");
+    let (status, first) = act(&f, id, "retry", Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(first["retry_of"], id);
+    // 连点：回同一条，不再开。
+    let (_, second) = act(&f, id, "retry", Value::Null).await;
+    assert_eq!(second["id"], first["id"]);
+    let (_, list) = f
+        .json(Method::GET, "/_wonton/api/media/tasks", Value::Null)
+        .await;
+    assert_eq!(list["tasks"].as_array().unwrap().len(), 2);
+}

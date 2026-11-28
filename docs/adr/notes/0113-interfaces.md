@@ -482,7 +482,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/tasks/{id}/pause` | `POST` | `{reason: PauseReason}` | `MediaTask` |
 | `/tasks/{id}/resume` | `POST` | 无 | `MediaTask` |
 | `/tasks/{id}/cancel` | `POST` | 无 | `MediaTask` |
-| `/tasks/{id}/retry` | `POST` | 无（终态才允许，设 `retry_of`） | `MediaTask` |
+| `/tasks/{id}/retry` | `POST` | 无（终态才允许，设 `retry_of`） | `MediaTask`：重试出来的那条；一个任务只重试出一条，再发回同一条 |
 | `/tasks/{id}/progress` | `POST` | `{done, total?}`（下载由设备报；上传由核心按偏移算） | `MediaTask` |
 | `/tasks/{id}/complete` | `POST` | 无（下载写完、改好名） | `MediaTask` |
 | `/tasks/{id}/failure` | `POST` | `MediaFailure`（设备那边的失败，退避由核心按类别定） | `MediaTask` |
