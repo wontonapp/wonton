@@ -1,7 +1,7 @@
 //! 收件箱（ADR-0119）：要用户决定和要用户知道的事，用五种条目进核心里的一页。
 //!
 //! 条目有类型、生命周期和结构化答案。核心按发送方身份和上限建条目，壳渲染
-//! [`InboxViewModel`](crate::InboxViewModel) 并把 [`InboxShellAction`] 发回核心。未知类型、未知状态和
+//! [`InboxViewModel`] 并把 [`InboxShellAction`] 发回核心。未知类型、未知状态和
 //! 更新的核心给的取值落到 `Other`，壳照常显示 `body` 兜底（AGENTS.md 的“兼容”）。
 //!
 //! 路径和工具名是核心与 App、插件之间的契约：改这里要同时改网关、MCP 总线和服务端实现。

@@ -23,7 +23,8 @@ pub enum InboxPayload {
     Recap(RecapPayload),
     Confirm(ConfirmPayload),
     Notice(NoticePayload),
-    /// 更新的核心给出的类型：wire 上只发 `{"type":"other"}`，原文放在这里和 [`InboxItem::raw_payload`]，
+    /// 更新的核心给出的类型：wire 上只发 `{"type":"other"}`，原文放在这里和
+    /// [`InboxItem::raw_payload`](crate::inbox::InboxItem::raw_payload)，
     /// 旧壳按单元变体也解析得了。
     Other(Value),
 }
