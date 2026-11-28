@@ -438,3 +438,40 @@ impl Home {
         self.core.members_requests_dropped.load(Ordering::SeqCst)
     }
 }
+
+impl Home {
+    /// Tuwunel 挂了或恢复了，隧道不受影响。
+    pub fn set_matrix_down(&self, down: bool) {
+        self.core.matrix_down.send_replace(down);
+    }
+
+    /// 发消息的请求回 502：核心连不上 Tuwunel。matrix-sdk 会自己重试很久，客户端这边不设期限就一直挂着。
+    pub fn fail_sends(&self, fail: bool) {
+        self.core.fail_sends.send_replace(fail);
+    }
+
+    /// 请求行（小写，如 `post /_matrix/client/v3/createroom`）含 `request` 的 Matrix 请求回 `status` 和 Matrix 错误码
+    /// `errcode`，像 Tuwunel 拒绝了它。
+    pub fn refuse_matrix(&self, request: &str, status: u16, errcode: &str) {
+        self.core.refusals.lock().unwrap().push(Refusal {
+            request: request.to_owned(),
+            status,
+            errcode: errcode.to_owned(),
+        });
+    }
+
+    /// 清掉 [`Self::refuse_matrix`] 设下的拒绝。
+    pub fn clear_refusals(&self) {
+        self.core.refusals.lock().unwrap().clear();
+    }
+
+    /// 服务器丢了房间列表那条 Sliding Sync 连接的位置：下一个请求回 `M_UNKNOWN_POS`，SDK 从头同步。
+    pub fn expire_room_list_sync(&self) {
+        self.core.expire_room_list.store(true, Ordering::SeqCst);
+    }
+
+    /// 上一次 [`Self::expire_room_list_sync`] 已经用掉。
+    pub fn room_list_sync_expired(&self) -> bool {
+        !self.core.expire_room_list.load(Ordering::SeqCst)
+    }
+}
