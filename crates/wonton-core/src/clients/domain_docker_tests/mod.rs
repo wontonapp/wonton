@@ -29,6 +29,7 @@ mod hot_reload;
 mod infra;
 mod issuance;
 mod pebble;
+mod rendered;
 
 const ZONE: &str = "example.test";
 
@@ -180,38 +181,6 @@ async fn wait_http(url: &str, root: Option<&Path>) -> Result<()> {
     }
 }
 
-// 服务商换了，入口配置和插件渲染出来的 compose 都不变。
-fn rendered_compare(case: &Case, rendered: Rendered) -> (Vec<u8>, Vec<u8>) {
-    let settings = EntrySettings {
-        domain: ZONE.into(),
-        service_url: None,
-        service_ca: None,
-        relay_ca: None,
-        registration: None,
-        acme_directory: Some("https://pebble.test:14000/dir".into()),
-        acme_ca: None,
-        acme_resolvers: Vec::new(),
-        acme_propagation_disable_ans: true,
-        acme_email: None,
-        acme_accept_terms: true,
-        acme_network: "bridge".into(),
-        dns_provider: None,
-        dns_env_file: None,
-        external_certificate: false,
-    };
-    let install = case.install.clone();
-    let base_compose = "services:\n  core:\n    volumes: []\n    networks:\n      core:\n        aliases: []\n    environment: {}\n  tuwunel:\n    volumes: []\n";
-    let compose = crate::entry_compose::render(base_compose, Some(&settings), &install).unwrap();
-    // 每次的子网不同：把这条随机地址归一成固定值再比。
-    (
-        rendered
-            .config
-            .replace(&case.connector_ip, "connector.test")
-            .into_bytes(),
-        compose.into_bytes(),
-    )
-}
-
 /// 每个服务商跑一遍：起环境、签发、验证书，再验热加载和渲染结果。
 async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     let mut case = Case::new();
@@ -226,7 +195,7 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     certificate::check(&case, &manager);
     let rendered = entry::up(&mut case, &manager);
     hot_reload::check(&case).await;
-    rendered_compare(&case, rendered)
+    rendered::compare(&case, rendered)
 }
 
 #[tokio::test(flavor = "multi_thread")]
