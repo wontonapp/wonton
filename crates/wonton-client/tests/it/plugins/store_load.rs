@@ -1,6 +1,6 @@
 //! 商店请求独立于已安装列表，旧响应不能撤下新请求的结果或失败。
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use tokio::sync::watch;
@@ -310,4 +310,51 @@ async fn late_store_responses_cannot_replace_newer_content_or_failure() {
         assert_eq!(view.store, newer.store);
         rig.core.stop_answering(Method::GET, STORE);
     }
+}
+
+#[tokio::test]
+async fn store_load_is_fetched_refreshed_and_searched() {
+    let rig = Rig::new().await;
+    assert!(
+        rig.app.search_store("photos".to_owned()).is_empty(),
+        "还没取过"
+    );
+    rig.connected().await;
+
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: false },
+        })
+        .unwrap();
+    rig.wait_for(|view| view.store.is_some()).await;
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: true },
+        })
+        .unwrap();
+    let deadline = Instant::now() + WAIT;
+    while rig
+        .core
+        .seen(&Method::GET, "/_wonton/api/store?refresh=true")
+        .is_empty()
+    {
+        assert!(
+            Instant::now() < deadline,
+            "下拉刷新要让家里的服务器不等缓存"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let found: Vec<_> = rig
+        .app
+        .search_store(" PhOtOs ".to_owned())
+        .into_iter()
+        .map(|item| item.id)
+        .collect();
+    assert_eq!(
+        found,
+        ["app.photos", "app.more-photos"],
+        "按名字和标签找，官方的在前"
+    );
+    assert_eq!(rig.app.search_store("音乐".to_owned())[0].id, "app.music");
 }
