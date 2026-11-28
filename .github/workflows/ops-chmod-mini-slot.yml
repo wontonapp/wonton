@@ -4,12 +4,14 @@ on:
     branches: [ops/chmod-mini-slot]
   workflow_dispatch:
 jobs:
-  who:
-    runs-on: xcode-27
+  chmod:
+    # 自带 runner（mini）才排 self-hosted；xcode-27 现在是 GitHub 托管，摸不到 mini 的文件。
+    runs-on: [self-hosted, macOS]
     timeout-minutes: 5
     steps:
       - run: |
-          hostname; scutil --get ComputerName 2>/dev/null; sysctl -n hw.model
-          ls /Users 2>&1 | head
-          ls -ld /Users/jiale 2>&1
-          ls -l /Users/jiale/wonton-dev/mini-slot.sh 2>&1
+          hostname; whoami
+          [ -d /Users/jiale ] || { echo "不是 mini，没有 /Users/jiale"; exit 1; }
+          chmod 755 /Users/jiale/wonton-dev/mini-slot.sh
+          ls -l /Users/jiale/wonton-dev/mini-slot.sh
+          bash /Users/jiale/wonton-dev/mini-slot.sh status
