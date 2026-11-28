@@ -32,6 +32,7 @@ mod failures;
 mod permissions;
 mod records;
 mod sso;
+mod uninstall;
 
 /// 核心在容器里（`WONTON_CORE_CONTAINER`）的管理器，其余同 [`manager_with`]。
 pub(super) fn manager_in_container(engine: Engine, dir: &tempfile::TempDir) -> PluginManager {
@@ -202,52 +203,6 @@ pub(super) fn app(id: &str) -> String {
         "  permissions: []",
     )
     .replace("id: app.test", &format!("id: {id}"))
-}
-
-#[tokio::test]
-async fn an_uninstall_finishes_after_its_request_goes_away() {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let m = Arc::new(manager_with(engine, &dir));
-    m.install(&app("app.test"), &[], super::langs())
-        .await
-        .unwrap();
-    let id = PluginId::parse("app.test").unwrap();
-    let hold = docker.hold(&format!(
-        "DELETE /containers/{}",
-        container_name("app-test", "web")
-    ));
-    let request = tokio::spawn({
-        let (m, id) = (m.clone(), id.clone());
-        async move {
-            m.uninstall_detached(id, true, Vec::new(), true, super::langs())
-                .await
-        }
-    });
-    hold.reached().await;
-    // 请求断开时 hyper 丢弃处理它的 future。
-    request.abort();
-    assert!(request.await.unwrap_err().is_cancelled());
-
-    // 卸载还在进行：再来一次如实回答，不另起一次。
-    let err = m
-        .uninstall_detached(id.clone(), true, Vec::new(), true, super::langs())
-        .await
-        .unwrap_err();
-    assert_eq!(err.kind(), "conflict");
-    assert_eq!(m.list()[0].status, PluginStatus::Uninstalling);
-
-    hold.release();
-    let mut changes = m.changes();
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        changes.wait_for(|_| m.list().is_empty()),
-    )
-    .await
-    .expect("请求断开后卸载照样做完")
-    .unwrap();
-    assert!(docker.containers().is_empty(), "{:?}", docker.containers());
-    assert!(docker.networks().is_empty(), "{:?}", docker.networks());
 }
 
 /// mcp.headers 解析不了（这里是密钥还没有值）是插件交的东西不对：报 Invalid，说清是哪个插件、哪个密钥。
