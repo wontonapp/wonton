@@ -5,8 +5,8 @@ use std::time::Duration;
 use super::Endpoint;
 use crate::http::HttpError;
 
-/// 网页探测一次的时限，和装完时的探测（[`super::health::wait_webui`]）、`plugins.health` 的详情接口
-/// （[`super::health_probe`]）一样。
+/// 网页探测一次的时限，和装完时的探测（[`super::super::health::wait_webui`]）、`plugins.health` 的详情接口
+/// （[`super::super::health_probe`]）一样。
 pub(in crate::plugin) const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// 请求一次网页入口，返回状态码。unix 套接字走 reqwest，普通网络走共享的 HTTP 客户端。

@@ -55,6 +55,7 @@ pub(in crate::plugin) fn core_aliases(public: &PublicUrls, manifest: &Manifest) 
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::manifest::Permission;
     use super::super::super::package::PluginPackage;
     use super::super::*;
     use crate::config::{PLUGIN_HEALTH_HOST, PLUGIN_MODELS_HOST, PublicUrls};
