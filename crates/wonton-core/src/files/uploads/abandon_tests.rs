@@ -8,6 +8,7 @@ use super::super::share_fs::TRANSFERS;
 use super::super::share_fs::tests::DIR_SYNC_FAILS;
 use super::tests::{new_upload, placed_without_record};
 use super::*;
+use crate::files::DELETED_UNSYNCED;
 use crate::files::test_support::Fixture;
 use crate::files::test_support::any_langs;
 

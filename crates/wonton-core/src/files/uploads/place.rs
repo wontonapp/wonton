@@ -4,10 +4,11 @@ use std::sync::Arc;
 
 use wonton_protocol::FileId;
 
+use super::super::FileEvent;
 use super::super::record::{FileRecord, Lookup, Origin};
 use super::super::share_fs::from_io;
 use super::super::share_fs::{Names, ShareError, Snapshot};
-use super::{Failure, FileEvent, Files, Pending, Placing};
+use super::{Failure, Files, Pending, Placing};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
