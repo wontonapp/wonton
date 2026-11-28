@@ -3,10 +3,12 @@
 //!
 //! 每次连上都按服务器对齐（[`state::Local::align`]）。系统播放器和后台传输只连本机回环（[`loopback`]），
 //! 起播带上壳报过的设备档（[`profile`]）。动作经 [`MediaLink::dispatch`] 进来：播放控制、停止、
-//! 队列改动发给核心，回应落到本地再推给壳；没成的原因落在视图的 `failure` 上，壳按类别出字。上传、下载的
+//! 队列改动发给核心，回应落到本地再推给壳；没成的原因落在视图的 `failure` 上，壳按类别出字。核心发给这台
+//! 设备的命令由 [`commands`] 长轮询取来，走同一条路执行并回执。上传、下载的
 //! 字节由执行层负责，不在这里。
 
 mod api;
+mod commands;
 mod loopback;
 #[cfg(test)]
 mod loopback_tests;
@@ -72,6 +74,8 @@ pub(crate) struct MediaLink {
     bridge: Mutex<Bridge>,
     media: watch::Sender<MediaViewModel>,
     playback: watch::Sender<Option<PlaybackViewModel>>,
+    /// 取命令的长轮询（[`commands::follow`]），同时只有一条。
+    commands: commands::Poller,
 }
 
 /// 两个视图的发送端；换服务器时接着用上一个作用域的，壳的订阅不用换。
@@ -109,6 +113,7 @@ impl MediaLink {
             bridge: Mutex::new(Bridge::default()),
             media: views.media,
             playback: views.playback,
+            commands: commands::Poller::default(),
         });
         runtime.spawn(follow_home(Arc::downgrade(&link), home.subscribe()));
         link
@@ -179,7 +184,8 @@ impl MediaLink {
             | MediaAction::DeleteOffline { .. } => Err(CoreError::NotReady {
                 reason: "this client core cannot run uploads, downloads, backups or offline deletions yet; the transfer executor is not built".into(),
             }),
-            // 新核心发的新动作，这一版跳过（AGENTS.md 的向前兼容）。
+            // 新核心发的新动作，这一版跳过（AGENTS.md 的向前兼容）。核心经命令通道发来的同样认不得，那边回失败
+            // 回执（`commands::cannot_run`），不让核心等到超时。
             MediaAction::Other(_) => Ok(()),
             action => {
                 let link = self.clone();
@@ -374,6 +380,34 @@ fn player_state(session: Option<&PlaybackSession>) -> PlayerState {
     }
 }
 
+/// 没在取命令就开一条（[`commands::follow`]）；断开时自己停，重连时再开。
+fn ensure_polling(link: &Arc<MediaLink>) {
+    let weak = Arc::downgrade(link);
+    let connected = weak.clone();
+    link.commands.ensure(
+        &link.runtime,
+        move || commands::is_connected(&connected),
+        move || {
+            let (connect, perform) = (weak.clone(), weak.clone());
+            commands::follow(
+                move || commands::connected(&connect),
+                move |action| {
+                    let link = perform.upgrade();
+                    async move {
+                        match link {
+                            Some(link) => link.send(action).await,
+                            None => Err(failure(
+                                MediaFailureCode::TransportUnavailable,
+                                "the media link was closed",
+                            )),
+                        }
+                    }
+                },
+            )
+        },
+    );
+}
+
 /// 每次连上就和服务器对齐一次：断线期间本地的偏离由服务器的值盖掉。
 async fn follow_home(link: Weak<MediaLink>, mut home: watch::Receiver<HomeViewModel>) {
     let mut was_connected = false;
@@ -383,6 +417,7 @@ async fn follow_home(link: Weak<MediaLink>, mut home: watch::Receiver<HomeViewMo
             let Some(link) = link.upgrade() else {
                 return;
             };
+            ensure_polling(&link);
             if let Err(failure) = link.sync().await {
                 tracing::warn!(code = ?failure.code, error = %failure.message, "media tasks failed to sync with the server");
             }
