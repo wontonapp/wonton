@@ -16,7 +16,6 @@ use tracing_subscriber::Layer as _;
 use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
-use wonton_client::{InstalledPlugin, InstalledPlugins};
 pub use wonton_matrix::testkit::ToDeviceHold;
 use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
 use wonton_tunnel::pair::PairProtocol;
@@ -37,6 +36,7 @@ mod matrix;
 mod onboarding;
 mod phone;
 mod plugin_start;
+mod plugins;
 mod sync;
 mod wait;
 
@@ -381,26 +381,6 @@ impl Home {
 
     pub fn hold_backup_read(&self, hold: bool) {
         self.core.hold_backup_read.send_replace(hold);
-    }
-
-    /// 设置假核心的“本人私人 Bot”应答；没设置时这个接口回 404，客户端显示读取问题。
-    pub fn set_own_private_bot(&self, own_private_bot: Value) {
-        *self.core.own_private_bot.lock().unwrap() = Some(own_private_bot);
-    }
-
-    /// 设置假核心的已装列表应答；没设置时这个接口回 404。
-    pub fn set_installed_plugins(&self, plugins: Vec<InstalledPlugin>) {
-        let installed = serde_json::to_value(InstalledPlugins {
-            plugins,
-            upgrade_check: None,
-        })
-        .unwrap();
-        *self.core.installed.lock().unwrap() = Some(installed);
-    }
-
-    /// 取已装列表的请求次数，数的是这个测试会话里的全部。
-    pub fn installed_requests(&self) -> usize {
-        self.core.installed_requests.load(Ordering::SeqCst)
     }
 }
 
