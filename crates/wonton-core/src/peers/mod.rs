@@ -28,14 +28,12 @@ use std::time::Duration;
 use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
-use wonton_protocol::{
-    PeerCode, PeerRequestRow, PeerRow, PeerStatus, PeersView, RejectedPeerRow, SecretString,
-};
+use wonton_protocol::{PeerRequestRow, PeerRow, PeerStatus, PeersView, RejectedPeerRow};
 use wonton_tunnel::Allowlist;
 use wonton_tunnel::federation::{
     PeerStates, PeerStatus as FederationStatus, PeerVerification, PinnedPeerCert,
 };
-use wonton_tunnel::peer_pair::{PeerIdentity, PeerPairingCode};
+use wonton_tunnel::peer_pair::PeerIdentity;
 
 use crate::plugin::languages::Languages;
 use crate::tunnel::Tunnel;
@@ -338,58 +336,6 @@ impl Peers {
             .get(server_name)
             .is_some_and(|record| record.phase == Phase::Paired);
         paired.then(|| self.forwarded_status(server_name))
-    }
-
-    /// 本机的码：令牌一直是这一张，中继地址按当时的取。
-    pub fn issue_code(&self) -> PeerCode {
-        let inner = self.lock();
-        let token = match inner.token.clone() {
-            Some(token) => token,
-            None => {
-                let token = code::issue();
-                let mut inner = inner;
-                inner.token = Some(token.clone());
-                if let Err(e) = self.save(&inner) {
-                    tracing::error!(error = %e, "新配的码写不进去");
-                }
-                token
-            }
-        };
-        self.code_uri(&token)
-    }
-
-    /// 重置码：换一个新令牌，旧码作废，用旧码发来的待处理请求一并清掉。
-    pub fn reset_code(&self) -> PeerCode {
-        let token = code::issue();
-        {
-            let mut inner = self.lock();
-            inner.token = Some(token.clone());
-            inner.requests.clear();
-            if let Err(e) = self.save(&inner) {
-                tracing::error!(error = %e, "重置的码写不进去");
-            }
-        }
-        tracing::info!("主人重置了服务器配对码");
-        self.code_uri(&token)
-    }
-
-    fn code_uri(&self, token: &code::PeerPairToken) -> PeerCode {
-        PeerCode {
-            code: SecretString::new(
-                PeerPairingCode {
-                    server_id: self.tunnel.endpoint.id(),
-                    relay_urls: self
-                        .tunnel
-                        .relays()
-                        .iter()
-                        .map(|relay| relay.url.clone())
-                        .collect(),
-                    server_name: self.own.server_name.clone(),
-                    token: token.clone(),
-                }
-                .to_uri(),
-            ),
-        }
     }
 
     /// 接上公网访问总开关：关着时已配对的行报公网访问已关闭（ADR-0050 的状态表）。
