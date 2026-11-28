@@ -53,6 +53,9 @@ pub struct PluginPackage {
     pub origin: Option<Origin>,
 }
 
+pub(super) type ServiceDependencies<'a> =
+    BTreeMap<&'a str, Vec<(String, super::compose::DependCondition)>>;
+
 /// serde 报错带字段路径（如 `webui.port`）：路径在根上时没有可写的段，原样返回信息。
 pub(super) fn pathed<E: fmt::Display>(error: &serde_path_to_error::Error<E>) -> String {
     let path = error.path().to_string();

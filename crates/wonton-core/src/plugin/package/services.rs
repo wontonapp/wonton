@@ -8,10 +8,7 @@ use super::super::compose::{Service, strip_extensions};
 use super::super::interpolate::{UsedVars, Vars, interpolate_value};
 use super::super::languages::Languages;
 use super::errors::{interpolate_error, service_error};
-use super::{PackageError, PluginPackage, pathed};
-
-pub(in crate::plugin) type ServiceDependencies<'a> =
-    BTreeMap<&'a str, Vec<(String, super::super::compose::DependCondition)>>;
+use super::{PackageError, PluginPackage, ServiceDependencies, pathed};
 
 impl PluginPackage {
     /// 插值后按 Compose 子集解析所有服务。`vars` 给出每个服务用的变量表：Bot 服务比全插件一份的服务
