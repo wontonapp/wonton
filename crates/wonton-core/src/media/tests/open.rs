@@ -62,13 +62,21 @@ fn two_threads_write_without_locking_errors() {
 }
 
 #[test]
-fn a_newer_database_version_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    drop(Store::open(dir.path()).unwrap());
-    let conn = rusqlite::Connection::open(dir.path().join("media.sqlite3")).unwrap();
-    conn.pragma_update(None, "user_version", 99).unwrap();
-    drop(conn);
-
-    let err = Store::open(dir.path()).unwrap_err();
-    assert!(matches!(err, MediaStoreError::TooNew { .. }), "{err}");
+fn a_database_at_another_version_is_refused() {
+    // 比核心新的、旧的（有外部用户之前不迁移），连同从前的五版编号，都拒开，不替它补表。
+    for version in [CURRENT_VERSION + 1, CURRENT_VERSION - 1, 5] {
+        if version == 0 || version == CURRENT_VERSION {
+            continue;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        drop(Store::open(dir.path()).unwrap());
+        let conn = rusqlite::Connection::open(dir.path().join("media.sqlite3")).unwrap();
+        conn.pragma_update(None, "user_version", version).unwrap();
+        drop(conn);
+        let err = Store::open(dir.path()).unwrap_err();
+        assert!(
+            matches!(err, MediaStoreError::UnsupportedVersion { found, .. } if found == version),
+            "{version}: {err}"
+        );
+    }
 }

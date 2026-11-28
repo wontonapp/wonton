@@ -346,6 +346,8 @@ pub enum MediaAction {
     Control { session: PlaybackSessionId, ctl: ControlOp },
     Stop { session: PlaybackSessionId, reason: StopReason },
     Queue { person: Person, revision: Revision, op: QueueOp },
+    Backup { kinds: Vec<MediaKind> },            // 设备建上传任务，回执带 `task`；客户端核执行归 M18
+    DeleteOffline { items: Vec<MediaItemRef> },  // 删完照常 `PUT /offline`；客户端核执行归 M19
     Other(String), // 新动作，旧壳跳过这一条、同批其他照常执行
 }
 
@@ -409,7 +411,7 @@ impl SessionService {
 ```
 
 - 第二个返回值是被接管的旧会话号，调用方拿它发 `media.session.taken_over`；旧会话的位置保留它最后一次上报的值，不被新请求的起点覆盖。新会话的起播位置夹到 `plan.duration_ms`。
-- 起播、控制、位置、停止都按 `sessions.version` 比较落库，落不上重读；库里`(person) WHERE stop_reason IS NULL`的唯一索引兜住并发起播，后到的接管先到的。只把唯一约束的失败认作“已有活动会话”，主键撞等其他约束错原样报 `Database`；迁移 v4 建索引前会把同一个人多余的活动会话置成 `taken_over` 终态、只留最新一条。
+- 起播、控制、位置、停止都按 `sessions.version` 比较落库，落不上重读；库里`(person) WHERE stop_reason IS NULL`的唯一索引兜住并发起播，后到的接管先到的。只把唯一约束的失败认作“已有活动会话”，主键撞等其他约束错原样报 `Database`。
 - `progress` 同一会话两次落库至少隔 5 秒（`wall_clock` 与服务的钟同源，都是 Unix 毫秒），`pause`/`seek`/`stop` 立即落并把节流基准推到现在；已停的会话上报回 `false` 不落。被别处改掉时重读一次再判，仍落不上也回 `false`，不报 `ConcurrentChange`。
 - `stop` 幂等：再停只把位置往后推，位置变小保留旧值；原因与终态保留第一次的。`Finished` 落 `Done`、`Error` 落 `Failed{upstream_error}`、其余落 `Cancelled`。
 - `Next`/`Prev` 按该人的队列移动 `cursor` 并换 `session.item`、位置归零：核心先算出换到哪一项、向它的来源要到计划，再把会话、队列指针、计划和会话记的提供方一起比较写，中间有别的改动就重读重来；要不到计划就什么都不写，会话还在原来那一项、按旧计划放；到头不回绕，`repeat_all` 往后回第一首，队列为空不动。`SetAudio`/`SetSubtitle` 只改计划里的 `selected`，重取计划归 M11。`Volume` 当前没有字段，只接受不改。
@@ -482,7 +484,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/tasks/{id}/pause` | `POST` | `{reason: PauseReason}` | `MediaTask` |
 | `/tasks/{id}/resume` | `POST` | 无 | `MediaTask` |
 | `/tasks/{id}/cancel` | `POST` | 无 | `MediaTask` |
-| `/tasks/{id}/retry` | `POST` | 无（终态才允许，设 `retry_of`） | `MediaTask` |
+| `/tasks/{id}/retry` | `POST` | 无（终态才允许，设 `retry_of`） | `MediaTask`：重试出来的那条；一个任务只重试出一条，再发回同一条 |
 | `/tasks/{id}/progress` | `POST` | `{done, total?}`（下载由设备报；上传由核心按偏移算） | `MediaTask` |
 | `/tasks/{id}/complete` | `POST` | 无（下载写完、改好名） | `MediaTask` |
 | `/tasks/{id}/failure` | `POST` | `MediaFailure`（设备那边的失败，退避由核心按类别定） | `MediaTask` |
@@ -507,7 +509,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/library/{rest}`、`/catalog/{rest}` | `GET`、`POST` | 同提供方的 `/library/…`、`/catalog/…`（第 9、10 节）；可带 `source` | 提供方的回包原样回；核心按 `library`+`photo`、`catalog`+`video` 选提供方，路径原样转、去掉 `source`，`.`、`..`、空段回 `protocol` |
 | `/items/{id}/artwork` | `GET` | 无（query: `kind`，可选 `source`、`type`、`width`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork`，`type`、`width` 原样带过去 |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
-| `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
+| `/commands/{id}/ack` | `POST` | `{seq, ok, failure?, task?}`（`task` 是设备为这条命令建的任务，`backup` 才带） | `204`（幂等） |
 | `/offline` | `PUT` | `{bytes}`：这台设备的离线副本现在一共占多少 | `QuotaView`；这台设备那份记成 `bytes`，别的设备那份不动（规则见 `OfflineUsage`） |
 | `/quota` | `GET` | 无 | `QuotaView`：这个人的两本账，上传是各提供方之和、离线是各设备之和 |
 
@@ -578,7 +580,7 @@ pub fn media_loopback(&self) -> String;
 | --- | --- | --- |
 | `wonton__media_status` | `{kind?, person?}` | 任务与会话列表，带进度与失败原因 |
 | `wonton__backup_now` | `{device?, kinds?}` | `MediaTask` |
-| `wonton__media_download` | `{device, item, kind}` | `MediaTask` |
+| `wonton__media_download` | `{device, item}`（种类在 `item.kind`） | `MediaTask` |
 | `wonton__media_play` | `{device?, item, kind, person?}` | `PlaybackSession` |
 | `wonton__media_control` | `{session, ctl: ControlOp}` | `PlaybackSession` |
 | `wonton__media_queue` | `{op: QueueOp\|read, revision?}` | `Queue` |
@@ -587,6 +589,9 @@ pub fn media_loopback(&self) -> String;
 | `wonton__media_delete` | `{device, items: Vec<MediaItemRef>}` | `204` |
 
 `person` 只能填本轮 `speakers` 里的人；共享 Bot 省略则取唯一说话人，多人必填。
+
+工具名和失败体在 `wonton-protocol` 的 `media/tools.rs`。要设备动手的工具（备份、下载、开播、删离线副本）经命令通道发：设备睡着就推一条
+`{"server", "media_command": {"seq"}}`（`MediaCommandPush`）叫醒它，30 秒没回执回 `{code: "device_no_response", message, reasons}`。
 
 ## 事件名与载荷（只加不改）
 

@@ -79,11 +79,21 @@ async fn a_new_address_for_the_same_server_keeps_the_session() {
 
     // 旧地址已经不通，所以手机只能经新地址收到这条消息；预览能显示正文，说明房间密钥也在。
     home.move_tunnel().await;
+    phone.connect(&home);
+    // 换地址是清掉旧会话重登，清的时候视图先变“正在登录”，消息可能在旧会话停完之前才到（CI 上就是这样），
+    // 那只能在“正在登录”里被收下。先等进这一步再发，免得本机的发送快过换地址、整个窗口被绕过去；
+    // 登录快到不用等也算正常，后面照样等稳定态。
+    let _ = tokio::time::timeout(
+        Duration::from_secs(5),
+        phone.wait_chat("开始换地址", |view| {
+            matches!(view.account, ChatAccount::SigningIn).then_some(())
+        }),
+    )
+    .await;
     bot_room
         .send_text("换了地址之后发的", &[])
         .await
         .expect("Bot 发消息");
-    phone.connect(&home);
 
     phone
         .wait_chat("经新地址收到消息", |view| {
@@ -101,13 +111,9 @@ async fn a_new_address_for_the_same_server_keeps_the_session() {
                 .then_some(())
         })
         .await;
-    // 不调 `signed_in()`：它要等 CheckReady 真的能 dispatch（#1100）；隧道刚换地址时旧会话的 stop_sync
-    // 会拖住这段窗口（#1150 已把等待上限提到 300s）。这条用例只关心“还是原来的设备”，直接看当前视图。
-    let view = phone.chat();
-    let ChatAccount::SignedIn { device_id, .. } = &view.account else {
-        panic!("应仍处于已登录状态：{:?}", view.account);
-    };
-    assert_eq!(device_id, &device, "应还是原来的设备");
+    // 预览只说明消息到了，不说明这次换地址已经收完，视图可能还停在“正在登录”。等 `signed_in`：
+    // 它要 CheckReady 真能 dispatch，再把这份会话连看 3 秒不被换掉，那才是“还登录着、还是这台设备”。
+    assert_eq!(phone.signed_in().await.1, device, "应还是原来的设备");
     assert_eq!(home.login_tokens(), 1, "换地址不应重新登录");
 }
 

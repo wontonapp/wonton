@@ -101,7 +101,8 @@ impl TaskService {
         Ok(self.store.due_tasks(at)?)
     }
 
-    /// 终态任务再跑一次：新任务号，`retry_of` 指回去，计数与进度清零。
+    /// 终态任务再跑一次：新任务号，`retry_of` 指回去，计数与进度清零。一个任务只重试出一条：已经重试过
+    /// 的回早先那条，连点不多开；那条也失败了，要重试的是它。
     pub fn retry(&self, task: TaskId) -> Result<MediaTask, TaskServiceError> {
         let old = self.store.task_any(task)?;
         if !old.state.is_terminal() {
@@ -136,7 +137,10 @@ impl TaskService {
             created_at: (self.clock)().saturating_mul(1_000),
             partial_failures: Vec::new(),
         };
-        self.store.create_task(&new)?;
+        let created = self.store.create_retry(&new)?;
+        if created.id != new.id {
+            return Ok(created);
+        }
         // 点名或首次选定的那家跟着走：重试不重新挑，免得换了一家。
         if let Some(provider) = self.store.task_provider(&new.person, old.id)? {
             self.store

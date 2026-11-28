@@ -26,7 +26,9 @@ pub fn task_path(task: TaskId) -> String {
     format!("{MEDIA_API_PREFIX}/tasks/{task}")
 }
 
-/// `POST /tasks/{id}/{pause|resume|cancel|retry}`
+/// `POST /tasks/{id}/{pause|resume|cancel|retry}`，都回 [`MediaTask`]。`pause`、`resume`、`cancel` 回改完的这个
+/// 任务；`retry` 只收终态任务，回重试出来的那条（新任务号，`retry_of` 指回这个），原任务不变。一个任务只
+/// 重试出一条：再发 `retry` 回同一条，不再开。
 pub fn task_action_path(task: TaskId, action: TaskAction) -> String {
     format!("{}/{}", task_path(task), action.as_str())
 }
@@ -255,6 +257,9 @@ pub struct CommandAck {
     pub ok: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<MediaFailure>,
+    /// 设备为这条命令建的任务（`backup` 建的上传任务）；别的命令不带。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<TaskId>,
 }
 
 /// `PUT /offline` 的请求体。离线占用这本账以设备为准：删了副本、系统清了缓存、重装了 App 之后，设备报一次

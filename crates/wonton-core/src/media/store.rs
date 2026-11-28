@@ -20,26 +20,24 @@ use wonton_protocol::media::TaskId;
 use wonton_protocol::media::view::{QuotaEntry, QuotaView};
 use wonton_protocol::media::{PlaybackSessionId, Queue};
 
+mod commands;
 mod routes;
 mod schema;
 mod sessions;
 mod tasks;
 
+pub use commands::AckState;
 pub use routes::UploadBinding;
 use schema::{QueueRow, classify, migrate, queue_row};
 pub use sessions::StoredSession;
 
 #[cfg(test)]
-pub(crate) use schema::SCHEMA_V1;
+pub(crate) use schema::CURRENT_VERSION;
 
 const DB_FILE: &str = "media.sqlite3";
 
 /// 每人在每个提供方上的上传上限。ADR-0113 第 3 节没定值，按 100 GiB 收。
 pub const DEFAULT_PROVIDER_UPLOAD_LIMIT: u64 = 100 * 1024 * 1024 * 1024;
-
-/// 迁移前没有提供方的上传账行落在这个空串提供方上（`schema.rs` 的 `MIGRATE_V2`）；
-/// 这个人的第一笔上传落到具体提供方时接手它（`record_usage`）。
-const LEGACY_PROVIDER: &str = "";
 
 #[derive(Debug, thiserror::Error)]
 pub enum MediaStoreError {
@@ -96,8 +94,10 @@ pub enum MediaStoreError {
     MissingDevice,
     #[error("上传的配额按提供方记，要指定提供方")]
     MissingProvider,
-    #[error("媒体库 {path} 的版本 {found} 比核心支持的 {supported} 新")]
-    TooNew {
+    #[error(
+        "媒体库 {path} 的结构版本是 {found}，核心认的是 {supported}；有外部用户之前不迁移，删掉这个库重建"
+    )]
+    UnsupportedVersion {
         path: PathBuf,
         found: i64,
         supported: i64,
@@ -437,8 +437,7 @@ impl Store {
         Ok(view)
     }
 
-    /// 写一格账。上传账先删掉迁移留下的空提供方旧账行：它的用量由这一格接手，
-    /// 留着会被 `read_quota` 与这一格一起合计两遍。
+    /// 写一格账。
     #[allow(clippy::too_many_arguments)] // 一格账就是这几个字段，再包结构体只是把参数搬个家。
     fn record_usage(
         &self,
@@ -450,13 +449,6 @@ impl Store {
         used: u64,
         limit: Option<u64>,
     ) -> Result<(), MediaStoreError> {
-        if ledger == Ledger::ProviderUpload && provider != LEGACY_PROVIDER {
-            tx.execute(
-                "DELETE FROM quota WHERE person = ? AND ledger = ? AND provider = ? AND device = ?",
-                params![person, ledger.as_str(), LEGACY_PROVIDER, device],
-            )
-            .map_err(|source| self.db_error(source))?;
-        }
         tx.execute(
             "INSERT INTO quota (person, ledger, provider, device, used, cap)
              VALUES (?, ?, ?, ?, ?, ?)
@@ -474,7 +466,7 @@ impl Store {
         Ok(())
     }
 
-    /// 这一格的用量与上限；没记过账返回 `None`。上传账没有这一格时回落到迁移留下的旧账行。
+    /// 这一格的用量与上限；没记过账返回 `None`。
     fn ledger_usage(
         &self,
         conn: &Connection,
@@ -483,13 +475,7 @@ impl Store {
         provider: &str,
         device: &str,
     ) -> Result<Option<(u64, Option<u64>)>, MediaStoreError> {
-        if let Some(row) = self.quota_row(conn, person, ledger, provider, device)? {
-            return Ok(Some(row));
-        }
-        if ledger == Ledger::ProviderUpload && provider != LEGACY_PROVIDER {
-            return self.quota_row(conn, person, ledger, LEGACY_PROVIDER, device);
-        }
-        Ok(None)
+        self.quota_row(conn, person, ledger, provider, device)
     }
 
     fn quota_row(
