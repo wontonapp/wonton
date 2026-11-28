@@ -24,6 +24,7 @@ use crate::plugin::{PluginId, PluginPackage, PluginStatus};
 
 mod availability;
 mod hosts;
+mod login;
 
 pub(super) fn bot(name: &str) -> BotRef {
     BotRef {
