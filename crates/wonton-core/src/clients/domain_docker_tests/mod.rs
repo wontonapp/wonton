@@ -3,7 +3,6 @@
 //! 真 Pebble、`pebble-challtestsrv` 和一个只在测试里存在的 HTTP 写入器充当 DNS 服务商；入口是一条真的
 //! HAProxy，热加载用正在下载的连接验证。要 Docker，标 `#[ignore]`。
 
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -24,6 +23,7 @@ use crate::test_docker::{Names, ensure_image};
 mod acme_dns;
 mod certificate;
 mod connector;
+mod entry;
 mod helper;
 mod infra;
 mod issuance;
@@ -179,52 +179,6 @@ async fn wait_http(url: &str, root: Option<&Path>) -> Result<()> {
     }
 }
 
-// 入口：按渲染出的配置起一条真 HAProxy，属主用证书文件的。
-
-fn entry_up(case: &mut Case, manager: &CertificateManager) -> Rendered {
-    let entry = case.names.oneshot_container("entry");
-    let certs = case.install.join("entry/certs");
-    let mut model = Model::federation_only(ZONE, ZONE);
-    model.public_labels = Vec::new();
-    model.connectors = vec![case.connector_ip.clone()];
-    let rendered = render(&model).unwrap();
-    write(&certs.join("public.crt-list"), &rendered.public_crt_list);
-    write(&certs.join("lan.crt-list"), &rendered.lan_crt_list);
-    let entry_config = case.dir.path().join("entry.cfg");
-    write(&entry_config, &rendered.config);
-    let site = manager.certificate_path();
-    let owner = format!(
-        "{}:{}",
-        std::fs::metadata(&site).unwrap().uid(),
-        std::fs::metadata(&site).unwrap().gid()
-    );
-    start(
-        &case.names,
-        &case.network,
-        &entry,
-        Some(&owner),
-        &case.entry_ip,
-        &["entry-edge.wonton.internal", "entry.wonton.internal"],
-        &[
-            (certs, "/certs".into()),
-            (entry_config, "/config/haproxy.cfg".into()),
-        ],
-        &case.haproxy,
-        "haproxy",
-        // 和产品一样开主进程管理端口（-S）：热加载走它，expose-fd 靠它把监听套接字交给新进程。
-        &[
-            "-W",
-            "-db",
-            "-f",
-            "/config/haproxy.cfg",
-            "-S",
-            &format!("{}:8404", case.entry_ip),
-        ],
-    );
-    case.entry = entry;
-    rendered
-}
-
 // 热加载不新起连接也不断掉正在下载的。
 /// 经连接器下载 `/slow`：`-Sv` 的 stderr 留给外面，返回还在下载的子进程。
 async fn hot_reload_download(case: &Case, roots: &Path, output: &Path) -> std::process::Child {
@@ -376,7 +330,7 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     pebble::up(&mut case).await;
     let manager = issuance::issue(&mut case, provider).await;
     certificate::check(&case, &manager);
-    let rendered = entry_up(&mut case, &manager);
+    let rendered = entry::up(&mut case, &manager);
     hot_reload_check(&case).await;
     rendered_compare(&case, rendered)
 }
