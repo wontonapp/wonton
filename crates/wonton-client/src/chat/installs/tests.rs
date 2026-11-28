@@ -7,7 +7,7 @@ use wonton_protocol::{
     PluginState, PluginTask, PluginTaskState, RoomMembership, RoomRow,
 };
 
-use super::{SETTLE, rows};
+use super::{SETTLE, rows::rows};
 use crate::plugins::PluginsLink;
 
 fn plugin(id: &str, state: PluginState, bot: Option<&str>) -> InstalledPlugin {
