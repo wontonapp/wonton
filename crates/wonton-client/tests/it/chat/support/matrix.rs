@@ -11,7 +11,7 @@ use tokio::net::TcpStream;
 use tracing::debug;
 
 use super::super::stale_join::forward_one;
-use super::{Core, read_body};
+use super::{Core, Home, read_body};
 
 pub(super) async fn serve_matrix(
     mut tcp: TcpStream,
@@ -420,4 +420,21 @@ async fn record_sync_request(core: &Core, text: &str, body: &[u8]) -> Option<Val
     }
     core.sync_requests.lock().unwrap().push(request.clone());
     Some(request)
+}
+
+impl Home {
+    /// 取房间成员的请求断开或恢复。
+    pub fn set_members_down(&self, down: bool) {
+        self.core.members_down.store(down, Ordering::SeqCst);
+    }
+
+    /// 取聊天显示方式账号数据的请求断开或恢复，别的请求不受影响。
+    pub fn set_layout_down(&self, down: bool) {
+        self.core.layout_down.store(down, Ordering::SeqCst);
+    }
+
+    /// 被 [`Self::set_members_down`] 断开过多少次取房间成员的请求。
+    pub fn members_requests_dropped(&self) -> usize {
+        self.core.members_requests_dropped.load(Ordering::SeqCst)
+    }
 }

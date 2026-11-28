@@ -425,21 +425,6 @@ impl Home {
     pub fn link_preview_requests(&self) -> usize {
         self.core.link_preview_requests.load(Ordering::SeqCst)
     }
-
-    /// 取房间成员的请求断开或恢复。
-    pub fn set_members_down(&self, down: bool) {
-        self.core.members_down.store(down, Ordering::SeqCst);
-    }
-
-    /// 取聊天显示方式账号数据的请求断开或恢复，别的请求不受影响。
-    pub fn set_layout_down(&self, down: bool) {
-        self.core.layout_down.store(down, Ordering::SeqCst);
-    }
-
-    /// 被 [`Self::set_members_down`] 断开过多少次取房间成员的请求。
-    pub fn members_requests_dropped(&self) -> usize {
-        self.core.members_requests_dropped.load(Ordering::SeqCst)
-    }
 }
 
 pub use super::timeline::Timeline;
