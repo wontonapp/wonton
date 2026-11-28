@@ -1,7 +1,9 @@
 //! Render one repeated service with its exact Bot variables, not another Bot's environment.
 
-use super::super::compose::Service;
+use super::super::compose::{Service, strip_extensions};
 use super::super::interpolate::{UsedVars, Vars, interpolate_value};
+use super::super::languages::Languages;
+use super::errors::{interpolate_error, service_error};
 use super::*;
 
 impl PluginPackage {
