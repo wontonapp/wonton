@@ -13,6 +13,7 @@ use anyhow::Context as _;
 
 use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
+use wonton_tunnel::federation::{PeerVerification, PinnedPeerCert};
 use wonton_tunnel::peer_pair::{PeerCertificate, deliver_certificate};
 
 use super::{PeerRecord, Peers, Phase, now_ms};
@@ -272,6 +273,79 @@ impl Peers {
         let server_name = server_name.to_owned();
         tokio::spawn(async move { peers.send_certificate(&server_name, false).await });
         true
+    }
+}
+
+impl Peers {
+    /// 出站 TLS 的对端校验材料（ADR-0112）：钉住的叶（轮换期新旧都在），或按窗口如实报“待钉”。
+    ///
+    /// 还没落 pin 的旧记录、以及刚配对还没收到对方证书的记录按 §5b 走待钉：带上窗口起点和是否到期
+    /// （到期仍只校名字放行，不直接断），不恒 `None`。`Pinned` 的每条记录都必须自洽（DER 和 SPKI 指纹
+    /// 对得上），一条坏数据就 fail-closed 成空根库，不让坏记录悄悄少一张 pin。
+    pub fn tls_verification(&self, server_name: &str) -> Option<PeerVerification> {
+        let peers = self.lock();
+        let record = peers.peers.get(server_name)?;
+        if record.phase != Phase::Paired {
+            return None;
+        }
+        match &record.pin_state {
+            PinState::Pending { since_version } => Some(PeerVerification::Pending {
+                since_version: (!since_version.is_empty()).then(|| since_version.clone()),
+                expired: record
+                    .pin_state
+                    .window_expired(crate::build_info::version()),
+            }),
+            PinState::Pinned => {
+                let mut pins = Vec::with_capacity(record.peer_pin.len());
+                let mut broken = false;
+                for pin in &record.peer_pin {
+                    match pin
+                        .certificate
+                        .der_bytes()
+                        .zip(pin.certificate.spki_sha256_bytes())
+                        .map(|(der, spki)| PinnedPeerCert::from_parts(der, spki))
+                    {
+                        Some(Ok(pin)) => pins.push(pin),
+                        Some(Err(error)) => {
+                            tracing::error!(server = %server_name, %error, "钉住的证书坏了，fail-closed");
+                            broken = true;
+                        }
+                        None => {
+                            tracing::error!(server = %server_name, "钉住的证书编码坏了，fail-closed");
+                            broken = true;
+                        }
+                    }
+                }
+                if broken {
+                    pins.clear();
+                }
+                Some(PeerVerification::Pinned(pins))
+            }
+        }
+    }
+
+    /// 窗口已到期、还没拿到对方证书的已配对服务器（ADR-0112 §5b）：如实报“对端还没升级”。
+    pub fn expired_pending(&self) -> Vec<String> {
+        self.expired_pending_on(crate::build_info::version())
+    }
+
+    /// 同 [`Self::expired_pending`]，按给出的当前版本判（测试用，免得开发构建的版本不可排序）。
+    pub fn expired_pending_on(&self, current_version: &str) -> Vec<String> {
+        let inner = self.lock();
+        inner
+            .peers
+            .values()
+            .filter(|record| {
+                if record.phase != Phase::Paired || !record.peer_pin.is_empty() {
+                    return false;
+                }
+                let PinState::Pending { since_version } = &record.pin_state else {
+                    return false;
+                };
+                !since_version.is_empty() && window_expired(since_version, current_version)
+            })
+            .map(|record| record.server_name.clone())
+            .collect()
     }
 }
 
