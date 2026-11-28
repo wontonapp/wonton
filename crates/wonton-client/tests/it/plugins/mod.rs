@@ -27,6 +27,7 @@ mod server_switch;
 mod share_recipients;
 mod stale_list;
 mod store_load;
+mod store_sources;
 mod takeover;
 mod tool_policy;
 
@@ -34,14 +35,11 @@ use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use wonton_client::{
-    Action, AddedSource, AddedTools, CoreError, OwnerProfileUpdate, PluginFailure, PluginImage,
-    PluginOperation, PluginState, PluginTaskState, SourceKind, StoreLoadState, StoreSection,
+    Action, AddedTools, CoreError, OwnerProfileUpdate, PluginFailure, PluginImage, PluginOperation,
+    PluginState, PluginTaskState, StoreLoadState,
 };
 
-use rig::{
-    CONNECT_BACKSTOP, Canned, IMAGE, Rig, WAIT, core_error, installed, item, listing, preview,
-    running,
-};
+use rig::{CONNECT_BACKSTOP, Canned, IMAGE, Rig, WAIT, core_error, installed, preview, running};
 use wonton_protocol::{
     AvatarMediaProblem, AvatarUpload, MyAvatarProblem, SecretInput, SecretString,
 };
@@ -50,68 +48,6 @@ use wonton_protocol::{
 /// 之后 settle 自己在最后一次成功读取 120s 后转不确定（UNREACHABLE_LIMIT），合计 219s；取 240s。
 /// 预算不足时超时会报出当时状态。
 const READ_BACKSTOP: Duration = Duration::from_secs(240);
-
-#[tokio::test]
-async fn an_added_source_shows_up_in_the_store_and_a_refused_one_says_why() {
-    let rig = Rig::new().await;
-    rig.connected().await;
-    let path = "/_wonton/api/store/sources";
-
-    rig.core.answer(
-        Method::POST,
-        path,
-        core_error(409, "conflict", "已经添加过"),
-    );
-    let refused = rig
-        .app
-        .add_store_source("o/r".to_owned())
-        .await
-        .unwrap_err();
-    assert!(matches!(refused, CoreError::NotReady { .. }), "{refused}");
-
-    let added = AddedSource {
-        address: "github:o/r".to_owned(),
-        kind: SourceKind::Repo,
-        provider: "github.com/o/r".to_owned(),
-        name: None,
-        section: StoreSection {
-            plugins: vec![item("app.added", "Added", &[])],
-            fetched_at_ms: None,
-            problem: None,
-            unreadable: Vec::new(),
-        },
-    };
-    rig.core.answer(
-        Method::POST,
-        path,
-        Canned(201, serde_json::to_string(&added).unwrap()),
-    );
-    let mut store = listing();
-    store.added = vec![added];
-    rig.core.answer(
-        Method::GET,
-        "/_wonton/api/store",
-        Canned(200, serde_json::to_string(&store).unwrap()),
-    );
-    rig.app.add_store_source("o/r".to_owned()).await.unwrap();
-    rig.wait_for(|view| view.store.as_ref().is_some_and(|s| !s.added.is_empty()))
-        .await;
-    assert_eq!(rig.app.search_store("added".to_owned())[0].id, "app.added");
-
-    rig.app
-        .remove_store_source("github:o/r".to_owned())
-        .await
-        .unwrap();
-    assert_eq!(
-        rig.core
-            .seen(
-                &Method::DELETE,
-                "/_wonton/api/store/sources?address=github%3Ao%2Fr"
-            )
-            .len(),
-        1
-    );
-}
 
 const PROFILE: &str = wonton_protocol::ME_PATH;
 
