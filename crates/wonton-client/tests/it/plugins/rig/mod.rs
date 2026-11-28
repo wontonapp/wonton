@@ -5,23 +5,22 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::Router;
-use iroh::endpoint::presets;
-use iroh::{Endpoint, EndpointId, SecretKey};
-use tokio::net::TcpListener;
+use iroh::EndpointId;
+
 use wonton_client::{
     Action, ClientCore, HomeStatus, Network, OnboardingViewModel, PluginTaskState, PluginsViewModel,
 };
-use wonton_tunnel::{Allowlist, TunnelServer};
 
 mod answers;
 mod bot_activity;
 mod fixtures;
+mod home;
 mod router;
 mod state;
 
 pub use answers::{Canned, Headered, core_error};
 pub use fixtures::{installed, item, listing, preview, running};
+pub use home::{FakeHome, ticket};
 pub use router::fake_core;
 #[allow(unused_imports)]
 // `Seen` 只在 `rig::Seen` 这一层露出，用例都从 `seen()` 的返回值推断。
@@ -32,52 +31,6 @@ pub const WAIT: Duration = Duration::from_secs(20);
 /// 失败后按退避重试；取 60s，超过就是真的连不上。
 pub const CONNECT_BACKSTOP: Duration = Duration::from_secs(60);
 pub const IMAGE: &str = "/_wonton/api/images/abc/icon-192.png";
-
-/// 假扮的家里服务器：隧道的对面是假核心。
-pub struct FakeHome {
-    pub core: Arc<CoreState>,
-    pub allowed: Allowlist,
-    server: TunnelServer,
-}
-
-impl FakeHome {
-    pub async fn start(allowed: Vec<EndpointId>) -> Self {
-        let core = Arc::new(CoreState::default());
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-        let upstream = listener.local_addr().unwrap();
-        let router = Router::new().fallback(fake_core).with_state(core.clone());
-        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let endpoint = Endpoint::builder(presets::Minimal)
-            .secret_key(SecretKey::generate())
-            .clear_ip_transports()
-            .bind_addr((Ipv4Addr::LOCALHOST, 0))
-            .unwrap()
-            .bind()
-            .await
-            .unwrap();
-        let allowed = Allowlist::new(allowed);
-        let server = TunnelServer::spawn(endpoint, allowed.clone(), upstream);
-        Self {
-            core,
-            allowed,
-            server,
-        }
-    }
-
-    pub fn ticket(&self) -> String {
-        ticket(
-            self.server.endpoint().id(),
-            self.server.endpoint().bound_sockets()[0],
-        )
-    }
-}
-
-pub fn ticket(id: EndpointId, addr: SocketAddr) -> String {
-    format!(
-        r#"{{"server": {{"endpoint_id": "{id}", "direct_addrs": ["{addr}"]}},
-            "base_domain": "wonton.localhost"}}"#
-    )
-}
 
 pub struct Rig {
     pub core: Arc<CoreState>,
