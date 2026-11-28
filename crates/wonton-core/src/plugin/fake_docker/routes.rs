@@ -94,11 +94,11 @@ fn serve(fake: &FakeDocker, method: &Method, uri: &Uri, body: &Bytes) -> Respons
         return events_response(fake.events.subscribe());
     }
     let query = uri.query().unwrap_or_default();
-    // 写操作带上 query：容器名这类参数只在 query 里，顺序断言要靠它。
-    let call = if query.is_empty() {
-        format!("{method} {path}")
-    } else {
+    // 建容器的名字只在 query 里，顺序断言要靠它；其余写操作保持原样，老测试按路径精确匹配。
+    let call = if path == "/containers/create" && !query.is_empty() {
         format!("{method} {path}?{query}")
+    } else {
+        format!("{method} {path}")
     };
     let mut docker = fake.lock();
     if *method != Method::GET {
