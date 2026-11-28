@@ -14,15 +14,11 @@ async fn only_the_plugins_own_network_reaches_it_without_a_session() {
 
     // 它的容器访问别的插件。
     let h = Harness::start(None).await;
-    super::super::proxy_sso_tests::register_vault(&h.manager).await;
+    super::proxy_sso_tests::register_vault(&h.manager).await;
     h.manager
         .register_source_for_test("app.whoami", "127.0.0.1/32", vec![]);
     let elsewhere = h
-        .get(
-            super::super::proxy_sso_tests::VAULT_HOST,
-            "/",
-            unauthenticated,
-        )
+        .get(super::proxy_sso_tests::VAULT_HOST, "/", unauthenticated)
         .await;
     assert_eq!(elsewhere.error_kind(), Some("unauthenticated"));
 

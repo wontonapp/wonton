@@ -17,6 +17,7 @@ use tower::ServiceExt;
 
 use super::fakes::loopback_tunnel;
 use super::fakes::{bind, echo_upstream, serve};
+pub(super) use super::proxy_sso_tests;
 use super::{CORE_COOKIE, ERROR_HEADER, Gateway, router};
 use crate::config::{OidcProviderConfig, PublicUrls};
 use crate::http::HttpClient;
