@@ -1,7 +1,7 @@
 # iroh-relay 配置模板。由 install.sh 装到 /etc/wonton-iroh-relay/config.toml（0640 root:wonton-iroh-relay）。
 # 部署形态：TCP 443 由 nginx 终结 TLS 再按 WebSocket Upgrade 反代到这里的 http_bind_addr；
 # 中继进程因此用 --dev（HTTP 只绑回环），TLS 配置只留给 UDP 上的 QUIC 地址发现（QAD）。
-# 字段含义见上游 iroh-relay v1.4.1 的 src/main.rs（Config / TlsConfig 的文档注释）。
+# 字段含义见上游 iroh-relay v1.5.0 的 src/main.rs（Config / TlsConfig 的文档注释）。
 
 # 只给本机 nginx 反代，不直接对公网监听。
 http_bind_addr = "127.0.0.1:8742"
@@ -24,7 +24,7 @@ shared_token = []
 # TLS 只给 QAD 的 QUIC 用；TCP 443 的证书由 nginx 和 certbot 管。
 # Reloading：中继每 24h 重读下面两个文件，certbot 续期后的 deploy hook 会把新证书复制过来。
 [tls]
-# 注意：https_bind_addr 和 quic_bind_addr 是这个节里的字段。上游 1.4.1 对顶层未知键不报错
+# 注意：https_bind_addr 和 quic_bind_addr 是这个节里的字段。上游 1.5.0 对顶层未知键不报错
 # （Config 没有 deny_unknown_fields），放到顶层会被静默忽略，QAD 只剩回环监听。
 # --dev 下 TLS 的 TCP 监听不开，这个值只用于默认值推导和文档。
 https_bind_addr = "127.0.0.1:8443"
