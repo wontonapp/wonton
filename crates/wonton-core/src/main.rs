@@ -345,6 +345,7 @@ async fn serve() -> anyhow::Result<()> {
         manager.clone(),
         http.clone(),
     )?);
+    bus.attach_media(media.clone(), tunnel.devices.clone());
     // 入口容器先对账：把上一版 compose 容器认领掉、按设置把入口建好，主人打开的公网入口和联邦 TLS 前端
     // 才在服务。失败按类别记日志、照常启动（不挡核心），带退避的重试在入口的运行循环里；入站联邦的
     // 上游地址按连接现解析，入口容器不在时那条流连不上、核心照常服务。

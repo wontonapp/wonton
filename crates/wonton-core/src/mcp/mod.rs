@@ -26,6 +26,7 @@ mod file_results;
 mod file_tools;
 #[path = "bus/identity.rs"]
 mod identity;
+mod media_tools;
 mod naming;
 mod notifier;
 mod people_tools;
@@ -131,6 +132,8 @@ pub struct Bus {
     friends: OnceLock<Arc<crate::friends::Friends>>,
     /// 收件箱（ADR-0119）。没接时收件箱工具和接口如实报不可用。
     inbox: OnceLock<Arc<crate::inbox::Inbox>>,
+    /// 媒体服务和设备登记表（ADR-0113 第 5 节）。没接时媒体工具如实报不可用（[`Bus::attach_media`]）。
+    media: OnceLock<media_tools::MediaDesk>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
     peers: Mutex<Vec<Peer<RoleServer>>>,
 }
@@ -175,6 +178,8 @@ mod highest_tool_tests;
 mod inbox_tools_tests;
 #[cfg(test)]
 mod install_gate_tests;
+#[cfg(test)]
+mod media_tools_tests;
 #[cfg(test)]
 mod missing_sender_tests;
 #[cfg(test)]

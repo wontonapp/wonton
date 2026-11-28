@@ -12,8 +12,8 @@ use wonton_protocol::SecretValues;
 use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::{
-    Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools, naming,
-    people_tools, profile_tools, save_tools, send_message_tool,
+    Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools,
+    media_tools, naming, people_tools, profile_tools, save_tools, send_message_tool,
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
@@ -121,6 +121,7 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(profile_tools::definitions());
     tools.extend(people_tools::definitions());
     tools.extend(crate::inbox::definitions());
+    tools.extend(media_tools::definitions());
     tools.push(send_message_tool::definition());
     tools
 }
@@ -179,6 +180,7 @@ pub async fn call(
                 Err(failure) => bus.deny(caller, &name, &value, &failure),
             };
         }
+        _ if media_tools::handles(tool) => media_tools::call(bus, caller, tool, &args),
         _ => Err(ToolFailure::new(
             "invalid_input",
             format!("没有工具 {name}"),
