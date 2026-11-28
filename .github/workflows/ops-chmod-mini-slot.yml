@@ -1,0 +1,16 @@
+# 临时：修 mini 上被 644 落盘的 mini-slot.sh（2026-11-28 部署时 tee 丢了执行位，受限 ssh 入口 exec 不了它）。
+# 走自带的 self-hosted runner 在 mini 本机上跑，不需要 ssh 进去。修好后这个文件可以删。
+name: ops-chmod-mini-slot
+on:
+  workflow_dispatch:
+jobs:
+  chmod:
+    runs-on: xcode-27
+    timeout-minutes: 5
+    steps:
+      - name: 执行位
+        run: |
+          chmod 755 "$HOME/wonton-dev/mini-slot.sh"
+          ls -l "$HOME/wonton-dev/mini-slot.sh"
+      - name: 能跑
+        run: bash "$HOME/wonton-dev/mini-slot.sh" status
