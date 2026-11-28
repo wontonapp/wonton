@@ -10,7 +10,7 @@ use wonton_client::InstalledPlugin;
 
 use super::answers::{Canned, Headered};
 use super::bot_activity;
-use super::owner_json;
+use super::router::owner_json;
 
 /// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
 type Holds = Mutex<HashMap<(Method, String), Arc<watch::Sender<bool>>>>;
