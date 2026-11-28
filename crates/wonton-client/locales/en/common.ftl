@@ -49,6 +49,8 @@ plugins-tasks-preview-no-source = This preview has no source, so it can't be ins
 plugins-tasks-dependent-in-use = Couldn't uninstall { $id }: other apps still need it. { $detail }
 # $capability is the missing required capability.
 plugins-tasks-preview-no-provider = Nothing in the store provides the missing required capability { $capability}, so it can't be installed.
+plugins-tasks-provider-needs-own-confirm = { $title } needs permissions that must be confirmed on their own: install it by itself first, then install this plugin again.
+plugins-tasks-preview-old-core = This core is too old to install the provider together; install { $capability } first, then try again.
 # $provider and $got are plugin IDs.
 plugins-capability-wrong-provider = The source for { $provider } now gives a different plugin ({ $got }); preview again.
 

@@ -46,6 +46,8 @@ plugins-tasks-preview-no-source = このプレビューには提供元がない�
 plugins-tasks-dependent-in-use = 「{ $id }」をアンインストールできませんでした：まだ使っているアプリがあります。{ $detail }
 # $capability は不足している必須機能です。
 plugins-tasks-preview-no-provider = 不足している必須機能{ $capability }を提供するプラグインがストアにないため、インストールできません。
+plugins-tasks-provider-needs-own-confirm = { $title }には個別の確認が必要な権限があります。先に「{ $title }」だけをインストールしてから、このプラグインをインストールしてください。
+plugins-tasks-preview-old-core = このコアは提供元を同時にインストールできないため、先に{ $capability }を単独でインストールしてから、もう一度お試しください。
 # $provider と $got はプラグイン ID です。
 plugins-capability-wrong-provider = { $provider } の取得元が別のプラグイン（{ $got }）に変わっています。プレビューをやり直してください。
 

@@ -242,9 +242,9 @@ async fn a_required_capability_with_no_provider_stops_before_the_request() {
     );
 }
 
-/// 提供方的最高级权限（ADR-0036）也在同一页确认：确认页列出了它，安装请求把这项权限授出去。
+/// 一起装时确认页没有提供方自己的最高级“单独确认”（ADR-0036）可走：整单停下，请主人单独装它。
 #[tokio::test]
-async fn a_provider_with_risky_permissions_confirms_on_the_same_page() {
+async fn a_provider_with_risky_permissions_is_not_installed_together() {
     let rig = Rig::new().await;
     rig.connected().await;
     let mut provider = provider_preview();
@@ -273,13 +273,21 @@ async fn a_provider_with_risky_permissions_confirms_on_the_same_page() {
             *state != PluginTaskState::Running
         })
         .await;
-    assert_eq!(state, PluginTaskState::Succeeded);
-    let sent: serde_json::Value =
-        serde_json::from_str(&rig.core.seen(&Method::POST, "/_wonton/api/plugins")[0].body)
-            .unwrap();
-    assert_eq!(
-        sent["install_together"][0]["request"]["grant"],
-        serde_json::json!(["storage.share.downloads:write"])
+    assert!(
+        matches!(
+            state,
+            PluginTaskState::Failed {
+                reason: PluginFailure::Upstream,
+                ref message,
+            } if message.contains("下载器")
+        ),
+        "{state:?}"
+    );
+    assert!(
+        rig.core
+            .seen(&Method::POST, "/_wonton/api/plugins")
+            .is_empty(),
+        "不能带着没确认的提供方权限发安装请求"
     );
 }
 
@@ -363,9 +371,10 @@ async fn an_uploaded_package_preview_also_names_the_provider() {
     assert_eq!(sent["install_together"][0]["id"], "app.downloader");
 }
 
-/// 提供方自己 wants 一个已装的高权限能力：它预览里的醒目连接提示一并显示，主人看得到再确认。
+/// 提供方自己 wants 一个已装的高权限能力：预览里的醒目连接提示（ADR-0053）一起装会丢，
+/// 整单停下，请主人单独装它。
 #[tokio::test]
-async fn a_provider_with_a_prominent_connection_notice_still_installs_together() {
+async fn a_provider_with_a_prominent_connection_notice_is_not_installed_together() {
     let rig = Rig::new().await;
     rig.connected().await;
     let mut provider = provider_preview();
@@ -396,7 +405,22 @@ async fn a_provider_with_a_prominent_connection_notice_still_installs_together()
             *state != PluginTaskState::Running
         })
         .await;
-    assert_eq!(state, PluginTaskState::Succeeded);
+    assert!(
+        matches!(
+            state,
+            PluginTaskState::Failed {
+                reason: PluginFailure::Upstream,
+                ref message,
+            } if message.contains("下载器")
+        ),
+        "{state:?}"
+    );
+    assert!(
+        rig.core
+            .seen(&Method::POST, "/_wonton/api/plugins")
+            .is_empty(),
+        "不能丢掉醒目的连接提示就把提供方连上"
+    );
 }
 
 /// 提供方的预览取不到时按真实原因收场：商店源连不上是 Upstream，不归成“输入非法”，
