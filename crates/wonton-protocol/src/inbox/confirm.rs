@@ -1,5 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+/// `confirm` 的风险档（ADR-0016 的风险类别，不自己发明一套）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum InboxRisk {
+    High,
+    VeryHigh,
+    Highest,
+    #[serde(other)]
+    Other,
+}
+
 /// `confirm` 的载荷：固定确认。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
