@@ -1,5 +1,5 @@
 //! 经隧道的网关行为测试：真实的 iroh 隧道（只走回环地址）、设备本地代理（和 App 一样带会话凭据）和
-//! 网关。插件上游和 Hydra 管理接口的替身与 `tests.rs` 共用。
+//! 网关。插件上游和 Hydra 管理接口的替身与 `tests` 共用。
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::os::unix::fs::MetadataExt;
