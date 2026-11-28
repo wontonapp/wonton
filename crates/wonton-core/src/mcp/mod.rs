@@ -183,6 +183,8 @@ mod missing_sender_tests;
 #[cfg(test)]
 mod optional_permission_tests;
 #[cfg(test)]
+mod panel_tests;
+#[cfg(test)]
 mod people_tests;
 #[cfg(test)]
 mod profile_tests;
