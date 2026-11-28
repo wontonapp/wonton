@@ -13,7 +13,7 @@ use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::{
     Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools, naming,
-    people_tools, profile_tools, save_tools, send_message_tool,
+    panel_tools, people_tools, profile_tools, save_tools, send_message_tool,
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
@@ -120,6 +120,7 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(authoring_tools::definitions());
     tools.extend(profile_tools::definitions());
     tools.extend(people_tools::definitions());
+    tools.extend(panel_tools::definitions());
     tools.extend(crate::inbox::definitions());
     tools.push(send_message_tool::definition());
     tools
@@ -161,6 +162,9 @@ pub async fn call(
         people_tools::USER_LOCALE => people_tools::call(bus, caller, &args),
         SEND_MESSAGE => {
             return send_message_tool::call(bus, caller, &name, args, activity).await;
+        }
+        panel_tools::PIN | panel_tools::UNPIN | panel_tools::LIST => {
+            return panel_tools::call(bus, caller, bare, args, activity).await;
         }
         _ if matches!(
             naming::join(naming::CORE, bare).as_str(),

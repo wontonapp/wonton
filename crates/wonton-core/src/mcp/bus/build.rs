@@ -1,6 +1,6 @@
 //! `Bus` 的构造和 `attach_*`：总线把各依赖接上来的入口。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::files::Files;
@@ -35,6 +35,7 @@ impl Bus {
             audit,
             takeovers: Takeovers::new(),
             adopt_refusals: Mutex::new(HashMap::new()),
+            pin_cards: Mutex::new(HashSet::new()),
             files: OnceLock::new(),
             help: OnceLock::new(),
             people: OnceLock::new(),

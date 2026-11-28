@@ -88,6 +88,7 @@ pub(crate) mod notify_limit;
 mod onboarding;
 mod owner_secrets;
 mod pages;
+mod panel_pins;
 mod peers;
 pub mod people_limits;
 pub(crate) mod permissions;
@@ -370,6 +371,8 @@ mod capabilities_tests;
 mod capability_uninstall_tests;
 #[cfg(test)]
 mod chain_mentions_tests;
+#[cfg(test)]
+mod panel_pins_tests;
 // 原有联邦用例照旧跑（main 上这个文件一度没人挂载，用例没在跑）：421、点段和发现文件的行为由它们锁住。
 #[cfg(test)]
 #[path = "clients_entry_tests.rs"]

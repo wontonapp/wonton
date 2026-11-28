@@ -88,8 +88,9 @@ mod tests {
     #[test]
     fn the_failure_reason_is_a_sentence_with_the_original_as_detail() {
         crate::l10n::set_languages(&["zh-Hans".to_owned()]);
-        let recoverable = reason(failed(true));
-        let rejected = reason(failed(false));
+        let lang = CATALOG.negotiate(&["zh-Hans"]);
+        let recoverable = reason(failed(true, lang));
+        let rejected = reason(failed(false, lang));
         // 语言是进程级全局，别的用例并发改它：四种语言的这句都算。
         assert!(
             [
