@@ -505,6 +505,8 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 | `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
 | `/items` | `GET` | 无（query 同提供方的 `GET /items`，`kind` 必填） | `{items, cursor?}`，核心转给这个种类的提供方 |
 | `/library/{rest}`、`/catalog/{rest}` | `GET`、`POST` | 同提供方的 `/library/…`、`/catalog/…`（第 9、10 节）；可带 `source` | 提供方的回包原样回；核心按 `library`+`photo`、`catalog`+`video` 选提供方，路径原样转、去掉 `source`，`.`、`..`、空段回 `protocol` |
+| `/sources` | `GET` | 无（query: `operation`，可选 `kind`） | `{sources: [{id, title, is_default}]}`：这个人能用、清单声明能做这件事的提供方（“选哪个提供方”第 2 条的合格者），`title` 按请求的语言；一家都没有是空表 |
+| `/share-targets` | `GET` | 无 | `{people: [{user_id, display_name?}]}`：能共享给的人，已加入的家人和主人、不含自己；不带角色和权限，任何已加入的家人都能调，不要管理成员权限 |
 | `/items/{id}/artwork` | `GET` | 无（query: `kind`，可选 `source`、`type`、`width`） | 图片字节，核心转给提供方的 `GET /items/{id}/artwork`，`type`、`width` 原样带过去 |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
 | `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
@@ -539,6 +541,7 @@ pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 - 会话换曲（`Next`/`Prev`）和取队列里另一项的流，按那一项的来源选：队列是相册、音乐、影视共用的一条。换了家，会话就记到新的那家，和新计划一起写，不会计划是一家、提供方是另一家。
 - 队列改成了推给正在播的那家（`PUT /playback/{session}/queue`），只带来源是它或没写来源的条目；没有在播的会话不推，推不过去只记日志。
 - 清单的 `provides.media_source.browse`（如 `opensubsonic`）只说这一家的浏览走哪种协议，不参与选提供方。
+- `GET /sources` 只列第 2 条的合格者，不替人挑；第 4 条回 `source_required` 时 App 用它让用户选，选定的那家记成这台设备在这个服务器上的默认、之后带着 `source` 来。规则本身只在核心这一处。
 
 ### 核心对提供方的凭据
 

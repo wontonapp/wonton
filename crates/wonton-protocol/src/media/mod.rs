@@ -20,6 +20,7 @@ pub use crate::personal_data::WONTON_USER_HEADER;
 use uuid::Uuid;
 
 pub mod api;
+pub mod choices;
 pub mod library;
 pub mod library_view;
 pub mod provider;

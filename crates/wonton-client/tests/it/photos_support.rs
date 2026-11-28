@@ -46,6 +46,7 @@ pub fn asset(id: &str, taken_at: u64) -> PhotoAsset {
         live: false,
         favorite: false,
         owner: None,
+        owner_unknown: false,
         thumbhash: None,
     }
 }

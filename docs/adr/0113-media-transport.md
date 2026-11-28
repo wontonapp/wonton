@@ -295,7 +295,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `/library` | `GET` | `LibraryFeatures`：接哪些写操作（`actions`）；只读的源回空表，壳不出对应按钮 |
 | `/library/timeline` | `GET` | `Timeline`：按拍摄月分桶（`YYYY-MM`、张数），新的在前 |
 | `/library/timeline/{month}?cursor=` | `GET` | `AssetPage`：这个月的条目，新的在前 |
-| `/library/albums` | `GET` | `Albums`：这个人能看到的相册，带归属（`me`/`household`/`person:<用户名>`）和是否共享 |
+| `/library/albums` | `GET` | `Albums`：这个人能看到的相册，带归属（`me`/`household`/`person:<Matrix ID>`）和是否共享 |
 | `/library/albums/{id}?cursor=` | `GET` | `AlbumPage` |
 | `/library/search?q=&people=&place=&from=&to=&kind=&favorite=&cursor=` | `GET` | `AssetPage`；`q` 按画面内容搜 |
 | `/library/people` | `GET` | `People`：有名字的人物，搜索页按人筛 |
@@ -309,6 +309,9 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
   （`notes/0113-interfaces.md`）：带 `?source=<插件 id>` 用它，没带用主人定的默认，只有一家就用它，多家又没定默认回
   `source_required`，不替人挑；这个人用不了的那家不算在“多家”里。
 - 这个人没被授权打开这个插件（ADR-0088 的应用清单）回 `permission_denied`，和打开插件网页是同一个判断。
+- 几家都能用时 App 先取 `GET /_wonton/api/media/sources?operation=library&kind=photo` 让用户挑，只列候选、不重写上面的规则。
+  共享相册、建相册时能选的人取 `GET /_wonton/api/media/share-targets`：已加入的家人和主人、不含自己，只带显示名和 Matrix ID；
+  任何已加入的家人都能取，不要管理成员权限。写操作里的人用这个 Matrix ID，提供方自己映射到上游账号，映射不上的那个人进 `failed`。
 - 客户端核持有浏览的状态：游标、按日分组、选择集；缩略图的磁盘缓存交给壳的图片加载器，键是条目 id 加档位（本机回环每次
   启动换端口和令牌，地址不能当键）。壳只画网格、
   手势和转场（ADR-0120 手写白名单里的“相册看图”）。字节经客户端核的本机回环交给原生图片加载器和播放器，不经绑定层搬。
@@ -331,7 +334,9 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
   全无时提供方先挑出做不了的再做。整批都做不了才回失败信封。
   提供方不认识的动作回 `protocol`，不静默忽略；部分成功逐条回 `failed`。
 - 每人独立库：提供方按 `X-Wonton-User` 用这个人自己的上游账号，回包只含他能看到的（自己的、家人共享给他的、共享相册）。
-  别人的条目带 `owner`（本机用户名），壳据此标出来源。“家庭”账号当家庭相册的库主（第 6 节），归属写 `household`，壳单列。
+  别人的条目带 `owner`（Matrix ID，相册的 `members` 也是），壳据此标出来源。上游里对不上这台服务器上任何人的账号，
+  提供方不写它的名字或邮箱：它的条目 `owner` 为空、带 `owner_unknown`，它建的相册归属写 `unknown`，`members` 里不列它；
+  在壳里照样算“不是我的”，也不能共享给它。“家庭”账号当家庭相册的库主（第 6 节），归属写 `household`，壳单列。
 - 上游账号首次用到时由提供方建，和网页 OIDC 自动开户同一个时机（核心只把授权过的人转过来）；ADR-0114 第 1 项的
   `member_accounts` 落地后，核心在授权时先调 `add`，首次建号这一步就提前，提供方的建号保持幂等。
 

@@ -5,6 +5,9 @@
 //! 壳看的视图由客户端核另出。服务端发来的取值枚举认不出时落 `Other`；[`LibraryAction`] 是提供方要
 //! 执行的动作，认不得就没法执行，报错（同 [`super::QueueOp`]）。
 //!
+//! 指人的字段（条目的 `owner`、相册的 `members`、[`AlbumOwner::Person`]、写操作里的 `share_with`、`people`）
+//! 一律是 Matrix ID，同 `X-Wonton-User`；提供方自己映射到上游账号。
+//!
 //! 失败一律回 [`super::MediaFailure`] 信封，码按 ADR-0113 第 9 节的表：请求本身不合法才是 `protocol`；
 //! 这个人看不到或改不了某一条是 `permission_denied`，条目不在了是 `media_gone`，上游把这两种说成 400 的，
 //! 提供方也要照这样归类。写操作逐条判断，做不了的那几条进 [`LibraryActionResult::failed`]，不连累整批。
@@ -121,9 +124,13 @@ pub struct PhotoAsset {
     pub live: bool,
     #[serde(default)]
     pub favorite: bool,
-    /// 不是本人的条目（家人共享给他的、共享相册里别人加的）写主人的本机用户名；本人的为空
+    /// 不是本人的条目（家人共享给他的、共享相册里别人加的）写主人的 Matrix ID；本人的为空
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
+    /// 不是本人的、但主人不是这台服务器上的哪位家人（上游里对不上任何人的账号）：`owner` 为空、这项为
+    /// true。提供方不写那个账号的名字或邮箱
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub owner_unknown: bool,
     /// 原图解码前的占位图（ThumbHash 的 base64）；没有就空着，壳画纯色
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thumbhash: Option<String>,
@@ -198,8 +205,10 @@ pub struct PersonEntry {
 pub enum AlbumOwner {
     Me,
     Household,
-    /// 别的家人，值是本机用户名
+    /// 别的家人，值是 Matrix ID（`person:@mom:example.com`）
     Person(String),
+    /// 别人的，但库主不是这台服务器上的哪位家人（`unknown`）；提供方不写那个账号的名字或邮箱
+    Unknown,
     /// 新版本新加的归属，原值在里。
     Other(String),
 }
@@ -209,6 +218,7 @@ impl Serialize for AlbumOwner {
         match self {
             Self::Me => serializer.serialize_str("me"),
             Self::Household => serializer.serialize_str("household"),
+            Self::Unknown => serializer.serialize_str("unknown"),
             Self::Person(name) => serializer.serialize_str(&format!("person:{name}")),
             Self::Other(raw) => serializer.serialize_str(raw),
         }
@@ -221,6 +231,7 @@ impl<'de> Deserialize<'de> for AlbumOwner {
         Ok(match raw.as_str() {
             "me" => Self::Me,
             "household" => Self::Household,
+            "unknown" => Self::Unknown,
             _ => match raw.strip_prefix("person:") {
                 Some(name) if !name.is_empty() => Self::Person(name.to_owned()),
                 _ => Self::Other(raw),
@@ -241,7 +252,7 @@ pub struct Album {
     /// 封面那一条的 id
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cover: Option<String>,
-    /// 除库主外能看这个相册的本机用户名；可能含正在看的这个人
+    /// 除库主外能看这个相册的人，Matrix ID；可能含正在看的这个人。不是这台服务器上家人的不列
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub members: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -367,7 +378,7 @@ pub enum LibraryAction {
         title: String,
         #[serde(default)]
         ids: Vec<String>,
-        /// 建好就共享给的本机用户名
+        /// 建好就共享给的人，Matrix ID（同 [`super::choices::ShareTarget::user_id`]）
         #[serde(default)]
         share_with: Vec<String>,
     },
@@ -379,7 +390,7 @@ pub enum LibraryAction {
         album: String,
         ids: Vec<String>,
     },
-    /// 共享给家人；`people` 是本机用户名，已在的不重复加
+    /// 共享给家人；`people` 是 Matrix ID（同 [`super::choices::ShareTarget::user_id`]），已在的不重复加
     ShareAlbum {
         album: String,
         people: Vec<String>,
@@ -441,6 +452,7 @@ mod tests {
             live: true,
             favorite: false,
             owner: Some("mom".into()),
+            owner_unknown: false,
             thumbhash: Some("1QcSHQRnh493V4dIh4eXh1h4kJUI".into()),
         }
     }
@@ -525,10 +537,38 @@ mod tests {
     }
 
     #[test]
+    fn an_owner_who_is_no_family_member_is_flagged_not_named() {
+        let mut asset = asset();
+        assert!(
+            serde_json::to_value(&asset)
+                .unwrap()
+                .get("owner_unknown")
+                .is_none()
+        );
+        asset.owner = None;
+        asset.owner_unknown = true;
+        let wire = serde_json::to_value(&asset).unwrap();
+        assert_eq!(wire["owner_unknown"], true);
+        assert!(wire.get("owner").is_none());
+        let back: PhotoAsset = serde_json::from_value(wire).unwrap();
+        assert_eq!(back, asset);
+    }
+
+    #[test]
     fn album_owner_reads_people_and_falls_to_other() {
         let owner: AlbumOwner = serde_json::from_str("\"person:mom\"").unwrap();
         assert_eq!(owner, AlbumOwner::Person("mom".into()));
         assert_eq!(serde_json::to_value(&owner).unwrap(), "person:mom");
+        // Matrix ID 自己带 `:`，只按第一个 `person:` 拆。
+        let owner: AlbumOwner = serde_json::from_str("\"person:@a:example.com\"").unwrap();
+        assert_eq!(owner, AlbumOwner::Person("@a:example.com".into()));
+        assert_eq!(
+            serde_json::to_value(&owner).unwrap(),
+            "person:@a:example.com"
+        );
+        let owner: AlbumOwner = serde_json::from_str("\"unknown\"").unwrap();
+        assert_eq!(owner, AlbumOwner::Unknown);
+        assert_eq!(serde_json::to_value(&owner).unwrap(), "unknown");
         for raw in ["\"guest\"", "\"person:\""] {
             let owner: AlbumOwner = serde_json::from_str(raw).unwrap();
             assert!(matches!(owner, AlbumOwner::Other(_)));

@@ -146,6 +146,8 @@ pub enum PhotoAlbumOwner {
     Person {
         username: String,
     },
+    /// 别人的，但库主不是这台服务器上的哪位家人；没有名字可写
+    Unknown,
     /// 新版本新加的归属，原值在里
     Other {
         raw: String,
@@ -529,6 +531,7 @@ impl From<&AlbumOwner> for PhotoAlbumOwner {
             AlbumOwner::Person(username) => Self::Person {
                 username: username.clone(),
             },
+            AlbumOwner::Unknown => Self::Unknown,
             AlbumOwner::Other(raw) => Self::Other { raw: raw.clone() },
         }
     }

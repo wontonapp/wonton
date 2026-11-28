@@ -131,7 +131,9 @@ pub(super) fn insert_album(view: &mut PhotoAlbums, row: PhotoAlbumRow) {
     let group = match row.owner {
         PhotoAlbumOwner::Me => 0,
         PhotoAlbumOwner::Household => 1,
-        PhotoAlbumOwner::Person { .. } | PhotoAlbumOwner::Other { .. } => 2,
+        PhotoAlbumOwner::Person { .. }
+        | PhotoAlbumOwner::Unknown
+        | PhotoAlbumOwner::Other { .. } => 2,
     };
     let mut groups = [
         &mut view.mine,
@@ -322,6 +324,7 @@ mod tests {
             live: false,
             favorite: false,
             owner: None,
+            owner_unknown: false,
             thumbhash: None,
         }
     }
