@@ -257,6 +257,9 @@ pub struct CommandAck {
     pub ok: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure: Option<MediaFailure>,
+    /// 设备为这条命令建的任务（`backup` 建的上传任务）；别的命令不带。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<TaskId>,
 }
 
 /// `PUT /offline` 的请求体。离线占用这本账以设备为准：删了副本、系统清了缓存、重装了 App 之后，设备报一次

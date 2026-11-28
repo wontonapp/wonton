@@ -37,8 +37,8 @@
 | 编号 | 目标 | 改哪 | 依赖 | 大小 | 先红后绿的行为测试 | 并行 |
 | --- | --- | --- | --- | --- | --- | --- |
 | M17 | `Action::Media`、`subscribe_media`/`subscribe_playback`、`player_state`；任务/会话本地服务以服务器为准对齐 | `crates/wonton-client/src/media/mod.rs`、`action.rs` | M1–M4 | L | 重连后本地偏离的偏移被服务器值覆盖；退订后不再收片 | 与 M18 并行 |
-| M18 | 上传执行：分片、`HEAD` 查偏移、偏移不符重开上传 | `client/media/upload.rs` | M17、M46 | L | 中途断网→重连从偏移续；偏移对不上→新 `upload_id` 从头 | 与 M17 并行不同文件 |
-| M19 | 下载执行：`.part` 加 `Range`/`If-Range`，206 缺失或 ETag 变则从 0 | `client/media/download.rs` | M17、M46 | L | 断后续传不重下已得字节；ETag 变则丢弃 `.part` 从头 | 与 M18 并行 |
+| M18 | 上传执行：分片、`HEAD` 查偏移、偏移不符重开上传 | `client/media/upload.rs` | M17、M46 | L | 中途断网→重连从偏移续；偏移对不上→新 `upload_id` 从头；收到 `backup` 命令照备份设置建上传任务，回执带 `task` | 与 M17 并行不同文件 |
+| M19 | 下载执行：`.part` 加 `Range`/`If-Range`，206 缺失或 ETag 变则从 0 | `client/media/download.rs` | M17、M46 | L | 断后续传不重下已得字节；ETag 变则丢弃 `.part` 从头；收到 `delete_offline` 命令删副本后 `PUT /offline` | 与 M18 并行 |
 | M20 | 播放执行：把 `PlaybackViewModel` 翻成播放器回调与 `MediaAction`；5 秒及 pause/seek/stop 上报 | `client/media/player_bridge.rs` | M17 | L | 播放位置推进→上报节流；`taken_over`→停声并报最后位置 | 靠 M17 |
 | M21 | `ViewModel` 翻成视图模型：任务进度、状态文案、失败原因带重试按钮 | `client/media/view.rs` | M17 | M | 六类不退避错误各出各自文案与正确按钮（无重试/带重试） | 与 M17 并行 |
 | M22 | 页面媒体会话收口为 renderer：Android 的 `PageMediaOwner` 与 iOS 的 `PageMediaActive` 改成由播放服务统一持有，网页只报“在放什么”；Android 的 `PageMediaService` 被 M33 吸收 | `client/pages/media/mod.rs`、`PageMediaOwner.kt`、`PageMediaActive.swift` | M17、M20、M33 | L | 第三方页的 `navigator.mediaSession` 不被抢；页面关掉会话不死 | 靠 M20 |
