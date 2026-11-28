@@ -3,7 +3,7 @@
 use matrix_sdk::ruma::{OwnedEventId, OwnedUserId};
 use serde_json::{Map, Value};
 
-use super::MessageBody;
+use super::content::MessageBody;
 use crate::agent_run::AgentRunStatus;
 use crate::reply::ReplyTo;
 
