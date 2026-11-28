@@ -49,6 +49,9 @@ fn bot(user: &str, name: &str) -> BotView {
         activity: None,
         saving: false,
         problem: None,
+        cloud: None,
+        custom_media: false,
+        face: None,
     }
 }
 
