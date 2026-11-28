@@ -13,6 +13,7 @@ mod place;
 #[cfg(test)]
 mod private_tests;
 mod room;
+mod state;
 mod sweep;
 mod turns;
 
@@ -24,6 +25,7 @@ use std::sync::{Arc, Mutex};
 
 pub(super) use pending::{Pending, Placing};
 pub(super) use room::has_room;
+pub use state::{NewUpload, UploadState};
 pub use turns::UploadTurn;
 use wonton_protocol::{FileFailure, FileId};
 
@@ -45,31 +47,7 @@ const KEEP_FREE_PERCENT: u64 = 5;
 /// 客户端走了的编号记这么久：tusd 的 pre-create 钩子晚到时要认得出来，钩子不会晚这么多。
 const WITHDRAWN_KEEP_SECS: u64 = 60 * 60;
 
-/// 创建上传时 tusd 转来的信息，都是客户端声明的，编号除外（网关定的）。
-#[derive(Debug, Clone, Copy)]
-pub struct NewUpload<'a> {
-    pub id: &'a FileId,
-    pub name: Option<&'a str>,
-    pub mime_type: Option<&'a str>,
-    /// 声明的长度；`Upload-Defer-Length` 时为空。
-    pub size: Option<u64>,
-    pub device: &'a str,
-}
-
-/// 一个编号对上传接口来说是什么。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UploadState {
-    /// `device` 是创建它的设备，只有它能接着传。
-    Pending {
-        size: u64,
-        device: String,
-    },
-    Finished {
-        size: u64,
-    },
-    Unknown,
-}
-
+/// tusd 的目录和待完成记录。
 pub(super) struct Uploads {
     /// tusd 存字节的目录，属主 `PUID:PGID`。
     dir: PathBuf,
