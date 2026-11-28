@@ -16,130 +16,10 @@ mod paths;
 mod payload;
 mod recap;
 
+mod kind;
+mod status;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-
-/// 条目的五种类型。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum InboxType {
-    /// 问题卡（`sample` 里叫 `choice`，前缀 `q-`）。
-    Choice,
-    /// HTML 页面或附件（前缀 `p-`）。
-    Page,
-    /// 收尾：现状、还缺什么、一个问题（前缀 `r-`）。
-    Recap,
-    /// 固定确认（前缀 `c-`）。
-    Confirm,
-    /// 只读通知（前缀 `n-`）。
-    Notice,
-    /// 更新的核心给出的类型。壳只显示 `title`/`body` 和“知道了”。
-    #[serde(other)]
-    Other,
-}
-
-impl InboxType {
-    /// 这个类型在条目 id 里的前缀。
-    #[must_use]
-    pub fn prefix(self) -> Option<char> {
-        match self {
-            Self::Choice => Some('q'),
-            Self::Confirm => Some('c'),
-            Self::Page => Some('p'),
-            Self::Recap => Some('r'),
-            Self::Notice => Some('n'),
-            Self::Other => None,
-        }
-    }
-
-    /// 从条目 id 的前缀认出类型；不认识的返回 `None`。
-    #[must_use]
-    pub fn from_prefix(prefix: char) -> Option<Self> {
-        match prefix {
-            'q' => Some(Self::Choice),
-            'c' => Some(Self::Confirm),
-            'p' => Some(Self::Page),
-            'r' => Some(Self::Recap),
-            'n' => Some(Self::Notice),
-            _ => None,
-        }
-    }
-
-    /// 这个类型的条目带不带 `expires_at_ms` 语义上的上限。
-    #[must_use]
-    pub fn is_question(self) -> bool {
-        matches!(self, Self::Choice | Self::Confirm)
-    }
-}
-
-/// 条目的生命周期（ADR-0119 第 1 节）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum InboxStatus {
-    /// 等收件人作答或阅读。
-    Pending,
-    /// 这条条目的收件人已经处理完，`outcome` 说怎么处理的。
-    Handled,
-    /// 管理员条目已经被别人抢先处理：其余管理员的列表里只剩这一状态（ADR-0088）。
-    HandledElsewhere,
-    /// 过了 `expires_at_ms` 还没被处理。
-    Expired,
-    /// 发送方撤回了。
-    Withdrawn,
-    /// `handled` 过了可回看的 24 小时，或 `expired`/`withdrawn` 过了 30 天，只剩只读。
-    Archived,
-    /// 更新的核心给出的状态。
-    #[serde(other)]
-    Other,
-}
-
-impl InboxStatus {
-    /// 还能不能作答。
-    #[must_use]
-    pub fn can_answer(self) -> bool {
-        matches!(self, Self::Pending)
-    }
-
-    /// 还能不能撤回自己的答案。
-    #[must_use]
-    pub fn can_reedit(self) -> bool {
-        matches!(self, Self::Handled)
-    }
-
-    /// 是不是终态（不会再变回 `pending`）。
-    #[must_use]
-    pub fn is_terminal(self) -> bool {
-        matches!(
-            self,
-            Self::Handled
-                | Self::HandledElsewhere
-                | Self::Expired
-                | Self::Withdrawn
-                | Self::Archived
-        )
-    }
-
-    /// 在列表里算“待回答”吗：只有 `pending` 的 choice/confirm/带问题或动作的 recap/page 算。
-    #[must_use]
-    pub fn needs_answer(self) -> bool {
-        matches!(self, Self::Pending)
-    }
-}
-
-/// 这条条目怎么被处理的。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum InboxOutcome {
-    Answered,
-    Declined,
-    Acknowledged,
-    /// 更新的核心给出的处理方式。
-    #[serde(other)]
-    Other,
-}
 
 /// 谁发的（显示用）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -466,21 +346,6 @@ pub struct InboxViewModel {
     pub problem: Option<String>,
 }
 
-impl InboxPayload {
-    /// 载荷对应的条目类型。
-    #[must_use]
-    pub fn kind(&self) -> InboxType {
-        match self {
-            Self::Choice(_) => InboxType::Choice,
-            Self::Page(_) => InboxType::Page,
-            Self::Recap(_) => InboxType::Recap,
-            Self::Confirm(_) => InboxType::Confirm,
-            Self::Notice(_) => InboxType::Notice,
-            Self::Other(_) => InboxType::Other,
-        }
-    }
-}
-
 #[cfg(test)]
 #[path = "../inbox_tests.rs"]
 mod tests;
@@ -519,5 +384,9 @@ pub use confirm::{ConfirmAction, ConfirmChoice, ConfirmPayload, InboxRisk};
 pub use notice::{InboxLevel, NoticePayload};
 
 pub use payload::InboxPayload;
+
+pub use kind::InboxType;
+
+pub use status::{InboxOutcome, InboxStatus};
 
 pub use crate::inbox_request::*;
