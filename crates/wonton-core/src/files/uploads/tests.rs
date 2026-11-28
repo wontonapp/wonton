@@ -8,6 +8,7 @@ use crate::files::test_support::any_langs;
 mod abandoning_tests;
 mod cleanup_tests;
 mod placement_tests;
+mod reading_tests;
 
 pub(super) fn new_upload(size: u64) -> NewUpload<'static> {
     NewUpload {
